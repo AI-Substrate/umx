@@ -1,0 +1,3 @@
+# F133: pub(crate) use std as s in module m, then use crate::m::s::fs as f in the crate root (escape 2). In an adapter,
+# so only the re-export rule speaks.
+expect = ["r-no-std-reexport"]

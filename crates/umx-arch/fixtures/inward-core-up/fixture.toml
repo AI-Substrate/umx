@@ -1,0 +1,2 @@
+# umx-core depends outward on umx-graph.
+expect = ["r-inward"]

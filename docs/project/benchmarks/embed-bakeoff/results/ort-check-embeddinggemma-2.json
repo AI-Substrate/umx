@@ -1,0 +1,15 @@
+{
+  "batch_invariance_min_cos_256": 0.9999997019767761,
+  "cos_cat_carburetor": 0.6958339810371399,
+  "cos_cat_kitten": 0.9015257358551025,
+  "last_tokens": [
+    "▁soup",
+    "▁cool",
+    "<eos>"
+  ],
+  "load_avg_1m_at_end": 135.94482421875,
+  "load_avg_1m_at_start": 137.59423828125,
+  "max_length": 2048,
+  "model": "embeddinggemma-2",
+  "pass": true
+}

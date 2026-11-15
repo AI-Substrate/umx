@@ -1,0 +1,161 @@
+{
+  "cli": null,
+  "commit": "d72269f32035",
+  "conditions": "nice -n 19, release, base of ws004 s10",
+  "date": "2026-11-10T08:13:36Z",
+  "fixture": {
+    "bytes": {
+      "edges": 54832229,
+      "graph": 1312,
+      "nodes": 99050426
+    },
+    "edges": 299996,
+    "edges_per_node": 3,
+    "generate_ms": 546.044,
+    "kind": "rich",
+    "nodes": 100000,
+    "seed": 1
+  },
+  "in_process": {
+    "add_node_3_edges_ms": {
+      "median": 5.462,
+      "min": 5.326,
+      "runs": 9
+    },
+    "encode_edges_ms": {
+      "median": 19.024,
+      "min": 18.656,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 1.481,
+      "min": 1.442,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 16.915,
+      "min": 16.691,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 1995.125,
+      "min": 1912.625,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 1.75,
+      "min": 1.709,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 187.384,
+      "min": 185.274,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.232,
+      "min": 0.23,
+      "runs": 5
+    },
+    "list_type_field_count": 2042,
+    "list_type_field_ms": {
+      "median": 0.034,
+      "min": 0.03,
+      "runs": 5
+    },
+    "list_type_status_count": 1244,
+    "list_type_status_ms": {
+      "median": 0.132,
+      "min": 0.117,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 216.179,
+      "min": 213.279,
+      "runs": 5
+    },
+    "load_peak_bytes": 133288507,
+    "mem_graph_bytes": 126111163,
+    "mem_hot_per_node_bytes": 227.0,
+    "mem_not_image_per_node_bytes": 271.0,
+    "mem_parts_bytes": {
+      "adjacency": 5599944,
+      "cold": 0,
+      "edge_columns": 9599872,
+      "field_columns": 774456,
+      "image": 99050426,
+      "node_columns": 7497430,
+      "title_text": 3589035
+    },
+    "mem_per_node_bytes": 1261.0,
+    "mem_title_text_per_node_bytes": 36.0,
+    "memory_bytes_over_alloc": 1.0,
+    "near_duplicate_insert_ms": {
+      "median": 17.216,
+      "min": 16.287,
+      "runs": 9
+    },
+    "path_hops_sum": 1356,
+    "path_us": {
+      "median": 799.629,
+      "min": 765.143,
+      "runs": 5
+    },
+    "rebuild_adjacency_ms": {
+      "median": 1.81,
+      "min": 1.675,
+      "runs": 9
+    },
+    "replace_one_line_ms": {
+      "median": 0.901,
+      "min": 0.882,
+      "runs": 9
+    },
+    "title_text_build_ms": {
+      "median": 7.622,
+      "min": 7.399,
+      "runs": 9
+    },
+    "walk_depth3_reached": 230.75,
+    "walk_depth3_us": {
+      "median": 1.294,
+      "min": 1.262,
+      "runs": 5
+    },
+    "within_1pct_count": 266,
+    "within_1pct_ms": {
+      "median": 0.002,
+      "min": 0.002,
+      "runs": 5
+    },
+    "within_root_count": 99999,
+    "within_root_ms": {
+      "median": 2.186,
+      "min": 2.095,
+      "runs": 5
+    },
+    "writes": {
+      "add_ms": {
+        "max": 81.149,
+        "n": 20,
+        "p50": 56.466,
+        "p95": 74.874
+      },
+      "add_parent_ms": {
+        "max": 308.104,
+        "n": 20,
+        "p50": 174.811,
+        "p95": 202.673
+      }
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

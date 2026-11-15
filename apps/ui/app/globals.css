@@ -1,0 +1,329 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *, .console *));
+/* The FUI skins (K1): Console (dark) and Instrument (light). */
+@custom-variant fui (&:is(.console *, .instrument *));
+
+/* The reference view's warm palette mapped to shadcn tokens (design note section 4). Hex, so the canvas can read
+   the same variables. Edge colours are opaque, pre-mixed with the canvas: sigma's WebGL blending treats colours as
+   premultiplied, so a translucent light edge on the dark canvas would draw near white. */
+:root {
+  --background: #f7f4ef;
+  --foreground: #242424;
+  --card: #ffffff;
+  --card-foreground: #242424;
+  --popover: #ffffff;
+  --popover-foreground: #242424;
+  --primary: #b11f4b;
+  --primary-foreground: #ffffff;
+  --secondary: #efebe4;
+  --secondary-foreground: #242424;
+  --muted: #efebe4;
+  --muted-foreground: #6e6862;
+  --accent: #f3e3e7;
+  --accent-foreground: #7d1535;
+  --destructive: #c62a3a;
+  --border: #e3ddd4;
+  --input: #ddd6cc;
+  --ring: #b11f4b;
+  --radius: 10px;
+  --canvas: #f7f4ef;
+  --canvas-ink: #242424;
+  --canvas-halo: #ffffff;
+  --canvas-edge: #c9c4bd;
+  --canvas-edge-structure: #dfdad3;
+  --canvas-edge-focus: #b11f4b;
+  --canvas-dim: #e6e2dc;
+  --canvas-agent: #2f6fd6;
+  --canvas-edge-dim: #ece8e2;
+  --chrome: #e3ddd4;
+  --chrome-hi: #c9c4bd;
+  --chrome-text: #6e6862;
+  --grid: #f7f4ef;
+  --glow-select: #b11f4b;
+  --glow-agent: #2f6fd6;
+  --glow-live: #b11f4b;
+  --readout: #242424;
+}
+
+.dark {
+  --background: #1f1e1d;
+  --foreground: #dedede;
+  --card: #292929;
+  --card-foreground: #dedede;
+  --popover: #292929;
+  --popover-foreground: #dedede;
+  --primary: #fd8ea1;
+  --primary-foreground: #2a1016;
+  --secondary: #333231;
+  --secondary-foreground: #dedede;
+  --muted: #303030;
+  --muted-foreground: #a29e99;
+  --accent: #3d2a2f;
+  --accent-foreground: #ffc3cd;
+  --destructive: #ff6b78;
+  --border: #383735;
+  --input: #42403e;
+  --ring: #fd8ea1;
+  --canvas: #1f1e1d;
+  --canvas-ink: #e6e4e1;
+  --canvas-halo: #292929;
+  --canvas-edge: #4a4846;
+  --canvas-edge-structure: #363533;
+  --canvas-edge-focus: #fd8ea1;
+  --canvas-dim: #353331;
+  --canvas-agent: #6ea8fe;
+  --canvas-edge-dim: #292827;
+  --chrome: #383735;
+  --chrome-hi: #4a4846;
+  --chrome-text: #a29e99;
+  --grid: #1f1e1d;
+  --glow-select: #fd8ea1;
+  --glow-agent: #6ea8fe;
+  --glow-live: #fd8ea1;
+  --readout: #dedede;
+}
+
+/* K1 FUI skins (ui-expert design note, section 2). Three levels only: data (foreground, ink, readouts) brightest,
+   structure (muted foreground) mid, chrome (frames, grid, chrome text) dim. One chrome hue family plus one accent,
+   which is the person's selection and never fills a node. test/skins.test.ts re-runs the contrast table. */
+.console {
+  color-scheme: dark;
+  --background: #05090d;
+  --foreground: #d6f0ff;
+  --card: #0a141c;
+  --card-foreground: #d6f0ff;
+  --popover: #0a141c;
+  --popover-foreground: #d6f0ff;
+  --primary: #ffb454;
+  --primary-foreground: #05090d;
+  --secondary: #0f1d26;
+  --secondary-foreground: #d6f0ff;
+  --muted: #0f1d26;
+  --muted-foreground: #7fa6ba;
+  --accent: #12232e;
+  --accent-foreground: #ffd59a;
+  --destructive: #ff5c6c;
+  --border: #1e4357;
+  --input: #1e4357;
+  --ring: #ffb454;
+  --radius: 2px;
+  --canvas: #05090d;
+  --canvas-ink: #d6f0ff;
+  --canvas-halo: #0a141c;
+  --canvas-edge: #1d3442;
+  --canvas-edge-structure: #142630;
+  --canvas-edge-focus: #ffb454;
+  --canvas-dim: #10212b;
+  --canvas-agent: #5aaaff;
+  --canvas-edge-dim: #0c171e;
+  --chrome: #1e4357;
+  --chrome-hi: #2f6b89;
+  --chrome-text: #5f8496;
+  --grid: #0b1820;
+  --glow-select: #ffb454;
+  --glow-agent: #5aaaff;
+  --glow-live: #ffb454;
+  --readout: #d6f0ff;
+}
+
+.instrument {
+  color-scheme: light;
+  --background: #eef1f2;
+  --foreground: #16232b;
+  --card: #f7f9fa;
+  --card-foreground: #16232b;
+  --popover: #f7f9fa;
+  --popover-foreground: #16232b;
+  --primary: #985300;
+  --primary-foreground: #ffffff;
+  --secondary: #e3e8ea;
+  --secondary-foreground: #16232b;
+  --muted: #e3e8ea;
+  --muted-foreground: #4f6470;
+  --accent: #e6eaec;
+  --accent-foreground: #6b3a00;
+  --destructive: #c62a3a;
+  --border: #c2cdd2;
+  --input: #c2cdd2;
+  --ring: #985300;
+  --radius: 2px;
+  --canvas: #eef1f2;
+  --canvas-ink: #16232b;
+  --canvas-halo: #f7f9fa;
+  --canvas-edge: #b9c5cb;
+  --canvas-edge-structure: #d3dce0;
+  --canvas-edge-focus: #985300;
+  --canvas-dim: #dce3e6;
+  --canvas-agent: #1463c9;
+  --canvas-edge-dim: #e3e8ea;
+  --chrome: #c2cdd2;
+  --chrome-hi: #7f949f;
+  --chrome-text: #5a6c77;
+  --grid: #e5eaec;
+  --glow-select: #985300;
+  --glow-agent: #1463c9;
+  --glow-live: #985300;
+  --readout: #16232b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-canvas: var(--canvas);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+.section-head {
+  @apply text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground;
+}
+
+.sigma-host,
+.sigma-host .sigma-container {
+  width: 100%;
+  height: 100%;
+  background: var(--canvas);
+}
+
+/* FUI chrome (K1, design note section 4): hairline frames with corner brackets drawn by CSS borders, mono section
+   heads and readouts. Light and Dark never match these selectors. */
+.console .section-head,
+.instrument .section-head {
+  @apply font-mono;
+  color: var(--chrome-text);
+}
+.console .fui-frame,
+.instrument .fui-frame {
+  border-color: var(--chrome);
+  box-shadow: none;
+}
+.fui-brackets {
+  display: none;
+}
+.console .fui-brackets,
+.instrument .fui-brackets {
+  display: block;
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+}
+.fui-brackets::before,
+.fui-brackets::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-color: var(--chrome-hi);
+  border-style: solid;
+}
+.fui-brackets::before {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+}
+.fui-brackets::after {
+  right: 0;
+  bottom: 0;
+  border-width: 0 1px 1px 0;
+}
+.fui-readout {
+  @apply font-mono text-[11px] uppercase tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+/* Motion (design note section 6): finite eases only, nothing loops. Reduced motion makes each one instant. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes bracket-in {
+  from {
+    opacity: 0;
+    inset: 6px;
+  }
+  to {
+    opacity: 1;
+    inset: -1px;
+  }
+}
+.console .panel-in,
+.instrument .panel-in {
+  animation: panel-in 300ms ease-out 1;
+}
+.console .bracket-in,
+.instrument .bracket-in {
+  animation: bracket-in 400ms ease-out 1;
+}
+
+/* A chip an agent filter changed pulses once in the agent's colour (plan 114). */
+@keyframes agent-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--canvas-agent) 70%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--canvas-agent) 0%, transparent);
+  }
+}
+.agent-pulse {
+  border-color: var(--canvas-agent);
+  animation: agent-pulse 1.2s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition: none !important;
+  }
+  .animate-spin,
+  .panel-in,
+  .bracket-in,
+  .agent-pulse,
+  .console .panel-in,
+  .instrument .panel-in,
+  .console .bracket-in,
+  .instrument .bracket-in {
+    animation: none !important;
+  }
+}

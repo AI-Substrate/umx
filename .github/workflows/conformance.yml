@@ -1,0 +1,76 @@
+name: conformance
+
+# LadybugDB 0.22.3 conformance for the Cypher subset (workstream 005; cypher-expert design input section 5).
+# Not part of `just check`: the checker links a ~90 MB prebuilt library that umx never links (D18). It reports
+# "skipped: lbug unavailable" and passes when the library cannot be fetched.
+on:
+  # PRs only, plus a manual run (decision D51, 2026-11-11).
+  pull_request:
+    paths:
+      - "crates/umx-cypher/**"
+      - "crates/umx-query/**"
+      - "tools/lbug-conformance/**"
+      - ".github/workflows/conformance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lbug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # rust-toolchain.toml's version, as check.yml installs it (F35); run.sh builds from the repo root.
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/lbug-conformance/target
+          key: lbug-conformance-${{ runner.os }}-${{ hashFiles('tools/lbug-conformance/Cargo.lock') }}
+      # Overrides the lbug build script would obey are set on purpose: run.sh must clear them and still link only
+      # the sha256-checked v0.22.3 archive (review round 1, B2).
+      - name: LadybugDB conformance
+        shell: bash
+        env:
+          LBUG_LINUX_VARIANT: perf
+          LBUG_SHARED: "1"
+          LBUG_LIBRARY_DIR: /nonexistent
+          LBUG_INCLUDE_DIR: /nonexistent
+          LBUG_BUILD_FROM_SOURCE: "1"
+          LBUG_VERSION: "0.0.1"
+        run: tools/lbug-conformance/run.sh crates/umx-cypher/fixtures/design "$RUNNER_TEMP/design-lbug.json" | tee "$RUNNER_TEMP/conformance.txt"
+      - name: Guards (inherited overrides, foreign library, float tolerance)
+        shell: bash
+        run: tools/lbug-conformance/test_run.sh | tee "$RUNNER_TEMP/guards.txt"
+      # A skipped run must never read as a pass: say it at the top of the job summary.
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            if grep -q '^skipped: lbug unavailable' "$RUNNER_TEMP/conformance.txt" 2>/dev/null; then
+              echo "## :warning: LadybugDB conformance NOT checked"
+              echo
+              echo "\`$(grep '^skipped:' "$RUNNER_TEMP/conformance.txt")\`"
+            else
+              echo "## LadybugDB conformance"
+              echo
+              echo "\`$(tail -1 "$RUNNER_TEMP/conformance.txt" 2>/dev/null || echo 'no output')\`"
+            fi
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/guards.txt" 2>/dev/null || echo "guards did not run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q '^skipped: lbug unavailable' "$RUNNER_TEMP/conformance.txt" 2>/dev/null; then
+            echo "::warning title=LadybugDB conformance skipped::$(grep '^skipped:' "$RUNNER_TEMP/conformance.txt")"
+          fi

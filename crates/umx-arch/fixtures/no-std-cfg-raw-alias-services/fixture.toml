@@ -1,0 +1,2 @@
+# std imported under attributes, as a raw identifier with a raw alias.
+expect = ["r-core-no-std"]

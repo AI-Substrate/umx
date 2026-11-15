@@ -1,0 +1,4 @@
+# Allowed control: every feature is built by the gate list or forwards to an excluded one.
+expect = []
+whole_workspace = true
+rules = "rules.toml"

@@ -1,0 +1,2037 @@
+{
+  "commit": "e9b6763023c676ca8431644204f50c2b100d9aab",
+  "dims": {
+    "256": {
+      "by_kind": {
+        "keyword": {
+          "mrr10": 1.0,
+          "n": 15,
+          "recall10": 1.0
+        },
+        "near_miss": {
+          "mrr10": 1.0,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "paraphrase": {
+          "mrr10": 0.7537797619047619,
+          "n": 40,
+          "recall10": 0.9625
+        },
+        "tail": {
+          "mrr10": 0.6461111111111111,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "title": {
+          "mrr10": 0.9,
+          "n": 5,
+          "recall10": 1.0
+        }
+      },
+      "cos_best_irrelevant": {
+        "n": 80,
+        "p5": 0.6038845777511597,
+        "p50": 0.6698099374771118,
+        "p95": 0.7280163764953613
+      },
+      "cos_relevant": {
+        "n": 94,
+        "p5": 0.6297225952148438,
+        "p50": 0.7120973467826843,
+        "p95": 0.8206556439399719
+      },
+      "mrr10": 0.8264037698412701,
+      "per_query": [
+        {
+          "first_rank": 1,
+          "id": "q-001",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-010",
+            "reg-050",
+            "reg-009"
+          ]
+        },
+        {
+          "first_rank": 3,
+          "id": "q-002",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.3333333333333333,
+          "top3": [
+            "reg-036",
+            "reg-016",
+            "reg-018"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-003",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-024",
+            "reg-008",
+            "reg-025"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-004",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-043",
+            "reg-025",
+            "dlv-006"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-005",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "reg-058",
+            "reg-050",
+            "reg-048"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-006",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-054",
+            "reg-015",
+            "reg-048"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-007",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-058",
+            "reg-056",
+            "cal-037"
+          ]
+        },
+        {
+          "first_rank": 8,
+          "id": "q-008",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.125,
+          "top3": [
+            "dlv-058",
+            "cal-046",
+            "reg-025"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-009",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-072",
+            "reg-005",
+            "cal-073"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-010",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "cal-004",
+            "reg-030",
+            "reg-020"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-011",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "reg-043",
+            "dlv-003",
+            "cal-049"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-012",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "reg-009",
+            "dlv-010",
+            "dlv-059"
+          ]
+        },
+        {
+          "first_rank": 20,
+          "id": "q-013",
+          "kind": "paraphrase",
+          "recall10": 0.0,
+          "rr10": 0.0,
+          "top3": [
+            "dlv-055",
+            "reg-026",
+            "dsn-022"
+          ]
+        },
+        {
+          "first_rank": 4,
+          "id": "q-014",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.25,
+          "top3": [
+            "dlv-027",
+            "dlv-026",
+            "cal-073"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-015",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-033",
+            "dlv-032",
+            "dlv-030"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-016",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-037",
+            "dlv-034",
+            "cal-036"
+          ]
+        },
+        {
+          "first_rank": 5,
+          "id": "q-017",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.2,
+          "top3": [
+            "dlv-009",
+            "cal-046",
+            "reg-025"
+          ]
+        },
+        {
+          "first_rank": 4,
+          "id": "q-018",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.25,
+          "top3": [
+            "dlv-007",
+            "dlv-036",
+            "dlv-053"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-019",
+          "kind": "paraphrase",
+          "recall10": 0.5,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-058",
+            "dsn-022",
+            "dlv-063"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-020",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-069",
+            "cal-020",
+            "dlv-021"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-021",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-004",
+            "dsn-026",
+            "dsn-024"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-022",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-014",
+            "dsn-007",
+            "dsn-054"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-023",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-018",
+            "dsn-016",
+            "dsn-019"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-024",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-023",
+            "dsn-020",
+            "dsn-024"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-025",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-035",
+            "dsn-034",
+            "cal-031"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-026",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-039",
+            "dsn-046",
+            "dsn-038"
+          ]
+        },
+        {
+          "first_rank": 10,
+          "id": "q-027",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.1,
+          "top3": [
+            "dsn-041",
+            "dsn-066",
+            "dsn-045"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-028",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dsn-057",
+            "dsn-058",
+            "dlv-019"
+          ]
+        },
+        {
+          "first_rank": 4,
+          "id": "q-029",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.25,
+          "top3": [
+            "cal-063",
+            "cal-017",
+            "cal-006"
+          ]
+        },
+        {
+          "first_rank": 7,
+          "id": "q-030",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.14285714285714285,
+          "top3": [
+            "dsn-054",
+            "dsn-036",
+            "dsn-071"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-031",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-004",
+            "dlv-007",
+            "cal-007"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-032",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-010",
+            "dsn-011",
+            "cal-008"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-033",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-016",
+            "cal-003",
+            "cal-007"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-034",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-019",
+            "cal-017",
+            "cal-020"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-035",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-027",
+            "cal-025",
+            "cal-028"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-036",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-034",
+            "cal-017",
+            "cal-024"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-037",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-039",
+            "reg-015",
+            "cal-046"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-038",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-049",
+            "dlv-006",
+            "dlv-033"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-039",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-063",
+            "cal-034",
+            "cal-064"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-040",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-073",
+            "reg-025",
+            "cal-072"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-041",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-050",
+            "reg-048",
+            "reg-017"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-042",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-040",
+            "reg-046",
+            "dlv-068"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-043",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-020",
+            "reg-066",
+            "reg-016"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-044",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-037",
+            "reg-033",
+            "cal-005"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-045",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-010",
+            "dlv-009",
+            "reg-005"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-046",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-021",
+            "cal-047",
+            "cal-020"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-047",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-019",
+            "dlv-015",
+            "dlv-017"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-048",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-063",
+            "dlv-064",
+            "dlv-062"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-049",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-056",
+            "cal-010",
+            "cal-049"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-050",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-009",
+            "dsn-010",
+            "dsn-011"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-051",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-022",
+            "dsn-020",
+            "dlv-004"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-052",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-023",
+            "cal-021",
+            "cal-022"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-053",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-034",
+            "dlv-071",
+            "reg-043"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-054",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-043",
+            "cal-022",
+            "dlv-041"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-055",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-057",
+            "cal-056",
+            "cal-034"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-056",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-026",
+            "reg-028",
+            "dlv-034"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-057",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-020",
+            "dsn-011",
+            "dsn-045"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-058",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-006",
+            "cal-058",
+            "cal-064"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-059",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-034",
+            "reg-036",
+            "reg-020"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-060",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-009",
+            "cal-008",
+            "dlv-031"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-061",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-040",
+            "dlv-041",
+            "dlv-060"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-062",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-035",
+            "reg-029",
+            "reg-030"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-063",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-017",
+            "cal-049",
+            "cal-064"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-064",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-011",
+            "dlv-008",
+            "reg-039"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-065",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-022",
+            "cal-028",
+            "dsn-045"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-066",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-005",
+            "reg-068",
+            "reg-007"
+          ]
+        },
+        {
+          "first_rank": 4,
+          "id": "q-067",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.25,
+          "top3": [
+            "reg-026",
+            "dlv-006",
+            "reg-025"
+          ]
+        },
+        {
+          "first_rank": 9,
+          "id": "q-068",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.1111111111111111,
+          "top3": [
+            "reg-028",
+            "cal-024",
+            "cal-006"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-069",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-012",
+            "dlv-013",
+            "dlv-008"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-070",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-030",
+            "dlv-033",
+            "dlv-008"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-071",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dlv-064",
+            "dlv-063",
+            "dlv-062"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-072",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-003",
+            "dlv-026",
+            "reg-042"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-073",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-045",
+            "dsn-023",
+            "dsn-044"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-074",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "cal-029",
+            "cal-032",
+            "cal-031"
+          ]
+        },
+        {
+          "first_rank": 10,
+          "id": "q-075",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.1,
+          "top3": [
+            "cal-062",
+            "cal-063",
+            "cal-023"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-076",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-018",
+            "reg-019",
+            "cal-035"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-077",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-068",
+            "reg-069",
+            "reg-005"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-078",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-023",
+            "dlv-022",
+            "dlv-021"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-079",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dsn-008",
+            "dsn-007",
+            "dsn-006"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-080",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-058",
+            "cal-006",
+            "cal-028"
+          ]
+        }
+      ],
+      "proposed_floor": 0.6788694858551025,
+      "recall10": 0.98125,
+      "recall5": 0.9125
+    },
+    "768": {
+      "by_kind": {
+        "keyword": {
+          "mrr10": 0.9666666666666667,
+          "n": 15,
+          "recall10": 1.0
+        },
+        "near_miss": {
+          "mrr10": 1.0,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "paraphrase": {
+          "mrr10": 0.7900297619047618,
+          "n": 40,
+          "recall10": 0.975
+        },
+        "tail": {
+          "mrr10": 0.72,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "title": {
+          "mrr10": 1.0,
+          "n": 5,
+          "recall10": 1.0
+        }
+      },
+      "cos_best_irrelevant": {
+        "n": 80,
+        "p5": 0.5800166130065918,
+        "p50": 0.6473261713981628,
+        "p95": 0.6972048282623291
+      },
+      "cos_relevant": {
+        "n": 94,
+        "p5": 0.6013162732124329,
+        "p50": 0.6859099864959717,
+        "p95": 0.8022922873497009
+      },
+      "mrr10": 0.8537648809523809,
+      "per_query": [
+        {
+          "first_rank": 1,
+          "id": "q-001",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-010",
+            "reg-009",
+            "reg-008"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-002",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-018",
+            "reg-020",
+            "reg-016"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-003",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "cal-015",
+            "reg-024",
+            "reg-028"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-004",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-043",
+            "reg-042",
+            "reg-025"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-005",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-050",
+            "reg-058",
+            "reg-005"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-006",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-054",
+            "reg-015",
+            "reg-004"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-007",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-058",
+            "reg-056",
+            "cal-002"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-008",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dlv-058",
+            "reg-062",
+            "reg-009"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-009",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-072",
+            "cal-073",
+            "reg-004"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-010",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-030",
+            "cal-004",
+            "reg-020"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-011",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-003",
+            "cal-059",
+            "cal-049"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-012",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "reg-009",
+            "dlv-010",
+            "dlv-018"
+          ]
+        },
+        {
+          "first_rank": 12,
+          "id": "q-013",
+          "kind": "paraphrase",
+          "recall10": 0.0,
+          "rr10": 0.0,
+          "top3": [
+            "dlv-055",
+            "reg-026",
+            "dlv-058"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-014",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dlv-026",
+            "dlv-028",
+            "dlv-027"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-015",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-033",
+            "dlv-032",
+            "dlv-031"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-016",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-037",
+            "dlv-034",
+            "cal-036"
+          ]
+        },
+        {
+          "first_rank": 4,
+          "id": "q-017",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.25,
+          "top3": [
+            "reg-025",
+            "dlv-009",
+            "cal-046"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-018",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dlv-007",
+            "dlv-055",
+            "dlv-036"
+          ]
+        },
+        {
+          "first_rank": 4,
+          "id": "q-019",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.25,
+          "top3": [
+            "dlv-062",
+            "dlv-063",
+            "dlv-064"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-020",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-069",
+            "dlv-021",
+            "cal-046"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-021",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-004",
+            "dsn-026",
+            "cal-061"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-022",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-014",
+            "dsn-007",
+            "dsn-012"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-023",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-018",
+            "dsn-019",
+            "dsn-046"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-024",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-023",
+            "dsn-020",
+            "dsn-024"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-025",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-035",
+            "dsn-034",
+            "cal-031"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-026",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-039",
+            "dsn-026",
+            "dsn-027"
+          ]
+        },
+        {
+          "first_rank": 8,
+          "id": "q-027",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.125,
+          "top3": [
+            "dsn-007",
+            "dsn-047",
+            "dsn-066"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-028",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "dsn-057",
+            "dsn-058",
+            "dsn-059"
+          ]
+        },
+        {
+          "first_rank": 3,
+          "id": "q-029",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.3333333333333333,
+          "top3": [
+            "cal-006",
+            "reg-072",
+            "dsn-073"
+          ]
+        },
+        {
+          "first_rank": 7,
+          "id": "q-030",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.14285714285714285,
+          "top3": [
+            "dsn-003",
+            "dsn-054",
+            "dsn-071"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-031",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-004",
+            "cal-002",
+            "cal-014"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-032",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-010",
+            "cal-008",
+            "cal-012"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-033",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-016",
+            "cal-034",
+            "cal-003"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-034",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-019",
+            "cal-017",
+            "cal-020"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-035",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-027",
+            "cal-043",
+            "cal-022"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-036",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-034",
+            "cal-017",
+            "cal-033"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-037",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-039",
+            "reg-056",
+            "reg-015"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-038",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-049",
+            "cal-003",
+            "cal-017"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-039",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "cal-034",
+            "cal-063",
+            "cal-050"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-040",
+          "kind": "paraphrase",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-073",
+            "cal-072",
+            "cal-046"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-041",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-050",
+            "reg-048",
+            "reg-017"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-042",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-040",
+            "reg-046",
+            "cal-005"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-043",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-020",
+            "reg-066",
+            "reg-016"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-044",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-037",
+            "reg-033",
+            "reg-034"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-045",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-010",
+            "dlv-009",
+            "reg-017"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-046",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "cal-047",
+            "dlv-021",
+            "cal-003"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-047",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-019",
+            "dlv-015",
+            "dlv-017"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-048",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-063",
+            "dlv-064",
+            "dlv-062"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-049",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-056",
+            "cal-006",
+            "cal-010"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-050",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-009",
+            "dsn-010",
+            "dsn-011"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-051",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-022",
+            "dsn-020",
+            "dlv-036"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-052",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-023",
+            "cal-021",
+            "cal-022"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-053",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-034",
+            "cal-016",
+            "dsn-059"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-054",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-043",
+            "cal-022",
+            "dlv-041"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-055",
+          "kind": "keyword",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-056",
+            "cal-057",
+            "cal-034"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-056",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-026",
+            "reg-028",
+            "reg-027"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-057",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-020",
+            "reg-013",
+            "dsn-024"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-058",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-006",
+            "cal-064",
+            "dlv-025"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-059",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-034",
+            "reg-036",
+            "reg-037"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-060",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-009",
+            "dlv-031",
+            "cal-008"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-061",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-040",
+            "dlv-041",
+            "dlv-030"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-062",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-035",
+            "reg-029",
+            "reg-031"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-063",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-017",
+            "cal-049",
+            "cal-057"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-064",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-011",
+            "reg-039",
+            "dlv-008"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-065",
+          "kind": "near_miss",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-022",
+            "dsn-023",
+            "dsn-045"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-066",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-005",
+            "reg-068",
+            "reg-030"
+          ]
+        },
+        {
+          "first_rank": 5,
+          "id": "q-067",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.2,
+          "top3": [
+            "reg-026",
+            "dlv-006",
+            "reg-025"
+          ]
+        },
+        {
+          "first_rank": 3,
+          "id": "q-068",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.3333333333333333,
+          "top3": [
+            "reg-044",
+            "cal-006",
+            "reg-046"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-069",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-012",
+            "dlv-008",
+            "dlv-060"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-070",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-030",
+            "dlv-033",
+            "dlv-003"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-071",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-063",
+            "dlv-062",
+            "dlv-064"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-072",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-003",
+            "dlv-057",
+            "reg-042"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-073",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-045",
+            "dsn-023",
+            "dsn-044"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "id": "q-074",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.5,
+          "top3": [
+            "cal-029",
+            "cal-032",
+            "cal-030"
+          ]
+        },
+        {
+          "first_rank": 6,
+          "id": "q-075",
+          "kind": "tail",
+          "recall10": 1.0,
+          "rr10": 0.16666666666666666,
+          "top3": [
+            "cal-044",
+            "cal-062",
+            "cal-064"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-076",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-018",
+            "reg-019",
+            "reg-031"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-077",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "reg-068",
+            "reg-069",
+            "reg-005"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-078",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dlv-023",
+            "dlv-022",
+            "dlv-021"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-079",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "dsn-007",
+            "dsn-008",
+            "dsn-006"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "id": "q-080",
+          "kind": "title",
+          "recall10": 1.0,
+          "rr10": 1.0,
+          "top3": [
+            "cal-058",
+            "cal-006",
+            "reg-003"
+          ]
+        }
+      ],
+      "proposed_floor": 0.649260550737381,
+      "recall10": 0.9875,
+      "recall5": 0.94375
+    }
+  },
+  "doc_tokens": {
+    "max": 756,
+    "mean": 128.20333333333335,
+    "over_512": 30,
+    "truncated": 0
+  },
+  "docs": 300,
+  "load_avg_1m_at_end": 65.65185546875,
+  "load_avg_1m_at_start": 61.05078125,
+  "max_length_effective": 2048,
+  "max_length_requested": 2048,
+  "model": "nomic-embed-text-v1.5",
+  "native_dims": 768,
+  "prefixes": true,
+  "quality_pass_docs_per_s": 29.18681661653142,
+  "queries": 80,
+  "query_truncated": 0,
+  "repo": "nomic-ai/nomic-embed-text-v1.5"
+}

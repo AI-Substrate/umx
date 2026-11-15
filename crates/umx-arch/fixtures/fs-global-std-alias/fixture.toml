@@ -1,0 +1,2 @@
+# R258 security N3: std renamed through a global path (use ::std as s), then fs reached through the new name.
+expect = ["r-fs-in-adapters"]

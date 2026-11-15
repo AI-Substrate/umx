@@ -1,0 +1,2 @@
+# umx-services names an adapter; only umx-compose may.
+expect = ["r-only-compose-wires", "r-inward"]

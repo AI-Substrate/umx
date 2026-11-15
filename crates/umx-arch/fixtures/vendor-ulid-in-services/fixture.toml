@@ -1,0 +1,2 @@
+# ulid belongs to umx-adapter-system only.
+expect = ["r-vendor-crates-owned", "r-inward"]

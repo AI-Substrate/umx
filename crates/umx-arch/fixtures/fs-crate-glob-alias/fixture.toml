@@ -1,0 +1,2 @@
+# F119: std renamed in the crate root, brought into another file by use crate::*, then fs reached by the bare name.
+expect = ["r-fs-in-adapters"]

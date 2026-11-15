@@ -1,0 +1,97 @@
+{
+  "cli": null,
+  "commit": "a07dbfbcfb34",
+  "conditions": "nice -n 19, release, shared machine; load averages at start 66.92 90.02 107.24",
+  "date": "2026-11-10T02:09:44Z",
+  "fixture": {
+    "bytes": {
+      "edges": 54830840,
+      "graph": 1312,
+      "nodes": 26511225
+    },
+    "edges": 299995,
+    "edges_per_node": 3,
+    "generate_ms": 282.537,
+    "kind": "plain",
+    "nodes": 100000,
+    "seed": 1
+  },
+  "in_process": {
+    "encode_edges_ms": {
+      "median": 83.722,
+      "min": 83.557,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 33.492,
+      "min": 32.717,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 181.413,
+      "min": 180.544,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 257.875,
+      "min": 212.167,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 45.791,
+      "min": 35.959,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 18.466,
+      "min": 18.394,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 2.953,
+      "min": 2.909,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 350.016,
+      "min": 346.382,
+      "runs": 5
+    },
+    "load_peak_bytes": 317961808,
+    "mem_graph_bytes": 242464336,
+    "mem_per_node_bytes": 2425.0,
+    "path_hops_sum": 1353,
+    "path_us": {
+      "median": 50067.37,
+      "min": 48690.217,
+      "runs": 5
+    },
+    "walk_depth3_reached": 231.609,
+    "walk_depth3_us": {
+      "median": 105.091,
+      "min": 103.551,
+      "runs": 5
+    },
+    "within_1pct_count": 83,
+    "within_1pct_ms": {
+      "median": 0.014,
+      "min": 0.013,
+      "runs": 5
+    },
+    "within_root_count": 99999,
+    "within_root_ms": {
+      "median": 138.467,
+      "min": 130.673,
+      "runs": 5
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

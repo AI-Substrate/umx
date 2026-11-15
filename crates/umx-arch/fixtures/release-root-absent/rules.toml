@@ -1,0 +1,12 @@
+blueprint = "unused"
+
+[[rule]]
+id = "r-no-fakes-in-release"
+root = "umx"
+fakes = "umx-fakes"
+feature = "stub"
+
+[[crate]]
+name = "umx-core"
+workspace = []
+external = []

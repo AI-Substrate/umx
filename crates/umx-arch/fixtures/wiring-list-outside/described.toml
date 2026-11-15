@@ -1,0 +1,9 @@
+[[row]]
+mode = "stub"
+port = "embedder"
+adapter = "fake.embedder"
+
+[[row]]
+mode = "real"
+port = "embedder"
+adapter = "onnx.embedder"

@@ -1,0 +1,74 @@
+{
+  "commit": "daa72c51243991dfcaf9f9137d2c573d8f7790c0",
+  "dims": {
+    "256": {
+      "by_kind": {
+        "keyword": {
+          "mrr10": 0.9666666666666667,
+          "n": 15,
+          "recall10": 1.0
+        },
+        "near_miss": {
+          "mrr10": 0.9199999999999999,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "paraphrase": {
+          "mrr10": 0.7791666666666666,
+          "n": 40,
+          "recall10": 0.8625
+        },
+        "tail": {
+          "mrr10": 0.875,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "title": {
+          "mrr10": 0.9,
+          "n": 5,
+          "recall10": 1.0
+        }
+      },
+      "mrr10": 0.8514583333333334,
+      "recall10": 0.93125
+    },
+    "768": {
+      "by_kind": {
+        "keyword": {
+          "mrr10": 0.9666666666666667,
+          "n": 15,
+          "recall10": 1.0
+        },
+        "near_miss": {
+          "mrr10": 0.95,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "paraphrase": {
+          "mrr10": 0.8291666666666668,
+          "n": 40,
+          "recall10": 0.9375
+        },
+        "tail": {
+          "mrr10": 0.8166666666666667,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "title": {
+          "mrr10": 0.9,
+          "n": 5,
+          "recall10": 1.0
+        }
+      },
+      "mrr10": 0.8729166666666668,
+      "recall10": 0.96875
+    }
+  },
+  "load_avg_1m_at_end": 125.24072265625,
+  "load_avg_1m_at_start": 130.8837890625,
+  "max_length": 2048,
+  "model": "embeddinggemma-2",
+  "native_dims": 768,
+  "repo": "onnx-community/embeddinggemma-2-ONNX",
+  "truncated": 0
+}

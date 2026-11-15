@@ -1,0 +1,22 @@
+{
+  "batch": 16,
+  "corpus_mean_tokens": 300.1166666666667,
+  "corpus_texts": 120,
+  "docs_per_s": 3.9390963834351873,
+  "first_load_s": 5.210936417,
+  "load_avg_1m_at_end": 157.21533203125,
+  "load_avg_1m_at_start": 80.01708984375,
+  "max_length": 2048,
+  "model": "qwen3-embedding-0.6b",
+  "peak_rss_mb": 4046.0625,
+  "query_ms": {
+    "n": 80,
+    "p50": 50.713042,
+    "p95": 104.448667
+  },
+  "rss_after_load_mb": 1890.234375,
+  "rss_after_run_mb": 4004.828125,
+  "sessions": 1,
+  "threads": 4,
+  "warm_load_s": 0.77246725
+}

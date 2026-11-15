@@ -1,0 +1,2 @@
+# F133: an adapter re-exports std::fs.
+expect = ["r-no-std-reexport"]

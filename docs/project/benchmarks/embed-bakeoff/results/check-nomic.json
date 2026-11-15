@@ -1,0 +1,9 @@
+{
+  "cos_cat_carburetor": 0.5560993552207947,
+  "cos_cat_kitten": 0.8605751991271973,
+  "dims": 256,
+  "load_avg_1m_at_end": 60.79443359375,
+  "load_avg_1m_at_start": 60.79443359375,
+  "model": "nomic-embed-text-v1.5",
+  "pass": true
+}

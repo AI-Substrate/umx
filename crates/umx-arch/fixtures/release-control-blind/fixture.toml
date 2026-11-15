@@ -1,0 +1,2 @@
+# Positive control: umx's stub feature does not forward, so the check could never see fakes.
+expect = ["r-no-fakes-in-release"]

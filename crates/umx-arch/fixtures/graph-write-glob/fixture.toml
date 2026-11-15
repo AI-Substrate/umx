@@ -1,0 +1,2 @@
+# umx-services reaches the unchecked graph writes (F144): graph-write-glob.
+expect = ["r-checked-graph-writes"]

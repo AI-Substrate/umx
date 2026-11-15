@@ -1,0 +1,12 @@
+{
+  "umx": 2,
+  "id": "01QG0000000000000000000001",
+  "alias": "fixture",
+  "title": "Query verb fixture (req-28)",
+  "created": "2026-11-10T00:00:00Z",
+  "ontology": {
+    "types": [],
+    "statuses": [],
+    "relations": []
+  }
+}

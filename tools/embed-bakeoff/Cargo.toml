@@ -1,0 +1,21 @@
+# Workstream 004 s03: local embedding model bake-off. Not a umx workspace member
+# (root Cargo.toml `exclude`), never a dependency of one, never built by `just check`.
+[package]
+name = "embed-bakeoff"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Its own workspace root, so cargo never folds it into the umx workspace.
+[workspace]
+
+[dependencies]
+# ONNX Runtime directly: fastembed 6 cannot feed Qwen3's position_ids and KV-cache inputs or
+# embeddinggemma-2's media-feature inputs. ort downloads pyke's ONNX Runtime build, pinned by
+# ort-sys's dist.tsv. Models are fetched by fetch.sh (pinned commit, no token).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls", "copy-dylibs", "api-27"] }
+ort-sys = { version = "=2.0.0-rc.13", default-features = false }
+tokenizers = { version = "=0.22.2", default-features = false, features = ["onig"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"

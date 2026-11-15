@@ -1,0 +1,10 @@
+blueprint = "unused"
+
+[[rule]]
+id = "r-core-no-std"
+crates = ["umx-kore"]
+
+[[crate]]
+name = "umx-core"
+workspace = []
+external = []

@@ -1,0 +1,2 @@
+# umx-query is #![no_std] but pulls std back in with `extern crate std` (that builds).
+expect = ["r-core-no-std"]

@@ -1,0 +1,3 @@
+# Control: no_std crates using alloc build.
+enforcer = "build"
+expect = []

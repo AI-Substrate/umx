@@ -1,0 +1,21 @@
+[package]
+name = "umx-compose"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-core = { path = "../umx-core" }
+umx-graph = { path = "../umx-graph" }
+umx-services = { path = "../umx-services" }
+umx-adapter-fs = { path = "../umx-adapter-fs" }
+umx-adapter-system = { path = "../umx-adapter-system" }
+umx-adapter-llamacpp = { path = "../umx-adapter-llamacpp" }
+umx-fakes = { path = "../umx-fakes", optional = true }
+
+[dev-dependencies]
+umx-arch = { path = "../umx-arch" }
+
+[features]
+stub = ["dep:umx-fakes"]
+cuda = ["umx-adapter-llamacpp/cuda"]

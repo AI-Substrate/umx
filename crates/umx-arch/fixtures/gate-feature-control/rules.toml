@@ -1,0 +1,10 @@
+# Every feature here is built by the gate or forwards to the excluded cuda feature.
+blueprint = "none"
+crate = []
+
+[[rule]]
+id = "r-gate-features"
+gate = ["umx/stub"]
+gate_excluded = [
+    { feature = "umx-adapter-llamacpp/cuda", reason = "needs the CUDA toolkit" },
+]

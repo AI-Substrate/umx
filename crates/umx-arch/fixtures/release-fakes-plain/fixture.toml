@@ -1,0 +1,2 @@
+# umx-fakes is a plain dependency of umx-compose, so cargo tree finds it in the release umx.
+expect = ["r-no-fakes-in-release", "r-inward"]

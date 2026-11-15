@@ -1,0 +1,3 @@
+# F133 (architect Q1): a private use std as s in module m is visible to its child; the child's use crate::m::s::fs
+# as f reaches std::fs through a module path, so the use fires though it is not rooted at the alias.
+expect = ["r-fs-in-adapters"]

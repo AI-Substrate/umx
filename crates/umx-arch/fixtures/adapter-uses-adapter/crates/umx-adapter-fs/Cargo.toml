@@ -1,0 +1,8 @@
+[package]
+name = "umx-adapter-fs"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-adapter-system = { path = "../umx-adapter-system" }

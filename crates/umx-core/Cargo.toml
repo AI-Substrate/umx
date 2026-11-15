@@ -1,0 +1,13 @@
+[package]
+name = "umx-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive", "alloc"] }
+serde_json = { workspace = true, features = ["alloc"] }
+toml = { workspace = true, features = ["parse", "display", "serde"] }
+sha2.workspace = true
+libm.workspace = true

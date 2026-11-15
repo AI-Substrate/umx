@@ -1,0 +1,2 @@
+# umx-daemon re-exports the whole of umx-protocol (unlisted).
+expect = ["r-inward"]

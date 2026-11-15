@@ -1,0 +1,10 @@
+# The gate list reaches an excluded feature.
+blueprint = "none"
+crate = []
+
+[[rule]]
+id = "r-gate-features"
+gate = ["umx/cuda"]
+gate_excluded = [
+    { feature = "umx-adapter-llamacpp/cuda", reason = "needs the CUDA toolkit" },
+]

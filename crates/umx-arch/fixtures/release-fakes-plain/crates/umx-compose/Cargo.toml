@@ -1,0 +1,12 @@
+[package]
+name = "umx-compose"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-core = { path = "../umx-core" }
+umx-fakes = { path = "../umx-fakes" }
+
+[features]
+stub = []

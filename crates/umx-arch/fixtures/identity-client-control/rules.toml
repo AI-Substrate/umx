@@ -1,0 +1,20 @@
+blueprint = "unused"
+
+[[rule]]
+id = "r-identity-client-only"
+allow = ["umx", "umx-compose", "umx-contracts"]
+
+[[crate]]
+name = "umx"
+workspace = ["umx-compose"]
+external = []
+
+[[crate]]
+name = "umx-daemon"
+workspace = ["umx-compose"]
+external = []
+
+[[crate]]
+name = "umx-compose"
+workspace = []
+external = []

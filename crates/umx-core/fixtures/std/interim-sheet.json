@@ -1,0 +1,24 @@
+{
+  "source": "the interim std vocabulary sheet of an internal review (D57, 2026-11-11), with the person fields as the first sheet had them: name and title, which std v1 drops (the node title is the name) and renames to job_title",
+  "types": [
+    "person", "organisation", "team", "role",
+    "project", "meeting", "event", "decision", "action", "question", "risk", "topic",
+    "document", "transcript",
+    "place", "system",
+    "agent", "session", "model", "harness", "platform"
+  ],
+  "relations": [
+    "member_of", "works_for", "part_of", "attended", "owns", "decides", "answers", "raised_in", "raised_by",
+    "mentions", "sourced_from", "supersedes", "held_at", "authored_by", "edited_by"
+  ],
+  "fields": {
+    "person": ["aliases", "job_title", "org", "name", "title"],
+    "meeting": ["starts_on", "ends_on"],
+    "event": ["starts_on", "ends_on"],
+    "project": ["starts_on", "ends_on", "due_on"],
+    "action": ["due_on"],
+    "decision": ["due_on"],
+    "risk": ["due_on"]
+  },
+  "renamed": ["person.name", "person.title"]
+}

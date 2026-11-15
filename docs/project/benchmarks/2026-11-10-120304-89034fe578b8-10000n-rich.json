@@ -1,0 +1,378 @@
+{
+  "cli": null,
+  "commit": "89034fe578b8",
+  "conditions": "nice -n 19, release, --no-cli, shared machine",
+  "date": "2026-11-10T12:03:04Z",
+  "fixture": {
+    "bytes": {
+      "edges": 5481770,
+      "graph": 1311,
+      "nodes": 9935628
+    },
+    "edges": 29994,
+    "edges_per_node": 3,
+    "generate_ms": 65.684,
+    "kind": "rich",
+    "nodes": 10000,
+    "seed": 1,
+    "vectors_per_node": 4
+  },
+  "in_process": {
+    "add_node_3_edges_ms": {
+      "median": 0.451,
+      "min": 0.415,
+      "runs": 9
+    },
+    "encode_edges_ms": {
+      "median": 1.812,
+      "min": 1.797,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 0.132,
+      "min": 0.129,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 0.207,
+      "min": 0.182,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 1728.458,
+      "min": 1639.0,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 1.292,
+      "min": 1.25,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 18.645,
+      "min": 17.886,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.208,
+      "min": 0.205,
+      "runs": 5
+    },
+    "list_type_field_count": 190,
+    "list_type_field_ms": {
+      "median": 0.003,
+      "min": 0.003,
+      "runs": 5
+    },
+    "list_type_status_count": 108,
+    "list_type_status_ms": {
+      "median": 0.009,
+      "min": 0.008,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 36.765,
+      "min": 35.841,
+      "runs": 5
+    },
+    "load_peak_bytes": 14287761,
+    "mem_graph_bytes": 14198993,
+    "mem_hot_per_node_bytes": 227.0,
+    "mem_not_image_per_node_bytes": 426.0,
+    "mem_parts_bytes": {
+      "adjacency": 559912,
+      "cold": 0,
+      "edge_columns": 959808,
+      "field_columns": 78456,
+      "image": 9935628,
+      "node_columns": 752241,
+      "word_index": 1912540
+    },
+    "mem_per_node_bytes": 1420.0,
+    "mem_word_index_per_node_bytes": 191.0,
+    "memory_bytes_over_alloc": 1.0,
+    "near_duplicate_insert_ms": {
+      "median": 0.007,
+      "min": 0.007,
+      "runs": 9
+    },
+    "path_hops_sum": 1082,
+    "path_us": {
+      "median": 56.603,
+      "min": 55.05,
+      "runs": 5
+    },
+    "rebuild_adjacency_ms": {
+      "median": 0.153,
+      "min": 0.118,
+      "runs": 9
+    },
+    "replace_one_line_ms": {
+      "median": 0.125,
+      "min": 0.104,
+      "runs": 9
+    },
+    "replace_one_node_ms": {
+      "median": 0.12,
+      "min": 0.108,
+      "runs": 9
+    },
+    "title_find": {
+      "near_duplicate_insert_s06_ms": {
+        "median": 1.689,
+        "min": 1.628,
+        "runs": 9
+      },
+      "queries": {
+        "exact": {
+          "branch_ms": {
+            "median": 1.713,
+            "min": 1.641,
+            "runs": 9
+          },
+          "candidates": 7114,
+          "s06_ms": {
+            "median": 2.364,
+            "min": 2.295,
+            "runs": 9
+          },
+          "same_top20": true
+        },
+        "typo": {
+          "branch_ms": {
+            "median": 1.622,
+            "min": 1.529,
+            "runs": 9
+          },
+          "candidates": 7114,
+          "s06_ms": {
+            "median": 2.501,
+            "min": 2.34,
+            "runs": 9
+          },
+          "same_top20": true
+        },
+        "worst": {
+          "branch_ms": {
+            "median": 3.888,
+            "min": 3.789,
+            "runs": 9
+          },
+          "candidates": 10000,
+          "s06_ms": {
+            "median": 3.535,
+            "min": 3.254,
+            "runs": 9
+          },
+          "same_top20": true
+        }
+      },
+      "s06_title_text_per_node_bytes": 36.0,
+      "terms": 64
+    },
+    "title_find_large_vocabulary": {
+      "nodes": 100000,
+      "queries": {
+        "exact": {
+          "branch_ms": {
+            "median": 12.788,
+            "min": 11.817,
+            "runs": 9
+          },
+          "candidates": 2031,
+          "s06_ms": {
+            "median": 23.061,
+            "min": 22.556,
+            "runs": 9
+          },
+          "same_top20": true,
+          "term_scan_ms": {
+            "median": 12.119,
+            "min": 11.625,
+            "runs": 9
+          }
+        },
+        "typo": {
+          "branch_ms": {
+            "median": 10.151,
+            "min": 9.205,
+            "runs": 9
+          },
+          "candidates": 1160,
+          "s06_ms": {
+            "median": 22.38,
+            "min": 22.079,
+            "runs": 9
+          },
+          "same_top20": true,
+          "term_scan_ms": {
+            "median": 9.761,
+            "min": 8.892,
+            "runs": 9
+          }
+        }
+      },
+      "terms": 59525
+    },
+    "vectors": {
+      "apply_mem_per_node_bytes": 1557.831,
+      "apply_memory_bytes_over_alloc": 1.0,
+      "count": 40000,
+      "decode_ms": {
+        "median": 23.422,
+        "min": 22.55,
+        "runs": 5
+      },
+      "decode_peak_over_blocks": 0.008,
+      "dims": 256,
+      "field_bytes_per_vector": 264.0,
+      "graph_and_vectors_load_ms": {
+        "median": 57.355,
+        "min": 57.186,
+        "runs": 5
+      },
+      "graph_load_ms": {
+        "median": 34.132,
+        "min": 33.782,
+        "runs": 5
+      },
+      "mem_bytes": 10522178,
+      "mem_per_node_bytes": 1052.218,
+      "memory_bytes_over_alloc": 1.0,
+      "per_node": 4,
+      "reembed_one_node": {
+        "bytes_written": 14787,
+        "files_written": 1,
+        "over_mean_shard": 0.922
+      },
+      "scan_checks": [
+        41972,
+        41074,
+        196812
+      ],
+      "scan_every_block_ms": {
+        "median": 0.193,
+        "min": 0.182,
+        "runs": 9
+      },
+      "scan_whole_ms": {
+        "median": 0.048,
+        "min": 0.046,
+        "runs": 9
+      },
+      "scan_whole_tenth_ms": {
+        "median": 0.01,
+        "min": 0.009,
+        "runs": 9
+      },
+      "shard_bytes": 16430000,
+      "shard_bytes_per_line": 410.75,
+      "shard_files": 1024,
+      "shard_mean_bytes": 16044.922,
+      "whole_bytes_per_vector": 260.126
+    },
+    "walk_depth3_reached": 232.4,
+    "walk_depth3_us": {
+      "median": 0.935,
+      "min": 0.874,
+      "runs": 5
+    },
+    "within_1pct_count": 61,
+    "within_1pct_ms": {
+      "median": 0.0,
+      "min": 0.0,
+      "runs": 5
+    },
+    "within_root_count": 9999,
+    "within_root_ms": {
+      "median": 0.117,
+      "min": 0.089,
+      "runs": 5
+    },
+    "word_index_build_ms": {
+      "median": 22.199,
+      "min": 21.454,
+      "runs": 9
+    },
+    "word_query_common4_hits": 100,
+    "word_query_common4_ms": {
+      "median": 0.319,
+      "min": 0.317,
+      "runs": 5
+    },
+    "word_query_common4_scoped_ms": {
+      "median": 0.176,
+      "min": 0.166,
+      "runs": 5
+    },
+    "word_query_scope_nodes": 975,
+    "word_query_scoped_hits": 100,
+    "word_query_uncommon2_ms": {
+      "median": 0.078,
+      "min": 0.076,
+      "runs": 5
+    },
+    "word_query_uncommon_common_ms": {
+      "median": 0.147,
+      "min": 0.145,
+      "runs": 5
+    },
+    "word_query_words": {
+      "common": [
+        "was",
+        "to",
+        "tied",
+        "the"
+      ],
+      "rare": [
+        "forecast",
+        "security"
+      ]
+    },
+    "word_update_one_node_ms": {
+      "median": 0.027,
+      "min": 0.026,
+      "runs": 9
+    },
+    "writes": {
+      "add_ms": {
+        "max": 79.942,
+        "n": 20,
+        "p50": 25.031,
+        "p95": 41.609
+      },
+      "add_parent_ms": {
+        "max": 211.102,
+        "n": 20,
+        "p50": 81.264,
+        "p95": 184.448
+      },
+      "add_with_model_ms": {
+        "max": 76.257,
+        "n": 20,
+        "p50": 40.348,
+        "p95": 60.339
+      },
+      "reembed_dry_run_cost": {
+        "estimated_tokens": 3394222,
+        "nodes": 10020,
+        "texts": 30040
+      },
+      "reembed_dry_run_ms": {
+        "max": 48.83,
+        "n": 3,
+        "p50": 44.14,
+        "p95": 48.83
+      }
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

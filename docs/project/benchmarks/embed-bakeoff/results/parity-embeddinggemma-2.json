@@ -1,0 +1,18 @@
+{
+  "batch": 16,
+  "docs": {
+    "mean": 0.9999296516180038,
+    "min": 0.999830424785614,
+    "n": 20
+  },
+  "load_avg_1m_at_end": 133.22412109375,
+  "load_avg_1m_at_start": 134.02734375,
+  "max_length": 2048,
+  "model": "embeddinggemma-2",
+  "pass": true,
+  "queries": {
+    "mean": 0.9999733656644821,
+    "min": 0.9999497532844543,
+    "n": 20
+  }
+}

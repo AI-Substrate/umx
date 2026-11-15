@@ -1,0 +1,22 @@
+{
+  "umx": 81,
+  "command": "version",
+  "status": "ok",
+  "data": {},
+  "warnings": [
+    {
+      "code": "daemon_version_mismatch",
+      "message": "The daemon runs build 0.0.0 abc dev; this CLI is 0.0.0 abc dev.",
+      "next": "umx daemon stop"
+    }
+  ],
+  "errors": [],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

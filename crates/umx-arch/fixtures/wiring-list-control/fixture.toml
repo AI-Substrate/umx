@@ -1,0 +1,3 @@
+# Control for the list form: the embedder row's real is a list, and describe(real) wires one listed adapter.
+expect = []
+active_ports = ["embedder"]

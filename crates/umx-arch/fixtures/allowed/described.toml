@@ -1,0 +1,29 @@
+[[row]]
+mode = "stub"
+port = "graph-files"
+adapter = "fake.graph-files"
+
+[[row]]
+mode = "real"
+port = "graph-files"
+adapter = "fs.graph-files"
+
+[[row]]
+mode = "stub"
+port = "clock"
+adapter = "fake.clock"
+
+[[row]]
+mode = "real"
+port = "clock"
+adapter = "system.clock"
+
+[[row]]
+mode = "stub"
+port = "id-generator"
+adapter = "fake.id-generator"
+
+[[row]]
+mode = "real"
+port = "id-generator"
+adapter = "system.id-generator"

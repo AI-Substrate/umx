@@ -1,0 +1,3 @@
+# A glob-and-alias chain in umx-graph, which umx-services ships with, launders the unchecked graph writes
+# (review R4, F144).
+expect = ["r-checked-graph-writes"]

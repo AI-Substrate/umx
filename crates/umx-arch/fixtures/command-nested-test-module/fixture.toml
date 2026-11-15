@@ -1,0 +1,2 @@
+# R182-1: an inline module's inner #![cfg(test)] hides only that module, so the shipped Command beside it fires.
+expect = ["r-command-in-adapters"]

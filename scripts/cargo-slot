@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+# Runs one cargo command in one of two build slots shared by concurrent builds, niced, with a shared compile cache
+# when sccache is installed (decision D41, 2026-11-10). Slot 2 is usually reserved (D59), so in practice one build
+# runs at a time, and waiters take it in queue order (below).
+# Usage: scripts/cargo-slot <cargo args...>, for example `scripts/cargo-slot test -p umx-graph --locked`.
+# The slot lives only as long as this one command: taken and released here, never across commands, and never
+# freed while its build still runs. TERM or INT to this script stops the build, then frees the slot. A slot
+# whose wrapper and build are both gone is reclaimed. A slot with no owner file is reclaimed once older than 60 s,
+# so a wrapper stalled (stopped, say) for longer than that between taking a slot and writing its owner file can
+# lose it while it runs; a running wrapper writes it at once. On a CI runner the slots are local, so this works
+# unchanged.
+# Waiters queue (F87): each takes a ticket in /tmp/umx-cargo-queue and only the first live ticket tries for a slot,
+# so the oldest waiter goes next. UMX_CARGO_PRIORITY=gate goes ahead of every normal waiter and =urgent ahead of
+# every gate one; within a class it is first come, first served. A waiter prints its place once. The queue folder
+# must be this user's, mode 700 and not a link; when it is not, or a ticket cannot be taken, the run is refused
+# with exit 77 rather than waiting outside the queue.
+# UMX_CARGO_SLOT_DIR, UMX_CARGO_QUEUE_DIR (default <slot dir>/umx-cargo-queue), UMX_CARGO_SLOT_POLL (seconds),
+# UMX_CARGO_QUEUE_PAUSE (seconds to hold the counter lock), UMX_CARGO_SLOT_FREE_GB, UMX_CARGO_SLOT_PAUSE (seconds
+# to hold a just-taken slot before going on),
+# UMX_CARGO_SLOT_RECLAIM_PAUSE (seconds between finding a slot stale and reclaiming it) and
+# UMX_CARGO_SLOT_OWNERLESS_AGE (seconds, default 60) exist for scripts/cargo-slot-test only.
+set -uo pipefail
+
+# Disk guard (2026-11-10: Rust target dirs filled the disk). Refuse to build below the floor, before taking
+# a slot. UMX_CARGO_MIN_FREE_GB sets the floor; it defaults to 20 GB, or 0 on CI (CI=true), whose throwaway
+# runners often have less than 20 GB free and where a full disk fails only that job.
+if [ "${CI:-}" = true ]; then default_floor=0; else default_floor=20; fi
+min_free_gb="${UMX_CARGO_MIN_FREE_GB:-$default_floor}"
+free_gb="${UMX_CARGO_SLOT_FREE_GB:-$(df -Pk "$PWD" | awk 'NR==2 {print int($4/1048576)}')}"
+if [ "${free_gb:-0}" -lt "$min_free_gb" ]; then
+  echo "cargo-slot: refused, only ${free_gb} GB free (floor ${min_free_gb} GB). Clear target/ in worktrees of merged PRs" >&2
+  echo "  and finished reviews (rm -rf <worktree>/target, or git worktree remove), then retry. Tell your PM." >&2
+  exit 75
+fi
+case "${UMX_CARGO_PRIORITY:-normal}" in
+  urgent) class=0 ;;
+  gate) class=1 ;;
+  normal) class=2 ;;
+  *) echo "cargo-slot: refused, UMX_CARGO_PRIORITY is gate, urgent or unset, not '${UMX_CARGO_PRIORITY}'" >&2; exit 64 ;;
+esac
+dir="${UMX_CARGO_SLOT_DIR:-/tmp}"
+queue="${UMX_CARGO_QUEUE_DIR:-$dir/umx-cargo-queue}"
+poll="${UMX_CARGO_SLOT_POLL:-10}"
+ownerless_age="${UMX_CARGO_SLOT_OWNERLESS_AGE:-60}"
+SLOTS=("$dir/umx-cargo-slot-1" "$dir/umx-cargo-slot-2")
+
+alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
+
+# A sleep that a TERM or INT ends at once. In the background, so `wait` returns on the signal; and the traps kill it,
+# because bash runs a trap between commands, and a signal that lands after the sleep starts but before `wait` does
+# would otherwise be noted only after the whole sleep. A signal before `napping=` is set is caught by the check.
+napping=""
+nap() { # <seconds>
+  sleep "$1" & napping=$!
+  if [ "$sig" -eq 0 ]; then wait "$napping"; else kill "$napping" 2>/dev/null; fi
+  napping=""
+}
+
+# A folder's last change, in seconds since the epoch (GNU stat, else BSD stat).
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+
+# Stale when the wrapper that took the slot and the build it started are both gone. Read from the folder at the
+# slot path now, every call: nothing is cached across a reclaim's marker. A folder with no owner is a wrapper
+# killed (SIGKILL) between its mkdir and writing the owner (F63); a new owner writes it straight after its mkdir,
+# so an ownerless folder is stale once it is older than $ownerless_age. Nothing is written into it to make it
+# look younger: the reclaim marker sits beside the folder, not in it.
+stale() { # <slot>
+  local owner="" theirs="" made
+  # Braces, so a file gone or unreadable since the -f test makes no noise: a plain `2>/dev/null` after `<` comes
+  # too late to catch the open's error.
+  [ -f "$1/owner" ] && { read -r owner _ < "$1/owner"; } 2>/dev/null
+  if [ -z "$owner" ]; then
+    made="$(mtime "$1")" || return 1
+    [ -n "$made" ] && [ $(( $(date +%s) - made )) -ge "$ownerless_age" ]
+    return
+  fi
+  [ -f "$1/child" ] && { read -r theirs < "$1/child"; } 2>/dev/null
+  ! alive "$owner" && ! alive "$theirs"
+}
+
+# Frees a slot folder: renamed to a private name first, so the slot path is free at once and a removal that fails
+# part way never leaves a half-removed folder at it, then removed.
+free_slot() { # <slot>
+  local gone="$1.gone.$$.$RANDOM"
+  mv "$1" "$gone" 2>/dev/null && rm -rf "$gone"
+}
+
+# Reclaims a slot found stale (F60). Two waiters can both find the same slot stale; if one frees it and a new run
+# takes it, the other must not free the new run's slot. So the reclaimer first takes the slot path's marker,
+# `<slot>.reclaim`, a symlink to its pid that only one process can create, then checks the folder now at the slot
+# path again and frees it only if it is still stale (a new owner's folder has a live owner, or is too young to be
+# ownerless). The marker sits beside the folder (F63) so it never changes the folder's age, and it is removed after
+# each reclaim. A marker whose holder is gone (a reclaimer killed by SIGKILL; TERM and INT only set a flag) is
+# cleared so a later pass can reclaim. Left open: two waiters clearing the same dead marker at once while a third
+# takes it, which needs that SIGKILL first.
+reclaim() { # <slot>
+  if ln -s "$$" "$1.reclaim" 2>/dev/null; then
+    stale "$1" && free_slot "$1"
+    rm -f "$1.reclaim"
+  else
+    local holder
+    holder="$(readlink "$1.reclaim" 2>/dev/null)" && ! alive "$holder" && rm -f "$1.reclaim"
+  fi
+  return 0
+}
+
+# The queue (F87). A ticket is a file `<queue>/<class>-<seq>-<pid>`: class 0 urgent, 1 gate, 2 normal, and seq a
+# 12-digit number, so a plain byte sort of the names is the order waiters go in. seq comes from the counter file
+# `<queue>/seq`, read and raised by one waiter at a time under the lock `<queue>/seq.lock`, a symlink to
+# `<pid>@<start time>` that only one process can create. So seq only grows and is never handed out twice, a ticket
+# name is never reused, and removing a dead ticket cannot remove a new waiter's: no marker is needed, unlike a slot.
+# A lock whose holder is gone (killed by SIGKILL inside the lock; TERM and INT only set a flag) is cleared after
+# reading it a second time. Left open, as with the slot marker: two waiters clearing the same dead lock while a
+# third takes it, which needs that SIGKILL first.
+# The ticket holds its waiter's start time, so a pid reused by another process does not keep a dead ticket live.
+started() { LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | awk '{$1 = $1; print}'; }
+
+# Live while the pid is and it started when recorded (no start time recorded: the pid alone).
+holder_live() { # <pid> <start time>
+  alive "$1" || return 1
+  [ -z "$2" ] || [ "$(started "$1")" = "$2" ]
+}
+
+# Permissions as octal digits (GNU stat, else BSD stat).
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null; }
+
+# The queue folder must be a folder of this user's that no one else can write or read: tickets in it are trusted
+# and dead ones are deleted. Made here with mode 700 if missing (its parent is not made); an existing link, a
+# folder of someone else's or a folder open to others is refused, never repaired.
+queue_ready() {
+  mkdir -m 700 "$queue" 2>/dev/null
+  if [ -L "$queue" ] || [ ! -d "$queue" ] || [ ! -O "$queue" ] || [ "$(mode "$queue")" != 700 ]; then
+    queue_problem="the queue folder $queue is not a folder of this user's with mode 700 (and not a link)"
+    return 1
+  fi
+}
+
+# Takes a ticket; returns 1 with $queue_problem set when it cannot, and 2 on a signal while waiting for the lock.
+queue_problem=""
+take_ticket() {
+  local lock="$queue/seq.lock" me holder c="" n misses=0
+  queue_ready || return 1
+  me="$$@$(started $$)"
+  # ln puts a link inside a folder (or a link to one) at its destination rather than failing, so a folder there
+  # would make the lock no lock at all: refused. -n keeps ln from following a link.
+  until [ ! -d "$lock" ] && ln -sn "$me" "$lock" 2>/dev/null; do
+    [ "$sig" -ne 0 ] && return 2
+    if [ -d "$lock" ]; then
+      queue_problem="the seq lock $lock is a folder, not a link"
+      return 1
+    fi
+    if holder="$(readlink "$lock" 2>/dev/null)"; then
+      misses=0
+      if ! holder_live "${holder%%@*}" "${holder#*@}" && [ "$(readlink "$lock" 2>/dev/null)" = "$holder" ]; then
+        rm -f "$lock"
+        continue
+      fi
+    elif [ ! -e "$queue" ]; then
+      queue_problem="the queue folder $queue went away"
+      return 1
+    else
+      # No lock there, yet ln failed: once is a lock let go between the two, twenty in a row (a second) is a folder
+      # that cannot be written.
+      misses=$((misses + 1))
+      if [ "$misses" -ge 20 ]; then
+        queue_problem="cannot make the seq lock in $queue"
+        return 1
+      fi
+    fi
+    nap 0.05
+  done
+  # A counter that cannot be read (a folder, say) or holds no number refuses: starting again from 1 could hand
+  # out a number a live ticket holds.
+  n=""
+  if [ ! -e "$queue/seq" ] && [ ! -L "$queue/seq" ]; then
+    n=1
+  else
+    { read -r c < "$queue/seq"; } 2>/dev/null
+    case "$c" in
+      "") queue_problem="the queue counter $queue/seq is empty or cannot be read" ;;
+      *[!0-9]*) queue_problem="the queue counter $queue/seq holds '$c', not a number" ;;
+      *) n=$((10#$c + 1)) ;;
+    esac
+  fi
+  if [ -n "${UMX_CARGO_QUEUE_PAUSE:-}" ]; then nap "$UMX_CARGO_QUEUE_PAUSE"; fi
+  if [ -n "$n" ] && ! { printf '%s\n' "$n" > "$queue/seq.new.$$" && mv -f "$queue/seq.new.$$" "$queue/seq"; } 2>/dev/null; then
+    queue_problem="cannot write the queue counter in $queue"
+    rm -f "$queue/seq.new.$$"
+    n=""
+  fi
+  rm -f "$lock"
+  [ -n "$n" ] || return 1
+  # Named before it is written, so the EXIT trap removes it whenever this script ends. An empty ticket (being
+  # written) counts as live while its pid is.
+  ticket="$queue/$class-$(printf %012d "$n")-$$"
+  { started $$ > "$ticket"; } 2>/dev/null || { queue_problem="cannot write a ticket in $queue"; return 1; }
+}
+
+# Live while its pid is and that pid started when the ticket says.
+ticket_live() { # <ticket>
+  local want=""
+  [ -f "$1" ] && { read -r want < "$1"; } 2>/dev/null
+  holder_live "${1##*-}" "$want"
+}
+
+# Sets $ahead to the number of tickets before ours. Dead tickets before the first live one are removed (the next
+# waiter reclaims them); behind that first live one only the pid is checked, which is enough to count, so a waiter
+# runs `ps` about once a pass.
+ahead=0
+queue_pass() {
+  local t first=""
+  ahead=0
+  while IFS= read -r t; do
+    [ "$t" = "$ticket" ] && break
+    [ -e "$t" ] || continue
+    if [ -z "$first" ]; then
+      if ticket_live "$t"; then first="$t"; ahead=1; else rm -f "$t"; fi
+    elif alive "${t##*-}"; then
+      ahead=$((ahead + 1))
+    fi
+  done < <(printf '%s\n' "$queue"/[0-2]-* | LC_ALL=C sort)
+}
+# Our own ticket gone (the queue folder cleared under us) is written again under the same name, keeping our place,
+# in a folder that passes the same checks. Returns 1 with $queue_problem set when it cannot.
+keep_ticket() {
+  [ -e "$ticket" ] && return 0
+  queue_ready || return 1
+  { started $$ > "$ticket"; } 2>/dev/null || { queue_problem="cannot write a ticket in $queue"; return 1; }
+}
+
+# Admission to the queue failed: refused (exit 77), never a run that skips the queue.
+queue_refused() {
+  echo "cargo-slot: refused, $queue_problem. Fix or remove it (or set UMX_CARGO_QUEUE_DIR), then retry." >&2
+  exit 77
+}
+
+# The traps go in before a ticket or a slot is taken (F53): a TERM or INT between taking the slot and starting the
+# build must still free it, and one while waiting must remove the ticket. They only note the signal (and stop the
+# build once there is one); the script acts on it at the next step, so no signal lands between `mkdir` and `mine=`.
+mine=""
+child=""
+ticket=""
+sig=0
+trap '[ -n "$ticket" ] && rm -f "$ticket"; [ -n "$mine" ] && free_slot "$mine"' EXIT
+trap 'sig=143; [ -n "$napping" ] && kill "$napping" 2>/dev/null; [ -n "$child" ] && kill -TERM -- "-$child" 2>/dev/null' TERM
+trap 'sig=130; [ -n "$napping" ] && kill "$napping" 2>/dev/null; [ -n "$child" ] && kill -TERM -- "-$child" 2>/dev/null' INT
+take_ticket
+case $? in
+  0) ;;
+  2) exit "$sig" ;;
+  *) queue_refused ;;
+esac
+said=""
+while [ -z "$mine" ]; do
+  keep_ticket || queue_refused
+  queue_pass
+  if [ "$ahead" -eq 0 ]; then
+    for s in "${SLOTS[@]}"; do
+      if mkdir "$s" 2>/dev/null; then mine="$s"; echo "$$ $(date +%s) $PWD" > "$s/owner"; break; fi
+      if stale "$s"; then
+        if [ -n "${UMX_CARGO_SLOT_RECLAIM_PAUSE:-}" ]; then nap "$UMX_CARGO_SLOT_RECLAIM_PAUSE"; fi
+        reclaim "$s"
+      fi
+    done
+  fi
+  # Out of the queue as soon as a slot is ours, so the next waiter goes on. Before the signal check, and in the
+  # background with `wait`: bash 3.2 can drop or mishandle an INT that lands while it waits for a foreground command
+  # (measured: 1 of 25 in a foreground command, 0 of 25 with `& wait`), and the F53 test sends one just here.
+  if [ -n "$mine" ] && [ -n "$ticket" ]; then rm -f "$ticket" & wait $!; ticket=""; fi
+  [ "$sig" -ne 0 ] && exit "$sig"
+  if [ -z "$mine" ]; then
+    [ -n "$said" ] || { said=1; echo "cargo-slot: waiting, $ahead ahead" >&2; }
+    nap "$poll"
+  fi
+done
+if [ -n "${UMX_CARGO_SLOT_PAUSE:-}" ]; then nap "$UMX_CARGO_SLOT_PAUSE"; fi
+[ "$sig" -ne 0 ] && exit "$sig"
+echo "cargo-slot: $(basename "$mine") taken for: cargo $*" >&2
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+# The shared cache only where sccache is installed; without it (a CI runner) cargo runs with no wrapper, even if
+# one was inherited.
+if sccache="$(command -v sccache)"; then
+  export RUSTC_WRAPPER="$sccache"
+  export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/.cache/umx-sccache}"
+  export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-15G}"
+else
+  unset RUSTC_WRAPPER
+fi
+# Smaller target dirs: no incremental dirs (sccache cannot cache incremental crates anyway) and line tables only.
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-line-tables-only}"
+export CARGO_PROFILE_TEST_DEBUG="${CARGO_PROFILE_TEST_DEBUG:-line-tables-only}"
+
+# Bash defers traps while a foreground command runs, so cargo runs in the background, in its own process group
+# (set -m), and this script waits. A background child ignores INT in a non-interactive shell, so TERM and INT are
+# both forwarded as TERM, to the whole group (cargo and its rustc children). Exit 143 on TERM, 130 on INT, else
+# cargo's own status; the EXIT trap frees the slot only after the build is gone.
+set -m
+nice -n 19 cargo "$@" &
+child=$!
+set +m
+echo "$child" > "$mine/child"
+# A signal that came before `child=` was set stopped nothing; stop the build now.
+[ "$sig" -ne 0 ] && kill -TERM -- "-$child" 2>/dev/null
+status=0
+while :; do
+  wait "$child"
+  status=$?
+  # A trapped signal ends `wait` early while the build may still run; a finished child that is not yet reaped
+  # still answers kill -0, so the next wait collects it.
+  alive "$child" || break
+done
+[ "$sig" -ne 0 ] && exit "$sig"
+exit "$status"

@@ -1,0 +1,3 @@
+# `extern crate r#std` imports std without the text `extern crate std` (it builds).
+# It is also a filesystem use outside the adapters (F114).
+expect = ["r-core-no-std", "r-fs-in-adapters"]

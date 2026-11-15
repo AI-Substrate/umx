@@ -1,0 +1,12 @@
+[package]
+name = "umx-cypher"
+version.workspace = true
+edition.workspace = true
+# Upstream's licence, never the workspace's: a later workspace licence change must not relabel the fork.
+license = "MIT"
+publish.workspace = true
+description = "Vendored fork of cypher-parser 0.8.1 (Shopify, MIT). See VENDORED.md."
+
+[dev-dependencies]
+# Reads the design fixture's jsonl and queries.json in tests/design.rs only.
+serde_json = { workspace = true, features = ["std"] }

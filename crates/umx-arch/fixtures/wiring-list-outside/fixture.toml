@@ -1,0 +1,3 @@
+# describe(real) wires an embedder adapter that is not in the row's real list.
+expect = ["r-wiring-matches-docs"]
+active_ports = ["embedder"]

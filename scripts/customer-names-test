@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Proves scripts/customer-names fires (D72), in a throwaway git checkout with its own names list:
+# - a planted name fails and is named by file and line, and the output never holds the name;
+# - it matches in any case, beside `_`, `-`, `.` or `/`, at a line's start or end, and in a binary file;
+# - a longer word that contains it, and the same bytes in an image file (outside the private folders), pass;
+# - an exception passes only while the file's blob matches; an edited or unlisted file fails again;
+# - with no names list the check skips with exit 0; a list with no names is an error (exit 2), not a skip;
+# - a relative UMX_CUSTOMER_NAMES means the caller's folder, even when the checkout is elsewhere;
+# - the three private folders (D72d) are skipped, and only those: a sibling with the same prefix is read;
+# - when git grep itself fails (not a git checkout), the check fails closed (exit 2) with a fixed line, and git's own
+#   message never reaches the output.
+# The planted name is built at run time and is in no real list. CUSTOMER_NAMES_CHECK runs another copy of the check.
+set -euo pipefail
+
+check="${CUSTOMER_NAMES_CHECK:-$(cd "$(dirname "$0")" && pwd)/customer-names}"
+work=$(mktemp -d)
+list="$work.names"
+trap 'rm -rf "$work" "$list"' EXIT
+git -C "$work" init -q
+name=$(printf '%s%s' qzx vny)
+upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+printf '# planted\n\nSomeOtherName\n  %s  \n' "$name" >"$list"
+export UMX_CUSTOMER_NAMES="$list"
+
+fail=0
+reset() {
+    find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+}
+run() {
+    local want="$1" what="$2" file="$3" out code=0
+    git -C "$work" add -A
+    out=$("$check" "$work" 2>&1) || code=$?
+    if [ "$code" != "$want" ]; then
+        echo "FAIL: $what: exit $code, want $want: $out" >&2
+        fail=1
+    elif [ "$want" = 1 ] && ! grep -q "^$file:2\$" <<<"$out"; then
+        echo "FAIL: $what: $file:2 not named in: $out" >&2
+        fail=1
+    elif grep -qi "$name" <<<"$out"; then
+        echo "FAIL: $what: the output echoes the name: $out" >&2
+        fail=1
+    else
+        echo "ok: $what"
+    fi
+}
+case_() {
+    local want="$1" what="$2" file="$3" text="$4"
+    reset
+    mkdir -p "$(dirname "$work/$file")"
+    printf 'first line\n%s\n' "$text" >"$work/$file"
+    run "$want" "$what" "$file"
+}
+
+case_ 0 "a clean file passes" notes.md "graph acme, alias globex"
+case_ 1 "a name as a word" notes.md "umx ui --graph $name"
+case_ 1 "a name in upper case" notes.md "HANDOVER-$upper-workshop.md"
+case_ 1 "a name at the start of a line" notes.md "$name is a graph"
+case_ 1 "a name at the end of a line" test.rs "let g = $name"
+case_ 1 "a name before _ (an alias family)" usage.md "umx check --graph ${name}_d1"
+case_ 1 "a name after _ (inside an identifier)" cli.rs "fn leaves_${name}_words_only() {}"
+case_ 1 "a name in a path" plan.json "\"root:$name/transcripts/016.ndjson\""
+case_ 1 "a name in a file under a folder with spaces" "docs/a b/notes.md" "see $name."
+case_ 0 "a longer word holding the name" notes.md "pre${name}post and ${name}2"
+# A binary file (a NUL byte in it) is read too. Written directly: a shell variable cannot hold a NUL.
+reset
+printf 'x\000\nnear %s\000\n' "$name" >"$work/cache.pyc"
+run 1 "a name in a binary file" cache.pyc
+for ext in jpg JPEG png gif webp; do
+    case_ 0 "the same bytes in a .$ext image" "assets/shot.$ext" "$name"
+done
+case_ 1 "a .svg image is text and is read" docs/shot.svg "<text>$name</text>"
+for folder in docs/plans/123-x docs/project/workshops docs/project/workstreams; do
+    case_ 0 "a name in the private folder $folder" "$folder/notes.md" "graph $name"
+done
+case_ 1 "a name in a folder that only starts like a private one" docs/plans-public/notes.md "graph $name"
+case_ 1 "a name in shipped project docs" docs/project/usage/001-x.md "graph $name"
+
+# Exceptions: path:blob, read from the checkout being checked.
+reset
+mkdir -p "$work/scripts" "$work/data"
+printf 'first line\nAB+%s/CD\n' "$name" >"$work/data/vectors.tsv"
+printf '# test\ndata/vectors.tsv:%s\n' "$(git -C "$work" hash-object data/vectors.tsv)" >"$work/scripts/customer-names-exceptions"
+run 0 "an excepted file at its blob" data/vectors.tsv
+printf 'another row\n' >>"$work/data/vectors.tsv"
+run 1 "an excepted file after an edit" data/vectors.tsv
+cp "$work/data/vectors.tsv" "$work/data/other.tsv"
+printf '# test\ndata/vectors.tsv:%s\n' "$(git -C "$work" hash-object data/vectors.tsv)" >"$work/scripts/customer-names-exceptions"
+run 1 "the excepted blob at another path" data/other.tsv
+
+# No list: a skip with one line.
+reset
+printf 'first line\n%s\n' "$name" >"$work/notes.md"
+git -C "$work" add -A
+code=0
+out=$(UMX_CUSTOMER_NAMES="$work/none" HOME="$work/nohome" "$check" "$work" 2>&1) || code=$?
+if [ "$code" = 0 ] && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && grep -q "skipped" <<<"$out"; then
+    echo "ok: a missing list skips with one line"
+else
+    echo "FAIL: a missing list: exit $code: $out" >&2
+    fail=1
+fi
+
+# A list with no names: an error, never a silent pass.
+printf '# nothing\n\n' >"$list"
+code=0
+out=$("$check" "$work" 2>&1) || code=$?
+if [ "$code" = 2 ] && [ "$out" = "customer-names: the names list holds no names, so the check did not run" ]; then
+    echo "ok: an empty list is an error"
+else
+    echo "FAIL: an empty list: exit $code: $out" >&2
+    fail=1
+fi
+
+# A relative list path is the caller's: run from the list's folder with the checkout given elsewhere.
+printf '%s\n' "$name" >"$list"
+code=0
+out=$(cd "$(dirname "$list")" && UMX_CUSTOMER_NAMES="$(basename "$list")" "$check" "$work" 2>&1) || code=$?
+if [ "$code" = 1 ] && grep -q "^notes.md:2\$" <<<"$out"; then
+    echo "ok: a relative list path is read from the caller's folder"
+else
+    echo "FAIL: a relative list path: exit $code: $out" >&2
+    fail=1
+fi
+
+# Fail closed: a folder that is no git checkout makes git grep fail; its message must not reach the output.
+plain=$(mktemp -d)
+printf '%s\n' "$name" >"$plain/notes.md"
+code=0
+out=$(GIT_CEILING_DIRECTORIES="$(dirname "$plain")" "$check" "$plain" 2>&1) || code=$?
+rm -rf "$plain"
+if [ "$code" = 2 ] && [ "$out" = "customer-names: git grep failed (exit 128), so the check did not run" ]; then
+    echo "ok: a failing git grep fails closed with a fixed line"
+else
+    echo "FAIL: a failing git grep: exit $code: $out" >&2
+    fail=1
+fi
+
+exit "$fail"

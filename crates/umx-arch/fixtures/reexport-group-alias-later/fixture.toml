@@ -1,0 +1,2 @@
+# Review R1: a private grouped `self as` alias, re-exported later through the alias.
+expect = ["r-inward"]

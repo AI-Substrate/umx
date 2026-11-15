@@ -1,0 +1,11 @@
+[package]
+name = "umx"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-adapter-llamacpp = { path = "../umx-adapter-llamacpp" }
+
+[features]
+cuda = ["umx-adapter-llamacpp/cuda"]

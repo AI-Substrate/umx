@@ -1,0 +1,2 @@
+# umx-services reaches the vendored fork directly; only umx-query may (workstream 005).
+expect = ["r-inward"]

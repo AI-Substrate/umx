@@ -1,0 +1,10 @@
+[package]
+name = "umx-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-compose = { path = "../umx-compose" }
+umx-services = { path = "../umx-services" }
+umx-core = { path = "../umx-core" }

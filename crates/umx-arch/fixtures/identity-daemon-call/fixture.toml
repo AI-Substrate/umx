@@ -1,0 +1,2 @@
+expect = ["r-identity-client-only"]
+rules = "rules.toml"

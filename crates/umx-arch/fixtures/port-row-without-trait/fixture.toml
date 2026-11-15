@@ -1,0 +1,2 @@
+# The IdGenerator trait was renamed; its [[port]] row now names a trait that is not there.
+expect = ["r-fake-per-port"]

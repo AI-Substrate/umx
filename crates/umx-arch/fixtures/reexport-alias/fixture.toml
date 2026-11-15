@@ -1,0 +1,2 @@
+# umx-daemon launders umx-protocol through a private alias.
+expect = ["r-inward"]

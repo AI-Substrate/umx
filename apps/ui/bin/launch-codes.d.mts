@@ -1,0 +1,23 @@
+export type EndWord = "restarted" | "unreachable";
+export type LaunchState = {
+  codes: Map<string, number>;
+  polls: number;
+  seen: number | null;
+  started: number;
+  ended: EndWord | null;
+  onEnd: ((why: EndWord) => void)[];
+};
+export const ENDED: Record<EndWord, string>;
+export function endView(state: LaunchState, why: string): boolean;
+export function whenEnded(state: LaunchState): Promise<EndWord>;
+export const CODE_LIFE_MS: number;
+export const TAB_LIVE_MS: number;
+export const CODE: RegExp;
+export function launchState(now?: number): LaunchState;
+export function armCode(state: LaunchState, code: unknown, now: number): boolean;
+export function takeCode(state: LaunchState, given: unknown, now: number): boolean;
+export function pollBegan(state: LaunchState, now: number): void;
+export function pollEnded(state: LaunchState, now: number): void;
+export function tabLive(state: LaunchState, now: number): boolean;
+export function idleFor(state: LaunchState, now: number): number;
+export function answerCode(state: LaunchState, code: string, now: number): "tab" | "armed" | null;

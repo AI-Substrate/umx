@@ -1,0 +1,3 @@
+# describe(stub) wires the real clock; the matrix says fake.clock.
+expect = ["r-wiring-matches-docs"]
+active_ports = ["clock"]

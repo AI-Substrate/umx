@@ -1,0 +1,2 @@
+# A crate with no allow-list row in rules.toml.
+expect = ["r-inward"]

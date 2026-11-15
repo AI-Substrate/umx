@@ -1,0 +1,74 @@
+{
+  "commit": "c25a394dd583836952667c12f008335071b3f43d",
+  "dims": {
+    "1024": {
+      "by_kind": {
+        "keyword": {
+          "mrr10": 1.0,
+          "n": 15,
+          "recall10": 1.0
+        },
+        "near_miss": {
+          "mrr10": 0.95,
+          "n": 10,
+          "recall10": 1.0
+        },
+        "paraphrase": {
+          "mrr10": 0.825,
+          "n": 40,
+          "recall10": 0.975
+        },
+        "tail": {
+          "mrr10": 0.7,
+          "n": 10,
+          "recall10": 0.9
+        },
+        "title": {
+          "mrr10": 0.9,
+          "n": 5,
+          "recall10": 1.0
+        }
+      },
+      "mrr10": 0.8625,
+      "recall10": 0.975
+    },
+    "256": {
+      "by_kind": {
+        "keyword": {
+          "mrr10": 0.9666666666666667,
+          "n": 15,
+          "recall10": 0.9666666666666667
+        },
+        "near_miss": {
+          "mrr10": 1.0,
+          "n": 10,
+          "recall10": 0.95
+        },
+        "paraphrase": {
+          "mrr10": 0.7935714285714286,
+          "n": 40,
+          "recall10": 0.9625
+        },
+        "tail": {
+          "mrr10": 0.7166666666666667,
+          "n": 10,
+          "recall10": 0.9
+        },
+        "title": {
+          "mrr10": 1.0,
+          "n": 5,
+          "recall10": 1.0
+        }
+      },
+      "mrr10": 0.8551190476190478,
+      "recall10": 0.95625
+    }
+  },
+  "load_avg_1m_at_end": 101.01513671875,
+  "load_avg_1m_at_start": 127.71875,
+  "max_length": 2048,
+  "model": "qwen3-embedding-0.6b",
+  "native_dims": 1024,
+  "repo": "onnx-community/Qwen3-Embedding-0.6B-ONNX",
+  "truncated": 0
+}

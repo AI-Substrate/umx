@@ -1,0 +1,26 @@
+{
+  "umx": 81,
+  "command": "node add",
+  "status": "warning",
+  "data": {
+    "k": 1
+  },
+  "warnings": [],
+  "hints": [
+    {
+      "code": "segment_without_parent",
+      "message": "Segment 01JC8XA4H7Q1V9K2M3N4P5R6S7 is part of nothing yet. Link it to its meeting, event or parent segment.",
+      "next": "umx edge add 01JC8XA4H7Q1V9K2M3N4P5R6S7 part_of <parent> --graph demo",
+      "subject": "01JC8XA4H7Q1V9K2M3N4P5R6S7"
+    }
+  ],
+  "errors": [],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

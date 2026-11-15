@@ -1,0 +1,2 @@
+# stub is a default feature, so the release umx contains umx-fakes.
+expect = ["r-no-fakes-in-release"]

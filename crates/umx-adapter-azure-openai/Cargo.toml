@@ -1,0 +1,15 @@
+[package]
+name = "umx-adapter-azure-openai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+umx-core.workspace = true
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+ureq.workspace = true
+
+[dev-dependencies]
+umx-contracts.workspace = true

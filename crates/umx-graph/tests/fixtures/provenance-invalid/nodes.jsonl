@@ -1,0 +1,2 @@
+{ "id":"00000000000000000000000001", "type":"problem", "title":"First", "status":"open", "note":"", "evidence":[], "status_history":[], "created":"now", "updated":"now", "created_by":"old", "authored_by_session":null, "edited_by_session":"bad-session", "prov_key":"../bad" }
+{"id":"00000000000000000000000002","type":"problem","title":"Second","status":"open","note":"","evidence":[],"status_history":[],"created":"now","updated":"now","created_by":"old"}

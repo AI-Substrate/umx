@@ -1,0 +1,2 @@
+# F117: an alias chain (std as s, s::os as o) declared after the use rooted at it, which names fs under a new name.
+expect = ["r-fs-in-adapters"]

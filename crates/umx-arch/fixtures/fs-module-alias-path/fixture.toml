@@ -1,0 +1,2 @@
+# F119: std re-exported by a module file (pub use std as s), then fs reached from the crate root through store::s.
+expect = ["r-fs-in-adapters", "r-no-std-reexport"]

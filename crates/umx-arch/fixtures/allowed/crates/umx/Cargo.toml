@@ -1,0 +1,15 @@
+[package]
+name = "umx"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-cli = { path = "../umx-cli" }
+umx-daemon = { path = "../umx-daemon" }
+umx-protocol = { path = "../umx-protocol" }
+
+[features]
+test-driver = []
+stub = ["umx-daemon/stub"]
+cuda = ["umx-daemon/cuda"]

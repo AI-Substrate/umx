@@ -1,0 +1,2 @@
+# umx-arch as a normal dependency; it is test-only like umx-contracts.
+expect = ["r-contracts-dev-only", "r-inward"]

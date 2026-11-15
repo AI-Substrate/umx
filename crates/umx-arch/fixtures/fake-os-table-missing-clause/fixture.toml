@@ -1,0 +1,4 @@
+# The adapter of a non-host table entry (plan9: system.service-manager) skips contract clause sm_c2.
+expect = ["r-fake-per-port"]
+active_ports = ["service-manager"]
+rules = "rules.toml"

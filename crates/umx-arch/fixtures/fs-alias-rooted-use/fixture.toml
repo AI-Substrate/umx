@@ -1,0 +1,2 @@
+# F117: a use rooted at a renamed std names fs under a new name; the call through it names no fs.
+expect = ["r-fs-in-adapters"]

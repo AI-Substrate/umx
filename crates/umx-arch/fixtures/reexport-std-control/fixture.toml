@@ -1,0 +1,4 @@
+# F133 control: an adapter's private use std::fs and pub(self) use std::os, a pub use of an external crate's item, and
+# re-exports of std items off the way to fs and of core (pub and pub(crate)), a private std::fs alias used only
+# privately and a non-fs std alias re-exported (R302-B1): none fires r-no-std-reexport.
+expect = []

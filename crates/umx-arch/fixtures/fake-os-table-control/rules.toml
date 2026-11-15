@@ -1,0 +1,20 @@
+# A port whose real adapter is a table keyed by OS. plan9 is never the host, so its entry is checked only if
+# r-fake-per-port checks every entry, not just the host's.
+blueprint = "none"
+crate = []
+
+[[rule]]
+id = "r-fake-per-port"
+
+[adapters]
+fake = "umx-fakes"
+fs = "umx-adapter-fs"
+system = "umx-adapter-system"
+
+[[port]]
+id = "service-manager"
+module = "service_manager"
+trait = "ServiceManager"
+stub = "fake.service-manager"
+real = { macos = "fs.service-manager", linux = "fs.service-manager", plan9 = "system.service-manager" }
+state = "active"

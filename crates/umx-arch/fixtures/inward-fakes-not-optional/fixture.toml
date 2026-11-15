@@ -1,0 +1,2 @@
+# umx-compose depends on umx-fakes unconditionally instead of behind feature stub.
+expect = ["r-inward"]

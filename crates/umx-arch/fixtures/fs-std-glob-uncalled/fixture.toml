@@ -1,0 +1,2 @@
+# R258 security N2: a std glob, then fs named without a call (a fn value), so no fs::<fn>( spelling.
+expect = ["r-fs-in-adapters"]

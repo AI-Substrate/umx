@@ -1,0 +1,2 @@
+# umx-cli reads env; only umx-compose may.
+expect = ["r-env-in-compose"]

@@ -1,0 +1,2 @@
+# R251 B1: std::os::unix::fs renamed in a group, then used through the new name.
+expect = ["r-fs-in-adapters"]

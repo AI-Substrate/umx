@@ -1,0 +1,8 @@
+# Env and secrets are read only in umx-compose (blueprint 001, d-9 and r-env-in-compose).
+# Its one config loader carries #[expect(clippy::disallowed_methods)]; umx-arch fails on any other.
+disallowed-methods = [
+  { path = "std::env::var", reason = "read env only in umx-compose (d-9)" },
+  { path = "std::env::var_os", reason = "read env only in umx-compose (d-9)" },
+  { path = "std::env::vars", reason = "read env only in umx-compose (d-9)" },
+  { path = "std::env::vars_os", reason = "read env only in umx-compose (d-9)" },
+]

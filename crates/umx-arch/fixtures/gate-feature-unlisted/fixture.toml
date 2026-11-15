@@ -1,0 +1,3 @@
+# umx-graph gains a feature `fast` that is neither in the gate list nor excluded, so no gate would build it.
+expect = ["r-gate-features"]
+rules = "rules.toml"

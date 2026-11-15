@@ -1,0 +1,60 @@
+[workspace]
+members = ["crates/*"]
+# Fixture workspaces with planted violations, the s03 embedding bake-off harness (ort and tokenizers kept out of
+# umx's dependency rules) and the LadybugDB conformance checker (umx never links LadybugDB, D18); each is its own
+# workspace.
+exclude = ["crates/umx-arch/fixtures", "tools/embed-bakeoff", "tools/lbug-conformance"]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Every external crate is pinned once here. Which crate may use it is in crates/umx-arch/rules.toml.
+[workspace.dependencies]
+serde = { version = "1", default-features = false }
+serde_json = { version = "1", default-features = false }
+# Text hashes of embedded text (ws004 s07a); no_std.
+sha2 = { version = "0.10", default-features = false }
+# The word index's term table (ws004 s10), with its own fixed hasher; no default hasher, no std.
+hashbrown = { version = "0.17", default-features = false }
+libc = "0.2"
+# no_std maths (sqrt for vector lengths, log for the word index): blueprint d-15. The same results on every platform.
+libm = { version = "0.2", default-features = false }
+toml = { version = "0.9", default-features = false }
+ulid = "1"
+# Sync HTTP for the hosted embedder: rustls with the platform verifier (system roots), no gzip.
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+# Local embedder (umx-adapter-llamacpp): llama.cpp over a GGUF model read from disk. llama-cpp-2's default features
+# are off (no OpenMP, no curl); Metal is turned on for macOS in the adapter's own manifest. llama-cpp-sys-2 still builds
+# llama.cpp's `common` library (its own default feature), which holds an HTTP client and model download code: nothing
+# calls it and the linker drops it, which the adapter's no_download_code_is_linked test checks on the linked binary.
+# Git, not crates.io: llama-cpp-2 0.1.161 (the latest release) bundles a llama.cpp without the gemma-embedding2
+# architecture; this commit's llama.cpp submodule is v0.8.0 (8642541), which has it. Move back to crates.io at the first
+# llama-cpp-2 release that bundles llama.cpp v0.8.0 or later. Security reviews this pin and any change to it.
+llama-cpp-2 = { git = "https://github.com/utilityai/llama-cpp-rs", rev = "0364f5da1c6a6ee37f507031f116ce4a09b28594", default-features = false }
+
+umx-core = { path = "crates/umx-core" }
+umx-graph = { path = "crates/umx-graph" }
+umx-cypher = { path = "crates/umx-cypher" }
+umx-query = { path = "crates/umx-query" }
+umx-services = { path = "crates/umx-services" }
+umx-contracts = { path = "crates/umx-contracts" }
+umx-fakes = { path = "crates/umx-fakes" }
+umx-adapter-fs = { path = "crates/umx-adapter-fs" }
+umx-adapter-system = { path = "crates/umx-adapter-system" }
+umx-adapter-azure-openai = { path = "crates/umx-adapter-azure-openai" }
+umx-adapter-llamacpp = { path = "crates/umx-adapter-llamacpp" }
+umx-adapter-model-fetch = { path = "crates/umx-adapter-model-fetch" }
+umx-protocol = { path = "crates/umx-protocol" }
+umx-compose = { path = "crates/umx-compose" }
+umx-daemon = { path = "crates/umx-daemon" }
+umx-cli = { path = "crates/umx-cli" }
+umx-arch = { path = "crates/umx-arch" }
+
+# Dev and test builds hash model files optimised: each load checks the 558 MB GGUF's sha256, and the real-model tests
+# took 72 s with sha2 unoptimised, 43 s with this. llama.cpp's C++ is optimised already (RelWithDebInfo in dev builds).
+[profile.dev.package.sha2]
+opt-level = 3

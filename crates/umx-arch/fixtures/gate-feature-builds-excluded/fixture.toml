@@ -1,0 +1,3 @@
+# The gate lists umx/cuda, which forwards to the excluded umx-adapter-llamacpp/cuda: the gate would need the toolkit.
+expect = ["r-gate-features"]
+rules = "rules.toml"

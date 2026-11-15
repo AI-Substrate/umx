@@ -1,0 +1,3 @@
+# The fake's graph_files_contract! list leaves out gf_c2 (it is only commented out).
+expect = ["r-fake-per-port"]
+active_ports = ["graph-files"]

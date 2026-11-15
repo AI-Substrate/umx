@@ -1,0 +1,4 @@
+# rules.toml names umx-kore (a typo or a rename); on a whole workspace the rule that names it fires.
+expect = ["r-core-no-std"]
+whole_workspace = true
+rules = "rules.toml"

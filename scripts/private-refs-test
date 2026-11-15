@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Proves scripts/private-refs fires (D72g), in a throwaway git checkout: a citation of a brief or the harness folder
+# fails and is named by file and line, wherever it starts; a word that only ends in the folder's name, a field named
+# like it and the three private folders pass; a failing git grep fails closed. The cited paths are built at run
+# time. PRIVATE_REFS_CHECK runs another copy of the check.
+set -euo pipefail
+
+check="${PRIVATE_REFS_CHECK:-$(cd "$(dirname "$0")" && pwd)/private-refs}"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+git -C "$work" init -q
+
+brief=$(printf '%s/%s' briefs time-review.md)
+harness=$(printf '.%s/%s' harness ledger.jsonl)
+fail=0
+case_() {
+    local want="$1" what="$2" file="$3" text="$4" out code=0
+    find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+    mkdir -p "$(dirname "$work/$file")"
+    printf 'first line\n%s\n' "$text" >"$work/$file"
+    git -C "$work" add -A
+    out=$("$check" "$work" 2>&1) || code=$?
+    if [ "$code" != "$want" ]; then
+        echo "FAIL: $what: exit $code, want $want: $out" >&2
+        fail=1
+    elif [ "$want" = 1 ] && ! grep -q "^$file:2\$" <<<"$out"; then
+        echo "FAIL: $what: $file:2 not named in: $out" >&2
+        fail=1
+    else
+        echo "ok: $what"
+    fi
+}
+
+case_ 0 "a clean file passes" notes.md "decision D71 (an internal review)"
+case_ 1 "a brief cited in prose" docs/project/usage/1-x.md "source: D71 ($brief)"
+case_ 1 "a brief at the start of a line" notes.md "$brief section 7"
+case_ 1 "a brief under another folder" fixture.json "\"source\": \"governance $brief\""
+case_ 1 "a harness file" notes.md "see $harness"
+case_ 1 "a harness path at the start of a line" notes.md "$harness"
+# A binary file (a NUL byte in it) is read too. Written directly: a shell variable cannot hold a NUL.
+find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+printf 'x\000\nsource %s\000\n' "$brief" >"$work/cache.pyc"
+git -C "$work" add -A
+code=0
+out=$("$check" "$work" 2>&1) || code=$?
+if [ "$code" = 1 ] && grep -q "^cache.pyc:2\$" <<<"$out"; then
+    echo "ok: a citation in a binary file"
+else
+    echo "FAIL: a citation in a binary file: exit $code: $out" >&2
+    fail=1
+fi
+case_ 0 "a word that ends in the folder's name" notes.md "the de$brief note"
+case_ 0 "a folder whose name only ends like it" notes.md "my_$brief and old-$brief and my.$brief"
+case_ 0 "a field named like the harness folder" code.rs "input.harness_session and input.harness/2"
+for folder in docs/plans/1-x docs/project/workshops docs/project/workstreams; do
+    case_ 0 "a citation in the private folder $folder" "$folder/notes.md" "source: $brief"
+done
+case_ 1 "a citation in a folder that only starts like a private one" docs/plans-public/notes.md "$brief"
+
+plain=$(mktemp -d)
+code=0
+out=$(GIT_CEILING_DIRECTORIES="$(dirname "$plain")" "$check" "$plain" 2>&1) || code=$?
+rm -rf "$plain"
+if [ "$code" = 2 ] && [ "$out" = "private-refs: git grep failed (exit 128), so the check did not run" ]; then
+    echo "ok: a failing git grep fails closed"
+else
+    echo "FAIL: a failing git grep: exit $code: $out" >&2
+    fail=1
+fi
+
+exit "$fail"

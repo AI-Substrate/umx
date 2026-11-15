@@ -1,0 +1,2 @@
+# F119: std renamed by a pub use in the crate root, then fs reached from another file through crate::s.
+expect = ["r-fs-in-adapters", "r-no-std-reexport"]

@@ -1,0 +1,2 @@
+# umx-daemon turns stub on by default, so the release umx contains umx-fakes through a dependency.
+expect = ["r-no-fakes-in-release"]

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# F184 (security's N1 notes): no tracked file may hold an absolute home path, `/Users/<name>` or `/home/<name>`,
+# wherever it starts (after `>`, `-I`, `=`, a quote or a letter) and however the name ends (`/`, a quote, a space,
+# the end of the line). Committed evidence writes `<repo>` for the repository root, `<home>` for the rest of a home
+# folder and `<user>` for the account name; scripts take paths from the environment or the repo (CARGO_SLOT,
+# scripts/cargo-slot, git rev-parse --show-toplevel).
+#
+# ALLOWED names the only synthetic example accounts that may appear anywhere, matched as the whole name: me, jo,
+# Jo, j and u (docs and test fixtures: /Users/me/, /home/jo/, "/Users/Jo Smith").
+# EXCEPTIONS are whole paths allowed only in the one file that holds them (review R336-3): the fake run folder the UI
+# tests nest under another folder, and a config test's file directly under the home root. The same text anywhere
+# else is a hit.
+#
+#   scripts/home-paths [<checkout>]    exit 0 when clean; else exit 1 and one `<file>:<line>:<path>` per hit
+set -euo pipefail
+
+ALLOWED='me|jo|Jo|j|u'
+# Each path is spelled in two quoted halves so this file holds none of them.
+EXCEPTIONS=(
+    'crates/umx-fakes/src/lib.rs:/fake/home''/run'
+    'crates/umx/src/ui.rs:/fake/home''/run'
+    'docs/plans/161-ws009-m1b2-ui-detach/assets/detach-run.log:<work>/home''/run'
+    'crates/umx-services/src/config.rs:/home''/secrets.env'
+    'crates/umx-services/tests/hybrid.rs:/home''/secrets.env'
+)
+cd "${1:-$(git rev-parse --show-toplevel)}"
+
+# Binary files are read as text too (`-a`, F209): a path in a committed binary leaks as surely as one in a log.
+# Each hit as `<file>:<line>:<path>`; a path just after `/fake` or `<work>` keeps that prefix, so an exception can
+# name the whole path.
+hits=$(git grep -n -o -a -E '(/fake|<work>)?/(Users|home)/[A-Za-z0-9._-]+' -- . |
+    grep -v -E "/(Users|home)/($ALLOWED)\$" || true)
+for exception in "${EXCEPTIONS[@]}"; do
+    file=${exception%%:*} path=${exception#*:}
+    hits=$(printf '%s\n' "$hits" | awk -F: -v f="$file" -v p="$path" 'NF == 3 && $1 == f && $3 == p { next } { print }')
+done
+hits=$(printf '%s\n' "$hits" | sed '/^$/d')
+if [ -n "$hits" ]; then
+    printf '%s\n' "$hits" >&2
+    echo "home-paths: $(printf '%s\n' "$hits" | wc -l | tr -d ' ') absolute home path(s) in tracked files; write <repo> or <home> instead (F184)" >&2
+    exit 1
+fi

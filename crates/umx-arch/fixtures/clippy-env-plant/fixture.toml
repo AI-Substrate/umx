@@ -1,0 +1,4 @@
+# Clippy with the workspace clippy.toml refuses an env read outside umx-compose.
+enforcer = "clippy"
+expect = ["r-env-in-compose"]
+must_show = ["use of a disallowed method `std::env::var`"]

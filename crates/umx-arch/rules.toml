@@ -1,0 +1,434 @@
+# The one machine policy for umx's architecture (blueprint 001, decision d-4).
+#
+# Every [[rule]] id is an r-* row of the blueprint and the other way round; the blueprint's d-4
+# layer table must equal `cargo run -p umx-arch -- render`. umx-arch fails on either drift.
+# Each rule has one checker in umx-arch, and the self-test proves each fires through its real
+# enforcer on a planted fixture under crates/umx-arch/fixtures/ (d-10).
+# Wildcards: a name ending in `*` matches by prefix.
+
+blueprint = "docs/project/blueprints/001-concept-graph.dd.json"
+# No staged activation (d-11): every rule runs on the real workspace and in the self-test. On the
+# whole workspace every crate a rule names must exist, so a rename cannot switch a rule off.
+
+[[rule]]
+id = "r-core-no-std"
+crates = ["umx-core", "umx-graph", "umx-cypher", "umx-query", "umx-services"]
+
+[[rule]]
+id = "r-inward"
+
+[[rule]]
+id = "r-adapters-isolated"
+from = "umx-adapter-*"
+deny = ["umx-adapter-*", "umx-services", "umx-compose", "umx-daemon", "umx-cli"]
+
+[[rule]]
+id = "r-only-compose-wires"
+targets = ["umx-adapter-*", "umx-fakes"]
+allow = ["umx-compose"]
+
+[[rule]]
+id = "r-vendor-crates-owned"
+
+[[rule]]
+id = "r-cli-is-a-client"
+crate = "umx-cli"
+allow = ["umx-protocol"]
+
+[[rule]]
+id = "r-contracts-dev-only"
+# umx-arch is test-only too: same check, second name (d-4).
+crates = ["umx-contracts", "umx-arch"]
+
+[[rule]]
+id = "r-no-fakes-in-release"
+root = "umx"
+fakes = "umx-fakes"
+feature = "stub"
+
+[[rule]]
+id = "r-fake-per-port"
+# Gated per [[port]] row: a planned row is printed, not enforced (d-6). Every trait under
+# umx-core/src/ports has a row (any state), and every row's trait exists.
+
+[[rule]]
+id = "r-wiring-matches-docs"
+# Runs in umx-compose's describe test, per [[port]] row (d-6), over the adapter ids of the ports
+# compose built; stub rows need `--features stub`.
+
+[[rule]]
+id = "r-env-in-compose"
+allow = ["umx-compose"]
+
+# std::process::Command only in adapter crates and the tools (ws009 s2, architect), in shipped source (src/):
+# tests/, #[cfg(test)] code and build scripts are skipped. An exception names one fn by file, so a second Command in
+# the same crate still fires.
+[[rule]]
+id = "r-command-in-adapters"
+allow = ["umx-adapter-*", "umx-arch", "umx-bench"]
+
+[[rule.except]]
+file = "umx-daemon/src/lib.rs"
+fn = "relaunch"
+reason = "daemon restart execs its own binary (F46/F64); move behind ServiceManager or an adapter later"
+
+# The filesystem (std::fs, std::os::unix::fs, File::open/create, OpenOptions) only in adapter crates, the tools and the
+# process shells (F114, architect), in shipped source (src/): tests/, #[cfg(test)] code and build scripts are skipped.
+# umx-daemon is the process shell (run folder, socket, pid, logs, doctor's own mode checks); its reads of user content
+# go through ports or adapter fns, enforced by review. umx is the binary; umx-compose wires adapters. umx-contracts is
+# test infrastructure shipped as a library, like umx-arch and umx-bench: its contract suites drive real adapters
+# against real temp dirs by design (architect, F114). Denied by
+# construction: umx-services, umx-graph, umx-query, umx-cypher, umx-protocol, umx-fakes' shipped code and umx-cli.
+# An exception names one fn by file, so a second use in the same file still fires.
+[[rule]]
+id = "r-fs-in-adapters"
+allow = ["umx-adapter-*", "umx-arch", "umx-bench", "umx-compose", "umx-contracts", "umx-daemon", "umx"]
+
+[[rule.except]]
+file = "umx-cli/src/batch.rs"
+fn = "read"
+reason = "the client reads its own --file input; it never reaches the daemon as a path"
+
+[[rule.except]]
+file = "umx-cli/src/lib.rs"
+fn = "open_tty"
+reason = "the person's terminal for the confirmation prompt (s06)"
+
+[[rule.except]]
+file = "umx-fakes/src/lib.rs"
+fn = "fetch"
+reason = "fake ModelFetcher writes the fetched file so the shared contract can check it on disk; stub builds only"
+
+# No use or extern crate wider than private (pub, pub(crate), pub(super), pub(in path)) brings in std, std::os or
+# std::os::unix themselves, a std path with an fs segment, or a glob of one, in any workspace crate (F133, architect):
+# r-fs-in-adapters reads a crate's names for std from its own files, so a re-export would make std::fs reachable under
+# a name it never records. Shipped source only; items off the way to fs (std::fmt::Display) and core or alloc are fine.
+[[rule]]
+id = "r-no-std-reexport"
+
+# Every write of a graph folder in the services goes through GraphFiles::write_set_checked, so a loaded graph's write
+# carries its stamps and never writes over files changed on disk since the load (F144, architect). The unchecked
+# wrappers (write_set, write) live in umx-core's setup::GraphFilesSetup, outside ports and re-exported nowhere.
+# Shipped source only (src/): tests/, #[cfg(test)] code and build scripts are skipped. No crate in the normal
+# dependency closure of those in `crates` (themselves included), but those in `allow` (its home), names
+# GraphFilesSetup or a `setup` path segment: an alias, a glob, a qualified call, a re-export or a glob-and-alias
+# chain (review R4) all name one somewhere in that closure.
+[[rule]]
+id = "r-checked-graph-writes"
+crates = ["umx-services"]
+allow = ["umx-core"]
+
+[[rule]]
+id = "r-identity-client-only"
+# plan 097 capture-latency bench; tool, never the daemon
+allow = ["umx", "umx-compose", "umx-contracts", "umx-bench"]
+
+[[rule]]
+id = "r-gate-features"
+# `just clippy` builds the workspace with exactly this list (`umx-arch gate-features` prints it), in place of
+# --all-features, so a feature the gate cannot build (it needs a toolkit the Mac lacks) can be left out by name. Every
+# feature a workspace crate declares must be built by this list or listed in gate_excluded below with a reason; one that forwards to
+# an excluded feature counts as excluded (architect, ws004 s19).
+gate = ["umx/stub", "umx/test-driver", "umx-daemon/stub", "umx-compose/stub", "umx-graph/bench", "umx-services/test-hooks", "umx-services/bench"]
+gate_excluded = [
+    { feature = "umx-adapter-llamacpp/cuda", reason = "builds llama.cpp with GGML_CUDA, which needs the CUDA toolkit (nvcc); `just check-cuda` builds and lints it on a Linux machine that has one (ws004 s19)" },
+]
+
+[[rule]]
+id = "r-rules-fire"
+
+# Capability libraries and their one owner crate (r-vendor-crates-owned). An empty owner list means
+# the owning adapter crate does not exist yet, so no crate may use the library. Shared libraries
+# (serde, serde_json, thiserror, hashbrown, toml) are not listed; the allow-lists below govern them.
+[owned]
+# The crates.io crate is never used: its vendored fork is the workspace crate umx-cypher (c-cypher, workstream 005).
+"cypher-parser" = []
+"notify*" = ["umx-adapter-fs"]
+"ulid" = ["umx-adapter-system"]
+# adapter-fs: getuid and statvfs (req-72, ws004 s14). adapter-system: killpg, non-reaping waitid, getpgrp (self-guard)
+# and fcntl F_GETFL/F_SETFL with O_NONBLOCK for bounded owned-tool cleanup (plan 097). Calls stay in small wrappers.
+"libc" = ["umx-adapter-fs", "umx-adapter-system"]
+# HTTP client: the hosted embedder adapter, sync (architect ruling 2026-11-10: no async runtime, no Azure SDK), and
+# the model fetcher (ws004 s14), its second owner, so the local embedder crate has no network dependency.
+"ureq" = ["umx-adapter-azure-openai", "umx-adapter-model-fetch"]
+"reqwest" = []
+"tokio" = []
+"azure_core" = []
+"azure_identity" = []
+# llama.cpp: the local embedder adapter (ws004 s04, GPU spike round 2). ort, tokenizers and fastembed are not used.
+"llama-cpp-2" = ["umx-adapter-llamacpp"]
+"llama-cpp-sys-2" = ["umx-adapter-llamacpp"]
+"ort" = []
+"tokenizers" = []
+"fastembed" = []
+
+# Layer allow-lists (d-4), in the blueprint's order: normal and build dependencies only.
+# A crate with no row is a violation. `optional` maps a dependency allowed only as optional to the
+# feature that must enable it.
+
+[[crate]]
+name = "umx-core"
+workspace = []
+# toml without std: the config codec (req-72). sha2: text hashes of embedded text (ws004 s07a). libm: no_std sqrt for vector lengths (ws004 s13, d-15).
+external = ["serde", "serde_json", "thiserror", "toml", "sha2", "libm"]
+
+[[crate]]
+name = "umx-graph"
+workspace = ["umx-core"]
+# libm: ln for BM25 word search without std (ws004 s10; architect 2026-11-10).
+external = ["hashbrown", "libm"]
+
+# The vendored cypher-parser 0.8.1 fork (c-cypher): depends on nothing, so it stays diffable against upstream.
+# Only umx-query may depend on it: no other row names it.
+[[crate]]
+name = "umx-cypher"
+workspace = []
+external = []
+
+# Cypher over umx-graph (c-query): the fork's GraphProvider over a graph view and one non-generic run(), so the
+# generic executor is instantiated here only. umx-services calls it (workstream 005 s04).
+[[crate]]
+name = "umx-query"
+workspace = ["umx-core", "umx-graph", "umx-cypher"]
+external = []
+
+[[crate]]
+name = "umx-services"
+# umx-query: the umx query capability (ws005 s04, architect).
+workspace = ["umx-core", "umx-graph", "umx-query"]
+external = []
+
+[[crate]]
+name = "umx-contracts"
+workspace = ["umx-core"]
+external = []
+
+[[crate]]
+name = "umx-fakes"
+workspace = ["umx-core"]
+external = []
+
+[[crate]]
+name = "umx-adapter-*"
+workspace = ["umx-core"]
+external = ["notify*", "ulid", "ureq", "llama-cpp-2", "llama-cpp-sys-2", "sha2", "serde", "serde_json", "libc"]
+
+[[crate]]
+name = "umx-protocol"
+workspace = []
+external = ["serde", "serde_json"]
+
+[[crate]]
+name = "umx-compose"
+workspace = ["umx-core", "umx-graph", "umx-services", "umx-adapter-*"]
+optional = { "umx-fakes" = "stub" }
+external = []
+
+[[crate]]
+name = "umx-daemon"
+workspace = ["umx-compose", "umx-services", "umx-core", "umx-protocol"]
+external = ["tokio", "serde_json"]
+
+[[crate]]
+name = "umx-cli"
+workspace = ["umx-protocol"]
+external = []
+
+[[crate]]
+name = "umx"
+workspace = ["umx-cli", "umx-daemon", "umx-protocol", "umx-compose", "umx-core"]
+external = []
+
+[[crate]]
+name = "umx-bench"
+# umx-query: the Cypher rows time run() directly (architect, ws005 s02); a services-level row joins in s04.
+workspace = ["umx-compose", "umx-services", "umx-core", "umx-graph", "umx-query"]
+# sha2: floor-calibration checks BEIR zips and keys its vector cache (ws004 s26).
+external = ["serde_json", "sha2"]
+
+[[crate]]
+name = "umx-arch"
+workspace = []
+external = ["serde", "serde_json", "toml"]
+
+# Re-exports (r-inward, ap-10): a `pub use` of a workspace crate or its items, or of a whole external
+# crate, is allowed only when listed here by name. Anything else is imported from the crate that defines
+# it, which then needs its own allow-list entry.
+[[reexport]]
+crate = "umx-daemon"
+path = "umx_compose::Config"
+
+# Adapter matrix (d-6): port -> stub and real adapter ids. r-fake-per-port and
+# r-wiring-matches-docs enforce a row once its state leaves "planned" (s05a made these three active). `real` is one
+# id, a table keyed by OS, or a list when config chooses the adapter: then real mode wires one listed id or none.
+
+[adapters]
+fake = "umx-fakes"
+fs = "umx-adapter-fs"
+system = "umx-adapter-system"
+azure-openai = "umx-adapter-azure-openai"
+llamacpp = "umx-adapter-llamacpp"
+hf = "umx-adapter-model-fetch"
+launchd = "umx-adapter-system"
+systemd = "umx-adapter-system"
+pij = "umx-adapter-system"
+env = "umx-adapter-system"
+
+# Client-side only, composed in the binary root; absent from daemon Ports by design.
+[[port]]
+id = "agent-identity"
+module = "agent_identity"
+trait = "AgentIdentity"
+stub = "fake.agent-identity"
+real = ["pij.agent-identity", "env.agent-identity"]
+state = "active"
+
+[[port]]
+id = "graph-files"
+module = "graph_files"
+trait = "GraphFiles"
+stub = "fake.graph-files"
+real = "fs.graph-files"
+state = "active"
+
+# A second GraphFiles instance: secured graphs' vector shards, under $UMX_HOME/vectors (req-46, ws004 s12).
+[[port]]
+id = "vector-cache"
+module = "graph_files"
+trait = "GraphFiles"
+stub = "fake.graph-files"
+real = "fs.graph-files"
+state = "active"
+
+[[port]]
+id = "clock"
+module = "clock"
+trait = "Clock"
+stub = "fake.clock"
+real = "system.clock"
+state = "active"
+
+[[port]]
+id = "id-generator"
+module = "id"
+trait = "IdGenerator"
+stub = "fake.id-generator"
+real = "system.id-generator"
+state = "active"
+
+[[port]]
+id = "config-files"
+module = "config_files"
+trait = "ConfigFiles"
+stub = "fake.config-files"
+real = "fs.config-files"
+state = "active"
+
+[[port]]
+id = "secrets"
+module = "secrets"
+trait = "Secrets"
+stub = "fake.secrets"
+real = "fs.secrets"
+state = "active"
+
+# This machine's record of each graph's confirmed embedding policy (ws004 s06 A2): a GraphStore port.
+[[port]]
+id = "local-state"
+module = "local_state"
+trait = "LocalState"
+stub = "fake.local-state"
+real = "fs.local-state"
+state = "active"
+
+# A second LocalState instance: this machine's secret allows, $UMX_HOME/allows/secret-allows.json (req-49, ws004 s08).
+[[port]]
+id = "secret-allows"
+module = "local_state"
+trait = "LocalState"
+stub = "fake.local-state"
+real = "fs.local-state"
+state = "active"
+
+# Another LocalState instance: this machine's lint terms, $UMX_HOME/lint/lint-terms.json (F139, security's shape).
+# Absent reads as no term scan; a file others can read is refused like any LocalState file.
+[[port]]
+id = "lint-terms"
+module = "local_state"
+trait = "LocalState"
+stub = "fake.local-state"
+real = "fs.local-state"
+state = "active"
+
+# A third LocalState instance: this machine's saved scopes, $UMX_HOME/scopes.toml (ws005 s07a, plan 066). Absent
+# reads as no scopes for this instance only; unreadable is an error naming the file.
+[[port]]
+id = "scopes"
+module = "local_state"
+trait = "LocalState"
+stub = "fake.local-state"
+real = "fs.local-state"
+state = "active"
+
+# A fourth LocalState instance: this machine's graph registry, $UMX_HOME/registry/graphs.toml (req-56's first slice,
+# ws002 F72, plan 081; blueprint c-port-registry, architect). Absent reads as an empty registry; unreadable is a
+# warning naming the file, and nothing reloads.
+[[port]]
+id = "registry"
+module = "local_state"
+trait = "LocalState"
+stub = "fake.local-state"
+real = "fs.local-state"
+state = "active"
+
+# Active since ws004 s05. Config chooses the real adapter (embedder.active), so `real` is a list: real mode wires
+# one of these, or none when embedder.active is none, and never the fake. Each local adapter joins the list in its
+# own PR (architect ruling, 2026-11-10).
+[[port]]
+id = "embedder"
+module = "embedder"
+trait = "Embedder"
+stub = "fake.embedder"
+real = ["azure-openai.embedder", "llamacpp.embedder"]
+state = "active"
+
+# Pinned model downloads (req-74; ws004 s14): `umx models fetch` only, never on embed. Hugging Face over https to
+# a fixed host allow-list, no token, sha256 checked before a file keeps its name.
+[[port]]
+id = "model-fetcher"
+module = "model_fetcher"
+trait = "ModelFetcher"
+stub = "fake.model-fetcher"
+real = "hf.model-fetcher"
+state = "active"
+
+# The daemon as a per-user service (req-86). `real` is keyed by OS (std::env::consts::OS): compose wires launchd on
+# macOS, systemd on Linux and none elsewhere (n-13), and r-fake-per-port runs every entry's contract.
+[[port]]
+id = "service-manager"
+module = "service_manager"
+trait = "ServiceManager"
+stub = "fake.service-manager"
+real = { macos = "launchd.service-manager", linux = "systemd.service-manager" }
+state = "active"
+
+# `umx ui` (req-104, ws009 s2): runs the graph view's server (node, its own process group, the token on stdin) and
+# opens the browser without the link in argv. Client-side only: absent from the daemon's Services and Ports by design
+# (architect B1); compose's client_adapters lists it for the wiring check.
+[[port]]
+id = "ui-host"
+module = "ui_host"
+trait = "UiHost"
+stub = "fake.ui-host"
+real = "system.ui-host"
+state = "active"
+
+# Source confinement for evidence and resources (req-47; ws006 S1, architect ruling 2026-11-11): canonical source
+# roots inside UMX_ROOTS and paths that stay inside them. S4 adds the read methods to the same trait.
+[[port]]
+id = "source-reader"
+module = "source_reader"
+trait = "SourceReader"
+stub = "fake.source-reader"
+real = "fs.source-reader"
+state = "active"

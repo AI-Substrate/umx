@@ -1,0 +1,2 @@
+# umx-cli bypasses the daemon by depending on umx-services.
+expect = ["r-cli-is-a-client", "r-inward"]

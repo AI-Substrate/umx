@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# D72: no tracked file may hold a customer name. The names are not in the repo: they are read, one per line, from
+# $UMX_CUSTOMER_NAMES or else ~/.config/unimatrix/customer-names (blank lines and `#` comments skipped). When neither
+# file exists (CI has no list) the check prints one skip line and exits 0. A list that exists but holds no names is an
+# error: a check that silently checks nothing is worse than none.
+#
+# A name matches case-insensitively as a whole word, where only letters and digits continue a word: `_`, `-`, `.`,
+# `/` and every other character separate, so `<name>_d1` and `HANDOVER-<NAME>-x` are hits and a longer word that
+# merely contains the name is not. Binary files are read as text (`-a`), so a name in a .pyc or a log with NUL bytes
+# is found, EXCEPT image files (jpg, jpeg, png, gif, webp): their compressed bytes match three-letter names by chance,
+# and a name drawn in a screenshot is not text anyway (the project manager, 2026-11-13).
+#
+# scripts/customer-names-exceptions (in the checkout being checked) lists `<path>:<git blob sha>` lines for files whose
+# hits are byte coincidences in recorded data that cannot change (base64 vectors a test reads). A file is skipped only
+# while its content hashes to that blob, so any edit to it brings the check back.
+#
+# Three folders stay private and are left out of the public snapshot (D72d): docs/plans, docs/project/workshops and
+# docs/project/workstreams. They still hold names and are not checked; everything else that is tracked is.
+#
+# A hit is reported as `<file>:<line>` only, never the matched text, so the output can go in a log or a PR. git grep's
+# own messages can quote a pattern, so its stderr is never shown: when it fails, the check fails closed with a fixed
+# line.
+#
+#   scripts/customer-names [<checkout>]    exit 0 when clean or skipped; 1 and one `<file>:<line>` per hit; 2 when
+#                                          the check could not run (an empty list, a failed git grep)
+set -euo pipefail
+
+error() {
+    echo "customer-names: $1, so the check did not run" >&2
+    exit 2
+}
+
+list=""
+for candidate in "${UMX_CUSTOMER_NAMES:-}" "$HOME/.config/unimatrix/customer-names"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+        list=$candidate
+        break
+    fi
+done
+if [ -z "$list" ]; then
+    echo "customer-names: skipped, no names list (set UMX_CUSTOMER_NAMES or write ~/.config/unimatrix/customer-names)"
+    exit 0
+fi
+
+patterns=$(mktemp)
+files=$(mktemp)
+trap 'rm -f "$patterns" "$files"' EXIT
+# One extended regex per name, its regex characters escaped, between separators or line ends. Read before any `cd`,
+# so a relative list path means the caller's folder.
+while IFS= read -r name || [ -n "$name" ]; do
+    name=$(printf '%s' "$name" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+    case "$name" in '' | '#'*) continue ;; esac
+    escaped=$(printf '%s' "$name" | sed -E 's/[][\.*^$(){}?+|/]/\\&/g')
+    printf '(^|[^A-Za-z0-9])%s([^A-Za-z0-9]|$)\n' "$escaped" >>"$patterns"
+done <"$list"
+[ -s "$patterns" ] || error "the names list holds no names"
+
+cd "${1:-$(git rev-parse --show-toplevel)}"
+
+skipped=()
+for ext in jpg jpeg png gif webp; do
+    skipped+=(":(exclude,icase,glob)**/*.$ext")
+done
+for folder in docs/plans docs/project/workshops docs/project/workstreams; do
+    skipped+=(":(exclude,literal)$folder")
+done
+
+excepted() {
+    local file="$1" line path sha
+    [ -f scripts/customer-names-exceptions ] || return 1
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in '' | '#'*) continue ;; esac
+        path=${line%:*} sha=${line##*:}
+        if [ "$path" = "$file" ] && [ "$(git hash-object -- "$file")" = "$sha" ]; then
+            return 0
+        fi
+    done <scripts/customer-names-exceptions
+    return 1
+}
+
+# git grep exits 0 with matches and 1 with none; anything else means the scan did not happen.
+code=0
+git grep -l -z -a -i -E -f "$patterns" -- . "${skipped[@]}" >"$files" 2>/dev/null || code=$?
+[ "$code" -le 1 ] || error "git grep failed (exit $code)"
+
+hits=""
+while IFS= read -r -d '' file; do
+    excepted "$file" && continue
+    # Line numbers only: the text after the first `:` is dropped before anything holds it. With pipefail the
+    # pipeline's status is git grep's, and a file listed above must match again.
+    code=0
+    lines=$(git grep -h -n -a -i -E -f "$patterns" -- ":(literal)$file" 2>/dev/null | LC_ALL=C tr -d '\000' |
+        cut -d: -f1) || code=$?
+    [ "$code" = 0 ] || error "git grep failed (exit $code)"
+    for n in $lines; do
+        hits="$hits$file:$n"$'\n'
+    done
+done <"$files"
+
+if [ -n "$hits" ]; then
+    printf '%s' "$hits" >&2
+    echo "customer-names: $(printf '%s' "$hits" | wc -l | tr -d ' ') line(s) in tracked files hold a listed customer name; use a synthetic alias (acme, globex, initech, demo) instead (D72)" >&2
+    exit 1
+fi

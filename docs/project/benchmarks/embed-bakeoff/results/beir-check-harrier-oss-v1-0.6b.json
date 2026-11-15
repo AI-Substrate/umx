@@ -1,0 +1,26 @@
+{
+ "model": "harrier-oss-v1-0.6b",
+ "cos_cat_kitten": 0.8873292803764343,
+ "cos_cat_carburetor": 0.715989887714386,
+ "pass": true,
+ "query_sample": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: how long may soup cool",
+ "doc_sample": "T body",
+ "last_tokens": [
+  "\u0120soup",
+  "\u0120cool",
+  "<|endoftext|>"
+ ],
+ "eos_token": "<|im_end|>",
+ "modules": [
+  "Transformer",
+  "Pooling",
+  "Normalize"
+ ],
+ "pooling": {
+  "embedding_dimension": 1024,
+  "pooling_mode": "lasttoken",
+  "include_prompt": true
+ },
+ "device": "mps:0",
+ "max_seq_length": 2048
+}

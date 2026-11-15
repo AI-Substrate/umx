@@ -1,0 +1,38 @@
+[package]
+name = "umx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "umx"
+
+[[bin]]
+name = "umx-test-driver"
+path = "tests/support/driver.rs"
+required-features = ["test-driver"]
+test = false
+doc = false
+
+[[bin]]
+name = "umx-fake-pij"
+path = "tests/support/fake_pij.rs"
+required-features = ["test-driver"]
+test = false
+doc = false
+
+[dependencies]
+umx-cli.workspace = true
+umx-daemon.workspace = true
+umx-protocol.workspace = true
+umx-compose.workspace = true
+umx-core.workspace = true
+
+[dev-dependencies]
+umx-fakes.workspace = true
+
+[features]
+test-driver = []
+stub = ["umx-daemon/stub", "umx-compose/stub"]
+# The local embedder on an NVIDIA GPU: `cargo build -p umx --release --features cuda` on Linux with the CUDA toolkit
+# (ws004 s19). Off by default; never in the Mac gate (r-gate-features excludes it).
+cuda = ["umx-daemon/cuda"]

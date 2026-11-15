@@ -1,0 +1,16 @@
+# LadybugDB conformance checker for the Cypher subset (workstream 005; cypher-expert design input section 5).
+# Its own workspace, excluded from umx's: umx never links LadybugDB (D18). No umx crate depends on it and
+# `just check` never builds it. Run it with tools/lbug-conformance/run.sh.
+[package]
+name = "lbug-conformance"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Pinned exactly: the engine version is part of the conformance claim. run.sh pins the prebuilt library too.
+lbug = "=0.22.3"
+serde_json = "1"
+
+[workspace]

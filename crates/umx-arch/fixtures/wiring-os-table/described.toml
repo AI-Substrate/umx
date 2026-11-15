@@ -1,0 +1,9 @@
+[[row]]
+mode = "stub"
+port = "service-manager"
+adapter = "fake.service-manager"
+
+[[row]]
+mode = "real"
+port = "service-manager"
+adapter = "launchd.service-manager"

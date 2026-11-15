@@ -1,0 +1,2 @@
+# F34: a `mod Request` nested in another file must not hide the root import that `pub use crate::Request` names.
+expect = ["r-inward"]

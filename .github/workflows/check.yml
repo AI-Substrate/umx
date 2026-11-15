@@ -1,0 +1,51 @@
+name: check
+
+on:
+  # PRs only, plus a manual run (decision D51, 2026-11-11). Disabled in Actions for now; the local gate (D50) is the merge rule.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # umx is built and used on macOS as well as Linux (E-3).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The version, profile and components come from rust-toolchain.toml, the same file local builds use (F35).
+      # It is also made the default, so cargo runs outside the repo (umx-arch's fixture builds in a temp folder)
+      # use the same compiler.
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+          rustc --version
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: just
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      # The stub walkthrough runs umx in a fresh network namespace (unshare --net --map-root-user);
+      # Ubuntu 24.04 blocks unprivileged user namespaces by default. Throwaway runner.
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: just check
+        run: just check
+      # req-52 at full size (4 writers x 250 nodes); ignored in the local default run.
+      - name: Full-size writers test
+        run: cargo test -p umx --locked --test writers -- --ignored

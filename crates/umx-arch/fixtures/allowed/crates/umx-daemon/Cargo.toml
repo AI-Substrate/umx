@@ -1,0 +1,15 @@
+[package]
+name = "umx-daemon"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-compose = { path = "../umx-compose" }
+umx-services = { path = "../umx-services" }
+umx-core = { path = "../umx-core" }
+umx-protocol = { path = "../umx-protocol" }
+
+[features]
+stub = ["umx-compose/stub"]
+cuda = ["umx-compose/cuda"]

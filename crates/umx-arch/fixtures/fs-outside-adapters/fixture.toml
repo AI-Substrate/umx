@@ -1,0 +1,2 @@
+# A services module reads a file itself instead of through a port (`fs::read_to_string` after a `use`).
+expect = ["r-fs-in-adapters"]

@@ -1,0 +1,2 @@
+# A new port trait under umx-core/src/ports with no [[port]] row.
+expect = ["r-fake-per-port"]

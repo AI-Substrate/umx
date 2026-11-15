@@ -1,0 +1,4 @@
+# The gate lists umx-graph/bench but the crate renamed it to benches: the list would silently stop building it.
+expect = ["r-gate-features"]
+whole_workspace = true
+rules = "rules.toml"

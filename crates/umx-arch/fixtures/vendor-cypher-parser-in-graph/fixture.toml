@@ -1,0 +1,2 @@
+# umx-graph takes cypher-parser from crates.io again; only the vendored fork umx-cypher may be used (workstream 005).
+expect = ["r-vendor-crates-owned", "r-inward"]

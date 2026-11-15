@@ -1,0 +1,20 @@
+[package]
+name = "umx-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+umx-compose.workspace = true
+umx-services.workspace = true
+umx-core.workspace = true
+umx-protocol.workspace = true
+serde_json = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+umx-fakes.workspace = true
+
+[features]
+stub = ["umx-compose/stub"]
+cuda = ["umx-compose/cuda"]

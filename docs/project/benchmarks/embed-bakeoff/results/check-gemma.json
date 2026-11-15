@@ -1,0 +1,9 @@
+{
+  "cos_cat_carburetor": 0.616023600101471,
+  "cos_cat_kitten": 0.920036256313324,
+  "dims": 256,
+  "load_avg_1m_at_end": 61.05078125,
+  "load_avg_1m_at_start": 60.79443359375,
+  "model": "embeddinggemma-300m",
+  "pass": true
+}

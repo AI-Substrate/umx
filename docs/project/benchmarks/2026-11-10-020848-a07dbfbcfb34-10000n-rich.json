@@ -1,0 +1,121 @@
+{
+  "cli": {
+    "add_ms": {
+      "max": 1754.011,
+      "n": 50,
+      "p50": 120.443,
+      "p95": 272.619
+    },
+    "find_ms": {
+      "median": 32.34,
+      "min": 27.771,
+      "runs": 5
+    },
+    "list_100_ms": {
+      "median": 19.301,
+      "min": 15.645,
+      "runs": 5
+    },
+    "load_ms": 54.507,
+    "nodes_bytes_after_adds": 9947368,
+    "rss_kb": {
+      "after_adds": 618864,
+      "idle": 2560,
+      "loaded": 78368
+    }
+  },
+  "commit": "a07dbfbcfb34",
+  "conditions": "nice -n 19, release, shared machine; load averages at start 67.68 90.93 107.76",
+  "date": "2026-11-10T02:08:48Z",
+  "fixture": {
+    "bytes": {
+      "edges": 5481770,
+      "graph": 1311,
+      "nodes": 9935628
+    },
+    "edges": 29994,
+    "edges_per_node": 3,
+    "generate_ms": 63.191,
+    "kind": "rich",
+    "nodes": 10000,
+    "seed": 1
+  },
+  "in_process": {
+    "encode_edges_ms": {
+      "median": 8.305,
+      "min": 8.202,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 8.684,
+      "min": 8.393,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 18.792,
+      "min": 17.984,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 800.75,
+      "min": 753.458,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 26.667,
+      "min": 22.042,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 10.639,
+      "min": 10.443,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.267,
+      "min": 0.228,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 46.512,
+      "min": 43.866,
+      "runs": 5
+    },
+    "load_peak_bytes": 54862404,
+    "mem_graph_bytes": 50143812,
+    "mem_per_node_bytes": 5014.0,
+    "path_hops_sum": 1082,
+    "path_us": {
+      "median": 3104.879,
+      "min": 3059.301,
+      "runs": 5
+    },
+    "walk_depth3_reached": 232.4,
+    "walk_depth3_us": {
+      "median": 68.605,
+      "min": 65.855,
+      "runs": 5
+    },
+    "within_1pct_count": 61,
+    "within_1pct_ms": {
+      "median": 0.007,
+      "min": 0.007,
+      "runs": 5
+    },
+    "within_root_count": 9999,
+    "within_root_ms": {
+      "median": 6.906,
+      "min": 6.021,
+      "runs": 5
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

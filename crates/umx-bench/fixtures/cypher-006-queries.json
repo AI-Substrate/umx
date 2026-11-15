@@ -1,0 +1,70 @@
+[
+  {"id": "q1-transitive-blocks", "variant": "kuzu",
+   "cypher": "MATCH (b)-[:blocks*1..10]->(x {id: '{X}'}) RETURN DISTINCT b.id AS id ORDER BY id"},
+
+  {"id": "q1-transitive-blocks", "variant": "anchor-first",
+   "cypher": "MATCH (x {id: '{X}'})<-[:blocks*1..10]-(b) RETURN DISTINCT b.id AS id ORDER BY id"},
+
+  {"id": "q2-chain-hub", "variant": "kuzu",
+   "cypher": "MATCH p = (a)-[:blocks*1..10]->(z) WHERE NOT EXISTS { MATCH ()-[:blocks]->(a) } AND NOT EXISTS { MATCH (z)-[:blocks]->() } UNWIND nodes(p) AS n RETURN n.id AS id, count(*) AS chains ORDER BY chains DESC, id LIMIT 5",
+   "ordered": true},
+  {"id": "q2-chain-hub", "variant": "subset",
+   "cypher": "MATCH (a)-[:blocks*0..10]->(n)-[:blocks*0..10]->(z) WHERE NOT EXISTS { MATCH ()-[:blocks]->(a) } AND NOT EXISTS { MATCH (z)-[:blocks]->() } AND a <> z RETURN n.id AS id, count(*) AS chains ORDER BY chains DESC, id LIMIT 5",
+   "ordered": true},
+  {"id": "q2-chain-hub-pairs", "variant": "subset", "oracle": "q2-chain-hub-pairs",
+   "cypher": "MATCH (a)-[:blocks*0..10]->(n)-[:blocks*0..10]->(z) WHERE NOT EXISTS { MATCH ()-[:blocks]->(a) } AND NOT EXISTS { MATCH (z)-[:blocks]->() } AND a <> z RETURN n.id AS id, count(*) AS chains ORDER BY chains DESC, id LIMIT 5",
+   "ordered": true},
+
+  {"id": "q3-unanswered-questions", "variant": "kuzu",
+   "cypher": "MATCH (q:question) WHERE q.status IN ['open', 'proposed'] AND NOT EXISTS { MATCH (q)<-[:answers]-() } RETURN q.id AS id ORDER BY id"},
+
+  {"id": "q4-conflicting-decisions", "variant": "alias-clash",
+   "cypher": "MATCH (a:decision)-[:conflicts_with]-(b:decision) WHERE a.id < b.id RETURN a.id AS a, b.id AS b ORDER BY a, b"},
+  {"id": "q4-conflicting-decisions", "variant": "kuzu",
+   "cypher": "MATCH (a:decision)-[:conflicts_with]-(b:decision) WHERE a.id < b.id RETURN a.id AS src, b.id AS dst ORDER BY src, dst"},
+
+  {"id": "q5-analyst-only", "variant": "kuzu",
+   "cypher": "MATCH (n) WHERE size(n.evidence_kinds) > 0 AND all(k IN n.evidence_kinds WHERE k = 'analyst') RETURN n.id AS id ORDER BY id"},
+  {"id": "q5-analyst-only", "variant": "subset",
+   "cypher": "MATCH (n) WHERE size(n.evidence_kinds) > 0 AND NOT 'client' IN n.evidence_kinds AND NOT 'transcript' IN n.evidence_kinds RETURN n.id AS id ORDER BY id"},
+
+  {"id": "q6-neighbours-by-rel", "variant": "kuzu",
+   "cypher": "MATCH (x {id: '{A}'})-[r]-(n) RETURN label(r) AS rel, n.id AS id ORDER BY rel, id"},
+  {"id": "q6-neighbours-by-rel", "variant": "neo4j",
+   "cypher": "MATCH (x {id: '{A}'})-[r]-(n) RETURN type(r) AS rel, n.id AS id ORDER BY rel, id"},
+  {"id": "q6-neighbours-by-rel", "variant": "subset", "oracle": "q6-neighbours-blocks-only",
+   "cypher": "MATCH (x {id: '{A}'})-[:blocks]-(n) RETURN DISTINCT 'blocks' AS rel, n.id AS id ORDER BY rel, id"},
+
+  {"id": "q7-edge-property", "variant": "kuzu",
+   "cypher": "MATCH (a)-[r:supports]->(b) WHERE r.confidence > 0.5 RETURN a.id AS src, b.id AS dst, r.confidence AS c ORDER BY src, dst"},
+  {"id": "q7-edge-property", "variant": "int-pct",
+   "cypher": "MATCH (a)-[r:supports]->(b) WHERE r.confidence_pct > 50 RETURN a.id AS src, b.id AS dst, r.confidence_pct AS c ORDER BY src, dst"},
+
+  {"id": "q8-shortest-path", "variant": "kuzu",
+   "cypher": "MATCH p = (a {id: '{A}'})-[* SHORTEST 1..10]-(b {id: '{B}'}) RETURN length(p) AS hops"},
+  {"id": "q8-shortest-path", "variant": "neo4j",
+   "cypher": "MATCH p = shortestPath((a {id: '{A}'})-[*..10]-(b {id: '{B}'})) RETURN length(p) AS hops"},
+
+  {"id": "q9-hubs", "variant": "kuzu",
+   "cypher": "MATCH (n)-[r]-() RETURN n.id AS id, count(r) AS degree ORDER BY degree DESC, id LIMIT 10", "ordered": true},
+  {"id": "q9-hubs", "variant": "subset",
+   "cypher": "MATCH (n)--(m) RETURN n.id AS id, count(*) AS degree ORDER BY degree DESC, id LIMIT 10", "ordered": true},
+
+  {"id": "q9-hubs", "variant": "subset-vs-distinct", "oracle": "q9-hubs-distinct-neighbours",
+   "cypher": "MATCH (n)--(m) RETURN n.id AS id, count(*) AS degree ORDER BY degree DESC, id LIMIT 10", "ordered": true},
+
+  {"id": "q10-exactly-two-hops", "variant": "kuzu",
+   "cypher": "MATCH (x {id: '{X2}'})-[:depends_on*2..2]->(t) RETURN DISTINCT t.id AS id ORDER BY id"},
+
+  {"id": "e1-create", "variant": "unsupported", "cypher": "CREATE (n:question {id: 'Q-x'}) RETURN n"},
+  {"id": "e2-merge", "variant": "unsupported", "cypher": "MERGE (n:question {id: 'Q-x'}) RETURN n"},
+  {"id": "e3-set", "variant": "unsupported", "cypher": "MATCH (n {id: '{A}'}) SET n.status = 'x' RETURN n.id"},
+  {"id": "e4-union", "variant": "unsupported", "cypher": "MATCH (n:decision) RETURN n.id AS id UNION MATCH (n:question) RETURN n.id AS id"},
+  {"id": "e5-param", "variant": "unsupported", "cypher": "MATCH (n {id: $id}) RETURN n.id"},
+  {"id": "e6-call", "variant": "unsupported", "cypher": "CALL show_tables() RETURN *"},
+  {"id": "e7-multilabel", "variant": "unsupported", "cypher": "MATCH (n:decision:question) RETURN n.id"},
+  {"id": "e8-hyphen-reltype", "variant": "unsupported", "cypher": "MATCH (a)-[:`depends-on`]->(b) RETURN a.id"},
+  {"id": "e9-unknown-reltype", "variant": "unsupported", "cypher": "MATCH (a)-[:nope]->(b) RETURN a.id"},
+  {"id": "e10-unknown-property", "variant": "unsupported", "cypher": "MATCH (a:decision) RETURN a.nope LIMIT 1"},
+  {"id": "e11-return-relvar", "variant": "unsupported", "cypher": "MATCH (a)-[r:supports]->(b) RETURN r LIMIT 1"}
+]

@@ -1,0 +1,12 @@
+{
+  "umx": 2,
+  "id": "01RG0000000000000000000001",
+  "alias": "rsv",
+  "title": "Resolve fixture (ws006 S0, req-15)",
+  "created": "2026-11-11T00:00:00Z",
+  "ontology": {
+    "types": [],
+    "statuses": [],
+    "relations": []
+  }
+}

@@ -1,0 +1,2 @@
+# R258 B1: a std glob brings fs into scope, then fs is renamed through self and called by the new name.
+expect = ["r-fs-in-adapters"]

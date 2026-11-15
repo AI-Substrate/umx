@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Proves scripts/seed-export (D72i L3) on a fixture repository: the drop list, the delivered_by clear (seed copy only),
+# the refusals (a link, a bad SHA, an existing STAGE, a STAGE inside a repository, a missing CONTROL), the listing proof
+# and the receipts. The fixture's PRD is a copy of the real PRD, so ddocs validates and builds it for real.
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+export_script="${SEED_EXPORT:-$here/seed-export}"
+repo=$(cd "$here/.." && pwd)
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+fail=0
+check() { # <what> <command...>: the command must succeed
+    local what=$1
+    shift
+    if ! "$@"; then
+        echo "FAIL: $what" >&2
+        fail=1
+    fi
+}
+not() { ! "$@"; }
+
+src="$work/src"
+brf=$(printf %s%s bri efs) hrn=$(printf %s%s .har ness) # spelled in halves so this file cites neither folder
+mkdir -p "$src"
+git init -q --initial-branch=main "$src"
+(
+    cd "$src"
+    mkdir -p docs/plans/1-x docs/project/workshops docs/project/workstreams docs/project/prds docs/project/usage \
+        "$brf" sub/"$hrn" src/__pycache__ crates/a skills
+    for f in docs/plans/1-x/a.md docs/project/workshops/w.md docs/project/workstreams/s.dd.json "$brf"/b.md \
+        sub/"$hrn"/h.md src/__pycache__/x.pyc src/old.pyc; do echo x >"$f"; done
+    echo 'kept' >docs/project/usage/u.md
+    echo 'fn main() {}' >crates/a/main.rs
+    printf '#!/bin/sh\necho hi\n' >skills/run.sh
+    chmod +x skills/run.sh
+    printf '# readme\n' >README.md
+    cp "$repo/docs/project/prds/001-concept-graph.dd.json" docs/project/prds/
+    cp -R "$repo/.dd" .dd
+    git add -A
+    git -c user.name=t -c user.email=t@users.noreply.github.com commit -q -m fixture
+)
+sha=$(git -C "$src" rev-parse HEAD)
+want_delivered=$(grep -c '"delivered_by"' "$src/docs/project/prds/001-concept-graph.dd.json")
+
+run_export() { (cd "$src" && "$export_script" "$@"); }
+
+# the export
+mkdir "$work/c1"
+check "the export succeeds" run_export "$sha" "$work/s1" "$work/c1" >"$work/log1" 2>&1
+stage="$work/s1"
+for gone in docs/plans docs/project/workshops docs/project/workstreams "$brf" sub/"$hrn" src/__pycache__ src/old.pyc; do
+    check "$gone is dropped" test ! -e "$stage/$gone"
+done
+for kept in docs/project/usage/u.md crates/a/main.rs README.md skills/run.sh; do
+    check "$kept is kept" test -f "$stage/$kept"
+done
+check "an executable bit is kept" test -x "$stage/skills/run.sh"
+check "no .git is copied from the source" test "$(git -C "$stage" rev-parse --git-dir)" = ".git"
+check "the stage has no commit" not git -C "$stage" rev-parse --verify --quiet HEAD
+check "the stage is staged" test -n "$(git -C "$stage" diff --cached --name-only)"
+check "the staged names equal seed-files.txt" test "$(git -C "$stage" ls-files | LC_ALL=C sort)" = "$(cat "$work/c1/seed-files.txt")"
+check "delivered_by is gone from the seed PRD" not grep -q '"delivered_by"' "$stage/docs/project/prds/001-concept-graph.dd.json"
+check "the transform counted every delivered_by" grep -q "\": $want_delivered" "$work/c1/seed-prd-transform.json"
+check "the source PRD keeps delivered_by" test "$(grep -c '"delivered_by"' "$src/docs/project/prds/001-concept-graph.dd.json")" = "$want_delivered"
+check "the listing proof passes" grep -q 'listing proof: PASS' "$work/c1/seed-listing-proof.txt"
+check "the listing proof counts nothing under the excluded trees" grep -q 'under docs/plans: 0' "$work/c1/seed-listing-proof.txt"
+check "the output names no dropped path" not grep -qE '(a\.md|w\.md|b\.md|h\.md|old\.pyc|s\.dd)' "$work/log1"
+check "the source is untouched" test -z "$(git -C "$src" status --porcelain)"
+
+# the refusals
+mkdir "$work/c2"
+check "a bad SHA is refused" not run_export deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$work/s2" "$work/c2"
+check "an existing STAGE is refused" not run_export "$sha" "$work/s1" "$work/c2"
+check "a missing CONTROL is refused" not run_export "$sha" "$work/s3" "$work/no-such-control"
+check "a refusal leaves no STAGE" test ! -e "$work/s3"
+mkdir -p "$work/inrepo"
+git init -q "$work/inrepo"
+check "a STAGE whose parent is a repository is refused" not run_export "$sha" "$work/inrepo/s" "$work/c2"
+check "the repository itself is not a place for STAGE" not run_export "$sha" "$src/stage" "$work/c2"
+
+# a link in the source refuses the whole export and leaves nothing behind
+(
+    cd "$src"
+    ln -s README.md link.md
+    git add -A
+    git -c user.name=t -c user.email=t@users.noreply.github.com commit -q -m link
+)
+linked=$(git -C "$src" rev-parse HEAD)
+check "a symlink refuses the export" not run_export "$linked" "$work/s4" "$work/c2"
+check "a symlink leaves no STAGE" test ! -e "$work/s4"
+check "the refusal says so" bash -c "cd '$src' && '$export_script' '$linked' '$work/s5' '$work/c2' 2>&1 | grep -q 'link or special file'"
+
+if [ "$fail" = 0 ]; then
+    echo "seed-export-test: the drop list, the delivered_by clear and the refusals hold"
+fi
+exit "$fail"

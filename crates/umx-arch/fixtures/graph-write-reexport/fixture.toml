@@ -1,0 +1,3 @@
+# umx-graph, which umx-services ships with, re-exports the unchecked graph writes under another name (F144);
+# the services then never spell setup.
+expect = ["r-checked-graph-writes"]

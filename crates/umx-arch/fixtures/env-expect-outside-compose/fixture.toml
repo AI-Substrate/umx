@@ -1,0 +1,2 @@
+# umx-daemon carries the lint suppression that only umx-compose's loader may.
+expect = ["r-env-in-compose"]

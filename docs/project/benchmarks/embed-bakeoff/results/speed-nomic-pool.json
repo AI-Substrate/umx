@@ -1,0 +1,19 @@
+{
+  "corpus_mean_tokens": 300.08870967741933,
+  "corpus_texts": 124,
+  "docs_per_s": 26.329150086907134,
+  "first_load_s": 0.319277208,
+  "load_avg_1m_at_end": 30.05078125,
+  "load_avg_1m_at_start": 21.642578125,
+  "mode": "pool",
+  "model": "nomic-embed-text-v1.5",
+  "peak_rss_mb": 3128.109375,
+  "query_ms": {
+    "n": 80,
+    "p50": 10.949792,
+    "p95": 12.279
+  },
+  "sessions": 4,
+  "threads_per_session": 1,
+  "warm_load_s_per_session": 0.22393880225
+}

@@ -1,0 +1,80 @@
+{"id": "q-001", "text": "keeping ejected suspect products in a secure container so nobody sneaks them onto the conveyor again", "kind": "paraphrase", "relevant": ["reg-010"]}
+{"id": "q-002", "text": "giving the seed-based ingredient its own separate production equipment because residue kept showing up", "kind": "paraphrase", "relevant": ["reg-018"]}
+{"id": "q-003", "text": "digitising handwritten factory forms on a regular cycle and getting rid of the filing cabinets", "kind": "paraphrase", "relevant": ["reg-024"]}
+{"id": "q-004", "text": "Saturday and Sunday cover being too thin to spot when we must tell the authorities in time", "kind": "paraphrase", "relevant": ["reg-043"]}
+{"id": "q-005", "text": "dangerous bacteria thriving inside a waste gully", "kind": "paraphrase", "relevant": ["reg-050", "reg-048"]}
+{"id": "q-006", "text": "how frequently do workers redo their cleanliness course", "kind": "paraphrase", "relevant": ["reg-054"]}
+{"id": "q-007", "text": "pigeons getting into the goods yard while lorries unload", "kind": "paraphrase", "relevant": ["reg-058"]}
+{"id": "q-008", "text": "digging beneath the surface of serious nonconformities by questioning several layers deep", "kind": "paraphrase", "relevant": ["reg-062"]}
+{"id": "q-009", "text": "anonymous hotline for employees worried about hygiene wrongdoing", "kind": "paraphrase", "relevant": ["reg-072"]}
+{"id": "q-010", "text": "lighter paperwork for a pastry lineup sold just in the cold months", "kind": "paraphrase", "relevant": ["reg-030"]}
+{"id": "q-011", "text": "fortnightly deployment slot early in the business calendar", "kind": "paraphrase", "relevant": ["dlv-003"]}
+{"id": "q-012", "text": "isolating intermittently broken checks so they stop gating code from landing", "kind": "paraphrase", "relevant": ["dlv-010"]}
+{"id": "q-013", "text": "restricting uploads of compiled artefacts to the trunk", "kind": "paraphrase", "relevant": ["dlv-014"]}
+{"id": "q-014", "text": "pager duty divided geographically so people sleep undisturbed", "kind": "paraphrase", "relevant": ["dlv-028"]}
+{"id": "q-015", "text": "schema change freezing writes to the biggest dataset", "kind": "paraphrase", "relevant": ["dlv-033"]}
+{"id": "q-016", "text": "unmaintained calendar package we depend on", "kind": "paraphrase", "relevant": ["dlv-037"]}
+{"id": "q-017", "text": "endless pointless pages so genuine trouble gets missed", "kind": "paraphrase", "relevant": ["dlv-046"]}
+{"id": "q-018", "text": "integrating everyone's code into one mainline continually", "kind": "paraphrase", "relevant": ["dlv-055"]}
+{"id": "q-019", "text": "stopping passwords and api keys before they enter version control", "kind": "paraphrase", "relevant": ["dlv-059", "dlv-058"]}
+{"id": "q-020", "text": "we have not proven we can bring back uploaded images after a disaster", "kind": "paraphrase", "relevant": ["dlv-069"]}
+{"id": "q-021", "text": "maximum attendee numbers when we gather face to face", "kind": "paraphrase", "relevant": ["dsn-004"]}
+{"id": "q-022", "text": "begin with rough scrappy mockups before glossy artwork", "kind": "paraphrase", "relevant": ["dsn-014"]}
+{"id": "q-023", "text": "quiet individual reflection period ahead of the group conversation about a design", "kind": "paraphrase", "relevant": ["dsn-018"]}
+{"id": "q-024", "text": "blind testers absent from our evaluations", "kind": "paraphrase", "relevant": ["dsn-023", "dsn-024"]}
+{"id": "q-025", "text": "how often should video call attendees get a rest", "kind": "paraphrase", "relevant": ["dsn-035"]}
+{"id": "q-026", "text": "grouping research stickies without speech initially", "kind": "paraphrase", "relevant": ["dsn-039"]}
+{"id": "q-027", "text": "making sense of interview findings promptly while recollection is fresh", "kind": "paraphrase", "relevant": ["dsn-049"]}
+{"id": "q-028", "text": "bandwagon effect when choosing between options with sticker counts", "kind": "paraphrase", "relevant": ["dsn-058"]}
+{"id": "q-029", "text": "icebreakers that annoy executives", "kind": "paraphrase", "relevant": ["dsn-073"]}
+{"id": "q-030", "text": "compensating shop-floor employees who attend our co-creation sessions", "kind": "paraphrase", "relevant": ["dsn-075"]}
+{"id": "q-031", "text": "haulage client hoping to grab every bill in one go", "kind": "paraphrase", "relevant": ["cal-004"]}
+{"id": "q-032", "text": "the milk cooperative would like smarter travel sequencing for its mechanics", "kind": "paraphrase", "relevant": ["cal-010"]}
+{"id": "q-033", "text": "physio group's bills losing a field so the health fund refuses them", "kind": "paraphrase", "relevant": ["cal-016"]}
+{"id": "q-034", "text": "glazier wants saved estimate presets", "kind": "paraphrase", "relevant": ["cal-019"]}
+{"id": "q-035", "text": "elevator firm's workers keep getting kicked off the phone application", "kind": "paraphrase", "relevant": ["cal-027"]}
+{"id": "q-036", "text": "electrician firm overbilled because leavers still had licences", "kind": "paraphrase", "relevant": ["cal-034"]}
+{"id": "q-037", "text": "exterminator's inconsistent pesticide naming ruins analytics", "kind": "paraphrase", "relevant": ["cal-039"]}
+{"id": "q-038", "text": "several big contract end dates bunching together", "kind": "paraphrase", "relevant": ["cal-049"]}
+{"id": "q-039", "text": "tiny accounts may leave if we charge extra", "kind": "paraphrase", "relevant": ["cal-063"]}
+{"id": "q-040", "text": "workers uneasy about GPS surveillance of their whereabouts", "kind": "paraphrase", "relevant": ["cal-073"]}
+{"id": "q-041", "text": "listeria drain swab", "kind": "keyword", "relevant": ["reg-050", "reg-048"]}
+{"id": "q-042", "text": "mock recall quarterly", "kind": "keyword", "relevant": ["reg-040"]}
+{"id": "q-043", "text": "label allergen review", "kind": "keyword", "relevant": ["reg-020"]}
+{"id": "q-044", "text": "supplier questionnaire score", "kind": "keyword", "relevant": ["reg-037", "reg-033"]}
+{"id": "q-045", "text": "flaky tests quarantine", "kind": "keyword", "relevant": ["dlv-010", "dlv-009"]}
+{"id": "q-046", "text": "connection pool outage", "kind": "keyword", "relevant": ["dlv-021"]}
+{"id": "q-047", "text": "billing rollout percentage flag", "kind": "keyword", "relevant": ["dlv-019"]}
+{"id": "q-048", "text": "api sunset deprecation", "kind": "keyword", "relevant": ["dlv-063", "dlv-064"]}
+{"id": "q-049", "text": "crazy eights", "kind": "keyword", "relevant": ["dsn-056"]}
+{"id": "q-050", "text": "journey map emotions", "kind": "keyword", "relevant": ["dsn-011", "dsn-009"]}
+{"id": "q-051", "text": "accessible dropdown toggle", "kind": "keyword", "relevant": ["dsn-022"]}
+{"id": "q-052", "text": "Quenby renewal", "kind": "keyword", "relevant": ["cal-023", "cal-024"]}
+{"id": "q-053", "text": "seat count dispute", "kind": "keyword", "relevant": ["cal-034"]}
+{"id": "q-054", "text": "offline mode requests", "kind": "keyword", "relevant": ["cal-043", "cal-022"]}
+{"id": "q-055", "text": "health score tickets", "kind": "keyword", "relevant": ["cal-057", "cal-056"]}
+{"id": "q-056", "text": "release of old logs demanded by the inspector", "kind": "near_miss", "relevant": ["reg-026", "reg-027"]}
+{"id": "q-057", "text": "auditing a council website for blind and motor-impaired visitors", "kind": "near_miss", "relevant": ["dsn-020"]}
+{"id": "q-058", "text": "escalation when a big customer goes over our heads to an executive", "kind": "near_miss", "relevant": ["cal-006", "cal-058"]}
+{"id": "q-059", "text": "red flags on a new ingredient vendor", "kind": "near_miss", "relevant": ["reg-034"]}
+{"id": "q-060", "text": "migration of a dairy cooperative's old spreadsheets into the product", "kind": "near_miss", "relevant": ["cal-009"]}
+{"id": "q-061", "text": "prototype that tested field-level diffing for phone data transfer", "kind": "near_miss", "relevant": ["dlv-040"]}
+{"id": "q-062", "text": "exemption for an unusual open source licence", "kind": "near_miss", "relevant": ["dlv-035"]}
+{"id": "q-063", "text": "retention of accounts who are logging in less and may churn", "kind": "near_miss", "relevant": ["cal-017"]}
+{"id": "q-064", "text": "shortening how long a feedback loop takes from push to green build", "kind": "near_miss", "relevant": ["dlv-011", "dlv-008"]}
+{"id": "q-065", "text": "controls on a booking form that keyboard users cannot reach", "kind": "near_miss", "relevant": ["dsn-022"]}
+{"id": "q-066", "text": "chilling time allowance for the large family soup tubs", "kind": "tail", "relevant": ["reg-005"]}
+{"id": "q-067", "text": "who signs off on documents held back for legal privilege", "kind": "tail", "relevant": ["reg-028"]}
+{"id": "q-068", "text": "retailer that insists on being rung for withdrawals", "kind": "tail", "relevant": ["reg-046"]}
+{"id": "q-069", "text": "who supplies the mac build machines for ci", "kind": "tail", "relevant": ["dlv-012"]}
+{"id": "q-070", "text": "time window for moving the biggest tenants to shards", "kind": "tail", "relevant": ["dlv-030"]}
+{"id": "q-071", "text": "month when we refuse to switch off old api endpoints", "kind": "tail", "relevant": ["dlv-063"]}
+{"id": "q-072", "text": "what tells everyone it's time for a compulsory pause in discovery days", "kind": "tail", "relevant": ["dsn-003"]}
+{"id": "q-073", "text": "banned word for moderators in usability scripts", "kind": "tail", "relevant": ["dsn-045"]}
+{"id": "q-074", "text": "how many field seats is Tolland adding up north", "kind": "tail", "relevant": ["cal-032"]}
+{"id": "q-075", "text": "whose inbox needs including whenever pricing comes up with the joinery customer", "kind": "tail", "relevant": ["cal-053"]}
+{"id": "q-076", "text": "Sesame dedicated line", "kind": "title", "relevant": ["reg-018"]}
+{"id": "q-077", "text": "Shelf life extension soups", "kind": "title", "relevant": ["reg-068"]}
+{"id": "q-078", "text": "Blameless postmortems", "kind": "title", "relevant": ["dlv-023"]}
+{"id": "q-079", "text": "Proto-personas", "kind": "title", "relevant": ["dsn-007"]}
+{"id": "q-080", "text": "Executive sponsor scheme", "kind": "title", "relevant": ["cal-058"]}

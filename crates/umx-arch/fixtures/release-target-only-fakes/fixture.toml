@@ -1,0 +1,2 @@
+# On Windows only, umx-daemon turns on compose stub: only `cargo tree --target all` sees it from another host.
+expect = ["r-no-fakes-in-release"]

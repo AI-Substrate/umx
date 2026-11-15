@@ -1,0 +1,3 @@
+# The fake names clause gf_c2 in a comment, a string and an empty same-named test, but never calls it.
+expect = ["r-fake-per-port"]
+active_ports = ["graph-files"]

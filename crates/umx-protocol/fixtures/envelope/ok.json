@@ -1,0 +1,19 @@
+{
+  "umx": 81,
+  "command": "daemon stop",
+  "status": "ok",
+  "data": {
+    "pid": 42,
+    "stopped": true
+  },
+  "warnings": [],
+  "errors": [],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

@@ -1,0 +1,3 @@
+# R270-2: one name, two std modules in two files (lib.rs s = std::os::unix, store.rs s = std); store.rs's chain
+# s::os as o, o::unix as u reaches fs through its own s.
+expect = ["r-fs-in-adapters", "r-no-std-reexport"]

@@ -1,0 +1,17 @@
+[package]
+name = "umx-query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+umx-core.workspace = true
+umx-graph.workspace = true
+umx-cypher.workspace = true
+
+[dev-dependencies]
+# Reads the design fixture's queries.json in tests only.
+serde_json = { workspace = true, features = ["std"] }
+# The query codes' catalogue rows (ws005 s04): the code tests render each refusal as the daemon does.
+umx-protocol.workspace = true

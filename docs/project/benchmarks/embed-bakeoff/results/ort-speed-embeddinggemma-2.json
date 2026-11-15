@@ -1,0 +1,22 @@
+{
+  "batch": 16,
+  "corpus_mean_tokens": 299.92,
+  "corpus_texts": 125,
+  "docs_per_s": 10.727011589245862,
+  "first_load_s": 2.1514599580000002,
+  "load_avg_1m_at_end": 80.01708984375,
+  "load_avg_1m_at_start": 80.67041015625,
+  "max_length": 2048,
+  "model": "embeddinggemma-2",
+  "peak_rss_mb": 3106.21875,
+  "query_ms": {
+    "n": 80,
+    "p50": 17.109083000000002,
+    "p95": 32.994041
+  },
+  "rss_after_load_mb": 1008.390625,
+  "rss_after_run_mb": 3104.078125,
+  "sessions": 1,
+  "threads": 4,
+  "warm_load_s": 0.569886167
+}

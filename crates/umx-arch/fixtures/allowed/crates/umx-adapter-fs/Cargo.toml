@@ -1,0 +1,12 @@
+[package]
+name = "umx-adapter-fs"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-core = { path = "../umx-core" }
+
+[dev-dependencies]
+umx-contracts = { path = "../umx-contracts" }
+umx-fakes = { path = "../umx-fakes" }

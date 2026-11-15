@@ -1,0 +1,24 @@
+{
+  "umx": 81,
+  "command": "graph list",
+  "status": "error",
+  "data": {
+    "rows": []
+  },
+  "warnings": [],
+  "errors": [
+    {
+      "code": "daemon_not_running",
+      "message": "The umx daemon is not running.",
+      "next": "umx daemon start"
+    }
+  ],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

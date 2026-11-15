@@ -1,0 +1,2 @@
+# umx-core uses an external crate outside its allow-list.
+expect = ["r-inward"]

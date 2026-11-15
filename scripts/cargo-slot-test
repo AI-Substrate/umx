@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+# Proves scripts/cargo-slot's guarantees with a fake cargo, in a private slot folder (never the machine's real
+# slots): two slots at most; TERM or INT to a wrapper stops its build and only then frees the slot, so a waiting
+# run enters (exit 143 or 130); cargo's own exit code passes through; a slot whose wrapper and build are gone is
+# reclaimed; no inherited RUSTC_WRAPPER without sccache; small target dirs (no incremental, line tables only);
+# below the free-space floor it refuses with exit 75 before taking a slot, except on CI where the floor is 0;
+# waiters go in queue order (F87): first come first served, gate before normal and urgent before gate, a dead
+# ticket is reclaimed, a ticket is removed on TERM and INT, a waiter prints its place once, seq numbers are never
+# handed out twice, and a queue folder that is not private, or a ticket that cannot be taken, refuses the run (77).
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+work="$(mktemp -d)"
+cleanup() {
+  jobs -p | xargs -r kill 2>/dev/null || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+mkdir "$work/bin" "$work/slots"
+cat > "$work/bin/cargo" <<'FAKE'
+#!/usr/bin/env bash
+case "$1" in
+  sleep) exec sleep 300 ;;
+  env) echo "wrapper=${RUSTC_WRAPPER:-none} incremental=${CARGO_INCREMENTAL:-} dev=${CARGO_PROFILE_DEV_DEBUG:-} test=${CARGO_PROFILE_TEST_DEBUG:-}" ;;
+  ran) touch "$(dirname "$0")/../ran" ;;
+  exit7) exit 7 ;;
+esac
+FAKE
+chmod +x "$work/bin/cargo"
+# An rm that, when UMX_TEST_RM_FAILS is set and it is asked to remove a slot folder, takes out the owner file and
+# then fails, as an rm cut off part way would.
+cat > "$work/bin/rm" <<'FAKE'
+#!/usr/bin/env bash
+if [ -n "${UMX_TEST_RM_FAILS:-}" ] && [ "$1" = -rf ] && [ -f "${2:-}/owner" ]; then
+  /bin/rm -f "$2/owner"
+  exit 1
+fi
+exec /bin/rm "$@"
+FAKE
+chmod +x "$work/bin/rm"
+export UMX_CARGO_SLOT_DIR="$work/slots" UMX_CARGO_QUEUE_DIR="$work/queue" UMX_CARGO_SLOT_POLL=0.2
+# A fake free-space figure, so the test does not depend on this machine's disk; and no CI floor unless a case
+# asks for it.
+export UMX_CARGO_SLOT_FREE_GB=1000
+unset CI UMX_CARGO_MIN_FREE_GB UMX_CARGO_PRIORITY
+# The defaults are checked below, so a shell's own overrides of these must not leak in.
+unset CARGO_INCREMENTAL CARGO_PROFILE_DEV_DEBUG CARGO_PROFILE_TEST_DEBUG
+# No sccache on this PATH.
+export PATH="$work/bin:/usr/bin:/bin"
+
+fail() { echo "cargo-slot-test: FAIL: $*" >&2; exit 1; }
+# Starts `[VAR=value ...] <command...>` in the background and sets $launched to its pid. Job control is on for the
+# launch only, so the run gets its own process group and INT like a foreground run does (a background job of a
+# non-interactive shell starts with INT ignored, and bash cannot trap a signal ignored on entry). Left on for the
+# whole script, every command substitution and pipeline runs as a job too, and bash 3.2 now and then prints
+# "child setpgid ... Operation not permitted" (F68).
+launch() {
+  set -m
+  env "$@" 2>/dev/null & launched=$!
+  set +m
+}
+# As launch, with the run's stderr kept in <file>.
+launch_to() { # <file> [VAR=value ...] <command...>
+  local err="$1"; shift
+  set -m
+  env "$@" 2>"$err" & launched=$!
+  set +m
+}
+slot_of() { grep -l "^$1 " "$work"/slots/*/owner 2>/dev/null | head -1 | xargs -r dirname; }
+wait_for() { for _ in $(seq 1 50); do eval "$1" && return 0; sleep 0.1; done; fail "$2"; }
+ticket_of() { for t in "$work"/queue/[0-2]-*-"$1"; do [ -e "$t" ] && echo "$t"; done; }
+tickets() { for t in "$work"/queue/[0-2]-*; do [ -e "$t" ] && echo "${t##*/}"; done; }
+no_tickets() { [ -z "$(tickets)" ] || fail "tickets left after $1: $(tickets | tr '\n' ' ')"; }
+
+launch "$here/cargo-slot" sleep; a=$launched
+launch "$here/cargo-slot" sleep; b=$launched
+wait_for '[ -n "$(slot_of $a)" ] && [ -n "$(slot_of $b)" ] && [ -f "$(slot_of $a)/child" ]' "two runs did not take the two slots"
+launch "$here/cargo-slot" sleep; c=$launched
+sleep 1
+[ -z "$(slot_of $c)" ] || fail "a third run took a slot while two builds ran"
+
+# TERM (exit 143) and INT (exit 130) each stop the build, then free the slot so a waiting run enters.
+stop() { # <wrapper pid> <signal> <expected exit>
+  local build
+  build="$(cat "$(slot_of "$1")/child")"
+  kill -"$2" "$1"
+  wait_for "! kill -0 $1 2>/dev/null" "$2 did not end the wrapper (deferred while its build runs?)"
+  set +e; wait "$1"; local status=$?; set -e
+  [ "$status" -eq "$3" ] || fail "$2: wrapper exited $status, not $3"
+  kill -0 "$build" 2>/dev/null && fail "$2 to the wrapper left its build running"
+  return 0
+}
+stop "$a" TERM 143
+wait_for '[ -n "$(slot_of $c)" ]' "the waiting third run never entered after TERM"
+launch "$here/cargo-slot" sleep; d=$launched
+sleep 1
+[ -z "$(slot_of $d)" ] || fail "a fourth run took a slot while two builds ran"
+stop "$b" INT 130
+wait_for '[ -n "$(slot_of $d)" ]' "the waiting run never entered after INT"
+b=$d
+
+# A normal exit code passes through.
+kill -TERM "$b" "$c"; wait "$b" "$c" 2>/dev/null || true
+set +e; "$here/cargo-slot" exit7 2>/dev/null; status=$?; set -e
+[ "$status" -eq 7 ] || fail "cargo's exit 7 came back as $status"
+# A stale slot (wrapper and build gone) is reclaimed.
+[ -z "$(ls "$work/slots")" ] || fail "slots left behind: $(ls "$work/slots")"
+mkdir "$work/slots/umx-cargo-slot-1" "$work/slots/umx-cargo-slot-2"
+echo "999999 0 /nowhere" > "$work/slots/umx-cargo-slot-1/owner"
+echo "999999 0 /nowhere" > "$work/slots/umx-cargo-slot-2/owner"
+out="$(RUSTC_WRAPPER=/inherited/sccache "$here/cargo-slot" env 2>/dev/null)" || fail "a run with stale slots failed"
+[ "$out" = "wrapper=none incremental=0 dev=line-tables-only test=line-tables-only" ] ||
+  fail "unexpected build environment: $out"
+# A caller's own setting is kept.
+out="$(CARGO_INCREMENTAL=1 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=full "$here/cargo-slot" env 2>/dev/null)"
+[ "$out" = "wrapper=none incremental=1 dev=0 test=full" ] || fail "an override was not kept: $out"
+
+# A signal between taking a slot and starting the build frees the slot and never starts cargo (F53: CI hit this
+# window). UMX_CARGO_SLOT_PAUSE holds the run there.
+for case in "TERM 143" "INT 130"; do
+  read -r signal want <<<"$case"
+  rm -f "$work/ran"
+  launch UMX_CARGO_SLOT_PAUSE=30 "$here/cargo-slot" ran; e=$launched
+  wait_for '[ -n "$(slot_of $e)" ]' "a paused run did not take a slot"
+  kill -"$signal" "$e"
+  wait_for "! kill -0 $e 2>/dev/null" "$signal before the build did not end the wrapper"
+  set +e; wait "$e"; status=$?; set -e
+  [ "$status" -eq "$want" ] || fail "$signal before the build: wrapper exited $status, not $want"
+  [ -z "$(ls "$work/slots")" ] || fail "$signal before the build left a slot: $(ls "$work/slots")"
+  [ ! -e "$work/ran" ] || fail "$signal before the build still ran cargo"
+done
+
+# F60: two waiters find the same slot stale. B reclaims it and takes it; A, held between its stale check and its
+# reclaim, must leave B's slot alone and take the other one. B is urgent, so it goes ahead of A in the queue while A
+# is still in its slot pass, which is the only way two waiters now try for slots at once.
+stale_slots() { # plants both slots as left by a dead wrapper
+  rm -rf "$work/slots"/*
+  for n in 1 2; do
+    mkdir "$work/slots/umx-cargo-slot-$n"
+    echo "999999 0 /nowhere" > "$work/slots/umx-cargo-slot-$n/owner"
+  done
+}
+stale_slots
+launch UMX_CARGO_SLOT_RECLAIM_PAUSE=2 "$here/cargo-slot" sleep; a=$launched
+sleep 0.5
+launch UMX_CARGO_PRIORITY=urgent "$here/cargo-slot" sleep; b=$launched
+wait_for '[ -n "$(slot_of $b)" ]' "B did not reclaim and take a slot"
+first="$(slot_of $b)"
+wait_for '[ -n "$(slot_of $a)" ]' "A did not take the other slot"
+[ "$(slot_of $b)" = "$first" ] || fail "A's late reclaim removed B's live slot ($first)"
+[ "$(slot_of $a)" != "$first" ] || fail "A took B's slot"
+kill -TERM "$a" "$b"; wait "$a" "$b" 2>/dev/null || true
+[ -z "$(ls "$work/slots")" ] || fail "slots left after the reclaim race: $(ls "$work/slots")"
+
+# A reclaimer killed (SIGKILL) while holding a stale slot's marker (beside the folder, F63) does not block later
+# reclaims, and the marker is cleared.
+stale_slots
+for n in 1 2; do ln -s 999999 "$work/slots/umx-cargo-slot-$n.reclaim"; done
+rm -f "$work/ran"
+launch "$here/cargo-slot" ran; e=$launched
+wait_for "! kill -0 $e 2>/dev/null" "a run behind dead reclaim markers never got a slot"
+wait "$e" || fail "a run behind dead reclaim markers failed"
+[ -e "$work/ran" ] || fail "dead reclaim markers kept cargo from running"
+[ -z "$(ls "$work/slots")" ] || fail "dead reclaim markers left slots: $(ls "$work/slots")"
+
+# A slot is renamed away before it is removed, so a removal that fails part way leaves nothing at the slot path
+# (F63). The failed removal's leftover is under a private name.
+rm -rf "$work/slots"/*
+UMX_TEST_RM_FAILS=1 "$here/cargo-slot" ran 2>/dev/null || fail "a run whose slot removal failed did not exit 0"
+for n in 1 2; do
+  [ ! -e "$work/slots/umx-cargo-slot-$n" ] || fail "a failed removal left umx-cargo-slot-$n at the slot path"
+done
+rm -rf "$work/slots"/*
+
+# A wrapper killed between its mkdir and writing its owner leaves an ownerless folder (F63). Once older than the
+# ownerless age it is reclaimed; a young one (a new owner about to write its owner file) is left alone.
+ownerless() { # <touch -t stamp or "now">
+  rm -rf "$work/slots"/*
+  for n in 1 2; do
+    mkdir "$work/slots/umx-cargo-slot-$n"
+    [ "$1" = now ] || touch -t "$1" "$work/slots/umx-cargo-slot-$n"
+  done
+}
+ownerless 202001010000
+rm -f "$work/ran"
+launch "$here/cargo-slot" ran; e=$launched
+wait_for "! kill -0 $e 2>/dev/null" "a run behind old ownerless slots never got a slot"
+wait "$e" || fail "a run behind old ownerless slots failed"
+[ -e "$work/ran" ] || fail "old ownerless slots kept cargo from running"
+[ -z "$(ls "$work/slots")" ] || fail "old ownerless slots were left: $(ls "$work/slots")"
+ownerless now
+rm -f "$work/ran"
+launch "$here/cargo-slot" ran; e=$launched
+sleep 1
+[ ! -e "$work/ran" ] || fail "a run reclaimed a young ownerless slot"
+[ -d "$work/slots/umx-cargo-slot-1" ] && [ -d "$work/slots/umx-cargo-slot-2" ] ||
+  fail "a young ownerless slot was removed"
+kill -TERM "$e"; wait "$e" 2>/dev/null || true
+rm -rf "$work/slots"/*
+
+# An owner file that cannot be read makes no noise on stderr (F65); the slot counts as ownerless (and young here),
+# so the run takes the other slot. Root reads a mode 000 file, so there is nothing to test as root (F66).
+if [ "$EUID" -ne 0 ]; then
+  rm -rf "$work/slots"/*
+  mkdir "$work/slots/umx-cargo-slot-1"
+  echo "999999 0 /nowhere" > "$work/slots/umx-cargo-slot-1/owner"
+  chmod 000 "$work/slots/umx-cargo-slot-1/owner"
+  rm -f "$work/ran"
+  "$here/cargo-slot" ran 2>"$work/err" >/dev/null || fail "a run beside an unreadable owner file failed"
+  [ -e "$work/ran" ] || fail "a run beside an unreadable owner file did not run cargo"
+  if grep -q owner "$work/err"; then fail "an unreadable owner file leaked to stderr: $(cat "$work/err")"; fi
+  chmod 600 "$work/slots/umx-cargo-slot-1/owner"
+  rm -rf "$work/slots"/*
+fi
+
+# F87, the queue. Two runs hold both slots, so everything after them waits.
+hold_both() {
+  launch "$here/cargo-slot" sleep; h1=$launched
+  launch "$here/cargo-slot" sleep; h2=$launched
+  wait_for '[ -n "$(slot_of $h1)" ] && [ -n "$(slot_of $h2)" ] && [ -f "$(slot_of $h1)/child" ] && [ -f "$(slot_of $h2)/child" ]' \
+    "two runs did not take the two slots"
+}
+queued() { # [VAR=value ...]: launches a waiting run and waits for its ticket
+  launch "$@" "$here/cargo-slot" sleep
+  wait_for "[ -n \"\$(ticket_of $launched)\" ]" "a waiting run took no ticket ($*)"
+}
+next_is() { # <run to stop> <run that must enter next> [runs that must still wait...]
+  local stopping="$1" want="$2" p; shift 2
+  kill -TERM "$stopping"; wait "$stopping" 2>/dev/null || true
+  wait_for "[ -n \"\$(slot_of $want)\" ]" "$label: $want did not go next"
+  for p in "$@"; do [ -z "$(slot_of "$p")" ] || fail "$label: $p went before $want"; done
+  wait_for "[ -z \"\$(ticket_of $want)\" ]" "$label: $want kept its ticket in a slot"
+}
+rm -rf "$work/slots"/* "$work/queue"/*
+
+# First come, first served. The later a waiter came, the faster it polls, so with plain polling the newest wins.
+label=FIFO
+hold_both
+queued UMX_CARGO_SLOT_POLL=1; w1=$launched
+queued UMX_CARGO_SLOT_POLL=0.5; w2=$launched
+launch_to "$work/err" UMX_CARGO_SLOT_POLL=0.1 "$here/cargo-slot" sleep; w3=$launched
+wait_for "[ -n \"\$(ticket_of $w3)\" ]" "the third waiter took no ticket"
+sleep 1
+if [ "$(grep -c 'cargo-slot: waiting' "$work/err")" -ne 1 ] || ! grep -q 'cargo-slot: waiting, 2 ahead' "$work/err"; then
+  fail "the third waiter did not print its place once as 2 ahead: $(cat "$work/err")"
+fi
+next_is "$h1" "$w1" "$w2" "$w3"
+next_is "$h2" "$w2" "$w3"
+next_is "$w1" "$w3"
+kill -TERM "$w2" "$w3"; wait "$w2" "$w3" 2>/dev/null || true
+no_tickets FIFO
+[ -z "$(ls "$work/slots")" ] || fail "slots left after FIFO: $(ls "$work/slots")"
+
+# gate goes ahead of normal and urgent ahead of gate; within gate, first come first served.
+label=priority
+hold_both
+queued; n=$launched
+queued UMX_CARGO_PRIORITY=gate; g1=$launched
+queued UMX_CARGO_PRIORITY=urgent; u=$launched
+queued UMX_CARGO_PRIORITY=gate; g2=$launched
+next_is "$h1" "$u" "$n" "$g1" "$g2"
+next_is "$h2" "$g1" "$n" "$g2"
+next_is "$u" "$g2" "$n"
+next_is "$g1" "$n"
+kill -TERM "$g2" "$n"; wait "$g2" "$n" 2>/dev/null || true
+no_tickets priority
+
+# A ticket is removed when its waiter is stopped while waiting.
+label=signal
+hold_both
+for case in "TERM 143" "INT 130"; do
+  read -r signal want <<<"$case"
+  queued; e=$launched
+  kill -"$signal" "$e"
+  wait_for "! kill -0 $e 2>/dev/null" "$signal did not end a waiting run"
+  set +e; wait "$e"; status=$?; set -e
+  [ "$status" -eq "$want" ] || fail "$signal while waiting: exit $status, not $want"
+  no_tickets "$signal while waiting"
+done
+kill -TERM "$h1" "$h2"; wait "$h1" "$h2" 2>/dev/null || true
+
+# Dead tickets ahead are reclaimed: one whose waiter is gone, and one whose pid now belongs to another process (this
+# test, alive, but not started when the ticket says).
+rm -rf "$work/slots"/* "$work/queue"/*
+echo 5 > "$work/queue/seq"
+: > "$work/queue/0-000000000005-999999"
+echo "Thu Jan  1 00:00:00 1970" > "$work/queue/1-000000000004-$$"
+rm -f "$work/ran"
+launch "$here/cargo-slot" ran; e=$launched
+wait_for "! kill -0 $e 2>/dev/null" "a run behind dead tickets never got a slot"
+wait "$e" || fail "a run behind dead tickets failed"
+[ -e "$work/ran" ] || fail "dead tickets kept cargo from running"
+no_tickets "dead tickets"
+[ "$(cat "$work/queue/seq")" = 6 ] || fail "seq did not move on from 5 to 6 (it is $(cat "$work/queue/seq"))"
+[ ! -e "$work/queue/seq.lock" ] || fail "the seq lock was left behind"
+
+# seq is never handed out twice (round 1, B1). A holds the counter lock between reading and writing the counter;
+# B and C, started meanwhile, must wait for it and get higher, distinct numbers.
+seq_of() { local t; t="$(ticket_of "$1")"; t="${t##*/}"; t="${t#*-}"; echo "${t%%-*}"; }
+label=seq
+hold_both
+rm -f "$work"/queue/[0-2]-*
+launch UMX_CARGO_QUEUE_PAUSE=1.5 "$here/cargo-slot" sleep; a=$launched
+wait_for '[ -L "$work/queue/seq.lock" ]' "A never took the seq lock"
+launch "$here/cargo-slot" sleep; b=$launched
+launch "$here/cargo-slot" sleep; c=$launched
+wait_for "[ -n \"\$(ticket_of $a)\" ] && [ -n \"\$(ticket_of $b)\" ] && [ -n \"\$(ticket_of $c)\" ]" "the three waiters took no tickets"
+sa="$(seq_of "$a")"; sb="$(seq_of "$b")"; sc="$(seq_of "$c")"
+[ "$sa" \< "$sb" ] && [ "$sa" \< "$sc" ] && [ "$sb" != "$sc" ] ||
+  fail "seq numbers clash or run backwards: A $sa, B $sb, C $sc"
+kill -TERM "$a" "$b" "$c" "$h1" "$h2"; wait "$a" "$b" "$c" "$h1" "$h2" 2>/dev/null || true
+no_tickets seq
+
+# A dead seq lock (its holder killed) is cleared.
+ln -s "999999@Thu Jan  1 00:00:00 1970" "$work/queue/seq.lock"
+rm -f "$work/ran"
+launch "$here/cargo-slot" ran; e=$launched
+wait_for "! kill -0 $e 2>/dev/null" "a run behind a dead seq lock never got a ticket"
+wait "$e" || fail "a run behind a dead seq lock failed"
+[ -e "$work/ran" ] && [ ! -e "$work/queue/seq.lock" ] || fail "a dead seq lock was not cleared"
+
+# The free-space floor: refused (exit 75) before a slot is taken and before cargo runs; CI's floor is 0 unless set.
+rm -rf "$work/slots"/*
+refused() { # <expected exit> [env assignments...]
+  local want="$1"; shift
+  rm -f "$work/ran"
+  set +e; env "$@" "$here/cargo-slot" ran 2>/dev/null; local status=$?; set -e
+  [ "$status" -eq "$want" ] || fail "a run with [$*]: exit $status, not $want"
+  if [ "$want" -ne 0 ]; then
+    [ ! -e "$work/ran" ] || fail "cargo ran below the floor ($*)"
+    [ -z "$(ls "$work/slots")" ] || fail "a refused run took a slot ($*)"
+  else
+    [ -e "$work/ran" ] || fail "cargo did not run ($*)"
+  fi
+}
+refused 75 UMX_CARGO_SLOT_FREE_GB=5
+refused 0 UMX_CARGO_SLOT_FREE_GB=25
+refused 0 UMX_CARGO_SLOT_FREE_GB=5 CI=true
+refused 75 UMX_CARGO_SLOT_FREE_GB=5 CI=true UMX_CARGO_MIN_FREE_GB=10
+refused 0 UMX_CARGO_SLOT_FREE_GB=5 UMX_CARGO_MIN_FREE_GB=4
+refused 64 UMX_CARGO_PRIORITY=soon
+refused 0 UMX_CARGO_PRIORITY=normal
+no_tickets "the refused runs"
+
+# The queue folder is made private (700) when missing, and one that is not private, or a counter that cannot be
+# used, refuses the run with 77 before a slot is taken (round 1, B2). Never a run that skips the queue: a live
+# urgent ticket blocks a normal run in a good queue, and the same queue made unwritable refuses, not bypasses.
+rm -rf "$work/queue"
+refused 0
+[ "$(stat -c %a "$work/queue" 2>/dev/null || stat -f %Lp "$work/queue")" = 700 ] || fail "a new queue folder is not mode 700"
+LC_ALL=C ps -o lstart= -p $$ | awk '{$1 = $1; print}' > "$work/queue/0-000000000099-$$"
+rm -f "$work/ran"
+launch "$here/cargo-slot" ran; e=$launched
+wait_for "[ -n \"\$(ticket_of $e)\" ]" "a run behind a live urgent ticket took no ticket"
+sleep 0.5
+[ ! -e "$work/ran" ] || fail "a live urgent ticket did not hold back a normal run"
+kill -TERM "$e"; wait "$e" 2>/dev/null || true
+chmod 500 "$work/queue"
+refused 77
+chmod 700 "$work/queue"
+rm -f "$work/queue/0-000000000099-$$"
+chmod 755 "$work/queue"
+refused 77
+chmod 700 "$work/queue"
+mkdir -m 700 "$work/real-queue"
+ln -s "$work/real-queue" "$work/link-queue"
+refused 77 UMX_CARGO_QUEUE_DIR="$work/link-queue"
+refused 77 UMX_CARGO_QUEUE_DIR="$work/no-such-parent/queue"
+if [ "$EUID" -eq 0 ]; then
+  chown 65534 "$work/real-queue"
+  refused 77 UMX_CARGO_QUEUE_DIR="$work/real-queue"
+fi
+for bad in junk empty folder; do
+  rm -rf "$work/queue/seq"
+  case "$bad" in
+    junk) echo junk > "$work/queue/seq" ;;
+    empty) : > "$work/queue/seq" ;;
+    folder) mkdir "$work/queue/seq" ;;
+  esac
+  refused 77
+  [ ! -e "$work/queue/seq.lock" ] || fail "a bad counter ($bad) left the seq lock behind"
+done
+rm -rf "$work/queue/seq"
+# A seq lock that is not a link refuses rather than hanging: a folder (ln would make its link inside it, so the
+# lock would hold nothing) at once, and a file (ln fails, and there is no holder to read) within a second or so.
+for bad in folder file; do
+  if [ "$bad" = folder ]; then mkdir "$work/queue/seq.lock"; else : > "$work/queue/seq.lock"; fi
+  launch "$here/cargo-slot" ran; e=$launched
+  wait_for "! kill -0 $e 2>/dev/null" "a run behind a seq lock that is a $bad never ended"
+  set +e; wait "$e"; status=$?; set -e
+  [ "$status" -eq 77 ] || fail "a seq lock that is a $bad: exit $status, not 77"
+  rm -rf "$work/queue/seq.lock"
+done
+no_tickets "the queue refusals"
+echo "cargo-slot-test: ok"

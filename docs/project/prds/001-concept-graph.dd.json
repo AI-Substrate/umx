@@ -1,0 +1,1978 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 001: Concept Graph",
+				"status": "draft",
+				"updated": "2026-11-11",
+				"owner": "project lead",
+				"summary": "Concept Graph lets agents turn the operator's work (calls, documents, workshops, projects) into addressable, embedded knowledge graphs that they can search, walk and join. It is a Rust CLI and local daemon over plain files in git, built small first and changed cheaply as agents use it."
+			}
+		},
+		{
+			"name": "why",
+			"value": "The operator's work is spread across calls, transcripts, documents, workshops and repos. Notes and summaries lose the shape of it: what is contested, what blocks what, which constraint (a piece of legislation, say) frames a whole problem space, and where each claim came from. A live concept graph built by agents during a design workshop showed the value: a high-fidelity map of a problem that other agents could reason over and that became the raw material for requirements and prototypes. That graph was one JSON file and one HTML page. Doing this across every customer, project and call needs a real tool: permanent addresses so documents can link to nodes, many graphs that link and join across each other, embeddings on every field so like content is found anywhere, and a fast CLI that agents in Claude Code or Copilot use as their main way in."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "the operator",
+					"need": "Project all their work into graphs they and their agents can question, walk and build from."
+				},
+				{
+					"id": "a-agent",
+					"name": "external agent",
+					"need": "Build and use graphs through a CLI it can learn from built-in docs, with errors that say what to do next."
+				},
+				{
+					"id": "a-teammate",
+					"name": "teammate",
+					"need": "Keep their own graphs in a shared repo, link to others' graphs, and merge without pain."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "An agent can seed a graph, ingest a transcript into it with evidence pointing at exact lines, and answer questions over it, using only the CLI and its docs."
+				},
+				{
+					"id": "g-2",
+					"goal": "Any node can be linked from any document by a permanent address, and found again."
+				},
+				{
+					"id": "g-3",
+					"goal": "Several graphs can be loaded together and walked, searched and joined as if they were one, without changing any of them."
+				},
+				{
+					"id": "g-4",
+					"goal": "Like content is found across nodes, fields and graphs by similarity."
+				},
+				{
+					"id": "g-5",
+					"goal": "A basic version works early and every change is cheap, so agents use it themselves from the start."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Serving a team over the network. The v1 daemon is local only, one per machine."
+				},
+				{
+					"id": "n-2",
+					"text": "A shared or remote UI. The v1 UI (req-104 to req-115) is a local, single-user view on this machine; editing in the UI, a Cypher console, multi-user use and saved layouts come later (decided 2026-11-11)."
+				},
+				{
+					"id": "n-3",
+					"text": "Massive graphs. Tens of thousands of nodes per graph is the design scale; millions are not."
+				},
+				{
+					"id": "n-4",
+					"text": "Fixed speed targets. Benchmarks report what we see and what each feature costs."
+				},
+				{
+					"id": "n-5",
+					"text": "Policing agents. The ontology guides with warnings; it never refuses."
+				},
+				{
+					"id": "n-6",
+					"text": "Writing through Cypher. Cypher is read-only; writes go through CLI verbs."
+				},
+				{
+					"id": "n-7",
+					"text": "Auto-starting the daemon, or a CLI mode that reads files without it."
+				},
+				{
+					"id": "n-8",
+					"text": "LadybugDB in v1. The graph lives in our own in-memory Rust code (umx-graph, core code, not a port, per q-12); a database adapter and a graph-store port can come later if a second store earns it."
+				},
+				{
+					"id": "n-9",
+					"text": "Capturing audio or captions. Transcripts come from existing capture tools."
+				},
+				{
+					"id": "n-10",
+					"text": "Splitting or merging graphs, and moving nodes between graphs, in v1. Rename and re-file are enough."
+				},
+				{
+					"id": "n-11",
+					"text": "A special hub-graph feature. A hub is an ordinary graph whose nodes link into other graphs (req-21)."
+				},
+				{
+					"id": "n-12",
+					"text": "Overlays as a separate kind of thing (retired 2026-11-10). Joining graphs is loading them into one space and linking across them."
+				},
+				{
+					"id": "n-13",
+					"text": "Windows, for now (decided 2026-11-10). umx targets macOS and Linux. If it comes later, the CLI-to-daemon transport becomes a named pipe and the service uses Task Scheduler; both sit behind adapters."
+				},
+				{
+					"id": "n-14",
+					"text": "Display hints in the vocabulary (D42, 2026-11-10). Types, statuses and relations carry no colour, shape or border. How a graph looks belongs to the UI that renders it, not to the graph files."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "Files are the truth",
+					"statement": "Each graph is a folder of plain files in a repo: `graph.json` (metadata and ontology), `nodes.jsonl`, `edges.jsonl` and an `embeddings/` folder. The daemon's in-memory copy is only a working copy rebuilt from these files.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Stop the daemon, delete all daemon state, start it and load the graph: the same queries return the same results.",
+					"source": "decisions D1, D3 (2026-11-09)"
+				},
+				{
+					"id": "req-02",
+					"title": "Files merge cleanly in git",
+					"statement": "Graph files are written for automatic merges: one record per line, records sorted by id, fields in a fixed order, and writing an unchanged graph produces byte-identical files.",
+					"actor": "a-teammate",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Load and save an unchanged graph: `git diff` is empty. Two branches that edit different nodes of one graph merge with no conflicts.",
+					"source": "D3",
+					"note": "2026-11-10: writes stay whole-file and atomic (one nodes.jsonl, one edges.jsonl); no partial writes for now (decided in workshop 008)."
+				},
+				{
+					"id": "req-03",
+					"title": "Load and unload graphs",
+					"statement": "An agent loads a graph into the daemon by path or alias and unloads it when done; a graph unused for a configurable idle time unloads itself.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx graph load <path>` then `umx graph list` shows it loaded; with idle time set to 1 minute it is gone from the list 1 minute after the last request.",
+					"source": "D1"
+				},
+				{
+					"id": "req-04",
+					"title": "Writes reach the files at once",
+					"statement": "Every change made through the CLI is written back to the graph's files atomically (temporary file, then move) before the command returns.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "After `umx node add` returns, the new node is in `nodes.jsonl`; killing the daemon mid-write never leaves a half-written file.",
+					"source": "D1; method from prior live concept graph work (atomic rebuilds)"
+				},
+				{
+					"id": "req-05",
+					"title": "File changes reach a loaded graph",
+					"statement": "When a loaded graph's files change on disk (for example after `git pull`), the daemon reloads the changed records and reports what changed.",
+					"actor": "a-teammate",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Edit `nodes.jsonl` outside the daemon: within a few seconds `umx node get` returns the new value and the daemon log names the changed ids.",
+					"source": "D1"
+				},
+				{
+					"id": "req-06",
+					"title": "Idle costs nothing",
+					"statement": "A running daemon with no graphs loaded, or with loaded graphs and no requests, uses no measurable CPU and runs no polling loop; file watching uses OS notifications.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With the daemon idle for 10 minutes, `ps` shows its CPU time unchanged to within 1 second.",
+					"source": "pij PRD procedure: bound the cost of any loop, timer or watcher"
+				},
+				{
+					"id": "req-07",
+					"title": "Seed a blank graph",
+					"statement": "`umx graph new <path> --alias <name>` creates a valid empty graph with a starter ontology the agent can edit.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx graph new /tmp/g --alias demo` then `umx graph load /tmp/g` succeeds and `umx ontology show` lists the starter types, statuses and relations.",
+					"source": "D7"
+				},
+				{
+					"id": "req-08",
+					"title": "Ontology per graph",
+					"statement": "Each graph declares its own vocabulary: node types, statuses, edge types and the custom fields each type carries. Agents write and change it through the CLI.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx ontology add-type risk --field likelihood:number` then `umx node add --type risk --set likelihood=3` succeeds with no warning.",
+					"source": "D6, D7"
+				},
+				{
+					"id": "req-09",
+					"title": "Ontology per hierarchy level",
+					"statement": "Any hierarchy node may declare vocabulary that applies below it, inheriting from the levels above. A lower level may add to, narrow or override anything it inherits. The CLI shows the effective vocabulary at any node.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Declare type `quote` under one call node: `umx ontology show --at <that call>` lists `quote`; `--at <a sibling call>` does not.",
+					"source": "D9, D11"
+				},
+				{
+					"id": "req-10",
+					"title": "Soft validation",
+					"statement": "A write that does not match the ontology is accepted and returns a warning that names the mismatch and the command that would fix the ontology. Nothing is refused for being off-vocabulary.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Add a node with an undeclared type: the command succeeds, the JSON output has a warning with a `next` command, and `umx check` lists the node.",
+					"source": "D7, D11 (\"we are not the police\")"
+				},
+				{
+					"id": "req-11",
+					"title": "Standard node fields",
+					"statement": "Every node has an id, type, title, status, note, evidence list, created and updated times, plus the custom fields its ontology declares.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx node add` with only `--type` and `--title` produces a node whose JSON has every standard field.",
+					"source": "brief; prior live concept graph model"
+				},
+				{
+					"id": "req-12",
+					"title": "Status keeps its history",
+					"statement": "Changing a node's status takes a reason and records the old status, new status, time, who changed it and why, and the change is labelled as a movement (resolved, in contention, back on the table). Statuses move as the argument moves.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx node status <id> agreed` without `--reason` warns; with a reason, twice: `umx node history <id>` lists both moves with time, author, reason and label.",
+					"source": "prior live concept graph method (status is the most valuable field); field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-13",
+					"title": "Edges are first class",
+					"statement": "Edges have an id, a type, a source, a target and optional fields. They live in the graph's edges file; incoming edges are worked out when the graph loads, never stored twice.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Add an edge A to B: `umx edge list --from A` and `umx edge list --to B` both return it, and it appears once in `edges.jsonl`.",
+					"source": "D3"
+				},
+				{
+					"id": "req-14",
+					"title": "Permanent addresses",
+					"statement": "Every graph, node and edge gets an id when created that never changes through rename or re-file. Links are stored as graph id plus node id; the address `umx:<graph-alias>/<id>` uses the alias only for display and typing, and the CLI accepts a unique short prefix of the id. The long form `umx:<alias>/<id>?repo=<git url>` adds a fetch hint that is ignored for identity and never stored in graph files.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Rename and re-file a node: its old address still resolves. Rename the graph's alias: an address using the old alias resolves as `redirected` and stored cross-graph edges are unchanged. `umx resolve umx:demo/<8-char prefix>` returns the full id; an ambiguous prefix returns `ambiguous` with the candidates. The long form of a registered graph resolves exactly like the short one.",
+					"source": "workshop 002 (not published) ADDR-1, ADDR-2; decided 2026-11-10, workshop 002 s7.9"
+				},
+				{
+					"id": "req-15",
+					"title": "Addresses resolve anywhere",
+					"statement": "An address pasted into any document resolves through the daemon, which loads the registered graph on demand. An address that cannot resolve says why. When the graph is unknown or not present, the error carries the hint URL and a next with the clone and `umx graph add` commands. The daemon never fetches.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`umx resolve <address>` for an unloaded registered graph loads it and returns ok; otherwise it returns one of: redirected (alias renamed), ambiguous, graph_unknown, graph_not_present (registered but its folder is missing), deleted. A test fixture exists for each. With the graph unknown, a long-form address gives graph_unknown with the URL in `next`.",
+					"source": "workshop 002 (not published) ADDR-3, ADDR-4; D13; decided 2026-11-10, workshop 002 s7.9"
+				},
+				{
+					"id": "req-16",
+					"title": "Hierarchy is nodes and edges",
+					"statement": "Hierarchy levels (for example customer, project, call) are ordinary nodes joined by `part-of` edges, and each graph uses whatever levels it needs. Searches and lists can be limited to everything under a node.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Re-file a call under another project: every address under it still resolves, and `umx node list --within <call>` returns the same set as before.",
+					"source": "D5; workshop 002 (not published) HIER-1"
+				},
+				{
+					"id": "req-17",
+					"title": "Placement suggestions",
+					"statement": "Given new content, the CLI returns ranked places in the hierarchy where it could go, with scores. The agent chooses, and asks a human when unsure.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx place suggest --text '<call summary>'` returns at least 3 ranked parent nodes with scores.",
+					"source": "D6"
+				},
+				{
+					"id": "req-18",
+					"title": "Structured evidence",
+					"statement": "A node's evidence is a list of pointers into its sources. Each pointer names the source (file path, URL or node address) and where in it: a transcript sequence range, line range, or quote with text before and after. It records whether the source is exact (chat, documents) or lossy (captions), and a hash of the source, and the kind of evidence: room (spoken), chat, screen, document or analyst (an agent's own inference).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Add evidence pointing at lines 3206 to 3240 of a transcript: `umx evidence show <node>` prints those lines. A transcript sequence range works the same way. After the source file is edited, `umx evidence show` reports `source_changed` (hash mismatch) instead of printing the wrong lines.",
+					"source": "D10; workshop 002 (not published) PROV-1"
+				},
+				{
+					"id": "req-19",
+					"title": "Transcripts are first-class sources",
+					"statement": "Live transcript files (NDJSON with sequence numbers, speaker, text and a chat flag) are understood natively, so evidence cites sequence ranges and a source document can itself be a node in the hierarchy.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Link a call node to a transcript file: `umx node list --evidence-from <call>` returns every node citing that transcript.",
+					"source": "D10; prior live transcript tooling"
+				},
+				{
+					"id": "req-20",
+					"title": "Evidence survives edits to the source",
+					"statement": "When a cited file changes, the pointer is found again by quote and the result says which selector matched.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "Insert lines above a cited passage: `umx evidence show <node>` still finds it and reports `matched: quote`.",
+					"source": "workshop 002 (not published) PROV-1, PROV-2"
+				},
+				{
+					"id": "req-21",
+					"title": "Links across graphs",
+					"statement": "An edge may connect nodes in different graphs: either or both ends may be in a graph other than the one it is stored in, and it is stored in the graph its author chooses. When the graphs involved are loaded together, walks and queries cross the boundary as if they were one graph; when a graph is not loaded the walk stops at a marked placeholder.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Store an edge from A (g1) to B (g2) in g3: g1 and g2 files are unchanged; with all three loaded `umx walk A --depth 2` returns B labelled with g2; with g2 unloaded B shows as `graph_not_loaded`.",
+					"source": "workshop 002 (not published) XG-1, XG-3",
+					"note": "2026-11-10: widened by project decision (stored in the author's graph, either end foreign); replaces overlays (req-24 to req-26)."
+				},
+				{
+					"id": "req-22",
+					"title": "Two-way links on request",
+					"statement": "A cross-graph link can be marked two-way. The reverse edge is written to the target graph only when the writer has access to it; otherwise the link waits as pending until the target's owner accepts it.",
+					"actor": "a-teammate",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "Create a two-way link to a graph you can write: both graphs hold the edge. To one you cannot: the link shows `pending` and `umx link accept` in the target writes it.",
+					"source": "workshop 002 (not published) XG-2; brief"
+				},
+				{
+					"id": "req-23",
+					"title": "Broken links are reported",
+					"statement": "Deleting a node leaves a tombstone with its id, last title and the date, so links to it report `deleted` instead of vanishing. Broken links are listed, not hidden.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Delete a linked node: `umx check` lists each incoming link with status `deleted`.",
+					"source": "workshop 002 (not published) XG-4"
+				},
+				{
+					"id": "req-24",
+					"title": "Overlays join graphs without changing them",
+					"statement": "An agent loads several graphs and works in an overlay that adds `same-as` and other join links between their nodes. Source graphs are never modified, and an overlay is thrown away unless saved.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "dropped",
+					"done_when": "Create an overlay over g1 and g2 and add a same-as link: the hashes of g1 and g2 files are unchanged; after `umx overlay drop` nothing remains on disk.",
+					"source": "D17; workshop 002 (not published) OVL-1",
+					"note": "Dropped 2026-11-10 by project decision: overlays retired. Many graphs load into one space (req-66) and cross-graph edges live in the author's graph (req-21)."
+				},
+				{
+					"id": "req-25",
+					"title": "Overlay views merge same-as nodes",
+					"statement": "A query run through an overlay can show each group of `same-as` nodes as one combined node, worked out at read time.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "dropped",
+					"done_when": "With A same-as B in an overlay, `umx query --overlay o --merge-same-as` returns one node carrying both addresses.",
+					"source": "D17",
+					"note": "Dropped 2026-11-10 by project decision: overlays retired. Many graphs load into one space (req-66) and cross-graph edges live in the author's graph (req-21)."
+				},
+				{
+					"id": "req-26",
+					"title": "Join proposals by similarity",
+					"statement": "The daemon proposes candidate cross-graph links from similarity for an agent to accept or reject; it never creates them itself.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "dropped",
+					"done_when": "`umx overlay propose o` lists candidate pairs with scores; accepting one adds a same-as link; nothing is added unasked.",
+					"source": "workshop 003 (not published) EMB-10",
+					"note": "Dropped 2026-11-10 by project decision: overlays retired. Many graphs load into one space (req-66) and cross-graph edges live in the author's graph (req-21)."
+				},
+				{
+					"id": "req-27",
+					"title": "Read-only Cypher subset",
+					"statement": "Agents query loaded graphs and overlays with a documented, read-only subset of openCypher, written exactly as Kuzu and LadybugDB accept it (no custom syntax), so a database adapter could later run the same queries. At least MATCH with fixed and bounded variable-length paths, WHERE, RETURN, ORDER BY and LIMIT; WITH and aggregates where the query library provides them. Anything else returns a stable error naming the clause, with a next step. Named exception: `similar_to` edges are followed only when a query names them, never by an untyped step (decided 2026-11-10, workshop 008).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A checked-in list of supported clauses has a fixture query for each that returns JSON rows from a fixture graph, and a test per unsupported clause shows its error code and `next`.",
+					"source": "D18; workshop 001 (not published) review; workshop 004 (not published) review"
+				},
+				{
+					"id": "req-28",
+					"title": "Everyday query verbs",
+					"statement": "The CLI has direct verbs for the common reads: get, list with filters, neighbours, walk to a depth, path between two nodes, and text search.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Each verb runs against the fixture graph and its result matches the equivalent Cypher query.",
+					"source": "brief (agent-friendly exploring, grouping and collating)",
+					"note": "2026-11-10: delivered with each verb checked against a hand-written oracle over the fixture graph; the equivalent-Cypher comparison in done_when is deferred until Cypher (req-27) is built."
+				},
+				{
+					"id": "req-29",
+					"title": "Similarity search",
+					"statement": "An agent finds nodes or fields similar to a node, a field or free text, optionally limited to graphs, a hierarchy subtree or an overlay. In v1 every similarity search is exact (a full scan), never approximate.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`umx similar --text '<phrase>' --within <call>` returns only nodes under that call, and the results equal a brute-force check.",
+					"source": "D12; workshop 003 (not published) EMB-6"
+				},
+				{
+					"id": "req-30",
+					"title": "Hybrid search",
+					"statement": "Search combines word matching and vector similarity and says which one matched each result. Short fields such as ids, enums and dates match exactly.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A search for an id finds it by exact match; a search for a paraphrase finds it by vector; each result names its match.",
+					"source": "workshop 003 (not published) EMB-1, EMB-7"
+				},
+				{
+					"id": "req-31",
+					"title": "Most like this set",
+					"statement": "An agent asks for the nodes most similar to a whole set, such as everything under one call, across other calls and graphs.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx similar --to-set <call>` returns ranked nodes from outside that call and names the method used.",
+					"source": "workshop 003 (not published) EMB-9; brief"
+				},
+				{
+					"id": "req-32",
+					"title": "Compare across fields",
+					"statement": "An agent compares one field with the same field type elsewhere, or with any embedded field in any loaded graph.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "`umx similar --field <node>.problem --any-field` returns matches from other field names, each labelled with its field.",
+					"source": "workshop 003 (not published) EMB-8; brief"
+				},
+				{
+					"id": "req-33",
+					"title": "Derived findings",
+					"statement": "Built-in queries surface findings nobody stated: what transitively blocks a node; a node sitting on several blocking chains; an open question blocking something with a date; decisions that conflict; open or proposed nodes unchanged for a long time; nodes resting only on analyst evidence or on a single source.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx findings` on a fixture with a question blocking a dated deliverable lists that pair as a schedule risk.",
+					"source": "prior live concept graph method (blocks and conflicts-with); field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-34",
+					"title": "Fields and nodes are embedded",
+					"statement": "Each embeddable field of every node gets its own vector, and each whole node gets one from a standard text form of all its fields. Which fields embed is declared per field type; ids, enums, dates and URLs do not.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Add a node with 3 text fields: the daemon reports 4 vectors for it (3 fields and the whole node).",
+					"source": "brief; workshop 003 (not published) EMB-1, EMB-2",
+					"note": "2026-11-11 (D56): which fields embed is now each field's role, content or data (req-97)."
+				},
+				{
+					"id": "req-35",
+					"title": "Only changes re-embed",
+					"statement": "Vectors are keyed by a hash of the embedded text and the model with its dimensions, so only changed fields are embedded again. Embedding runs in the background and never blocks an edit. The whole-node text form has a version in its key, so changing it re-embeds only whole-node vectors.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Edit one field: exactly one field vector and the whole-node vector are recomputed; the edit command returns before embedding finishes. Bumping the whole-node serialiser version recomputes only whole-node vectors.",
+					"source": "D4; workshop 003 (not published) EMB-3"
+				},
+				{
+					"id": "req-36",
+					"title": "Embeddings are committed and merge",
+					"statement": "Except for secured graphs (req-46), vectors are stored in the graph folder as sorted text lines sharded by node id, at int8 with configurable dimensions (default 256), so they commit and merge like other graph files. Each vector is L2-normalised and quantised with its own scale so files are deterministic. Two lines with the same key (node, field, model and dimensions, text hash) are equally valid, and `umx embeddings repair` (or a git merge driver) keeps the first in sort order. A graph can instead keep vectors as an uncommitted local cache.",
+					"actor": "a-teammate",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Clone a repo with a committed graph: loading it embeds nothing. Two branches that change different nodes' vectors merge cleanly; two branches that embed the same new text merge, or are fixed by one `umx embeddings repair`.",
+					"source": "D4"
+				},
+				{
+					"id": "req-37",
+					"title": "Embedder per graph",
+					"statement": "Each graph names its embedding model and dimensions. Similarity across graphs only runs between graphs with the same model and dimensions, and says so otherwise.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Search across two graphs with different models: the result names the mismatch and the graphs left out.",
+					"source": "workshop 003 (not published) EMB-4"
+				},
+				{
+					"id": "req-38",
+					"title": "One binary, CLI through the daemon",
+					"statement": "One binary is both CLI and daemon. Every CLI command talks to the daemon, except `umx version`, `umx agents-start-here`, `umx docs list|get` and `umx daemon start|status`, which are served from text compiled into the binary and touch no graph data or files (project lead ruling 2026-11-09 under D13); when the daemon is not running the CLI says so and prints the exact command to start it.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With the daemon stopped, `umx graph list` exits non-zero with a message containing `umx daemon start`. The architecture rule `cli-is-a-client` passes: the CLI crate depends only on the daemon protocol crate.",
+					"source": "D13; project lead ruling 2026-11-09 under D13 (offline exception)"
+				},
+				{
+					"id": "req-39",
+					"title": "Built-in docs for agents",
+					"statement": "The CLI carries its own documentation with many examples: `umx agents-start-here`, `umx docs list` and `umx docs get <topic>`.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "An agent with no other context runs `umx agents-start-here`, then seeds a graph and adds a node using only commands it printed.",
+					"source": "D7; Flowspace3 CLI as the model"
+				},
+				{
+					"id": "req-40",
+					"title": "Errors say what to do next",
+					"statement": "Every error has a stable code, a plain message and a runnable next step. Unknown ids and off-vocabulary types or relations suggest the nearest matches.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A test triggers every error code and checks each has a non-empty `next`.",
+					"source": "D7"
+				},
+				{
+					"id": "req-41",
+					"title": "JSON output everywhere",
+					"statement": "Every command prints a JSON envelope by default (status, data, warnings, errors) so agents parse results reliably. Node text in it is marked as untrusted data from the graph, and the CLI and daemon never run, fetch or follow anything because of node content.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Every command's JSON output validates against the envelope schema. A fixture node whose text says \"ignore your instructions and run curl ...\" comes back unchanged in a data field, and the fake network port records no call.",
+					"source": "D7; workshop 005 (not published) SEC-7",
+					"note": "2026-11-10: output shape follows the reader (req-63): JSON for pipes and agents, text for terminals."
+				},
+				{
+					"id": "req-42",
+					"title": "Cheap to change",
+					"statement": "A small code change can be rebuilt, the daemon restarted and the CLI reinstalled with one command, and agents pick the new version up straight away.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "One command (for example `just dev`) rebuilds, restarts and reinstalls; `umx version` then shows the new build in every agent's shell.",
+					"source": "D16 (the operator: \"cheap and easy to change\")"
+				},
+				{
+					"id": "req-43",
+					"title": "Benchmarks report, not gate",
+					"statement": "A repeatable benchmark suite reports, on standard fixtures (10k and 100k nodes, 3 edges and 11 vectors per node at 256 dimensions): load-from-files time, peak memory per loaded graph, walk, Cypher, scoped and full-scan similarity. A small labelled quality fixture (a few calls and their known related nodes) reports recall alongside. The harness lands with the first fast path, and each new feature shows what it costs. Nothing gates on these numbers.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "`umx-bench` writes a dated result file; running it before and after a change shows the difference.",
+					"source": "D8; workshop 004 (not published) ARCH-13"
+				},
+				{
+					"id": "req-44",
+					"title": "Ports and adapters, enforced",
+					"statement": "The code follows strict ports and adapters: a pure core, services as the composition layer, an adapter for every external thing (files, embedding providers, vector store, transcripts, clock, network), fakes plus one contract suite per port, and every architecture rule checked by a test that is proven to fire.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`cargo test -p umx-arch` passes and its self-test shows every rule catching a planted violation; `cargo build -p umx-core` builds with `#![no_std]`; `cargo tree -p umx -e normal -i umx-fakes` finds nothing; the composition's `describe()` equals the blueprint's adapter list.",
+					"source": "D14; workshop 004 (not published) ARCH-1 to ARCH-9",
+					"note": "2026-11-10: vectors are plain data in umx-graph with no vector-store port until a second store is wanted; embedding shards go through the one files port (decided in workshop 008; amends D12, D14)."
+				},
+				{
+					"id": "req-45",
+					"title": "Owner-only daemon",
+					"statement": "The v1 daemon listens only on a local socket that only its owner can open; it opens no network port.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "The daemon's socket file is mode 0600 inside a 0700 directory (`stat -f %Lp`), and `lsof -nP -a -p <daemon pid> -i` prints nothing.",
+					"source": "D15; workshop 005 (not published) SEC-1"
+				},
+				{
+					"id": "req-46",
+					"title": "Secured graphs keep content local",
+					"statement": "A graph can be marked secured. A secured graph never sends text to a hosted embedding provider and never writes vectors to tracked files. It embeds only through a local instance; with none configured, it runs with word search only.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With a hosted embedder that fails the test if called, ingesting a secured graph embeds through a local instance; its vectors and similar files never land in tracked paths (git status clean); search on it uses the local instance, or, with no local instance, returns word results with embedder_not_local_for_secured / similarity_unavailable. Config, env or a flag naming a hosted instance for a secured graph is refused.",
+					"source": "workshop 005 (not published) SEC-2, SEC-3; reviews by security and architect",
+					"note": "2026-11-10: the local model comes from req-74. 2026-11-11 (D53): 'secured' now means visibility named plus embedder local; a graph may instead allow a trusted tenant embedder (req-91), which this requirement does not cover."
+				},
+				{
+					"id": "req-47",
+					"title": "Locators stay inside their roots",
+					"statement": "Evidence pointers to files resolve only inside the graph's repo or registered source folders, and v1 never fetches URLs found in evidence.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Pointers using `../`, an absolute path outside the roots, a symlink that leads out of the roots, and `file://` are each refused with a clear error; a URL in evidence is never fetched (the fake network port records no call).",
+					"source": "workshop 005 (not published) SEC-9"
+				},
+				{
+					"id": "req-48",
+					"title": "Logs hold ids, not content",
+					"statement": "Daemon logs, errors and benchmark reports carry addresses and counts, never node text.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Grep a day of logs from a fixture run for a sentinel string planted in node text: no match.",
+					"source": "workshop 005 (not published) SEC-12"
+				},
+				{
+					"id": "req-49",
+					"title": "Secret scan on ingest",
+					"statement": "Text coming in is scanned for likely secrets; a hit warns and holds hosted embedding of that field until the agent redacts or overrides it.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "shipped",
+					"done_when": "Ingest a field containing a fake API key: the command warns and the field is not sent to a hosted embedder.",
+					"source": "workshop 005 (not published) SEC-10"
+				},
+				{
+					"id": "req-50",
+					"title": "Secured graphs stay out of other requests",
+					"statement": "A secured graph's nodes are invisible to any search, similarity or walk that did not explicitly load it. Links into it from other graphs show only its address, never its title or content. An overlay that includes it is secured, and cannot be saved to an open location.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A search that did not load the secured graph returns none of its nodes or scores; an open graph linking into it shows `secured node in <alias>`; saving a secured overlay into an open graph's folder is refused.",
+					"source": "workshop 005 (not published) SEC-4 to SEC-6"
+				},
+				{
+					"id": "req-51",
+					"title": "Stub mode",
+					"statement": "The whole CLI and daemon run with fakes (fake embedder, no network, no API key) through a test-only build feature, and the daemon reports which adapter serves each port.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "CI runs the req-39 agent walkthrough end to end with no network. `umx daemon status` names the adapter wired to each port.",
+					"source": "D16; architect review"
+				},
+				{
+					"id": "req-52",
+					"title": "Many agents write at once",
+					"statement": "Writes to a graph are applied one at a time in the daemon, so agents calling the CLI at the same moment never lose updates or interleave file contents.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "4 CLI processes each add 250 nodes to one graph at once: `nodes.jsonl` holds exactly 1,000 new nodes, and a reload-and-save leaves `git diff` empty.",
+					"source": "ladybugdb-expert review"
+				},
+				{
+					"id": "req-53",
+					"title": "Search degrades openly",
+					"statement": "If the embedder fails or is offline, search still returns word-match results and says it is degraded, so a failure never looks like \"nothing similar\".",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With the embedder faked offline, `umx search <phrase>` returns word matches and the status `similarity_unavailable`.",
+					"source": "embeddings-expert review"
+				},
+				{
+					"id": "req-54",
+					"title": "Memory is visible",
+					"statement": "The daemon shows how much memory each loaded graph uses, since unloading is the only memory control.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx graph list` shows memory per loaded graph, and the figure changes when a graph is loaded or unloaded.",
+					"source": "ladybugdb-expert review"
+				},
+				{
+					"id": "req-55",
+					"title": "Field addresses",
+					"statement": "A single field of a node has its own address, `umx:<alias>/<id>#<field>`, so similar fields can be cited and resolved.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx resolve umx:demo/<id>#problem` returns that field's value and its node.",
+					"source": "graph-addressing-expert review"
+				},
+				{
+					"id": "req-56",
+					"title": "Graph registry and aliases",
+					"statement": "A per-machine registry records each graph's id, alias and folder. Aliases are unique on the machine and can be renamed; old aliases redirect.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "`umx graph add <path> --alias a`, then `umx graph rename a b`: `umx resolve umx:a/<id>` returns `redirected` to `umx:b/<id>`.",
+					"source": "q-08; graph-addressing-expert review; ws006 S23 (plan 209): rename and move"
+				},
+				{
+					"id": "req-57",
+					"title": "Find before add",
+					"statement": "An agent can find existing nodes by approximate title before adding one, and adding a node whose title is close to an existing one warns and names the match.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx node find 'aproval delays'` returns the node titled 'Approval delays'; `umx node add --title 'Approval delay'` succeeds with a near-duplicate warning naming it.",
+					"source": "field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-58",
+					"title": "Append note and evidence in one call",
+					"statement": "An agent appends to a node's note and adds an evidence pointer in one command, since most changes to a live graph are exactly that.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx node note <id> --append '<text>' --evidence <pointer>` updates both, and `umx node get <id>` shows the appended note and the new evidence entry.",
+					"source": "field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-59",
+					"title": "Edges read back as sentences",
+					"statement": "Adding an edge echoes it as a sentence, for example \"Approval delays blocks Launch date\", so the agent can check the direction.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx edge add A blocks B` prints the sentence with both titles in that order.",
+					"source": "field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-60",
+					"title": "What changed since",
+					"statement": "An agent asks what changed in a graph since a time, a pass or a transcript position: nodes added, nodes changed (with status moves), edges added or removed.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "After two edits, `umx diff --since <time before them>` lists exactly those two changes.",
+					"source": "field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-61",
+					"title": "Passes over a live source",
+					"statement": "The tool owns the loop over a live source: a pass records which transcript range and payload it consumed, keeps the agent's cursor, and stamps the graph's metadata; the cadence can be paused and stopped.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx pass begin --source <transcript>` returns the next unread range; `umx pass end` records it; `umx pass list` shows each pass with its range and change counts.",
+					"source": "field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-62",
+					"title": "Commentary scaffolding",
+					"statement": "For each pass the tool generates the list of status moves and the current open threads (open, contested and proposed nodes), so the agent writes only the interpretation.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "`umx pass report <n>` prints the moves in that pass and the open threads, each with its node address.",
+					"source": "field interview with a live concept graph agent, 2026-11-09"
+				},
+				{
+					"id": "req-63",
+					"title": "Output shape follows the reader",
+					"statement": "umx picks its output shape like flowspace3: a terminal gets human text, while a pipe, file, CI capture or agent subprocess gets the JSON envelope with no flag. `--json` and `--human` force a shape anywhere, and `UMX_OUTPUT=json|human` pins it (for agent harnesses that run inside a terminal such as tmux, where a seat looks like a person).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx graph list` in a terminal prints text; `umx graph list | cat` prints one JSON object; `umx graph list --json` in a terminal prints JSON; `umx graph list --human | cat` prints text; `UMX_OUTPUT=json umx graph list` in a terminal prints JSON.",
+					"source": "decided 2026-11-10: default --json, type --human, so agents save tokens",
+					"note": "2026-11-10: amended by project decision from 'JSON always by default' to flowspace3-style detection. An earlier change shipped JSON-by-default and --human; this adds terminal detection and UMX_OUTPUT=json."
+				},
+				{
+					"id": "req-64",
+					"title": "Human mode looks great",
+					"statement": "Human output has striking ASCII art: a banner on `umx agents-start-here`, `umx version` and `umx daemon start`, and clear tables with colour where the terminal supports it. None of it ever appears in JSON output, and it degrades to plain text when colour is off or output is piped.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "`umx version --human` shows the banner; `NO_COLOR=1 umx version --human` shows it without colour codes; `umx version` (JSON) contains no banner text.",
+					"source": "the operator, 2026-11-10: \"needs to have sick ascii art in human mode\""
+				},
+				{
+					"id": "req-65",
+					"title": "similar_to edges in every graph",
+					"statement": "Every graph has `similar_to` edges from each node to its top matches (default 10, above a per-model score floor) by whole-node vector, with a `score` field. They are kept current as nodes are added, changed or deleted, stored in the graph folder in their own sorted, sharded files (never in `edges.jsonl`), and can be rebuilt from the vectors at any time. Walks and Cypher follow them only when a query names them.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Add a node to a graph with vectors: its `similar_to` edges appear in `similar/` and in `MATCH (a)-[s:similar_to]->(b) WHERE s.score > 0.8 RETURN b`; an untyped step does not follow them; `umx similarity rebuild` reproduces the files byte for byte.",
+					"source": "decided 2026-11-10, rulings recorded in workshop 008 sections 9-10",
+					"note": "Stored similar_to lists came with workstream 004 s09; the Cypher MATCH clause with workstream 005 s05. Cross-graph similar_to computed at query time moved to req-90 (project manager, 2026-11-11)."
+				},
+				{
+					"id": "req-66",
+					"title": "Many graphs in one space",
+					"statement": "Many graphs load into one space and are queried together by scope: a list of graphs or a saved named set. With no scope a command works on one graph, as today.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Load g1 and g2, then `umx node list --graph g1,g2` returns nodes from both, each labelled with its graph; save the set as `umx scope save both --graph g1,g2` and `umx node list --scope both` returns the same; `umx node list` with one graph loaded is unchanged.",
+					"source": "decided 2026-11-10, rulings recorded in workshop 008 sections 9-10"
+				},
+				{
+					"id": "req-67",
+					"title": "Repeated ids are kept and reported",
+					"statement": "A record id that appears twice in a graph file (for example after a git merge) is loaded with a warning and reported by `umx check`; nothing is dropped or erased from disk.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Duplicate a line in `nodes.jsonl` with a changed title: `umx graph load` warns `duplicate_id` naming the id, `umx check` lists it, and the next write leaves both lines' content recoverable.",
+					"source": "decided 2026-11-10, rulings recorded in workshop 008 sections 9-10"
+				},
+				{
+					"id": "req-68",
+					"title": "Word search across all fields",
+					"statement": "Word search ranks nodes BM25-style across every text field (title, note, custom text fields), within the same scopes as similarity, so search is robust beside vectors (req-30).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx search 'approval delay'` on a fixture returns the node whose note (not title) holds those words, with a score and the field that matched; a node matching in its title ranks above one matching only in its note.",
+					"source": "decided 2026-11-10, rulings recorded in workshop 008 sections 9-10"
+				},
+				{
+					"id": "req-69",
+					"title": "Two copies of one graph",
+					"statement": "Two copies of one graph (for example git worktrees) can be loaded at once and addressed as `umx:<alias>@<copy>/<id>`. A plain `umx:<alias>/<id>` means the primary copy. Files and the JSON `address` field never name a copy.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Load acme from worktrees on main and feature/x: `umx graph list` shows acme@main (primary) and acme@feature-x; a node added in the feature copy resolves via @feature-x and gives node_not_found via the plain address; neither copy's files contain \"feature-x\"; with the primary unloaded and two copies left, a plain address gives copy_ambiguous.",
+					"source": "decided 2026-11-10 (workshop 008 s2.6 and s10 ruling 6); workshop 002 s7"
+				},
+				{
+					"id": "req-70",
+					"title": "A umx agent skill",
+					"statement": "A `/umx` agent skill, built like pij's: a short `SKILL.md` router (when to load it, a grammar line, a registry of jobs to route modules, a table giving every umx verb a home) and one route module per job (for example start, build, ingest, explore, doctor), loaded one at a time (progressive disclosure), with shared conventions cited from one place. It routes to `umx docs` rather than repeating them. It lives in the repo and installs globally with one command.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`just skill-link` links it into ~/.agents/skills/umx; an agent loading `/umx` sees only SKILL.md, and `/umx build` loads only that route; a test fails if any umx verb has no route home or a route names a verb umx does not have.",
+					"source": "decision D31 (2026-11-10), the operator: \"we need a unimatrix skill ... progressive disclosure skills ... with skill routing\""
+				},
+				{
+					"id": "req-71",
+					"title": "Changing a new graph is obvious",
+					"statement": "There are no graph templates. Instead `umx graph new` ends by showing how to change the new graph's vocabulary and settings (the `umx ontology` and graph settings commands, with an example of each), and `umx docs get graph` covers it.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx graph new <folder> --alias x --human` prints the commands to add a type, a relation and a status and to change a graph setting; each printed command runs as shown.",
+					"source": "decision D30 (2026-11-10), the operator: \"as long as its very clear how to change the template / settings for a graph on init\""
+				},
+				{
+					"id": "req-72",
+					"title": "First-class config",
+					"statement": "umx has its own config file and commands (show, set, check) for providers and defaults, layered machine-wide then per repository, with secrets kept out of it (environment or a secrets file umx owns). It never reads another tool's config.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx config show` lists every setting with where it came from; `umx config set embedder.azure.endpoint <url>` writes it; `umx config check` names a missing or invalid setting with a runnable next.",
+					"source": "decision D27b (2026-11-10), the operator: \"copy config to our own config ... need first class config\"; workshop 009 (not published)"
+				},
+				{
+					"id": "req-73",
+					"title": "Azure embeddings through az login",
+					"statement": "umx embeds with Azure OpenAI signed in through the Azure CLI (`az login`, Entra ID) by default, using the same resource and deployment as Flowspace copied into umx's config. API-key auth is an option, never the default. The credential is explicit in config.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With `az login` done and no key set, `umx` embeds a fixture graph through Azure; with `auth = \"api_key\"` and a key in the environment it does the same; with neither, the error names `az login` as the next step.",
+					"source": "decisions D27a, D27b, D27c (2026-11-10); workshop 009 (not published)"
+				},
+				{
+					"id": "req-74",
+					"title": "A local embedding model",
+					"statement": "umx can embed with a local model (no network): embeddinggemma-2 in BF16 GGUF through llama.cpp, Metal on macOS, CPU elsewhere, CUDA as an opt-in feature (D46, chosen by a bake-off on public retrieval sets and two GPU spikes). Model files are pinned by hash.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "With the network blocked, a graph configured for the local model embeds; the bake-off result (quality, parity and speed for the candidates) is committed; a model file whose hash differs is refused.",
+					"source": "decision D27d (2026-11-10; superseded by D44 and D46); workshop 009 (not published); docs/project/benchmarks/embed-bakeoff/RESULT.md"
+				},
+				{
+					"id": "req-75",
+					"title": "A graph records its embedding model, and pulls stay compatible",
+					"statement": "Each graph records in `graph.json` (committed) the embedding model and dimensions its vectors were made with, plus the text-form version, like Flowspace does. Vectors are keyed by model and dimensions, never by provider or deployment, so teammates using different providers of the same model stay compatible. When the graph's model does not match what this machine is set up to embed with (for example after pulling someone else's graph), umx keeps working on the committed vectors, embeds nothing new with the wrong model, and says so with the two ways out: configure a provider for the graph's model, or deliberately re-embed the graph with `umx embeddings reembed --model <m>` (which shows the cost first). It never mixes models in one graph or re-embeds without being asked.",
+					"actor": "a-teammate",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Pull a graph embedded with model A onto a machine configured only for model B: `umx graph load` warns `embedder_mismatch` naming both models and the two next commands; similarity search on committed vectors still works; adding a node leaves its vectors pending, not made with B; `umx embeddings reembed --model B --dry-run` prints the vector count and estimated cost, and without `--dry-run` rewrites every vector and updates graph.json.",
+					"source": "the operator, 2026-11-10: \"Flowspace stores the embedding type ... make sure we do that as well so that way we can maintain compatibility\"; workshop 009 (key by model@dims)"
+				},
+				{
+					"id": "req-76",
+					"title": "Edges to missing nodes are kept and reported",
+					"statement": "An edge that names a node missing from its graph (for example after a git merge of a node delete with an edge add) is loaded with a `dangling_edge` warning and reported by `umx check`. It is left out of the loaded graph (edge lists, counts, walks) but kept aside so its line survives every write, and it rejoins the graph at the next load if the node returns. Nothing is erased.",
+					"actor": "a-teammate",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Add an edge line to `edges.jsonl` naming a missing node: `umx graph load` warns `dangling_edge` with the edge id, `umx check` lists it, `umx edge list` and walks do not show it, a later unrelated write keeps the line in the file, and restoring the node makes the edge appear after reload.",
+					"source": "graph-storage-expert ruling 2026-11-10 (same principle as the repeated-id ruling, req-67); requested by the project manager"
+				},
+				{
+					"id": "req-77",
+					"title": "Nodes that are outside things",
+					"statement": "A node can be a file, folder or URL: an ordinary node with a standard `locator` field holding where it lives (`kind`: file, folder, url), its `format` (which decides the selectors it supports), its `source` (a path relative to the graph folder, `root:repo/<path>` for elsewhere in the same git repo, `root:<name>/<path>` in a source root configured on this machine, or an http(s) URL; never an absolute path), and the hash umx last saw. The node's `type` stays soft vocabulary. There is one resource node per locator in a graph: adding the same source again returns the existing node. umx never fetches URLs. Reserved node names, exposed flat to Cypher: `locator`, `locator_kind`, `locator_source`, `locator_format`, `locator_hash`, `locator_length`, `locator_seq_max`, `locator_of`, `locator_selector`. A duplicate locator after a merge loads with a `duplicate_locator` warning and nothing is erased. Refreshing a locator's hash or length is bookkeeping and does not bump `updated`.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`umx node add --type document --locator docs/brief.md` creates a node titled from the file; running it again returns the same id with `resource_exists`; `umx resource show <node>` prints its metadata; editing the file makes `umx resource check` report `source_changed`; `--locator /abs/path` outside the repo is refused with the `root:` form in `next`; `umx edge add <person> shared <node>` works like any edge.",
+					"source": "decided 2026-11-10: nodes can be external things (URL, file), transcripts that link to lines; workshop 010 (not published) sections 3, 5"
+				},
+				{
+					"id": "req-78",
+					"title": "Every passage is addressable",
+					"statement": "A resource node gives every passage inside it an address without making it a node: `umx:<alias>/<id>#<selectors>`, where a selector is `seq=` (transcript entries), `L` (file lines), `section=` (heading path) or `quote=` with optional `prefix=`/`suffix=`, joined by `&` and tried in order. A fragment with `=` or starting `L<digit>` is a selector, anything else is a field (req-55). umx writes and stores selectors in one canonical, percent-encoded form, and the same grammar serves addresses, evidence pointers and edge ends. Resolving reads the source and returns the passage (for transcripts: sequence, time, speaker, chat flag and text, marked untrusted), which selector matched, and the source status.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`umx resolve umx:demo/<transcript>#seq=3206-3210` returns those 5 entries with sequence, speaker and text; `#L10-L12` and `#section=Scope` on a markdown node return those lines; `#seq=1` on a markdown node gives `selector_unsupported`; any selector on a node with no locator gives `not_a_resource`; `quote=we ship` is answered in canonical form `quote=we%20ship`; the graph's node count does not change.",
+					"source": "decided 2026-11-10: nodes can be external things (URL, file), transcripts that link to lines; workshop 010 (not published) sections 2, 4"
+				},
+				{
+					"id": "req-79",
+					"title": "Excerpt nodes by promotion",
+					"statement": "When a passage needs its own notes, status or many links, `umx excerpt promote <resource>#<selector>` creates one `excerpt` node, `part_of` the resource, with a passage locator (resource id, canonical selector, quote snapshot). It rewrites every selector edge in writable loaded graphs that pointed at exactly that selector to point at the excerpt, keeping edge ids, and lists overlapping selectors without rewriting them. Promoting the same selector again returns the existing excerpt. Evidence pointers are never rewritten, and an address naming the promoted selector still resolves and reports `promoted_to`. Promotion is written with the write-a-set call (workshop 008 section 4.1) and does not ship before it; T's graph is written first, then each other graph as its own set, with failures reported as warnings. An edge that becomes identical to an existing one is kept and listed as `duplicate_after_promote`.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "With two edges to `<T>#seq=3206-3240` and one to `<T>#seq=3200-3250`, `umx excerpt promote '<T>#seq=3206-3240'` creates one excerpt part_of T, the two edges now point at it with the same ids and no selector, the third is listed as overlapping and unchanged; running it again returns the same excerpt id with `excerpt_exists`; `umx resolve <T>#seq=3206-3240` reports `promoted_to` the excerpt.",
+					"source": "decision D35, option C (2026-11-10); workshop 010 (not published) section 7"
+				},
+				{
+					"id": "req-80",
+					"title": "Who cites this node",
+					"statement": "`umx backlinks <node>` lists text files in the loaded graphs' repos and registered source roots that contain the node's address in any form (field, selector, copy, ?repo=, old alias, unique short prefix), with path, line and the address as written. Resource nodes group passage backlinks by selector. The index is a local cache refreshed by the file watcher, never committed; files inside a secured graph's folder appear only when that graph is in scope.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Paste a node's address, and separately an old-alias short-prefix form of it, into a markdown file in the graph's repo: `umx backlinks <node>` lists both with file and line; deleting the lines removes them after the watcher runs; a file outside the repos and roots is not listed.",
+					"source": "decided 2026-11-10: nodes can be external things (URL, file), transcripts that link to lines; workshop 010 (not published) section 9"
+				},
+				{
+					"id": "req-81",
+					"title": "Edges to passages (selector edges)",
+					"statement": "An edge end may carry a selector, so an edge points straight at a passage of a resource: stored as `to_selector` / `from_selector` (canonical selector strings) on the edge line. This is the default way to link to lines. Edges with the same ends, type and selectors are one edge; different selectors on the same two nodes are different edges. Only resource nodes take selectors (a `#field` end is refused). In Cypher the selectors are ordinary edge properties, null for whole-node edges. A selector edge is a typed relationship to a passage; an evidence pointer records where a node's content came from. Reserved edge names: `from_selector`, `to_selector` and derived `from_seq_from`, `from_seq_to`, `to_seq_from`, `to_seq_to`.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`umx edge add <answer> answered_in 'umx:demo/<T>#seq=3206-3240'` stores `to_selector: \"seq=3206-3240\"`; adding it again returns `edge_exists`; `umx query \"MATCH (a)-[r:answered_in]->(t) WHERE r.to_selector STARTS WITH 'seq=' RETURN a.title, r.to_selector\"` returns the row; the Cypher check lands with `umx query` and workshop 006 R-Q2/R-Q3 (bound relationship variables, each parallel edge counted), and two selector edges to one transcript return two rows; `umx edge list --to <T> --selector seq=3200-3300` lists it; deleting those lines from the transcript makes `umx check` list the edge as `selector_not_found` without dropping it.",
+					"source": "decision D35, option C (2026-11-10); workshop 010 (not published) section 6"
+				},
+				{
+					"id": "req-82",
+					"title": "Live transcripts grow without being a change",
+					"statement": "A transcript locator records the hash of the bytes it has read, their length and the last sequence number. A longer file whose recorded prefix still matches is `grown`, not changed; a changed prefix is `source_changed`. A pass (req-61) or `umx resource check --update` moves the record forward. A `seq` selector past the recorded end still resolves, reading the file live, and says `beyond_recorded`.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Append 10 entries to a registered transcript: `umx resource check` reports `grown`; `umx resolve <T>#seq=<new>` returns the entry with `beyond_recorded`; edit an early entry: the check reports `source_changed` and `seq` selectors still return the right entries.",
+					"source": "workshop 010 (not published) section 5; req-61"
+				},
+				{
+					"id": "req-83",
+					"title": "Word and PDF passages",
+					"statement": "Word (.docx) resources support `section=` (by Heading styles) and `quote=` selectors. There is no paragraph id, because `w14:paraId` is not stable. PDF resources support `page=` and `quote=` (a could inside this row).",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "On a fixture .docx, `umx resolve <doc>#section=Scope/Risks` returns that section's paragraphs and `#quote=...` finds a sentence after a paragraph is inserted above it.",
+					"source": "workshop 010 (not published) sections 4, 13; workshop 002 (not published) PROV-2"
+				},
+				{
+					"id": "req-84",
+					"title": "Transcript lines in queries",
+					"statement": "The daemon can present a transcript's entries as virtual, read-only `:line` nodes (seq, time, speaker, chat, text) joined by `has_line`, for queries only: never written to graph files, embedded or counted. The line table is built before the query, the first time one needs it, and cached outside the graph. It is passed to the executor as a read-only layer with its own handle space. `:line` and `has_line` appear only when a query names them. Selector edges are joined to lines through the derived seq integers, not duplicated as edges. `l.text` is untrusted.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "`umx query \"MATCH (t:transcript)-[:has_line]->(l:line) WHERE l.speaker = 'Speaker 2' RETURN l.seq\"` returns that speaker's entries; `MATCH (n) RETURN count(n)` is the same before and after; `MATCH (a)-[r:answered_in]->(t)-[:has_line]->(l) WHERE l.seq >= r.to_seq_from AND l.seq <= r.to_seq_to RETURN l.seq` returns the cited lines; the graph files and `umx graph stats` node count are unchanged.",
+					"source": "the operator, 2026-11-10: \"a transcript node and then a line number node\"; workshop 010 (not published) section 8; cypher-expert verdict C4; graph-storage-expert verdict S5"
+				},
+				{
+					"id": "req-85",
+					"title": "umx doctor",
+					"statement": "`umx doctor` diagnoses the whole setup in one command and repairs what it safely can: daemon running and its build matching the CLI, socket and folder permissions, graph roots, config validity (req-72), embedder reachable (an `az login` token, or local model files present with the pinned hash), every registered graph's folder present, `umx check` on each loaded graph, and the persistent service (req-86) installed and healthy. Each finding has a code, a plain message and a runnable `next`; the verdict is ok, degraded or broken. It works with the daemon down, and never starts a process or widens file access.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With everything healthy `umx doctor` says ok; stopping the daemon, rebuilding only the CLI, logging out of az, removing a registered graph's folder and corrupting the config each give their own finding with a runnable next and a degraded or broken verdict; `umx doctor --fix` repairs the safe ones (stale socket, permissions) and reports what it changed.",
+					"source": "decided 2026-11-10: doctor command and a persistent daemon; flowspace3 doctor as the model"
+				},
+				{
+					"id": "req-86",
+					"title": "A persistent daemon",
+					"statement": "`umx daemon install` sets the daemon up as a per-user service (a launchd agent on macOS, a systemd user unit on Linux) that starts at login, restarts after a crash, keeps logs in `$UMX_HOME`, and is upgraded by `just dev` and by reinstalling umx; `umx daemon uninstall` removes it. Running the daemon by hand (`umx daemon start`) still works, and starting a second one still refuses with daemon_already_running. `umx daemon restart` restarts a running daemon and never starts one from nothing: it waits for queued writes, then restarts through the service manager when the installed service runs that daemon, else in place with the same pid and flags. `umx daemon service` reports the installed service without needing the daemon.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "After `umx daemon install`, logging out and in (or `launchctl kickstart` on macOS, `systemctl --user restart umx` on Linux) brings the daemon up; killing it with `kill -9` brings it back within a few seconds; `umx daemon status` shows it as a service with its build; after `just dev` the service runs the new build; `umx daemon uninstall` leaves nothing behind in launchd or systemd.",
+					"source": "decided 2026-11-10: doctor command and a persistent daemon; flowspace3 doctor as the model; amends D13 (still no auto-start from the CLI itself)"
+				},
+				{
+					"id": "req-87",
+					"title": "The embedding model stays warm, then unloads",
+					"statement": "The daemon loads the local embedding model on first use, not at start, and keeps it in memory so later embeds and searches reuse it with no reload. After a configurable idle time with no embed or search (default 15 minutes) it unloads the model and gives the memory back; the next use loads it again. Concurrent requests during a load wait for the one load, never start a second. The idle unload uses a timer, not polling (req-06). Hosted providers have no model to load.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "With the daemon freshly started, its RSS does not include the model; the first `umx search` loads it once and later searches show no load time (warm query p95 recorded in umx-bench); two searches fired at once during the load cause one load; after the idle time with no requests the model unloads and RSS drops by roughly the model's size, and the next search loads it again; `umx daemon status` and `umx doctor` show whether the model is loaded, its memory, and when it will unload.",
+					"source": "decided 2026-11-10: load it once, lazy, keep it in memory so queries are fast, unload when unused for a while (D47; follows D46 and req-03)"
+				},
+				{
+					"id": "req-88",
+					"title": "A batch verb",
+					"statement": "`umx batch --file <ops.jsonl|->` applies many changes as one: one JSON op per line (node add, edge add, node edit) with the same fields as the single verbs, temp refs (\"ref\":\"n1\") so later lines can name nodes created earlier in the batch, all or nothing, each graph file written once per batch, and `--dry-run` showing the change without writing. Ops come from a file or stdin, never long command-line strings (quoting, ARG_MAX).",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A 1,000-line ops file of node adds and edge adds that reference earlier refs applies in one call, writes nodes.jsonl and edges.jsonl once each, and reports each ref with its new id; a batch with one bad line changes nothing and names the line; `--dry-run` reports the same result without writing; 1,000 adds at 10k nodes take far less than 1,000 single adds.",
+					"source": "decision D48 (2026-11-10): build the batch verb now, before ingest (workshop 008 section 4's first lever); workstream 003 s07"
+				},
+				{
+					"id": "req-89",
+					"title": "Symmetric relations are one edge both ways",
+					"statement": "conflicts_with, alternative_to and possibly_same_as, and any relation a graph marks with `umx ontology add relation <r> --symmetric`, are symmetric: an edge is stored once with the lower node id as its source. `umx edge add` stores a symmetric edge that way whichever end is named first, and adding the reverse of an existing edge returns that edge with edge_exists. `umx graph load`, and marking a relation symmetric when it already has edges both ways, keep one edge of a reversed pair and warn symmetric_duplicate for the other line, which stays in the file as written. neighbours, walk and path follow a symmetric edge from either end whatever the direction asked; `umx edge list` stays literal. part_of and similar_to cannot be marked symmetric (symmetric_refused).",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx edge add B conflicts_with A` with A < B stores A conflicts_with B; adding it again either way returns edge_exists; a file holding both directions loads as one edge with a symmetric_duplicate warning; `umx neighbours B --direction out` lists A; `umx ontology add relation r --symmetric` on a relation with edges both ways leaves one active edge at once; `--symmetric` on part_of is refused with symmetric_refused.",
+					"source": "decision D49 part 2 (2026-11-10) (ws005 Cypher defaults; F48). The other D49 parts are ws005's."
+				},
+				{
+					"id": "req-90",
+					"title": "similar_to across graphs, computed on demand",
+					"statement": "When a query's scope holds more than one graph, a named `similar_to` step from a bound start node (bound by id before the step) also reaches nodes in each other graph in scope that has the same recorded embedding key (model@dims, prompt version included; req-75). These edges are computed at query time from the loaded vectors and never stored. For each such graph, the start node's top k nodes at or above the floor are returned, with k and floor taken from the start node's graph, scored from the int8 rows exactly as stored lists are, and ordered by score, then graph, then id. Each result carries its graph and address. A graph is never compared with another copy of its own graph id (d-21), and a secured graph only when the request names it (blueprint d-20). A graph in scope with a different key is not compared and is named in a `similar_to_model_mismatch` warning. A compared graph with nodes that have no whole-node vector gives `similar_to_incomplete`. Inward or undirected steps and unbound starts across graphs are refused with a next. Untyped steps never follow similar_to.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Two graphs a and b on the same key: `umx query --graph a,b 'MATCH (x {id: $id})-[s:similar_to]->(y) RETURN y.id, y.address, s.score'` returns x's stored list in a plus, from b, exactly the top k (from a's settings) of a brute-force scan of b's whole-node rows, with scores bit-identical to umx_core::similar::score_units on the same rows (oracle: in the same nodes merged into one graph, each returned b pair has the same score). With b on another key (other dims or prompt version), only a's rows come back and the answer warns similar_to_model_mismatch naming b and both keys. With `--graph a,a_copy` (two copies of one graph id) no row pairs a node with its twin. With b secured and not named, b contributes nothing. An unbound start, or an inward or undirected step into b, is refused with a next. A node of b with no whole-node vector gives similar_to_incomplete. Nothing is written to a's or b's similar/ files (both folders byte-identical before and after).",
+					"source": "decided 2026-11-10, workshop 008 sections 9-10 (split out of req-65 by the project manager, 2026-11-11)",
+					"note": "Wording from embeddings-expert and graph-addressing-expert. k is per other graph (embeddings-expert), so one large graph cannot crowd out the rest."
+				},
+				{
+					"id": "req-91",
+					"title": "A secured graph may use our own tenant's embedder",
+					"statement": "A graph has two settings: visibility (open, or named: left out of unscoped search and multi-graph reads unless named) and embedder (any, trusted, or local). Secured means named plus local, as before. Every embedder instance defined in the machine config is trusted (D62); a repo layer, env, flag or graph file can never define an instance, mark one trusted or loosen a graph's settings. A graph whose embedder setting is trusted embeds through local or machine-configured instances only; secret holds (req-49) still apply to trusted instances. Changing a hosted instance's endpoint, deployment, kind or model warns when non-open graphs route to it. Any graph that is not fully open (open plus any) keeps its vectors and similar files in the local cache, never in tracked paths, as a secured graph does.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "With a machine-configured hosted fake and an untrusted hosted fake that fails the test if called: a named+trusted graph embeds through the configured fake and its vectors stay out of tracked paths; a secured (named+local) graph never reaches a hosted fake; a repo layer, env or flag cannot define or trust an instance or widen a graph's embedder setting; a multi-graph search sends each graph's query only to an instance that graph admits; loosening either setting by pull or hand edit never takes effect without confirm-policy; unscoped search still skips named graphs, reporting a count only; a leftover trusted_endpoint warns config_key_deprecated.",
+					"source": "D53 (via a tester, 2026-11-11); design: plan 071 (not published) (security and architect agreed) D62 (2026-11-11): a machine-configured embedder is trusted; s20 shipped first, s20b removes the typed confirmation."
+				},
+				{
+					"id": "req-92",
+					"title": "Word search matches stems and prefixes",
+					"statement": "Word search matches English word forms and prefixes: a query word also finds its English stem's other forms (stemmer chosen in s21's design) (vendor finds vendors, vendors finds vendor) and, from a minimum length, terms that start with it (approv finds approve, approval and pre-approve). An exact word ranks above a stem match, which ranks above a prefix match; prefix expansion is capped and says when it was capped; each hit says which form it matched. Title find and the near-duplicate check keep exact surface words. Words with digits or non-English letters match exactly only (iso27001, ids).",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "With no embedder configured: `umx search vendor` finds a node titled 'Pre-approve listed vendors'; `umx search vendors` finds 'vendor'; `umx search approv` finds approve, approval and pre-approve; an exact match outranks a stem match outranks a prefix match; title find and near-duplicate answers are unchanged; hybrid search keeps its recall bounds on the recorded real vectors (the hybrid_recall test: hybrid at least the better leg minus 0.02, no query kind more than 0.05 below its best leg, exact title at rank 1); each hit reports the form it matched (word_terms), and a capped prefix is reported (word_prefix_capped).",
+					"source": "Tester friction (on a private graph, 2026-11-11) via the project lead"
+				},
+				{
+					"id": "req-93",
+					"title": "Every write records who made it",
+					"statement": "Every write (node add, node edit, edge add, batch) records its author, captured by the CLI, never by the daemon. There are three tiers: a pij seat (from `pij-rs --json whoami`, run once per CLI call); a harness without pij (the harness and its session id from the environment); and `cli` with the OS user. When nothing can be found, the author is `unknown`, and the write is never blocked. Provenance is a claim recorded by the writer, never an authority: nothing in umx keys a decision on it. Only an allow-list of values is captured (the harness name and its session-id variable per known harness, the OS login name, and pij whoami's fields by name), each validated and run through the secret scanner; a value that fails becomes unknown. No hostname, IP, home path, working folder, full name, token or key is ever stored.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "From a pij seat, `umx node add` records that seat, its role, model and harness and the harness session; from a harness without pij it records the harness and session; from a plain shell it records cli and the OS user; with the pij daemon down it records the next tier down and the write still succeeds. whoami runs once per CLI call, never once per node.",
+					"source": "decision D55 (2026-11-11, via the project lead); architect note f:agent-provenance; graph-addressing-expert ruling f:agent-provenance"
+				},
+				{
+					"id": "req-94",
+					"title": "Provenance lives in the graph",
+					"statement": "Provenance is stored in the graph's own files, so it travels with the graph through git. A content node points to the session that wrote it (authored_by, edited_by), the session to its agent (session_of), and the agent to its harness, model and platform (runs_on, uses_model, registered_in). Those are ordinary nodes of reserved types, one per prov_key per graph, keyed by prov_key, not by locator. Content nodes carry the link as a key on their own line, so a graph does not grow one edge per node. Node lines carry authored_by_session and edited_by_session (the last edit only, not a history); edge lines carry authored_by_session. A committed session id is display-only: umx never opens, resumes, fetches or builds a path or URL from it.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "After writes from two seats, the graph's files hold one session node per harness session and one agent, model, harness and platform node each, with the links above. A pulled copy of the graph shows the same provenance on another machine. An older umx still reads the files (unknown keys kept), and the write overhead is under 2% at 100k nodes.",
+					"source": "decision D55 (2026-11-11, via the project lead); architect note f:agent-provenance; graph-addressing-expert ruling f:agent-provenance"
+				},
+				{
+					"id": "req-95",
+					"title": "Provenance is hidden unless asked for",
+					"statement": "Provenance nodes and their derived relations are left out of every read (lists, find, search, similarity, walks, path and Cypher) unless the request asks for them with `--provenance`.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Every read verb, with a test each, shows no provenance node or relation by default and shows them with `--provenance`; search, walk and similarity results and costs are unchanged with provenance hidden. `umx who` and `umx node who` work without --provenance.",
+					"source": "decision D55 (2026-11-11, via the project lead); architect note f:agent-provenance; graph-addressing-expert ruling f:agent-provenance"
+				},
+				{
+					"id": "req-96",
+					"title": "umx who",
+					"statement": "`umx who <seat|session>` lists what that seat or session made and edited, across the graphs in scope, and `umx node who <node>` shows who made and last edited a node.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx who <seat>` lists the nodes and edges that seat authored or edited, with addresses; `umx who <session>` does the same for one session; `umx node who <node>` prints the session, agent, role, model and harness, each with its address.",
+					"source": "decision D55 (2026-11-11, via the project lead); architect note f:agent-provenance; graph-addressing-expert ruling f:agent-provenance"
+				},
+				{
+					"id": "req-97",
+					"title": "Data fields are never embedded",
+					"statement": "Each field type has a role, content or data. Data fields (file names, ids, agent ids, seats, hashes, locators, provenance) are never embedded: they get no field vector and are left out of the whole-node text form; content fields embed as before. `umx ontology add field <type> name:kind --role data|content` sets it, with a default per kind (string is content; int, float, bool, date and list are data and cannot be content), and `umx ontology set field` changes it. Leaving data fields out is a new text-form version: a graph with no data field keeps every vector, a node whose whole-node vector included a field now marked data goes pending, and nothing is re-embedded on load: only reembed or an explicit role change remakes vectors. Data fields of kind string stay searchable by words and exact match.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A data field gets no field vector and is absent from the whole-node text; a content field embeds; kind defaults apply and a non-string kind is refused as content; a graph made before this with no data field loads with zero pending and zero embed calls; a node whose committed whole-node vector was made from text that included a field now marked data goes pending (text_form_outdated) on load, and nothing remakes it passively: only reembed or an explicit role change does; a graph with no data field records text_form 2 at its next graph.json write, never on load; changing a role marks the affected nodes pending with a warning (count and the dry-run next), and the worker then remakes their whole-node vector (plus the field vector for data to content), dropping data-field lines; with a recording fake embedder, the document texts sent for field and whole-node vectors are built without any data field, and a search query's text is sent unchanged; word search still finds the values of data fields of kind string.",
+					"source": "D56 (2026-11-11); design: plan 082 (not published) (embeddings-expert and architect agreed)"
+				},
+				{
+					"id": "req-98",
+					"title": "std v1 built in and versioned",
+					"statement": "umx ships one standard vocabulary, std v1, built into the binary: people (person, organisation, team, role), work (project, meeting, event, decision, action, question, risk, topic), sources (document, transcript), places and things (place, system), resources (file, url, folder, excerpt), and the reserved provenance types, with the relations that join them (member_of, works_for, part_of, attended, owns, decides, answers, raised_in, raised_by, held_at, mentions, sourced_from, supersedes). Names are stored plain (`person`, never `std:person`); `std:` is a qualifier the CLI accepts on any type, relation or field name and refuses with `not_std` for a name outside std. A graph opts in with `std: <n>` in its ontology, new graphs opt in by default (`--no-std` opts out), and a graph with a higher std than the build knows loads with `std_newer` and never refuses. std versions only add names. A person has `job_title` and no name field (the node title is the name); `role` is a type. A meeting is a gathering with attendees and an event is a happening that is not a gathering. std v1 has date fields, all of kind date with role data: starts_on and ends_on on meeting and event, starts_on, ends_on and due_on on project, and due_on on action, decision and risk; a value is a date or a date-time (the date kind keeps a time normalised to UTC, written with a Z). A meeting or event is held somewhere with `held_at` (a stored user relation to a place; the endpoints are soft, so an online meeting may point at a system).",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "`umx ontology show` marks std entries and `umx ontology show --std` prints std v1 alone; `umx node add --type std:person` works and `--type std:widget` gives `not_std`; `umx graph new` writes `std: 1` and `--no-std` does not; a graph with `std: 2` loads with `std_newer` naming both versions; every name in the interim std sheet is in std v1 except the two renamed person fields; a graph without `std` stays byte-identical; `--set starts_on=2026-11-11` and `--set due_on=2026-11-11T09:00:00Z` are accepted on a project; `edge add <meeting> held_at <place>` and `edge add <meeting> held_at <system>` (an online meeting) both succeed, and `edge add <meeting> held_at <person>` succeeds with `relation_endpoint_unexpected`.",
+					"source": "decision D57 (2026-11-11); graph-addressing expert ws008 design"
+				},
+				{
+					"id": "req-99",
+					"title": "std reserved names, clashes and soft endpoint types",
+					"statement": "In a std graph, std names are reserved: a custom type or relation with a std name and no fields is a no-op, a custom field with a std field's name and another kind is refused with `std_field_conflict`, a user node of a provenance type warns `reserved_type`, and a user edge with a reserved stored relation or a derived relation is refused (`reserved_relation`, `relation_derived`). Each std relation carries soft `from_types` and `to_types` (works_for person to organisation; member_of person to team and team to organisation; owns an owner to any node; raised_by question, risk, decision or action to person, team or organisation; raised_in to meeting or event; held_at meeting or event to place or system). An edge outside them is accepted with the warning `relation_endpoint_unexpected` naming the expected types and is never refused; a graph widens them with `umx ontology add relation <r> --from <t> --to <t>`. The name `std` is reserved as a type, relation and field name in every graph, std or not (`reserved_name`), so the `std:` qualifier is never ambiguous. A non-std graph reserves nothing else new. In Cypher, std names are plain: a label or relationship type spelled `std` or `std:<x>` is refused with `query_std_qualifier` (message \"std names are plain in Cypher: write :<x>\", next `umx docs get query`), because `(n:std:person)` is a label union that umx's soft vocabulary would otherwise accept and widen to every person. The derived relations authored_by and edited_by follow similar_to's rules in Cypher: they appear only when a step names them by type, a variable-length step on them is refused (`query_feature_not_supported`), they are never symmetric, the edge value is {type, from, to, graph, derived: true} with no id, both directions work, and a session outside the parts in scope gives no row. An edge's author is the field `r.authored_by_session`, not a step, because edges are not nodes.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "In a std graph `edge add a authored_by b` and `--set prov_key=x` are refused; a custom field `title` of another kind on a std type gives `std_field_conflict`; `edge add <person> works_for <team>` succeeds with `relation_endpoint_unexpected` naming organisation; after `umx ontology add relation works_for --from person --to team` the same call has no warning; an older umx's stored authored_by edge loads with `reserved_relation_stored` and nothing is dropped; a non-std graph accepts all of these names as ordinary custom names, except that `umx ontology add type std` (or a relation or field named `std`) is refused with `reserved_name` in any graph; `MATCH (n:std:person) RETURN n` and `MATCH (a)-[:std:member_of]->(b) RETURN a` are each refused with `query_std_qualifier` while `MATCH (p:person)-[:member_of]->(t:team) RETURN p` works; `MATCH (n)-[r:authored_by]->(s:session) RETURN n, s` returns edges with `derived: true` and no id, an untyped step returns none, and `-[:authored_by*1..2]->` is refused with `query_feature_not_supported`.",
+					"source": "decision D57 (2026-11-11); graph-addressing expert ws008 design and addendum; cypher-expert note topic:ws008-cypher-form"
+				},
+				{
+					"id": "req-100",
+					"title": "Custom fields on std types",
+					"statement": "A graph can add its own fields to a std type (`umx ontology add field person shoe_size:int`). The effective declaration is std's fields plus the graph's; a custom field may not reuse a std or reserved field name, and a lower ontology level may add fields to a std type but never narrow or override std's own.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`umx ontology add field person shoe_size:int` in a std graph stores only the custom field and `ontology show` lists std fields first, tagged std, then the extension; a field that reuses a std field name or a reserved key name is refused; a lower level that redeclares a std field's kind is refused.",
+					"source": "decision D57 (2026-11-11); graph-addressing expert ws008 design"
+				},
+				{
+					"id": "req-101",
+					"title": "Adopt std in an existing graph",
+					"statement": "`umx ontology adopt-std` moves an existing graph onto std in one write set: it sets `std: 1`, folds in the graph's own declarations that std now supplies, keeps custom fields as extensions, and leaves every other custom name alone. `--map individual=person` renames a type or relation on matching lines and never changes ids or addresses; renames are never inferred, only suggested in `--dry-run`, which writes nothing. Conflicts are listed with their fix and block the write. The verb is idempotent and works on secured graphs.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A graph built to the interim sheet adopts with zero line changes; `--map individual=person` rewrites only those lines and keeps ids; a second run reports `already_std` and writes nothing; `--dry-run` writes nothing and prints the plan; each conflict kind (field kind clash, a custom relation named like a reserved or derived one with edges) has a fixture and writes nothing.",
+					"source": "decision D57 (2026-11-11); graph-addressing expert ws008 design"
+				},
+				{
+					"id": "req-102",
+					"title": "Entity keys across graphs",
+					"statement": "Anything can be an entity: one reserved field `entity_key`, a list of strings, role data (never embedded or word-indexed), on any type, with no closed list of entity types and no person_key, org_key or team_key. Two nodes of the same type in any graphs that share a key are the same entity. Each key is `<scheme>:<value>` with a snake_case scheme; `id:` takes a 26-character umx id, `email:` and `upn:` are allowed and are lowercased and trimmed, and any other snake_case scheme is accepted. A malformed key is refused with entity_key_invalid. Each graph keeps an entity key index (same type plus normalised key), and a key shared by two nodes in one graph warns duplicate_key, keeps both and lets the lower id win. `umx entity key <node> add|remove <key>` sets keys (as do node edit and batch); `--where entity_key=<k>` finds the members across `--graph a,b` and `--scope`. There is no central or directory graph (D63): each graph keeps its own nodes.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Two graphs each with a person node keyed `email:Ana@X.com` and `email:ana@x.com` are both found by `umx node list --where entity_key=email:ana@x.com --scope <name>`; the same key on an organisation and a person does not match; `umx entity key <node> add bad key` is refused with entity_key_invalid and nothing is written; a duplicate key in one graph warns duplicate_key on load and write; a secured graph not named gives nothing; a graph with no keys keeps byte-identical files.",
+					"source": "decision D57 (2026-11-11); rewritten for D63 to D63c (no directory graph, one entity_key list on any type, email and UPN allowed); entity identity review brief"
+				},
+				{
+					"id": "req-103",
+					"title": "An agent can orient in a graph",
+					"statement": "`umx graph guide <alias>` gives an agent the graph's purpose and conventions, then every type, status and relation with a one-line meaning, a count and one example. Meanings are stored in graph.json through `--description` on `umx ontology add` and `umx graph set --description`, and the purpose and conventions through `umx graph set --purpose` and `--conventions`. A missing description shows as missing with a next naming the command to set it, and is never invented.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "On a graph with descriptions, `umx graph guide <alias>` lists each type, status and relation with its meaning, count and example, after the purpose and conventions; on an undescribed graph it exits 0 with warnings naming the commands that set descriptions.",
+					"source": "decision D54 lane B (2026-11-11, via the project manager)"
+				},
+				{
+					"id": "req-104",
+					"title": "The operator opens a local graph view",
+					"statement": "`umx ui` starts the local web view and opens the browser on this machine only: a server bound to 127.0.0.1 on a free port, a per-run token exchanged once for an HttpOnly SameSite=Strict cookie, Host checked on every request and Origin on any non-GET, a strict CSP and no request to any other host (no remote fonts, analytics or update checks). It reads graphs only through the installed `umx` with an allow-list of read verbs, never graph files directly.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "A request with a wrong Host, no cookie or a foreign Origin is refused; the server listens on 127.0.0.1 only; the page loads with the network tab showing only 127.0.0.1.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-105",
+					"title": "The operator picks a graph",
+					"statement": "The view lists every graph the daemon has, with node and edge counts. A secured graph opens only when named; views across graphs count secured graphs and never name them (blueprint d-20).",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "The picker matches `umx graph list`; picking a graph draws it.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-106",
+					"title": "The operator zooms, pans and fits a graph",
+					"statement": "The canvas draws the chosen graph with WebGL (sigma.js and graphology), with smooth zoom, pan and fit, and stays fluid at 10,000 nodes. A graph larger than the load cap opens with a banner saying it is truncated, never silently.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "A private graph and a 10k-node synthetic graph open; zoom, pan and fit work; a frame-time number at 10k is recorded.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-107",
+					"title": "The operator reads a node",
+					"statement": "Clicking a node opens a panel with its title, type, status, fields, evidence and neighbours; clicking a neighbour moves to it. Node content renders as text only (it may be ingested and untrusted); links open only for http(s).",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "The panel shows what `umx node get` and `umx neighbours` return for that node.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-108",
+					"title": "The view looks good in light and dark",
+					"statement": "Light, dark and system themes on shadcn/ui. Colours, shapes and rings come from the UI, derived from type and status, never from the vocabulary (D42); std types (D57) get a curated palette by family and custom types a stable hashed hue that reads in both themes. Provenance (D55) and retired nodes are hidden by default, with a toggle each.",
+					"actor": "a-operator",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "Screenshots in both themes; the same type has the same colour in every graph.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-109",
+					"title": "The operator sees clusters",
+					"statement": "Detected communities are coloured with soft hulls, and a Parent mode groups by the part_of tree.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "On a private graph, clusters and hulls draw; switching to Parent regroups.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-110",
+					"title": "The operator focuses a neighbourhood",
+					"statement": "Focusing a node shows its neighbourhood 1 to 3 hops out and dims the rest.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "Focus at 1, 2 and 3 hops shows exactly the nodes `umx walk` returns at that depth.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-111",
+					"title": "The operator filters by relation, type and status",
+					"statement": "Chips with counts filter edges by relation and nodes by type and status.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "Turning a chip off hides exactly those nodes or edges and the counts agree.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-112",
+					"title": "The operator searches the graph",
+					"statement": "Title find, hybrid search (exact, word, vector) through the daemon, and \"similar to this node\" through the daemon's similar_to; vectors never reach the browser.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "Results match `umx node find`, `umx search` and similar_to for the same input; clicking a result pans to it.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-113",
+					"title": "Changes made from the CLI appear live",
+					"statement": "A node or edge added, edited or removed through the CLI appears in an open view without a reload.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "A `umx node add` shows in the open view within two seconds.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-114",
+					"title": "An agent steers the view",
+					"statement": "`umx ui focus|highlight|filter|fit|clear` drive the open view through the daemon. The screen notes each agent action, shows the agent's highlight apart from the operator's selection, never moves the camera while the operator is using it (follow mode), and `clear` removes only agent state.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "Each verb changes the open view and is listed in the activity strip; an unknown node is refused.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-115",
+					"title": "An agent sees what the operator selected",
+					"statement": "`umx ui selection` returns the ids, addresses, titles and types the operator has selected; the view shows that the selection is shared.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "Selecting three nodes and running `umx ui selection` returns those three.",
+					"source": "the operator, 2026-11-11, via the project lead's UI brief; workstream 009"
+				},
+				{
+					"id": "req-116",
+					"title": "An index of every graph this machine has loaded",
+					"statement": "The daemon keeps a machine-local index of every graph ever loaded on this machine (in $UMX_HOME/state, beside the loaded set from F72), so graphs that have unloaded can be found and reloaded. `umx graph list --all` shows loaded and unloaded graphs together: alias, id, folder path, last loaded, node and edge counts, embedding model, policy, the repo it lives in, whether the folder still exists (`missing` if not), and the exact command to reload it. `umx graph load <alias>` resolves an unloaded alias through the index. `umx graph forget <alias>` removes an entry. A secured graph lists only its alias, id and path, never content.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "After loading three graphs and letting one idle-unload and another be unloaded by hand, `umx graph list --all` shows all three with the right state, path, counts and reload command; `umx graph load <alias>` reloads the unloaded one by alias; renaming one graph's folder shows it as missing; `umx graph forget <alias>` removes it; a daemon restart keeps the index; a secured graph's row carries no content.",
+					"source": "decision D61 (2026-11-11): list graphs that were loaded in the past, as an index with the command to reload them and the files (builds on F72 and req-15's registry)"
+				},
+				{
+					"id": "req-117",
+					"title": "std tags and the tag filter",
+					"statement": "In a std graph every type has a std `tags` field: a list, role data (never embedded or word-indexed), on nodes only in v1. Each tag is `<value>` or `<facet>:<value>`, both snake_case (`[a-z][a-z0-9_]{0,63}`), for example `origin:double_diamond` or `needs_review`. Tags are stored lowercased, deduplicated and sorted, so order never makes a git diff; input that is not snake_case is refused with tag_invalid and the snake_case form in next. Tags are free-form by default; `umx ontology add tag <facet>:<value>` (or `<facet>:*`) declares them, and once a facet has declared tags an undeclared tag in it warns tag_off_vocabulary (never refused). `umx node add --tag`, `node edit --tag/--untag` and batch `tags`/`tag`/`untag` write them. `--tag a` filters node list, node find, search, walk and neighbours `--within`: repeated flags are AND, a comma inside one flag is OR, `--tag 'origin:*'` matches a facet and `--no-tag` excludes, across `--graph a,b` and `--scope` with the d-20 and d-21 rules. One inverted tag index per graph keeps filters from scanning. In Cypher, `'x' IN n.tags`. `umx ontology adopt-std --field-to-tag <field>` turns a custom field's values into `<field>:<value>` tags. In a non-std graph `tags` stays an ordinary custom name.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "In a std graph, `umx node add ... --tag origin:Double-Diamond` is refused with tag_invalid suggesting `origin:double_diamond`; `--tag b --tag a --tag a` stores `[a, b]`; `node list --tag origin:double_diamond --tag needs_review`, `--tag x,y`, `--tag 'origin:*'` and `--no-tag x` return the right nodes from the tag index without a scan; a declared facet warns tag_off_vocabulary on an undeclared tag; `ontology adopt-std --field-to-tag origin` moves every origin value into a tag with ids unchanged and lists values it cannot normalise; `MATCH (n) WHERE 'needs_review' IN n.tags` matches.",
+					"source": "a test graph; graph-addressing expert topic:ws008-std-tags (2026-11-11); project lead (ws008 builds tags end to end; the project manager reviews the Cypher side)"
+				},
+				{
+					"id": "req-118",
+					"title": "Embedding setup and status without restarts or guesswork",
+					"statement": "`umx embeddings probe` tests an instance added to the config after the daemon started, without a restart, and never changes routing. `umx config import --from flowspace3` copies only the embedder settings (kind, endpoint, deployment, model, dims) into the machine config, never reads or echoes a secret, refuses a source file others can write, prints the resulting model key and warns when it matches no loaded graph or has no calibrated floor; `--dims` overrides the width. `umx embeddings status` reports, per graph, the instance, model key and pending, held and done counts, with no network or credential call; named graphs appear by alias with counts only.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"source": "Azure rollout frictions (a tester, 2026-11-11); ws004 s27",
+					"done_when": "Probe of an instance added after start works without restart; import sets exactly the embedder keys, never reads a fixture secrets.env, and its collision repair keeps --as, --model and --dims; status reports unknown, not current, when a graph's vectors could not be read."
+				},
+				{
+					"id": "req-119",
+					"title": "Similarity floors calibrated per model",
+					"statement": "Search and similar_to use a floor per model key, measured on public retrieval sets (BEIR SciFact, NFCorpus, ArguAna): the noise p99 of query-to-document (search) and document-to-document (similar_to) scores, lowered for search only as far as keeps hybrid nDCG@10 within 0.01 of no floor. A model key without a calibration gets no floor and a floor_uncalibrated note naming the use that lacks one, never a guessed constant. Machine-only overrides embedders.<n>.search_floor and similar_floor take precedence. The floors and their runs are committed under docs/project/benchmarks/floor-calibration.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"source": "Azure rollout: the uncalibrated 0.5 floor gave 33 of 41 probes no vector row; embeddings-expert's ruling; ws004 s26",
+					"done_when": "At least 30 of the 41 rollout probes return a vector row with text-embedding-3-large@256; floors.json matches the committed runs; an unknown key gets floor_uncalibrated; a repo layer cannot set a floor."
+				},
+				{
+					"id": "req-120",
+					"title": "Embedding runs in parallel up to each instance's limit",
+					"statement": "Background embedding keeps up to an instance's concurrency ceiling of batches in flight (Azure 31 plus one slot kept for queries; local sessions as configured), paced by a per-instance tokens_per_minute set in the machine config only. A 429 pauses only that instance, honours Retry-After and halves its pace once per episode (never below an eighth), recovering after a quiet minute. A search's query embed never waits behind background batches. Writes stay as fast as req-121 promises.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"source": "the operator, 2026-11-11: parallel embedding like flowspace3; ws004 s25",
+					"done_when": "With a fake at ceiling N, at most N batches are in flight and more than one is; a 429 pauses only that instance; a query embed during a full load returns within its bound; secured and held texts never reach a hosted fake; nodes/s, calls/s and the longest write-lock hold are reported against main on a synthetic 5k graph."
+				},
+				{
+					"id": "req-121",
+					"title": "Writes never wait on background embedding",
+					"statement": "While a graph's vectors are being made, client writes (node and edge adds, edits, batches) go ahead of embedding work and return in their normal time. Embedding applies its results in short steps that give way to a waiting write, and similar_to lists are refreshed in memory at once and written to disk as one set when the backlog drains. If the daemon stops mid-drain, the next load finds the lists stale and rebuilds them; it never trusts a half-written set.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"source": "Azure rollout: writes waited 30 to 60 s during the embedding backlog; ws004 s25a",
+					"done_when": "Client write p95 while 2,000 nodes drain is within 1.5x idle; each embedding step holds the write lock for at most one file; a crash after a partial similar_to flush reloads as stale and rebuilds to the same bytes as a one-shot rebuild."
+				},
+				{
+					"id": "req-122",
+					"title": "Title find finds long titles from a few of their words",
+					"statement": "`umx node find` matches a short query against a long title: when every query word is a whole word of the title (any order, case and punctuation), the title scores at least 0.5 + 0.2 times its whole-title similarity, so it clears the find floor. Close spellings still match by whole-title similarity. Find matches titles only; when it finds nothing it says so and points to `umx search`, which also searches notes and word forms. The near-duplicate check is unchanged.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"source": "Tester friction (title find returned nothing for a short query against a long title); ws004 s24",
+					"done_when": "A query of whole title words finds a 20-word title; a fuzzy close match still outranks a held long title; an empty find warns find_no_match; title find at 100k within the graph-storage-expert's gates (two large-vocabulary rows accepted by the project manager)."
+				},
+				{
+					"id": "req-123",
+					"title": "Related nodes are reported when a node is written",
+					"statement": "When a batch or node add writes a node and an admitted embedder with a calibrated floor exists, umx embeds the new node's whole-node text at query time and reports up to 3 existing nodes above that model's search floor as related, with scores, separate from the word-based near_duplicate warning. Related is never called duplicate. With no admitted embedder or no calibrated floor, only near_duplicate runs and the reply says the related check was skipped.",
+					"actor": "a-agent",
+					"priority": "could",
+					"state": "planned",
+					"source": "Field report (pairs on a test graph, 2026-11-11); embeddings-expert ruling; ws004 s28",
+					"done_when": "On a synthetic fixture shaped like the five reported pairs, pairs 1, 2 and 4 are reported as related and a random control pair is not; with no embedder the reply notes the skip."
+				},
+				{
+					"id": "req-124",
+					"title": "Evidence on edges",
+					"statement": "An edge can carry evidence pointers the same way a node does: an optional standard `evidence` key on the edge line, with the same evidence list and locator grammar as nodes (ws006 S1 and S2). `umx edge add --evidence` writes it, and adding evidence to an edge that already exists appends rather than dropping it (evidence_appended). `umx edge edit --evidence` and `umx edge show` exist. `umx edge list` gains evidence_count and evidence_kinds columns, and every evidence check covers edges as well as nodes. `evidence` and `evidence_kinds` become reserved edge field names; an older custom field named `evidence` that is not evidence is kept, with a warning.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A feeds edge carries `--evidence root:repo/src/x.rs#L10-L20` and shows it in `umx edge show` and evidence_count in `umx edge list`; adding the same edge again with another pointer keeps both (evidence_appended); edge add with a umx: pointer to a missing node warns dangling_evidence (and evidence_unchecked for an unloaded or non-Open graph) exactly as node add does; once S4 reads sources, umx check's source status covers edge evidence too; a graph with no edge evidence keeps byte-identical files; a custom `evidence` string field on an old edge loads with a warning and is not lost.",
+					"source": "a tester's report on a private graph (a feeds edge's source lines lived in its why text); project lead 2026-11-11; graph-addressing expert topic:edge-evidence"
+				},
+				{
+					"id": "req-125",
+					"title": "Evidence lineage",
+					"statement": "Agents can see where a claim came from and whether two claims really are independent. `umx evidence lineage <item>` shows an item's evidence pointers, what each resolves to, who added it, and the upstream sources behind it. `umx evidence origins [--scope]` groups items by root source. `umx evidence shared <a> <b>` says whether two items' evidence is independent or shares a root. A pointer's source is the node it resolves to, else the resource node holding its locator, else the canonical locator key; derivation is stated only by the std relation sourced_from between resource nodes, never inferred; the roots are the ends of the sourced_from closure, and two pointers share an origin when their root sets meet. Only open or explicitly named graphs are resolved or walked, and a secured graph is treated exactly as an unloaded one. Read-only; no format change.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Two nodes citing different documents that are both sourced_from one transcript resource show that transcript as a shared root in `umx evidence shared`, and as one group in `umx evidence origins`; two nodes with unrelated sources show independent; `umx evidence lineage` lists each pointer with its resolution, its adder (by_session when recorded, otherwise null with the item's authored_by as context), and independent_roots, the count of distinct roots; a pointer into a loaded secured graph gives the same output as into an unloaded one.",
+					"source": "a tester's framed feedback C1 (2026-11-11); project lead; graph-addressing expert topic:evidence-lineage; req-125 allocated by the project lead"
+				},
+				{
+					"id": "req-126",
+					"title": "Evidence maintenance",
+					"statement": "An agent can list, add and remove a node's evidence pointers one at a time: `umx node evidence <node> list|add|remove`, with `--reason` required on remove. A pointer is matched on its source and selector in canonical form (not its kind); duplicates refuse with evidence_ambiguous and take `--at`, and removing one again gives already_removed. A removed pointer is never erased: it moves to the node's `evidence_removed` trail with when it was removed, the reason and the session. Batch lines `evidence add` and `evidence remove` take one batch-wide `--reason` and `\"missing\": \"skip\"`. Matching never resolves the pointer's target, so it reveals nothing about secured graphs. `evidence_removed` becomes a reserved field name; no format change.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "`umx node evidence <n> remove <pointer> --reason stale` moves it to evidence_removed with the reason and session and `node evidence <n> list` no longer shows it; remove without --reason is refused; removing it again gives already_removed; two identical pointers refuse evidence_ambiguous until --at; a batch removes 60 pointers with one reason; a graph with no removals keeps byte-identical files.",
+					"source": "a tester's report (about 60 stale selectors, hand-edited nodes.jsonl); project lead 2026-11-11 (F100); graph-addressing expert topic:evidence-maintenance"
+				},
+				{
+					"id": "req-127",
+					"title": "Entities across graphs: links and inherited edges",
+					"statement": "Two nodes are the same entity when they share an entity_key (req-102) or a stored `same_as` edge links them (confirmed); a `possibly_same_as` edge is a proposal. `same_as` is a built-in symmetric relation beside possibly_same_as, usually between nodes in two graphs. `umx entity link <a> <b>` stores a same_as edge in the graph the caller names, `umx entity unlink` removes it, and keys are set separately. `umx entity show <node>` lists the entity's members by graph with how each matched. Entities merge in memory only, built at read time; nothing merged is stored. `umx neighbours` on a node also shows the real edges of its entity's other members, each inherited row carrying `via` (the address of the member it came from, `umx:<alias>/<id>`), its graph and `match_status` (own, confirmed or proposed, since proposals merge too); without `--scope` it covers every loaded open graph (secured graphs only when named) and the reply lists the graphs it covered, while `--scope` pins the set. `--entities off` gives today's rows unchanged and `--entities confirmed` leaves out proposals. Any reply that groups nodes ends with a hint: how many nodes were grouped, how many through proposals, and the flag that turns it off or shows the members.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "With two graphs sharing a key, `umx neighbours` on one member shows the other's edges with via, graph and match_status confirmed, the covered graphs and the hint; `umx entity link` between two unkeyed nodes does the same; a possibly_same_as pair shows its inherited edges as proposed, and `--entities confirmed` hides them; `--entities off` gives byte-identical rows to before; one secured and one open graph, unnamed, show nothing from the secured one; two copies of one graph do not group; `umx entity show` lists members by graph.",
+					"source": "decisions D63 to D63c (2026-11-11); entity identity review brief (E2, E3); req-127 allocated by the project lead"
+				},
+				{
+					"id": "req-128",
+					"title": "A Graphfile lists a repo's graphs",
+					"statement": "A Graphfile at the repo root (TOML, committed) lists the repo's graphs by repo-relative path, with optional named sets, and commands can list and load all of them. `umx graph new` adds the new graph to the Graphfile by default (creating the file), and --no-graphfile skips it. `umx graph scan` finds graph folders missing from the Graphfile and adds them. The Graphfile is never a central graph (D63) and never weakens a graph's own policy (D66).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "Plan 137's acceptance tests pass: `umx graph load --graphfile` loads every entry (and `--set` one set) and `umx graph list --graphfile` lists them all; `umx graph new` adds the new graph by default and `--no-graphfile` leaves the Graphfile untouched; `umx graph scan --add` adds the graph folders the Graphfile is missing and `umx graph scan --drop <alias>` undoes an add; a Graphfile with a duplicate or an over-cap write is refused (`graphfile_invalid`, `graphfile_too_large`) and nothing changes.",
+					"source": "decision D66 (2026-11-12); the project manager for ws002 s17, plan 137"
+				},
+				{
+					"id": "req-135",
+					"title": "Near-duplicate warnings and short title finds are precise",
+					"statement": "node add and batch flag near_duplicate only against nodes of the same type. Titles that differ only by a short identity token (Unit A vs Unit B), a period token (FY24 vs FY25) or one distinct word stay distinct, while typos, plurals and joined or split words still match. A batch reports near_duplicate_line with a dry run as next. node find with a short query (up to 3 words) matches word by word, so a one-word query never matches a title that shares no word with it.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"source": "Field reports from three testers via the project lead (2026-11-12), shapes only; ws004 s30",
+					"done_when": "On synthetic fixtures shaped like the reported cases, the period, identity-token, near-spelled-word and one-word-query pairs are not flagged or found, typo and plural controls still are, and title_find bench rows stay within the gates."
+				},
+				{
+					"id": "req-136",
+					"title": "Similar nodes across graphs, computed at query time",
+					"statement": "umx similarity pairs --graph g1,g2,... --k <n> --min <score> returns, for each node in the named graphs, its top k most similar nodes in the other named graphs. It is computed at query time off the writer lock and never written. Only graphs with an identical recorded model key are compared; others are skipped with a warning. search --all visibility rules apply. Scores match the stored lists, with ties to the lower id. Work over the copy and dot caps is refused with a named code.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"source": "the operator, 2026-11-12 (shadow connections across the graphs in the view) via the project manager; embeddings-expert scope; ws004 s31",
+					"done_when": "Five synthetic graphs of 2k nodes answer in under a second, with write p95 under the s25a bar while pairs run; mismatched-key graphs are skipped with a warning; the view (ws009 M1c) reads it with fixed argv."
+				},
+				{
+					"id": "req-137",
+					"title": "Deny that two nodes are one entity",
+					"statement": "A stored `not_same_as` relation records that two nodes, in one graph or two, are NOT one entity, with who said so (the writer and session) and why (a required reason). It splits an entity group a shared `entity_key` or a `same_as` link would otherwise join: every read applies joins in one fixed order and skips any join that would put a denied pair together, naming what it skipped. It is written only by `umx entity deny` and removed only by `umx entity undeny`. A denial counts only while the read covers its storing graph and both its nodes; it never hides a node.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`umx entity deny <a> <b> --reason <text>` and `umx entity undeny <a> <b>` work; entity show skips denied joins in the fixed order and warns entity_join_denied; entity link on a denied pair and edge writes of not_same_as are refused; the tests and controls of plan 139 pass.",
+					"source": "D69 point 5 and the coverage ruling (2026-11-12); reverses D63c item 8; the graph-addressing expert's join order and security's who and coverage rulings; ws008 E2c, plan 139; project manager 2026-11-12"
+				},
+				{
+					"id": "req-138",
+					"title": "instance_of relates an instance to what it is one of",
+					"statement": "`instance_of` is a std relation every graph knows without declaring it: directed, one way (\"this deployment is an instance of that product\"), any types at either end, allowed across graphs, refused as symmetric and for `ontology remove`. An entity read never joins across it: only keys and `same_as` join, so two nodes `instance_of` each other stay two entities.",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "An instance_of edge across two graphs is written with no warning, and entity show lists each end alone; a key the two share still joins them; the organise and entity topics teach it.",
+					"source": "the operator's answer 6 in the entity review ('instance_of (answer 6)'); D69; ws008 T6, plan 190; project manager 2026-11-13"
+				},
+				{
+					"id": "req-139",
+					"title": "Replies carry hints, separate from warnings",
+					"statement": "umx's reply envelope has a `hints` list beside warnings and errors: advice that never changes status or the exit code and always names the next command to run (catalogue kind Hint). Services raise hints through their one notes list and the daemon routes each by kind; a reply lists at most 8 in catalogue order, then hints_truncated. Advice that was reported as a warning moves to hints in reviewed batches (D69, architect topic:hints-envelope).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "An ok reply with a hint stays ok with exit 0; segment_without_parent and the first batch of advice codes arrive as hints; human output prints them last; the UI reads envelopes with and without hints.",
+					"source": "D69 (9); architect topic:hints-envelope (2026-11-12); ws002 X1, plan 180; project manager 2026-11-13 on the codes moved"
+				},
+				{
+					"id": "req-144",
+					"title": "A time docs topic",
+					"statement": "`umx docs get time` tells agents how umx handles time today: the date kind, that times are stored in universal time and a plain date is a universal-time day, to write the offset on the way in, the day-edge trap, starts_on and ends_on as the one span pair, date the anchors and link the rest. building, ingest, organise and the /umx skill routes cite it (D71, R5).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "The topic is registered and cited, and the docs tests pass.",
+					"source": "the time rulings R1, R4 and R5 (2026-11-12, the internal time review 6.1 and 7 step 2); ws008 TM1, plan 146; project manager 2026-11-12"
+				},
+				{
+					"id": "req-145",
+					"title": "Dates of any precision compare by instant",
+					"statement": "A date field accepts a year (2025), a month (2025-01), a day or a date-time. Each is a span in universal time, and every comparison (sort, --where filters, Cypher) compares those spans by instant: one value is before another only if it ends on or before the moment the other starts, and equal when one contains the other. A date-time is its instant, so 2026-10-29T22:40:00Z is before 2026-10-30. Stored values do not change form (D71, R4).",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "umx-core's per-precision table (time::tests::the_ordering_table_holds_and_text_compare_fails_it) holds for every pair of year, month, day and date-time, and comparing as text fails it; month and year values round-trip and bad ones are refused; `--where` and Cypher return the same nodes for every operator over a mixed-precision graph, with 2026-10-29T22:40:00Z before 2026-10-30 (umx-services tests/cypher.rs where_and_cypher_compare_dates_alike, every_cypher_path_compares_dates_by_instant); a graph written before loads and saves to the same bytes (umx-graph tests/columns.rs old_dates_keep_their_bytes_and_compare_by_instant).",
+					"source": "D71; the internal time review R4, R5 and section 7 steps 3 and 5; F124; plan 147 (ws008 TM2)"
+				},
+				{
+					"id": "req-146",
+					"title": "std v1 holds the time rows and the lifecycle statuses",
+					"statement": "umx's std v1 table (umx-core) holds D71's time rows and four lifecycle statuses. The type `segment` is a part of a meeting, event or other segment, linked to its parent with part_of (no parent is a hint, segment_without_parent, never a refusal), with the fields starts_on, ends_on and step. `step` is an int of at least 1, the order among siblings with the same part_of parent only; std on segment, phase and method, and any graph may add it to another type; two siblings may share a step. `starts_on` and `ends_on` (kind date, role data) are the one span pair, allowed on any node or edge without a declaration, placed on meeting, event, project and segment and on works_for and member_of edges; there is no valid_from or valid_to. `precedes` is a stored directed relation (a before b), cross-graph allowed, expecting the same type at both ends (a mixed pair warns relation_endpoint_unexpected), cycles allowed. `raised_in` is a stored directed relation from anything to the finest anchor it came up in (segment, meeting, event, transcript or phase, soft), cross-graph allowed, several per node. The statuses active (unsettled), stalled (unsettled, say why), delivered (settled) and withdrawn (out of play, say why) are general to every type, stored plain, with no transition table and no synonyms (delivered is not done; the built-in open stays); a graph's own declaration of the same name keeps its standing. All are std 1, stored plain, and refused for ontology remove like other std names.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "umx-core's standard table tests pass (standard::tests::the_d71_rows_hold, the_lifecycle_statuses_and_their_standings, every_interim_sheet_name_is_std_but_the_two_renamed_person_fields), the spine code reads `step` from the table, and the organise and time topics, the build skill route and usage 176 teach the rows and the statuses.",
+					"source": "D71 (time rulings R1 and R5, 2026-11-12, the internal time review); graph-addressing-expert topic:ws008-time-std and topic:ws008-std-statuses; ws008 T1, plan 171; F136"
+				},
+				{
+					"id": "req-147",
+					"title": "Time warnings at write time",
+					"statement": "A write that loses or hides a time warns, and goes ahead. On node add, node edit, a batch's node lines and an edge's fields: time_no_offset when a date field is given a date-time with a clock and no offset (umx stores it as universal time, so a local time lands hours out; next the time topic, with the offset form in the message); time_as_text when a text field holds a time, because its value reads as a date of month precision or finer or a clock time, or its name ends in _at or _on (next declares the field kind date, or the time topic for a field declared as text); anchor_undated when a meeting, event, segment or transcript (the std anchor types) is added with no starts_on, or an edit retypes a node to one or removes its starts_on (next the node edit that sets it). In a batch each warning carries its line. Catalogue rows only, no wire change (D71 R4, the time review's step 6).",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "umx tests a_date_time_without_an_offset_warns_on_every_write, time_held_as_text_warns_by_value_or_name and an_undated_anchor_warns_when_it_is_added_or_made pass, each with the correct form quiet; every catalogue code is triggered; time.md, organise.md, usage 178 and the build and ingest routes teach the warnings.",
+					"source": "D71 R4 and the internal time review step 6 (B3); ws008 TM3, plan 173; project manager 2026-11-13"
+				},
+				{
+					"id": "req-148",
+					"title": "--raised-in on node add and batch",
+					"statement": "`umx node add --raised-in <anchor>` adds the node and a raised_in edge from it to the anchor in one write; a refusal of either writes nothing. `umx batch --raised-in <anchor>` gives every node the batch adds (not edits, notes, status moves or edge lines) a raised_in edge to the anchor; a node add line's own `raised_in` names its anchor instead. The anchor is a node of the graph or an address in another (`umx:<graph>/<id>`), resolved exactly as `umx edge add` resolves an end, so it is refused or warned about as edge add would be; a batch's anchor is resolved once, before any line runs, and one that does not resolve refuses the whole batch with edge add's own error. An anchor of a type raised_in does not expect (segment, meeting, event, transcript, phase) warns relation_endpoint_unexpected and is stored; a far anchor's type is read only from an open graph. Node add's reply names the edge (`raised_in_edge`); each batch row names its edge (`raised_in_edge`, null in a dry run) and anchor (`raised_in`).",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "umx tests a_node_raised_in_an_anchor_gets_its_edge_in_the_same_write, an_unresolvable_anchor_is_refused_as_edge_add_refuses_it and a_batch_raised_in_an_anchor_links_every_node_it_adds pass; node.md, batch.md, ingest.md, time.md, usage 179 and the ingest route teach it.",
+					"source": "D71; the internal time review 4.B B2 (a default anchor for a batch) and step 8; ws008 TM4, plan 177; project manager 2026-11-13"
+				},
+				{
+					"id": "req-149",
+					"title": "Declared spines",
+					"statement": "`umx graph spine confirm <graph> <candidate>` stores a proposed anchor-type candidate's declaration in graph.json's `spines` unchanged (a built-in candidate is refused, spine_builtin_candidate, with set as its next); `umx graph spine set <graph> --file <decl.json>` stores one the builder writes, replacing the declared spine of the same name; `umx graph spine show <graph> [<name>]` places the graph on each declared spine now and reports cover and spread as propose does; `umx graph spine remove <graph> <name>` drops one. Every name in a declaration is the graph's vocabulary or std (spine_name_unknown names the part), a graph has at most one main spine (spine_main_taken), and a refusal writes nothing. Writes go through the checked graph.json write. The first declared spine raises graph.json to format 6 (FORMAT_SPINES), which an older umx refuses (graph_format_newer); a graph with none keeps its format. Placement gains by_rule, fixed in the service with named settings (no expressions): a node nothing else places sits in the middle band of its neighbours placed by data, one link away; a rule placement never feeds another and the anchors' parent is never placed by rule (D71; time review 5.3 and step 9).",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "umx tests a_declared_spine_round_trips_through_set_show_and_remove, confirm_stores_the_proposed_declaration_unchanged and a_spine_declaration_is_checked_before_it_is_stored, umx-core the_spines_format_is_written_for_a_spine_and_refused_by_an_older_reader and umx-services a_node_linked_to_placed_nodes_sits_in_their_middle_band_by_rule pass; graph.md, time.md, usage 187 and the build route teach it.",
+					"source": "D71; the internal time review 5.2, 5.3 and step 9; architect's FORMAT_SPINES ruling (2026-11-12); ws008 TM5, plan 194; the project manager 2026-11-13"
+				},
+				{
+					"id": "req-150",
+					"title": "Status moves name where they happened",
+					"statement": "`umx node status <node> <status> --in <anchor> [--evidence <pointer> --evidence-kind <kind>]` stores, on the status move, `in` (the anchor as `umx:<graph id>/<node id>`, a node of the graph or of another) and `evidence` (one pointer in node evidence's grammar). The anchor resolves exactly as `--raised-in`'s does (edge add's end: its refusals byte for byte, its warnings, relation_endpoint_unexpected against raised_in's target types, a secured far anchor's type never read); a refusal makes no move. The pointer is scanned as node evidence is: secret_suspected on the verb, a refused batch line, and the read flag status_evidence:<i>. A batch's node status line takes `in`, `evidence` and `evidence_kind`; a batch's --raised-in never sets a move's `in`. node get shows both in status_history; a move without them is stored as before (D71: said time comes from raised_in and the status move).",
+					"actor": "a-agent",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "umx tests a_status_move_names_where_it_happened, a_status_anchor_that_does_not_resolve_is_refused_as_edge_add_refuses_it, a_status_moves_evidence_is_scanned and a_batch_status_line_names_where_it_happened pass; node.md, time.md, usage 183 and the build route teach it.",
+					"source": "D71; the internal time review R1 (said time) and step 11; ws008 TM6, plan 183; project manager 2026-11-13"
+				},
+				{
+					"id": "req-151",
+					"title": "The operator can pick a sci-fi skin",
+					"statement": "The view offers the FUI skins Console (dark) and Instrument (light) next to the plain light and dark themes, with live glow, callouts and readouts; the choice is remembered.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Switching to Console and to Instrument restyles the open graph without reload, and the choice survives a reopen.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-152",
+					"title": "The operator sees several graphs as one canvas",
+					"statement": "The view opens several graphs at once on one canvas, each graph's nodes keyed by its alias, with edges between open graphs drawn and secured graphs counted but never named.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Opening three graphs shows them on one canvas with between-graph edges and per-graph labels; live changes apply per graph.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-153",
+					"title": "The operator sees one entity across graphs",
+					"statement": "The view shows a person or other entity that appears in several graphs as one entity, linked to each graph's node.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Highlighting one person shows that person's node in every open graph that has it.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-154",
+					"title": "The operator sees the graph along a timeline",
+					"statement": "A time strip reads the spine from the service and filters and colours the view by time; times are stored in UTC and shown in local time.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Dragging the time strip shows only the nodes in the chosen range.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-155",
+					"title": "The operator replays how the graph changed",
+					"statement": "The view steps through the graph's history along the time spine.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Stepping back shows the graph as it was at an earlier time.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-156",
+					"title": "An agent drives the view with richer verbs",
+					"statement": "Agents can open graphs, highlight entities and move through time in the operator's view through umx ui verbs, never widening what the view hides.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "An agent opens two graphs and highlights an entity in the operator's view with umx ui verbs.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-157",
+					"title": "The operator sees edge names and directions",
+					"statement": "Every directed edge shows its direction with an arrowhead; relation names show on hover, selection, focus or zoom; busy context relations start quiet.",
+					"actor": "a-operator",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "A selected node's edges show arrowheads and relation names in every theme.",
+					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "What is the CLI called?",
+					"default": "`umx`.",
+					"status": "answered",
+					"answer": "`umx` (decided 2026-11-09). Checked clear of macOS, Homebrew, Debian/Ubuntu, Arch/AUR, Fedora, winget, Scoop, Chocolatey, crates.io and PyPI; npm's `umx` installs no command."
+				},
+				{
+					"id": "q-02",
+					"question": "Where do secured graphs live, given anyone who can read the repo can read them?",
+					"default": "In their own private repo or an untracked folder; the CLI warns when a secured graph sits in a repo with a remote.",
+					"status": "open"
+				},
+				{
+					"id": "q-03",
+					"question": "Which embedding models by default?",
+					"default": "Hosted `text-embedding-3-small` at 256 dimensions for open graphs. Secured graphs use word search only until a local model is added; that model is picked by a short bake-off among models trained to be cut short (nomic-embed-text-v1.5, EmbeddingGemma-300M, arctic-embed-l-v2, Qwen3-Embedding-0.6B), or runs at its native size.",
+					"status": "open"
+				},
+				{
+					"id": "q-04",
+					"question": "Are customer graphs secured by default?",
+					"default": "Yes when they hold client transcripts or documents; open for the operator's own concept and project graphs.",
+					"status": "open"
+				},
+				{
+					"id": "q-05",
+					"question": "Can secured graphs be compared with open graphs by similarity?",
+					"default": "No in v1: graphs on different models cannot be compared. Later, an open graph can compute a local vector set on demand to compare with a secured graph.",
+					"status": "open"
+				},
+				{
+					"id": "q-06",
+					"question": "What form do node ids take?",
+					"default": "ULID; fully random ids for secured graphs so creation time does not leak.",
+					"status": "open"
+				},
+				{
+					"id": "q-07",
+					"question": "What is the starter ontology for `umx graph new`?",
+					"default": "The vocabulary proven in the live concept graph work: problem, actor, option, mechanism, criterion, question, decision, tension, precedent, capability; statuses agreed, contested, open, ruled-out, proposed, context; relations supports, undercuts, depends-on, blocks, conflicts-with, answers, part-of, alternative-to, raises, owned-by. Add relations tests, possibly-same-as and criterion-for, and statuses leaning and acknowledged, which the field session needed.",
+					"status": "open"
+				},
+				{
+					"id": "q-08",
+					"question": "How does the daemon find graphs?",
+					"default": "See req-56: `umx graph add <path> --alias <name>` registers a graph in a per-machine registry.",
+					"status": "open"
+				},
+				{
+					"id": "q-09",
+					"question": "How do we query edge fields with Cypher, which cypher-parser may not support?",
+					"default": "Extend or vendor cypher-parser (MIT) when the first query needs it.",
+					"status": "open"
+				},
+				{
+					"id": "q-10",
+					"question": "What data do we test and benchmark on?",
+					"default": "A realistic synthetic set (transcripts, documents, a workshop) generated by agents, with no client data.",
+					"status": "open"
+				},
+				{
+					"id": "q-11",
+					"question": "How is Word document evidence opened?",
+					"default": "Open the document and highlight the quoted text; there is no reliable paragraph link.",
+					"status": "open"
+				},
+				{
+					"id": "q-12",
+					"question": "Is the in-memory graph our core code, or the first adapter behind a graph-store port (so LadybugDB could be a second adapter)?",
+					"default": "Answered in blueprint 001 d-1: the in-memory graph is our own core code (umx-graph), not a port. A GraphStore trait is extracted only if a second store earns it.",
+					"status": "answered"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-09",
+					"by": "project lead",
+					"change": "First draft, from the operator's brief, rulings D1 to D18 and research workshops 001 to 005."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project lead",
+					"change": "Folded reviews from security, architect, embeddings, graph-addressing and LadybugDB experts: secured graphs local-only as must (req-46) with visibility rules split to req-50; Cypher subset made explicit (req-27); hybrid search must; deterministic and repairable vector files; stronger done-whens for 14, 15, 18, 38, 41, 44, 45, 47; new rows 50 to 56 (stub mode, concurrent writers, degraded search, memory, field addresses, registry); non-goals n-10, n-11; q-12 added."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project lead",
+					"change": "CLI named `umx` (q-01 answered); `cg` renamed to `umx` in commands, addresses (`umx:<alias>/<id>`) and crate names."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project lead",
+					"change": "Folded a field interview: req-12 must with reasons and movement labels; evidence kinds (req-18); findings list (req-33 should); near-match errors (req-40); new rows 57 to 62 (find before add, append note with evidence, edge sentences, diff since, passes, commentary scaffolding); q-07 starter vocabulary extended."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project lead",
+					"change": "Resolve and evidence statuses written in snake_case (graph_unknown, graph_not_present, graph_not_loaded, source_changed) to match error codes, per the verb grammar."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project manager",
+					"change": "q-12 answered from blueprint 001 d-1 (in-memory graph is core code, umx-graph, not a port); n-8 wording aligned."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project manager",
+					"change": "req-38: narrow offline exception (version, agents-start-here, docs list|get, daemon start|status from compiled-in text, no graph access), project lead ruling 2026-11-09 under D13."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project manager",
+					"change": "Delivery recorded: req-44; req-38, 45, 06, 42, 40, 41; req-01, 02, 04, 07, 08, 10, 11, 13, 14, 52, 57, 59 (shipped). req-39 in progress (minimal docs shipped; s06 completes it)."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "project manager",
+					"change": "Delivery recorded: req-03, 12, 58; req-43; req-39; req-51 (all shipped)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "JSON output becomes the default with --human to opt in (req-63, req-41 amended); ASCII art and colour in human mode (req-64). For workstream 002."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Storage rulings (workshop 008): similar_to edges (req-65), one space for many graphs (req-66), repeated ids kept and reported (req-67), BM25 word search (req-68); req-21 widened; overlays retired (req-24 to req-26 dropped, n-12); writes stay whole-file (req-02 note)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project manager",
+					"change": "req-63 delivered (shipped)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "req-63 amended to flowspace3-style output detection (terminal gets text, pipe gets JSON, --json/--human force, UMX_OUTPUT pins)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Address rulings: copies of one graph (req-69); long form with ?repo= fetch hint (req-14, req-15). Grammar umx:<alias>[@<copy>]/<id>[#<field>][?repo=<url>]."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Workshop 008 rulings: req-27 named exception for similar_to; req-44 note, vectors are plain data in umx-graph (amends D12, D14)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "/umx agent skill (req-70); no graph templates, but graph new shows how to change vocabulary and settings (req-71)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Embedding-provider answers (workshop 009): first-class config (req-72), Azure through az login with API keys optional (req-73), local model bake-off (req-74)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Graphs record their embedding model; mismatches after a pull are reported with two ways out, never silently mixed or re-embedded (req-75)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Dangling edge ends kept and reported (req-76), beside req-67."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "Resource nodes (req-77), addressable lines and sections (req-78), excerpt nodes (req-79), backlinks from documents (req-80); design in workshop 010."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "graph-addressing expert",
+					"change": "Workshop 010 refined by graph-addressing-expert with D35: req-77 to req-80 amended (locator kind/format/source, one resource per locator, fragment grammar, excerpts by promotion, backlink scope); req-81 selector edges, req-82 growing transcripts, req-83 Word and PDF passages, req-84 virtual transcript lines added."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "umx doctor (req-85) and a persistent daemon as a launchd service (req-86)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project lead",
+					"change": "req-86 covers Linux (systemd user unit); Windows is out of scope for now (n-13)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project manager",
+					"change": "Delivery recorded: req-63, req-64, req-67 and req-76 (shipped)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project manager",
+					"change": "Delivery recorded: req-70, req-71 and req-72 (shipped)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project manager",
+					"change": "req-74: the local model is embeddinggemma-2 BF16 GGUF on llama.cpp (D46), replacing the nomic/Gemma-300M pair (D27d); done_when speaks of the candidates in general."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project manager",
+					"change": "Delivery recorded: req-85, req-86 and req-28 (shipped; req-28 checked against a hand oracle, Cypher not yet built)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "project manager",
+					"change": "req-30, req-37, req-68 and req-73 shipped; req-53's status word is similarity_unavailable (embedder_unavailable is the embedder error since req-73 shipped); req-65 notes which steps deliver its parts. req-53 names umx search (umx similar --text is not a verb)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "the coder",
+					"change": "req-89 (D49 part 2, symmetric relations stored once and followed from either end) added and shipped."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-46 and req-74 shipped. req-46's done_when states what is proven (local instance only for secured graphs, no tracked vectors, word fallback with embedder_not_local_for_secured / similarity_unavailable, hosted override refused)."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-49 (secret scan holds fields from hosted embedders) and req-53 (search degrades openly, query embeds bounded at 5 s) shipped."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-75 shipped (end-to-end proof through the daemon; parts built in earlier changes)."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "the coder",
+					"change": "req-86 statement now covers umx daemon restart (ws002 F46) and umx daemon service (ws002 F58); delivered with the restart race fix (ws002 F64)."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "graph-addressing expert",
+					"change": "req-77 source forms: relative paths are graph-folder-relative (as stored evidence), plus built-in root:repo/ and machine source roots (graph-addressing-expert R1, agreed with the architect)."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-91 (D53: visibility and embedder settings, trusted tenant embedder) and req-92 (word search stems and prefixes) added; req-46 notes that secured is now named plus local."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-97 (D56: data fields are never embedded) added; req-34 notes it; req-92's done_when names word_terms and word_prefix_capped."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-98 to req-102 added for workstream 008 (D57, the std: vocabulary): std v1 built in and versioned, reserved names, clashes and soft endpoint types, custom fields on std types, adopt-std, and cross-graph identity keys (open on J1)."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-99 gains the cypher-expert's rules (`std` reserved in every graph, query_std_qualifier, derived authored_by and edited_by in Cypher). req-98 gains the std date fields (starts_on, ends_on, due_on) and the held_at relation. req-103 (graph guide, D54 lane B) added."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-104 to req-115 added: the local graph view (workstream 009, the operator's UI brief), agreed with the ui-expert, architect and security. n-2 narrowed: the shared or remote UI stays a non-goal, the local view is in."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-105 to req-108 in progress: workstream 009 S1 shipped the read-only view; the launcher, secured-graph rule and polish follow in S2 and S8."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-104 in progress: workstream 009 S2 shipped `umx ui`; polish and docs complete it in S8."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-91 edited for D62 (a machine-configured embedder is trusted); req-118 to req-123 added for ws004 s27, s26, s25, s25a, s24 and s28 (numbers from the project lead's ledger)."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-109 and req-110 in progress: workstream 009 S3 shipped clusters and focus; S8 finishes the polish."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-111 and req-112 in progress: workstream 009 S4 shipped filters and search; S8 finishes the polish."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "project manager",
+					"change": "req-92 and req-120 shipped."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-114 in progress: workstream 009 S6 (wire, then view) shipped agent control of the open view; S8 finishes the polish."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-115 in progress: workstream 009 S7 shipped selection back to agents; S8 finishes the polish."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-91 shipped (D53 then D62) and req-97 shipped."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-113 in progress: workstream 009 S5 (feed, then view) shipped live updates; measured well under the 2 s budget. S8 finishes the polish."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-151 to req-157 added for workstream 009 phase 2 (numbers from the project lead's ledger). req-151 complete (K1 skins); req-152 in progress (M1a canvas); req-157 in progress (E1 edges, plan 150)."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-157 shipped: workstream 009 S15 E1 draws edge direction and relation labels."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-135 (near_duplicate and short find precision, ws004 s30) and req-136 (cross-graph similarity pairs, ws004 s31) added, in progress."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-135 shipped (ws004 s30) and req-136 shipped (ws004 s31)."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "project manager",
+					"change": "req-153 in progress: workstream 009 S11 M2 (entities in the view) started on ws008 E2."
+				},
+				{
+					"date": "2026-11-13",
+					"by": "project manager",
+					"change": "req-152 shipped: workstream 009 S10 M1 (multi-graph canvas, hold and apply, launcher and agent open, detached view, shadows)."
+				},
+				{
+					"date": "2026-11-13",
+					"by": "project manager",
+					"change": "req-153 shipped: workstream 009 S11 (entities across graphs); E3 additions follow."
+				}
+			]
+		}
+	]
+}

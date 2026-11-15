@@ -1,0 +1,3 @@
+# A #[path] module in a pure crate can pull in a file the checks never scan.
+# r-inward fires too: a #[path] module is outside what the re-export scan sees.
+expect = ["r-core-no-std", "r-inward"]

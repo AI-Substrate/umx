@@ -1,0 +1,9 @@
+# umx-graph/fast is in neither list.
+blueprint = "none"
+crate = []
+
+[[rule]]
+id = "r-gate-features"
+gate = ["umx-graph/bench"]
+gate_excluded = [
+]

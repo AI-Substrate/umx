@@ -1,0 +1,5 @@
+# A rename or removal must not switch the rule off unseen: on a whole workspace, a missing root
+# (umx) is reported. Partial fixtures leave whole_workspace unset and are not asked about it.
+expect = ["r-no-fakes-in-release"]
+whole_workspace = true
+rules = "rules.toml"

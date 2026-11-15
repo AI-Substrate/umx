@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Proves scripts/home-paths fires (F184), in a throwaway git checkout:
+# - a planted home path fails and is named by file and line, wherever it starts (line start, after `>`, `-I`, `=`, a
+#   quote or a letter) and however its name ends (`/`, a quote, a space, the end of the line);
+# - a planted path beside an allowed one on the same line still fails;
+# - placeholders, the allowed names (whole names only) and the fake run folder nested in another path pass.
+# The planted names are built at run time, so this file holds none. HOME_PATHS_CHECK runs another copy of the check
+# (an older one, to show which cases it misses).
+set -euo pipefail
+
+check="${HOME_PATHS_CHECK:-$(cd "$(dirname "$0")" && pwd)/home-paths}"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+git -C "$work" init -q
+
+home() { printf '/%s/%s' "$1" "$2"; }
+fail=0
+case_() {
+    local want="$1" what="$2" file="$3" text="$4" out code=0
+    find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+    mkdir -p "$(dirname "$work/$file")"
+    printf 'first line\n%s\n' "$text" >"$work/$file"
+    git -C "$work" add -A
+    out=$("$check" "$work" 2>&1) || code=$?
+    if [ "$code" != "$want" ]; then
+        echo "FAIL: $what: exit $code, want $want: $out" >&2
+        fail=1
+    elif [ "$want" = 1 ] && ! grep -q "^$file:2:" <<<"$out"; then
+        echo "FAIL: $what: $file:2 not named in: $out" >&2
+        fail=1
+    else
+        echo "ok: $what"
+    fi
+}
+
+planted=planted-name
+case_ 0 "placeholders and allowed names pass" clean.md \
+    "see <repo>/docs, <home>/.umx and <user>; $(home Users me)/x, $(home home jo)/y, '$(home Users Jo) Smith/.umx'"
+case_ 0 "the fake run folder in its fixture file" crates/umx-fakes/src/lib.rs "argv.push(\"/fake$(home home run)/ui.sock\")"
+case_ 0 "a config test's file under the home root in its test" crates/umx-services/tests/hybrid.rs "dir(\"$(home home secrets.env)\")"
+case_ 1 "a /Users path at the start of a line" run.log "$(home Users $planted)/substrate/repo"
+case_ 1 "a /home path in a script" plants.py "x = \"$(home home $planted)/.cargo/bin\""
+case_ 1 "a planted path beside an allowed one" both.md "$(home Users me)/ok beside $(home Users $planted)/leak"
+case_ 1 "after > (a redirect)" run.sh "cargo test >$(home home $planted)/out.log"
+case_ 1 "after -I (a flag)" build.sh "cc -I$(home home $planted)/include main.c"
+case_ 1 "after a letter" notes.md "path:x$(home Users $planted)/a"
+case_ 1 "a home root at the end of a line" env.sh "HOME=$(home home $planted)"
+case_ 1 "a quoted home root" cfg.py "root = '$(home Users $planted)'"
+case_ 1 "a home root before a space" notes.txt "cd $(home Users $planted) && ls"
+case_ 1 "an allowed name as a prefix of another" names.md "$(home home jo)e/x"
+# F209: a binary file (a NUL byte in it) is read too. Written directly: a shell variable cannot hold a NUL.
+find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+printf 'x\000%s/repo/plants.py\n' "$(home Users $planted)" >"$work/cache.pyc"
+git -C "$work" add -A
+code=0
+out=$("$check" "$work" 2>&1) || code=$?
+if [ "$code" = 1 ] && grep -q "^cache.pyc:" <<<"$out"; then
+    echo "ok: a home path in a binary file"
+else
+    echo "FAIL: a home path in a binary file: exit $code: $out" >&2
+    fail=1
+fi
+case_ 1 "a bare run account under the home root" notes.md "HOME=$(home home run)"
+case_ 1 "a deep path under that run account" notes.md "see $(home home run)/projects/x"
+case_ 1 "the fake run folder outside its fixture file" other.rs "\"/fake$(home home run)/ui.sock\""
+case_ 1 "secrets.env under the Users root outside the fixtures" notes.md "$(home Users secrets.env)"
+case_ 1 "the config test's path in another file" crates/umx-services/src/lib.rs "dir(\"$(home home secrets.env)\")"
+
+exit "$fail"

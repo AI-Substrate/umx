@@ -1,0 +1,4 @@
+# Allowed control: every table entry's adapter runs every clause.
+expect = []
+active_ports = ["service-manager"]
+rules = "rules.toml"

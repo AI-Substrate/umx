@@ -1,0 +1,114 @@
+floor-calibration: embeddinggemma-2@256+p1 through instance gemma (local), run fc-2026-11-11-cdc1965
+scifact: 5183 documents, 300 queries
+scifact: batch 1/1037, 2 s
+scifact: batch 51/1037, 51 s
+scifact: batch 101/1037, 67 s
+scifact: batch 151/1037, 93 s
+scifact: batch 201/1037, 117 s
+scifact: batch 251/1037, 137 s
+scifact: batch 301/1037, 155 s
+scifact: batch 351/1037, 173 s
+scifact: batch 401/1037, 194 s
+scifact: batch 451/1037, 217 s
+scifact: batch 501/1037, 242 s
+scifact: batch 551/1037, 264 s
+scifact: batch 601/1037, 285 s
+scifact: batch 651/1037, 325 s
+scifact: batch 701/1037, 351 s
+scifact: batch 751/1037, 380 s
+scifact: batch 801/1037, 404 s
+scifact: batch 851/1037, 466 s
+scifact: batch 901/1037, 500 s
+scifact: batch 951/1037, 528 s
+scifact: batch 1001/1037, 556 s
+scifact: batch 1037/1037, 576 s
+scifact: query 1/300
+scifact: query 251/300
+scifact: at floor 0 {"floor":0.0,"ndcg10":0.7739,"queries":300,"queries_with_vector_row":300,"recall10":0.8996,"vector_rows_per_query":10.0}
+nfcorpus: 3633 documents, 323 queries
+nfcorpus: batch 1/727, 0 s
+nfcorpus: batch 51/727, 18 s
+nfcorpus: batch 101/727, 36 s
+nfcorpus: batch 151/727, 65 s
+nfcorpus: batch 201/727, 86 s
+nfcorpus: batch 251/727, 106 s
+nfcorpus: batch 301/727, 160 s
+nfcorpus: batch 351/727, 182 s
+nfcorpus: batch 401/727, 202 s
+nfcorpus: batch 451/727, 233 s
+nfcorpus: batch 501/727, 256 s
+nfcorpus: batch 551/727, 277 s
+nfcorpus: batch 601/727, 301 s
+nfcorpus: batch 651/727, 321 s
+nfcorpus: batch 701/727, 343 s
+nfcorpus: batch 727/727, 359 s
+nfcorpus: query 1/323
+nfcorpus: query 251/323
+nfcorpus: at floor 0 {"floor":0.0,"ndcg10":0.3625,"queries":323,"queries_with_vector_row":323,"recall10":0.1826,"vector_rows_per_query":9.8266}
+arguana: 8674 documents, 1406 queries
+arguana: batch 1/1735, 1 s
+arguana: batch 51/1735, 13 s
+arguana: batch 101/1735, 26 s
+arguana: batch 151/1735, 38 s
+arguana: batch 201/1735, 50 s
+arguana: batch 251/1735, 63 s
+arguana: batch 301/1735, 77 s
+arguana: batch 351/1735, 95 s
+arguana: batch 401/1735, 111 s
+arguana: batch 451/1735, 130 s
+arguana: batch 501/1735, 148 s
+arguana: batch 551/1735, 167 s
+arguana: batch 601/1735, 186 s
+arguana: batch 651/1735, 205 s
+arguana: batch 701/1735, 230 s
+arguana: batch 751/1735, 253 s
+arguana: batch 801/1735, 276 s
+arguana: batch 851/1735, 293 s
+arguana: batch 901/1735, 311 s
+arguana: batch 951/1735, 332 s
+arguana: batch 1001/1735, 351 s
+arguana: batch 1051/1735, 369 s
+arguana: batch 1101/1735, 386 s
+arguana: batch 1151/1735, 405 s
+arguana: batch 1201/1735, 425 s
+arguana: batch 1251/1735, 445 s
+arguana: batch 1301/1735, 465 s
+arguana: batch 1351/1735, 483 s
+arguana: batch 1401/1735, 500 s
+arguana: batch 1451/1735, 527 s
+arguana: batch 1501/1735, 551 s
+arguana: batch 1551/1735, 568 s
+arguana: batch 1601/1735, 585 s
+arguana: batch 1651/1735, 601 s
+arguana: batch 1701/1735, 619 s
+arguana: batch 1735/1735, 631 s
+arguana: query 1/1406
+arguana: query 251/1406
+arguana: query 501/1406
+arguana: query 751/1406
+arguana: query 1001/1406
+arguana: query 1251/1406
+arguana: at floor 0 {"floor":0.0,"ndcg10":0.548,"queries":1406,"queries_with_vector_row":1406,"recall10":0.8748,"vector_rows_per_query":10.0}
+fixture: 300 documents, 80 queries
+fixture: batch 1/60, 0 s
+fixture: batch 51/60, 15 s
+fixture: batch 60/60, 18 s
+fixture: query 1/80
+fixture: at floor 0 {"floor":0.0,"ndcg10":0.7118,"queries":80,"queries_with_vector_row":80,"recall10":0.9875,"vector_rows_per_query":10.0}
+scifact: at floor 0.7401 {"floor":0.7401,"ndcg10":0.7742,"queries":300,"queries_with_vector_row":300,"recall10":0.8996,"vector_rows_per_query":9.5833}
+nfcorpus: at floor 0.7401 {"floor":0.7401,"ndcg10":0.3557,"queries":323,"queries_with_vector_row":299,"recall10":0.1717,"vector_rows_per_query":8.0464}
+arguana: at floor 0.7401 {"floor":0.7401,"ndcg10":0.5445,"queries":1406,"queries_with_vector_row":1398,"recall10":0.862,"vector_rows_per_query":8.8115}
+fixture: at floor 0.7401 {"floor":0.7401,"ndcg10":0.7259,"queries":80,"queries_with_vector_row":79,"recall10":0.8875,"vector_rows_per_query":5.15}
+scifact: at floor 0.7301 {"floor":0.7301,"ndcg10":0.7741,"queries":300,"queries_with_vector_row":300,"recall10":0.8996,"vector_rows_per_query":9.7733}
+nfcorpus: at floor 0.7301 {"floor":0.7301,"ndcg10":0.3598,"queries":323,"queries_with_vector_row":307,"recall10":0.1769,"vector_rows_per_query":8.6811}
+arguana: at floor 0.7301 {"floor":0.7301,"ndcg10":0.5475,"queries":1406,"queries_with_vector_row":1405,"recall10":0.8727,"vector_rows_per_query":9.3855}
+fixture: at floor 0.7301 {"floor":0.7301,"ndcg10":0.7417,"queries":80,"queries_with_vector_row":80,"recall10":0.9313,"vector_rows_per_query":6.6625}
+scifact: at floor 0.7201 {"floor":0.7201,"ndcg10":0.7739,"queries":300,"queries_with_vector_row":300,"recall10":0.8996,"vector_rows_per_query":9.8967}
+nfcorpus: at floor 0.7201 {"floor":0.7201,"ndcg10":0.362,"queries":323,"queries_with_vector_row":316,"recall10":0.1811,"vector_rows_per_query":9.13}
+arguana: at floor 0.7201 {"floor":0.7201,"ndcg10":0.5469,"queries":1406,"queries_with_vector_row":1406,"recall10":0.8727,"vector_rows_per_query":9.7155}
+fixture: at floor 0.7201 {"floor":0.7201,"ndcg10":0.7318,"queries":80,"queries_with_vector_row":80,"recall10":0.95,"vector_rows_per_query":7.975}
+scifact: at floor 0.7101 {"floor":0.7101,"ndcg10":0.7739,"queries":300,"queries_with_vector_row":300,"recall10":0.8996,"vector_rows_per_query":9.9567}
+nfcorpus: at floor 0.7101 {"floor":0.7101,"ndcg10":0.3624,"queries":323,"queries_with_vector_row":321,"recall10":0.1817,"vector_rows_per_query":9.4025}
+arguana: at floor 0.7101 {"floor":0.7101,"ndcg10":0.5473,"queries":1406,"queries_with_vector_row":1406,"recall10":0.8748,"vector_rows_per_query":9.8826}
+fixture: at floor 0.7101 {"floor":0.7101,"ndcg10":0.7343,"queries":80,"queries_with_vector_row":80,"recall10":0.9875,"vector_rows_per_query":8.8375}
+floor-calibration: wrote docs/project/benchmarks/floor-calibration/floors.json and RESULT.md

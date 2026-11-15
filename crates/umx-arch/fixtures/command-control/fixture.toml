@@ -1,0 +1,2 @@
+# Allowed: Command in an adapter crate, in the excepted fn, in #[cfg(test)] code, an inline module with #![cfg(test)], a whole #![cfg(test)] file and as a word in a comment or string.
+expect = []

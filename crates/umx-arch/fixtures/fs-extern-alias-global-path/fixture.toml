@@ -1,0 +1,3 @@
+# R258 B2: extern crate std as host, then fs reached by an expression path with a leading :: (::host::fs), in a crate
+# that may name std (umx-cli is not no_std).
+expect = ["r-fs-in-adapters"]

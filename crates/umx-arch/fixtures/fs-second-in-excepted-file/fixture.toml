@@ -1,0 +1,2 @@
+# batch.rs's read is excepted by name; a second filesystem use beside it in the same file still fires.
+expect = ["r-fs-in-adapters"]

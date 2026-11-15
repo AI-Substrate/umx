@@ -1,0 +1,4 @@
+# The compiler refuses files, clock, env and processes in a no_std crate.
+enforcer = "build"
+expect = ["r-core-no-std"]
+must_show = ["E0433", "std::fs", "std::time", "std::env", "std::process"]

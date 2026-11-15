@@ -1,0 +1,15 @@
+{
+  "batch_invariance_min_cos_256": 0.9999997019767761,
+  "cos_cat_carburetor": 0.2884245216846466,
+  "cos_cat_kitten": 0.7437654137611389,
+  "last_tokens": [
+    "Ġsoup",
+    "Ġcool",
+    "<|endoftext|>"
+  ],
+  "load_avg_1m_at_end": 123.8642578125,
+  "load_avg_1m_at_start": 125.94189453125,
+  "max_length": 2048,
+  "model": "qwen3-embedding-0.6b",
+  "pass": true
+}

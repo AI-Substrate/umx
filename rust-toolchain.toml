@@ -1,0 +1,7 @@
+# The one Rust toolchain for umx, locally and in CI (F35): local clippy must flag what CI flags. CI installs
+# exactly this (.github/workflows/check.yml). To move to a newer Rust, change the version here in its own PR and
+# fix what the new clippy finds in that PR.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

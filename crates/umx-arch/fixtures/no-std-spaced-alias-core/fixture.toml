@@ -1,0 +1,3 @@
+# std imported across lines, past a comment, under an alias. host::fs::read is also a filesystem use outside the
+# adapters, reached through the renamed std (F114, R251 B1).
+expect = ["r-core-no-std", "r-fs-in-adapters"]

@@ -1,0 +1,2 @@
+# F133: an adapter (fs allowed) re-exports std itself, so another crate could reach std::fs as umx_adapter_fs::std::fs.
+expect = ["r-no-std-reexport"]

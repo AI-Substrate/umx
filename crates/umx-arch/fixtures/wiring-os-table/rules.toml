@@ -1,0 +1,17 @@
+blueprint = "none"
+crate = []
+
+[[rule]]
+id = "r-wiring-matches-docs"
+
+[adapters]
+fake = "umx-fakes"
+launchd = "umx-adapter-system"
+
+[[port]]
+id = "service-manager"
+module = "service_manager"
+trait = "ServiceManager"
+stub = "fake.service-manager"
+real = { macos = "launchd.service-manager", linux = "launchd.service-manager" }
+state = "active"

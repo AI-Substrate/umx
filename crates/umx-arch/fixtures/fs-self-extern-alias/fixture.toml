@@ -1,0 +1,3 @@
+# F119 (security): extern crate std as host, then fs reached through self::host in the same file (umx-cli
+# is not no_std, so extern crate std is legal there).
+expect = ["r-fs-in-adapters"]

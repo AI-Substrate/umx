@@ -1,0 +1,14 @@
+[package]
+name = "umx-daemon"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-compose = { path = "../umx-compose" }
+
+[target.'cfg(windows)'.dependencies]
+umx-compose = { path = "../umx-compose", features = ["stub"] }
+
+[features]
+stub = ["umx-compose/stub"]

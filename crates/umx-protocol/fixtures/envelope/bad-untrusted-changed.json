@@ -1,0 +1,11 @@
+{
+  "umx": 81,
+  "command": "daemon stop",
+  "status": "ok",
+  "data": {},
+  "warnings": [],
+  "errors": [],
+  "untrusted": [
+    "errors[].candidates"
+  ]
+}

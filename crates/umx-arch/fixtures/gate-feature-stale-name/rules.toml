@@ -1,0 +1,10 @@
+# umx-graph/bench was renamed to benches; benches is excluded so only the stale name fires.
+blueprint = "none"
+crate = []
+
+[[rule]]
+id = "r-gate-features"
+gate = ["umx-graph/bench"]
+gate_excluded = [
+    { feature = "umx-graph/benches", reason = "plant: keeps the renamed feature itself covered" },
+]

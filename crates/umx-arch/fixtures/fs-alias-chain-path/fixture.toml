@@ -1,0 +1,2 @@
+# F117: std::os::unix renamed through an alias of std (the uses name no fs), then fs reached by a path through it.
+expect = ["r-fs-in-adapters"]

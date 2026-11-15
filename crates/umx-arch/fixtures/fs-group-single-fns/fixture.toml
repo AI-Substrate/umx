@@ -1,0 +1,2 @@
+# R251 B1: single fns imported from std::fs in a group, called bare.
+expect = ["r-fs-in-adapters"]

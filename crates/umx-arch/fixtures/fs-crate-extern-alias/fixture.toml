@@ -1,0 +1,3 @@
+# F119 (security): extern crate std as host in the crate root, then fs reached from another file through
+# crate::host.
+expect = ["r-fs-in-adapters"]

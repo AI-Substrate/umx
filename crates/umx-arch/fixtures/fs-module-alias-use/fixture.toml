@@ -1,0 +1,3 @@
+# F133 (review N1): module store re-exports std, and the crate root renames its fs through a use rooted at the
+# module (use store::s::fs as files). Both rules fire: the use reaches std::fs, and the pub use re-exports std.
+expect = ["r-fs-in-adapters", "r-no-std-reexport"]

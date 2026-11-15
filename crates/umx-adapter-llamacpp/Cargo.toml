@@ -1,0 +1,29 @@
+[package]
+name = "umx-adapter-llamacpp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Reads a GGUF model from disk only: no HTTP crate, and llama.cpp's download code (in its `common` library) is never
+# called and not linked (tests/stub.rs no_download_code_is_linked), so the embed path cannot reach the network
+# (architect, ws004 s04). Fetching the file is a separate step (s14).
+[dependencies]
+umx-core.workspace = true
+llama-cpp-2.workspace = true
+sha2.workspace = true
+
+# Metal on macOS (the GPU spike, round 2); CPU elsewhere.
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { workspace = true, features = ["metal"] }
+
+[features]
+# CUDA on Linux (ws004 s19, D46): off by default, the cargo feature is the only switch. Building it needs the CUDA
+# toolkit; nothing is fetched. cuda-no-vmm links cudart and cuBLAS statically and loads the driver at run time, so a
+# cuda build still starts on a machine with no NVIDIA driver and runs on the CPU. The Mac gate never builds it
+# (r-gate-features); `just check-cuda` does, on a machine with the toolkit.
+cuda = ["llama-cpp-2/cuda-no-vmm"]
+
+[dev-dependencies]
+umx-contracts.workspace = true
+serde_json = { workspace = true, features = ["std"] }

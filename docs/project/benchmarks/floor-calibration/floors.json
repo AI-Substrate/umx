@@ -1,0 +1,896 @@
+{
+  "about": "Calibrated similarity floors (workstream 004 s26), written by umx-bench's floor-calibration (crates/umx-bench/src/bin/floor-calibration.rs); umx_core::similarity::CALIBRATED is checked against it. No vectors and no corpus text.",
+  "keys": {
+    "embeddinggemma-2@256+p1": {
+      "adapter": "llamacpp.embedder",
+      "deployment": null,
+      "dims": 256,
+      "estimated_tokens_sent": 0,
+      "floor_gate_unmet": false,
+      "instance_kind": "local",
+      "model": "embeddinggemma-2",
+      "null_doc_doc": {
+        "p50": 0.7069,
+        "p95": 0.8095,
+        "p99": 0.8462,
+        "samples": 1800000
+      },
+      "null_query_doc": {
+        "p50": 0.5983,
+        "p95": 0.7014,
+        "p99": 0.7401,
+        "samples": 405800
+      },
+      "prompt_version": 1,
+      "run": "fc-2026-11-11-cdc1965",
+      "run_date": "2026-11-11",
+      "search_floor": 0.7101,
+      "search_floor_lowered": [
+        {
+          "failed": [
+            {
+              "drop": 0.1,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.7401
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0562,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.7301
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0375,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.7201
+        }
+      ],
+      "search_floor_p99": 0.7401,
+      "search_floor_stop_p50": 0.5983,
+      "similar_floor": 0.8462,
+      "smoke": false,
+      "tasks": {
+        "arguana": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.548,
+            "queries": 1406,
+            "queries_with_vector_row": 1406,
+            "recall10": 0.8748,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.7101,
+            "ndcg10": 0.5473,
+            "queries": 1406,
+            "queries_with_vector_row": 1406,
+            "recall10": 0.8748,
+            "vector_rows_per_query": 9.8826
+          },
+          "documents": 8674,
+          "failed": 0,
+          "held": 47,
+          "null_doc_doc": {
+            "p50": 0.5599,
+            "p95": 0.6513,
+            "p99": 0.695,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.5745,
+            "p95": 0.6584,
+            "p99": 0.6995,
+            "samples": 281200
+          },
+          "queries": 1406,
+          "source": {
+            "sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/arguana.zip"
+          }
+        },
+        "fixture": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.7118,
+            "queries": 80,
+            "queries_with_vector_row": 80,
+            "recall10": 0.9875,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.7101,
+            "ndcg10": 0.7343,
+            "queries": 80,
+            "queries_with_vector_row": 80,
+            "recall10": 0.9875,
+            "vector_rows_per_query": 8.8375
+          },
+          "documents": 300,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.6338,
+            "p95": 0.7138,
+            "p99": 0.7593,
+            "samples": 60000
+          },
+          "null_query_doc": {
+            "p50": 0.6525,
+            "p95": 0.716,
+            "p99": 0.7526,
+            "samples": 16000
+          },
+          "queries": 80,
+          "source": {
+            "path": "docs/project/benchmarks/embed-bakeoff"
+          }
+        },
+        "nfcorpus": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.3625,
+            "queries": 323,
+            "queries_with_vector_row": 323,
+            "recall10": 0.1826,
+            "vector_rows_per_query": 9.8266
+          },
+          "at_floor": {
+            "floor": 0.7101,
+            "ndcg10": 0.3624,
+            "queries": 323,
+            "queries_with_vector_row": 321,
+            "recall10": 0.1817,
+            "vector_rows_per_query": 9.4025
+          },
+          "documents": 3633,
+          "failed": 0,
+          "held": 22,
+          "null_doc_doc": {
+            "p50": 0.7565,
+            "p95": 0.8308,
+            "p99": 0.8641,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.6633,
+            "p95": 0.7311,
+            "p99": 0.7625,
+            "samples": 64600
+          },
+          "queries": 323,
+          "source": {
+            "sha256": "efe5be03f8c5b86a5870102d0599d227c8c6e2484328e68c6522560385671b0b",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip"
+          }
+        },
+        "scifact": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.7739,
+            "queries": 300,
+            "queries_with_vector_row": 300,
+            "recall10": 0.8996,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.7101,
+            "ndcg10": 0.7739,
+            "queries": 300,
+            "queries_with_vector_row": 300,
+            "recall10": 0.8996,
+            "vector_rows_per_query": 9.9567
+          },
+          "documents": 5183,
+          "failed": 0,
+          "held": 34,
+          "null_doc_doc": {
+            "p50": 0.7204,
+            "p95": 0.7974,
+            "p99": 0.8337,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.6483,
+            "p95": 0.7209,
+            "p99": 0.7575,
+            "samples": 60000
+          },
+          "queries": 300,
+          "source": {
+            "sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+          }
+        }
+      },
+      "texts_sent": 0,
+      "tokens_per_min": 1500000,
+      "umx_commit": "cdc19658"
+    },
+    "text-embedding-3-large@256": {
+      "adapter": "azure-openai.embedder",
+      "deployment": "text-embedding-3-large-01",
+      "dims": 256,
+      "estimated_tokens_sent": 0,
+      "floor_gate_unmet": false,
+      "instance_kind": "azure_openai",
+      "model": "text-embedding-3-large",
+      "null_doc_doc": {
+        "p50": 0.3757,
+        "p95": 0.537,
+        "p99": 0.6133,
+        "samples": 1800000
+      },
+      "null_query_doc": {
+        "p50": 0.2758,
+        "p95": 0.4456,
+        "p99": 0.529,
+        "samples": 405800
+      },
+      "prompt_version": null,
+      "run": "fc-2026-11-11-cdc1965",
+      "run_date": "2026-11-11",
+      "search_floor": 0.409,
+      "search_floor_lowered": [
+        {
+          "failed": [
+            {
+              "drop": 0.0102,
+              "metric": "ndcg10",
+              "task": "scifact"
+            },
+            {
+              "drop": 0.0321,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.0625,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.529
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0314,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.0688,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.519
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0299,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.0563,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.509
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0249,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.05,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.499
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0264,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.05,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.489
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0238,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.0438,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.479
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0184,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            }
+          ],
+          "from": 0.469
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0156,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            }
+          ],
+          "from": 0.459
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0116,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            }
+          ],
+          "from": 0.449
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0133,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            }
+          ],
+          "from": 0.439
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0103,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            }
+          ],
+          "from": 0.429
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0101,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            }
+          ],
+          "from": 0.419
+        }
+      ],
+      "search_floor_p99": 0.529,
+      "search_floor_stop_p50": 0.2758,
+      "similar_floor": 0.6133,
+      "smoke": false,
+      "tasks": {
+        "arguana": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.5141,
+            "queries": 1406,
+            "queries_with_vector_row": 1406,
+            "recall10": 0.8535,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.409,
+            "ndcg10": 0.5141,
+            "queries": 1406,
+            "queries_with_vector_row": 1406,
+            "recall10": 0.8535,
+            "vector_rows_per_query": 10.0
+          },
+          "documents": 8674,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.3384,
+            "p95": 0.5044,
+            "p99": 0.5869,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.2899,
+            "p95": 0.4569,
+            "p99": 0.5434,
+            "samples": 281200
+          },
+          "queries": 1406,
+          "source": {
+            "sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/arguana.zip"
+          }
+        },
+        "fixture": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.7302,
+            "queries": 80,
+            "queries_with_vector_row": 80,
+            "recall10": 0.9813,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.409,
+            "ndcg10": 0.7537,
+            "queries": 80,
+            "queries_with_vector_row": 80,
+            "recall10": 0.975,
+            "vector_rows_per_query": 7.5875
+          },
+          "documents": 300,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.2903,
+            "p95": 0.4804,
+            "p99": 0.5879,
+            "samples": 60000
+          },
+          "null_query_doc": {
+            "p50": 0.2438,
+            "p95": 0.3953,
+            "p99": 0.4782,
+            "samples": 16000
+          },
+          "queries": 80,
+          "source": {
+            "path": "docs/project/benchmarks/embed-bakeoff"
+          }
+        },
+        "nfcorpus": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.3826,
+            "queries": 323,
+            "queries_with_vector_row": 323,
+            "recall10": 0.1895,
+            "vector_rows_per_query": 9.7616
+          },
+          "at_floor": {
+            "floor": 0.409,
+            "ndcg10": 0.3734,
+            "queries": 323,
+            "queries_with_vector_row": 289,
+            "recall10": 0.18,
+            "vector_rows_per_query": 7.3127
+          },
+          "documents": 3633,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.4089,
+            "p95": 0.5647,
+            "p99": 0.639,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.2216,
+            "p95": 0.3993,
+            "p99": 0.4748,
+            "samples": 64600
+          },
+          "queries": 323,
+          "source": {
+            "sha256": "efe5be03f8c5b86a5870102d0599d227c8c6e2484328e68c6522560385671b0b",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip"
+          }
+        },
+        "scifact": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.7243,
+            "queries": 300,
+            "queries_with_vector_row": 300,
+            "recall10": 0.8537,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.409,
+            "ndcg10": 0.7285,
+            "queries": 300,
+            "queries_with_vector_row": 298,
+            "recall10": 0.8537,
+            "vector_rows_per_query": 9.63
+          },
+          "documents": 5183,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.3767,
+            "p95": 0.5247,
+            "p99": 0.5931,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.2613,
+            "p95": 0.4227,
+            "p99": 0.4906,
+            "samples": 60000
+          },
+          "queries": 300,
+          "source": {
+            "sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+          }
+        }
+      },
+      "texts_sent": 0,
+      "tokens_per_min": 1500000,
+      "umx_commit": "cdc19658"
+    },
+    "text-embedding-3-small@256": {
+      "adapter": "azure-openai.embedder",
+      "deployment": "text-embedding-3-small-01",
+      "dims": 256,
+      "estimated_tokens_sent": 0,
+      "floor_gate_unmet": false,
+      "instance_kind": "azure_openai",
+      "model": "text-embedding-3-small",
+      "null_doc_doc": {
+        "p50": 0.3294,
+        "p95": 0.5018,
+        "p99": 0.5807,
+        "samples": 1800000
+      },
+      "null_query_doc": {
+        "p50": 0.2687,
+        "p95": 0.4377,
+        "p99": 0.5195,
+        "samples": 405800
+      },
+      "prompt_version": null,
+      "run": "fc-2026-11-11-cdc1965",
+      "run_date": "2026-11-11",
+      "search_floor": 0.4095,
+      "search_floor_lowered": [
+        {
+          "failed": [
+            {
+              "drop": 0.0197,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.1813,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.5195
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0196,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.1625,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.5095
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0173,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.1625,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4995
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0168,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.1313,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4895
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0143,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.1063,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4795
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0128,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.1,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4695
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0103,
+              "metric": "ndcg10",
+              "task": "nfcorpus"
+            },
+            {
+              "drop": 0.0875,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4595
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0563,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4495
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0313,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4395
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.0313,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4295
+        },
+        {
+          "failed": [
+            {
+              "drop": 0.025,
+              "metric": "recall10",
+              "task": "fixture"
+            }
+          ],
+          "from": 0.4195
+        }
+      ],
+      "search_floor_p99": 0.5195,
+      "search_floor_stop_p50": 0.2687,
+      "similar_floor": 0.5807,
+      "smoke": false,
+      "tasks": {
+        "arguana": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.4814,
+            "queries": 1406,
+            "queries_with_vector_row": 1406,
+            "recall10": 0.8122,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.4095,
+            "ndcg10": 0.4814,
+            "queries": 1406,
+            "queries_with_vector_row": 1406,
+            "recall10": 0.8122,
+            "vector_rows_per_query": 10.0
+          },
+          "documents": 8674,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.2971,
+            "p95": 0.4631,
+            "p99": 0.5491,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.2759,
+            "p95": 0.4427,
+            "p99": 0.5295,
+            "samples": 281200
+          },
+          "queries": 1406,
+          "source": {
+            "sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/arguana.zip"
+          }
+        },
+        "fixture": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.6979,
+            "queries": 80,
+            "queries_with_vector_row": 80,
+            "recall10": 0.9688,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.4095,
+            "ndcg10": 0.7318,
+            "queries": 80,
+            "queries_with_vector_row": 80,
+            "recall10": 0.95,
+            "vector_rows_per_query": 6.825
+          },
+          "documents": 300,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.2963,
+            "p95": 0.4718,
+            "p99": 0.5803,
+            "samples": 60000
+          },
+          "null_query_doc": {
+            "p50": 0.2415,
+            "p95": 0.3858,
+            "p99": 0.4602,
+            "samples": 16000
+          },
+          "queries": 80,
+          "source": {
+            "path": "docs/project/benchmarks/embed-bakeoff"
+          }
+        },
+        "nfcorpus": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.3687,
+            "queries": 323,
+            "queries_with_vector_row": 323,
+            "recall10": 0.1769,
+            "vector_rows_per_query": 9.7926
+          },
+          "at_floor": {
+            "floor": 0.4095,
+            "ndcg10": 0.3628,
+            "queries": 323,
+            "queries_with_vector_row": 292,
+            "recall10": 0.171,
+            "vector_rows_per_query": 7.5387
+          },
+          "documents": 3633,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.3605,
+            "p95": 0.5212,
+            "p99": 0.5992,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.228,
+            "p95": 0.3863,
+            "p99": 0.454,
+            "samples": 64600
+          },
+          "queries": 323,
+          "source": {
+            "sha256": "efe5be03f8c5b86a5870102d0599d227c8c6e2484328e68c6522560385671b0b",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip"
+          }
+        },
+        "scifact": {
+          "at_0": {
+            "floor": 0.0,
+            "ndcg10": 0.719,
+            "queries": 300,
+            "queries_with_vector_row": 300,
+            "recall10": 0.8433,
+            "vector_rows_per_query": 10.0
+          },
+          "at_floor": {
+            "floor": 0.4095,
+            "ndcg10": 0.72,
+            "queries": 300,
+            "queries_with_vector_row": 300,
+            "recall10": 0.8499,
+            "vector_rows_per_query": 9.8067
+          },
+          "documents": 5183,
+          "failed": 0,
+          "held": 0,
+          "null_doc_doc": {
+            "p50": 0.3306,
+            "p95": 0.5046,
+            "p99": 0.5781,
+            "samples": 600000
+          },
+          "null_query_doc": {
+            "p50": 0.2784,
+            "p95": 0.4505,
+            "p99": 0.5176,
+            "samples": 60000
+          },
+          "queries": 300,
+          "source": {
+            "sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+            "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+          }
+        }
+      },
+      "texts_sent": 0,
+      "tokens_per_min": 1500000,
+      "umx_commit": "cdc19658"
+    }
+  }
+}

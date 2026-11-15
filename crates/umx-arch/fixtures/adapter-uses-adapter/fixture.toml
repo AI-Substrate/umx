@@ -1,0 +1,2 @@
+# One adapter depends on another.
+expect = ["r-adapters-isolated", "r-inward", "r-only-compose-wires"]

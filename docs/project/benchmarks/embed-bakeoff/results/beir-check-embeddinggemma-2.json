@@ -1,0 +1,26 @@
+{
+ "model": "embeddinggemma-2",
+ "cos_cat_kitten": 0.9026119709014893,
+ "cos_cat_carburetor": 0.6950505971908569,
+ "pass": true,
+ "query_sample": "task: search result | query: how long may soup cool",
+ "doc_sample": "title: T | text: body",
+ "last_tokens": [
+  "\u2581soup",
+  "\u2581cool",
+  "<eos>"
+ ],
+ "eos_token": "<eos>",
+ "modules": [
+  "Transformer",
+  "Pooling",
+  "Normalize"
+ ],
+ "pooling": {
+  "embedding_dimension": 768,
+  "pooling_mode": "mean",
+  "include_prompt": true
+ },
+ "device": "mps:0",
+ "max_seq_length": 2048
+}

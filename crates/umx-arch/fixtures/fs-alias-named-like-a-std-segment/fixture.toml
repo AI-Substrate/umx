@@ -1,0 +1,3 @@
+# R270-1: std renamed to os, then std::os::unix renamed by its own std path: the literal std path stays std::os::unix,
+# not rewritten through the alias, so u::fs is std::os::unix::fs.
+expect = ["r-fs-in-adapters"]

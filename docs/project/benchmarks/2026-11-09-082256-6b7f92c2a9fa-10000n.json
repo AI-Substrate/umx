@@ -1,0 +1,73 @@
+{
+  "cli": {
+    "add_ms": {
+      "max": 135.387,
+      "n": 50,
+      "p50": 58.929,
+      "p95": 82.921
+    },
+    "find_ms": {
+      "median": 24.426,
+      "min": 22.878,
+      "runs": 5
+    },
+    "list_100_ms": {
+      "median": 8.211,
+      "min": 6.225,
+      "runs": 5
+    },
+    "load_ms": 48.805,
+    "nodes_bytes_after_adds": 2659984,
+    "rss_kb": {
+      "after_adds": 51648,
+      "idle": 2464,
+      "loaded": 43792
+    }
+  },
+  "commit": "6b7f92c2a9fa",
+  "conditions": "nice -n 19, release",
+  "date": "2026-11-09T08:22:56Z",
+  "fixture": {
+    "bytes": {
+      "edges": 5482021,
+      "graph": 1311,
+      "nodes": 2648244
+    },
+    "edges": 29994,
+    "edges_per_node": 3,
+    "generate_ms": 26.079,
+    "nodes": 10000,
+    "seed": 1
+  },
+  "in_process": {
+    "find_ms": {
+      "median": 15.503,
+      "min": 15.112,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 1.657,
+      "min": 1.609,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.093,
+      "min": 0.077,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 27.29,
+      "min": 23.747,
+      "runs": 5
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 1
+}

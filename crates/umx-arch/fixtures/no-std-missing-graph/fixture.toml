@@ -1,0 +1,2 @@
+# umx-graph's lib.rs does not start with #![no_std].
+expect = ["r-core-no-std"]

@@ -1,0 +1,7 @@
+[package]
+name = "umx"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+umx-compose = { path = "../umx-compose" }

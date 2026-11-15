@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Writes crates/umx-services/src/graph_store/casefold.rs: Unicode's full case folding, after lower case (F203 N3).
+
+Rust's `char::to_lowercase` is a full lower-casing, not a case folding. This script lists every character that lower
+casing leaves alone but case folding changes (`ß` to `ss`, `ς` to `σ`, `ſ` to `s`, ligatures, Cherokee small letters to
+capitals, ...), so that lower case then this table is Unicode's full case folding, one character at a time. It checks
+that over every code point before it writes, using Python's own tables.
+
+Rust's std may know a newer Unicode than Python: a character newer than Python's tables folds by lower case only. Run
+from the repository root when either Unicode version moves:
+    python3 -B scripts/casefold-table
+"""
+
+import pathlib
+import subprocess
+import sys
+import unicodedata
+
+REPO = pathlib.Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
+OUT = REPO / "crates/umx-services/src/graph_store/casefold.rs"
+
+chars = [chr(i) for i in range(0x110000) if not 0xD800 <= i < 0xE000]
+table = {c: c.casefold() for c in chars if c.lower() == c and c.casefold() != c}
+wrong = [c for c in chars if "".join(table.get(x, x) for x in c.lower()) != c.casefold()]
+if wrong:
+    sys.exit(f"lower case then the table is not case folding for {len(wrong)} characters, first U+{ord(wrong[0]):04X}")
+
+
+def rust(text: str) -> str:
+    return "".join(f"\\u{{{ord(c):04X}}}" for c in text)
+
+
+rows = "\n".join(f'    (\'{rust(c)}\', "{rust(f)}"),' for c, f in sorted(table.items()))
+OUT.write_text(
+    f"""//! Unicode's full case folding after lower case (F203 N3): `char::to_lowercase` (std's Unicode version), then
+//! this table of what case folding changes beyond lower case, from Unicode {unicodedata.unidata_version}. A
+//! character newer than the table folds by lower case only. Written by `scripts/casefold-table`; do not edit by
+//! hand.
+
+/// What case folding makes of `c`, a character `char::to_lowercase` gave, when that is not `c` itself.
+pub(super) fn fold_lowered(c: char) -> Option<&'static str> {{
+    FOLDS
+        .binary_search_by_key(&c, |(from, _)| *from)
+        .ok()
+        .map(|i| FOLDS[i].1)
+}}
+
+/// Every character lower casing leaves alone and case folding changes, in code point order.
+const FOLDS: &[(char, &str)] = &[
+{rows}
+];
+"""
+)
+print(f"{OUT.relative_to(REPO)}: {len(table)} folds, Unicode {unicodedata.unidata_version}")

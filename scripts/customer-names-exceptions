@@ -1,0 +1,3 @@
+# <path>:<git blob sha> per line; see scripts/customer-names. Only for byte coincidences in recorded data that cannot change.
+docs/project/benchmarks/embed-bakeoff/vectors/embeddinggemma-2@256+p1.rows.tsv:ec23f2b8ecf268b824cbc55508128d9bf6d875c7
+docs/project/benchmarks/embed-bakeoff/vectors/embeddinggemma-2@256+p1.tsv:56cc02dd4f57a73393173b43986b7d9f142b6921

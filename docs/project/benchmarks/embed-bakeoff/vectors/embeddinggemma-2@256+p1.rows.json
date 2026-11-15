@@ -1,0 +1,17 @@
+{
+  "about": "What embeddinggemma-2@256+p1.rows.tsv was made with; hybrid_recall refuses the rows when any of this differs from umx's current model pin or text form (ws004 s26b). Human notes: embeddinggemma-2@256+p1.rows.provenance.md.",
+  "key": "embeddinggemma-2@256+p1",
+  "model": "embeddinggemma-2",
+  "repo": "ggml-org/embeddinggemma-2-GGUF",
+  "commit": "6ea3e3a309d12a4779cfda98b8c19800d2d5da71",
+  "file": "embeddinggemma-2-BF16.gguf",
+  "file_sha256": "68bae29d62fb8c7d23e98d21fd4662753ddd636e6b62b8a70dfe059a9844f216",
+  "whole_node_version": 2,
+  "whole_node_version_note": "Recorded under form 1 (umx b21ca71b). Form 2 (D56, ws004 s22) leaves data fields out; these nodes have only a title and a note, so both forms build the same texts and every row's hash still matches (hybrid_recall checks the nodes have no other fields).",
+  "field_form": "title: none | text: ",
+  "rows_sha256": "0473ec0c263ee4c7a1405803c2e3b2d701c0580e1dedce9f123a7b8a2e42eaf0",
+  "rows": 980,
+  "backend": "metal",
+  "umx_commit": "b21ca71b",
+  "date": "2026-11-11"
+}

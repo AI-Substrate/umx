@@ -1,0 +1,1419 @@
+{
+  "cli": {
+    "add_ms": {
+      "max": 103.16,
+      "n": 50,
+      "p50": 52.308,
+      "p95": 91.09
+    },
+    "add_parent_ms": {
+      "max": 1145.347,
+      "n": 50,
+      "p50": 173.744,
+      "p95": 302.327
+    },
+    "find_ms": {
+      "median": 16.892,
+      "min": 12.342,
+      "runs": 5
+    },
+    "list_100_ms": {
+      "median": 10.461,
+      "min": 9.598,
+      "runs": 5
+    },
+    "load_ms": 437.114,
+    "nodes_bytes_after_adds": 99062166,
+    "rss_kb": {
+      "after_adds": 420640,
+      "idle": 7296,
+      "loaded": 219360
+    }
+  },
+  "commit": "9b2fa7c86da9",
+  "conditions": "nice -n 19, release",
+  "date": "2026-11-10T13:01:37Z",
+  "fixture": {
+    "bytes": {
+      "edges": 54832229,
+      "graph": 1312,
+      "nodes": 99050426
+    },
+    "edges": 299996,
+    "edges_per_node": 3,
+    "generate_ms": 600.992,
+    "kind": "rich",
+    "nodes": 100000,
+    "seed": 1,
+    "vectors_per_node": 4
+  },
+  "in_process": {
+    "add_node_3_edges_ms": {
+      "median": 5.485,
+      "min": 5.071,
+      "runs": 9
+    },
+    "batch": {
+      "adds_ms": 108.162,
+      "adds_parent_edges_ms": 237.731,
+      "adds_rows": 1000,
+      "dry_run_adds_ms": 67.601,
+      "dry_run_rows": 1000,
+      "graph": {
+        "apply_adds_edges_ms": {
+          "median": 3.78,
+          "min": 3.745,
+          "runs": 3
+        },
+        "apply_edits_ms": {
+          "median": 1165.479,
+          "min": 1164.423,
+          "runs": 3
+        },
+        "mixed_apply_ms": {
+          "median": 360.376,
+          "min": 353.664,
+          "runs": 3
+        },
+        "ops": 1000,
+        "rollback_equal": true,
+        "rollback_ms": {
+          "median": 351.5,
+          "min": 350.714,
+          "runs": 3
+        },
+        "undo_bound_bytes": 324406,
+        "undo_bytes": 345270
+      },
+      "node_add_p50_ms": 58.722,
+      "one_op_batch_p50_ms": 59.22,
+      "ops": 1000
+    },
+    "cypher": {
+      "max_peak": "design/m11-degree/design",
+      "max_peak_bytes": 338170129,
+      "queries": [
+        {
+          "id": "m01-label",
+          "ms": {
+            "median": 2.932,
+            "min": 2.833,
+            "runs": 5
+          },
+          "peak_bytes": 11671423,
+          "rows": 10052,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m02-label-or",
+          "ms": {
+            "median": 6.077,
+            "min": 6.041,
+            "runs": 5
+          },
+          "peak_bytes": 23176942,
+          "rows": 19962,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m03-prop-map",
+          "ms": {
+            "median": 0.002,
+            "min": 0.002,
+            "runs": 5
+          },
+          "peak_bytes": 2210,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m04-out",
+          "ms": {
+            "median": 0.004,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 3815,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m05-in",
+          "ms": {
+            "median": 0.003,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 3815,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m06-undirected",
+          "ms": {
+            "median": 0.003,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 3773,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m07-rel-types-or",
+          "ms": {
+            "median": 0.004,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 5298,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m08-untyped-parallel",
+          "ms": {
+            "median": 0.007,
+            "min": 0.007,
+            "runs": 5
+          },
+          "peak_bytes": 12357,
+          "rows": 8,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m09-self-loop-undirected",
+          "ms": {
+            "median": 0.003,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 3999,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m10-relvar",
+          "ms": {
+            "median": 0.004,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 5027,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m11-degree",
+          "ms": {
+            "median": 497.233,
+            "min": 492.964,
+            "runs": 5
+          },
+          "peak_bytes": 338170129,
+          "rows": 3,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m12-varlen-cycle",
+          "ms": {
+            "median": 0.006,
+            "min": 0.006,
+            "runs": 5
+          },
+          "peak_bytes": 8938,
+          "rows": 5,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m13-exactly-two",
+          "ms": {
+            "median": 0.003,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 4523,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m14-two-patterns",
+          "ms": {
+            "median": 10.142,
+            "min": 9.933,
+            "runs": 5
+          },
+          "peak_bytes": 43221985,
+          "rows": 275,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "m15-rel-uniqueness",
+          "ms": {
+            "median": 0.004,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 4572,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w01-bool",
+          "ms": {
+            "median": 56.529,
+            "min": 55.263,
+            "runs": 5
+          },
+          "peak_bytes": 34244399,
+          "rows": 29493,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w02-in-neq",
+          "ms": {
+            "median": 5.04,
+            "min": 4.996,
+            "runs": 5
+          },
+          "peak_bytes": 2480200,
+          "rows": 2562,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w03-is-null",
+          "ms": {
+            "median": 4.469,
+            "min": 4.39,
+            "runs": 5
+          },
+          "peak_bytes": 11589881,
+          "rows": 9981,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w04-strings",
+          "ms": {
+            "median": 25.588,
+            "min": 24.551,
+            "runs": 5
+          },
+          "peak_bytes": 527277,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w05-float-edge",
+          "ms": {
+            "median": 11.827,
+            "min": 11.548,
+            "runs": 5
+          },
+          "peak_bytes": 43221902,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w06-list-in",
+          "ms": {
+            "median": 216.682,
+            "min": 215.807,
+            "runs": 5
+          },
+          "peak_bytes": 533568,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w07-list-all",
+          "refused": "query syntax at byte 73: expected `)` to close a function call",
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w08-not-exists",
+          "ms": {
+            "median": 5.991,
+            "min": 5.769,
+            "runs": 5
+          },
+          "peak_bytes": 2511642,
+          "rows": 2152,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "w09-exists-where",
+          "ms": {
+            "median": 8.431,
+            "min": 8.305,
+            "runs": 5
+          },
+          "peak_bytes": 4608538,
+          "rows": 23,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "o01-optional",
+          "ms": {
+            "median": 11.226,
+            "min": 10.976,
+            "runs": 5
+          },
+          "peak_bytes": 12997787,
+          "rows": 10169,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "a01-agg",
+          "ms": {
+            "median": 3.449,
+            "min": 3.202,
+            "runs": 5
+          },
+          "peak_bytes": 4434876,
+          "rows": 1563,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "a02-agg-float",
+          "ms": {
+            "median": 30.135,
+            "min": 29.146,
+            "runs": 5
+          },
+          "peak_bytes": 43220945,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "a03-collect-sorted",
+          "ms": {
+            "median": 0.004,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 4698,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "x01-with-filter",
+          "ms": {
+            "median": 33.482,
+            "min": 32.905,
+            "runs": 5
+          },
+          "peak_bytes": 43221054,
+          "rows": 1207,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "r01-distinct-skip-limit",
+          "ms": {
+            "median": 15.701,
+            "min": 15.323,
+            "runs": 5
+          },
+          "peak_bytes": 43220420,
+          "rows": 2,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "u01-unwind",
+          "ms": {
+            "median": 0.004,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 4412,
+          "rows": 2,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "c01-case",
+          "ms": {
+            "median": 4.328,
+            "min": 4.235,
+            "runs": 5
+          },
+          "peak_bytes": 12446187,
+          "rows": 9981,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "f01-functions",
+          "ms": {
+            "median": 0.004,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 5079,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "k01-comment",
+          "ms": {
+            "median": 2.637,
+            "min": 2.611,
+            "runs": 5
+          },
+          "peak_bytes": 9583956,
+          "rows": 9910,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "z01-multilabel-colon",
+          "refused": "query syntax at byte 17: expected `)` to close a node pattern",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z02-neq-bang",
+          "refused": "query syntax at byte 34: unexpected character `!`",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z03-unbounded",
+          "ms": {
+            "median": 0.003,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 3815,
+          "rows": 1,
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z04-type-fn",
+          "refused": "unknown function `type`",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z05-labels-fn",
+          "ms": {
+            "median": 0.002,
+            "min": 0.002,
+            "runs": 5
+          },
+          "peak_bytes": 2551,
+          "rows": 1,
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z06-order-by-node",
+          "ms": {
+            "median": 6.028,
+            "min": 5.787,
+            "runs": 5
+          },
+          "peak_bytes": 12202271,
+          "rows": 10052,
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z07-path-var",
+          "refused": "query syntax at byte 6: expected `(` to start a node pattern",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z08-arith",
+          "refused": "query syntax at byte 65: unexpected trailing input",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z09-regex",
+          "refused": "query syntax at byte 25: unexpected character `~`",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z10-unknown-rel",
+          "refused": "unknown relationship type `nope`",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z11-unknown-prop",
+          "ms": {
+            "median": 0.002,
+            "min": 0.002,
+            "runs": 5
+          },
+          "peak_bytes": 2143,
+          "rows": 1,
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "m16-zero-lower",
+          "ms": {
+            "median": 0.003,
+            "min": 0.003,
+            "runs": 5
+          },
+          "peak_bytes": 4219,
+          "rows": 2,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "z13-union",
+          "refused": "query syntax at byte 36: unexpected trailing input",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z14-return-node",
+          "ms": {
+            "median": 0.002,
+            "min": 0.002,
+            "runs": 5
+          },
+          "peak_bytes": 2201,
+          "rows": 1,
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "o02-alias-shadow",
+          "ms": {
+            "median": 3.091,
+            "min": 2.891,
+            "runs": 5
+          },
+          "peak_bytes": 11661368,
+          "rows": 10052,
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "z15-walk-undirected",
+          "ms": {
+            "median": 0.005,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 5315,
+          "rows": 2,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "z16-symmetric-directed",
+          "refused": "conflicts_with is symmetric, so it has no direction: match it with -[:conflicts_with]-",
+          "set": "design",
+          "variant": "probe"
+        },
+        {
+          "id": "n01-in-list-numeric",
+          "ms": {
+            "median": 3.435,
+            "min": 3.351,
+            "runs": 5
+          },
+          "peak_bytes": 10318660,
+          "rows": 9910,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "n02-count-distinct-numeric",
+          "ms": {
+            "median": 0.002,
+            "min": 0.002,
+            "runs": 5
+          },
+          "peak_bytes": 3831,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "n03-with-distinct-numeric",
+          "ms": {
+            "median": 0.002,
+            "min": 0.002,
+            "runs": 5
+          },
+          "peak_bytes": 3386,
+          "rows": 1,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "p01-map-reads-path-var",
+          "ms": {
+            "median": 12.938,
+            "min": 12.541,
+            "runs": 5
+          },
+          "peak_bytes": 43221113,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "p02-map-anonymous",
+          "ms": {
+            "median": 12.683,
+            "min": 12.549,
+            "runs": 5
+          },
+          "peak_bytes": 43221129,
+          "rows": 0,
+          "set": "design",
+          "variant": "design"
+        },
+        {
+          "id": "q1-transitive-blocks",
+          "ms": {
+            "median": 0.005,
+            "min": 0.005,
+            "runs": 5
+          },
+          "peak_bytes": 7633,
+          "rows": 5,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q1-transitive-blocks",
+          "ms": {
+            "median": 0.005,
+            "min": 0.005,
+            "runs": 5
+          },
+          "peak_bytes": 7633,
+          "rows": 5,
+          "set": "workshop-006",
+          "variant": "anchor-first"
+        },
+        {
+          "id": "q2-chain-hub",
+          "refused": "query syntax at byte 6: expected `(` to start a node pattern",
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q2-chain-hub",
+          "ms": {
+            "median": 330.614,
+            "min": 328.483,
+            "runs": 5
+          },
+          "peak_bytes": 68115505,
+          "rows": 5,
+          "set": "workshop-006",
+          "variant": "subset"
+        },
+        {
+          "id": "q2-chain-hub-pairs",
+          "ms": {
+            "median": 331.288,
+            "min": 325.648,
+            "runs": 5
+          },
+          "peak_bytes": 68115505,
+          "rows": 5,
+          "set": "workshop-006",
+          "variant": "subset"
+        },
+        {
+          "id": "q3-unanswered-questions",
+          "ms": {
+            "median": 5.96,
+            "min": 5.558,
+            "runs": 5
+          },
+          "peak_bytes": 2511642,
+          "rows": 2152,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q4-conflicting-decisions",
+          "ms": {
+            "median": 1.488,
+            "min": 1.445,
+            "runs": 5
+          },
+          "peak_bytes": 4435253,
+          "rows": 163,
+          "set": "workshop-006",
+          "variant": "alias-clash"
+        },
+        {
+          "id": "q4-conflicting-decisions",
+          "ms": {
+            "median": 1.611,
+            "min": 1.478,
+            "runs": 5
+          },
+          "peak_bytes": 4435261,
+          "rows": 163,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q5-analyst-only",
+          "refused": "query syntax at byte 73: expected `)` to close a function call",
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q5-analyst-only",
+          "ms": {
+            "median": 1048.312,
+            "min": 1046.751,
+            "runs": 5
+          },
+          "peak_bytes": 87133974,
+          "rows": 75048,
+          "set": "workshop-006",
+          "variant": "subset"
+        },
+        {
+          "id": "q6-neighbours-by-rel",
+          "ms": {
+            "median": 0.009,
+            "min": 0.009,
+            "runs": 5
+          },
+          "peak_bytes": 19529,
+          "rows": 13,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q6-neighbours-by-rel",
+          "refused": "unknown function `type`",
+          "set": "workshop-006",
+          "variant": "neo4j"
+        },
+        {
+          "id": "q6-neighbours-by-rel",
+          "ms": {
+            "median": 0.005,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 6387,
+          "rows": 3,
+          "set": "workshop-006",
+          "variant": "subset"
+        },
+        {
+          "id": "q7-edge-property",
+          "ms": {
+            "median": 11.773,
+            "min": 11.067,
+            "runs": 5
+          },
+          "peak_bytes": 43221902,
+          "rows": 0,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q7-edge-property",
+          "ms": {
+            "median": 11.587,
+            "min": 11.222,
+            "runs": 5
+          },
+          "peak_bytes": 43221914,
+          "rows": 0,
+          "set": "workshop-006",
+          "variant": "int-pct"
+        },
+        {
+          "id": "q8-shortest-path",
+          "refused": "query syntax at byte 6: expected `(` to start a node pattern",
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q8-shortest-path",
+          "refused": "query syntax at byte 6: expected `(` to start a node pattern",
+          "set": "workshop-006",
+          "variant": "neo4j"
+        },
+        {
+          "id": "q9-hubs",
+          "ms": {
+            "median": 485.935,
+            "min": 474.411,
+            "runs": 5
+          },
+          "peak_bytes": 338170129,
+          "rows": 10,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "q9-hubs",
+          "ms": {
+            "median": 418.367,
+            "min": 415.289,
+            "runs": 5
+          },
+          "peak_bytes": 338169689,
+          "rows": 10,
+          "set": "workshop-006",
+          "variant": "subset"
+        },
+        {
+          "id": "q9-hubs",
+          "ms": {
+            "median": 423.792,
+            "min": 421.342,
+            "runs": 5
+          },
+          "peak_bytes": 338169689,
+          "rows": 10,
+          "set": "workshop-006",
+          "variant": "subset-vs-distinct"
+        },
+        {
+          "id": "q10-exactly-two-hops",
+          "ms": {
+            "median": 0.004,
+            "min": 0.004,
+            "runs": 5
+          },
+          "peak_bytes": 4529,
+          "rows": 1,
+          "set": "workshop-006",
+          "variant": "kuzu"
+        },
+        {
+          "id": "e1-create",
+          "refused": "query syntax at byte 0: expected `MATCH`",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e2-merge",
+          "refused": "query syntax at byte 0: expected `MATCH`",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e3-set",
+          "refused": "query syntax at byte 45: expected keyword `RETURN`",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e4-union",
+          "refused": "query syntax at byte 37: unexpected trailing input",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e5-param",
+          "refused": "query syntax at byte 14: unexpected character `$`",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e6-call",
+          "refused": "query syntax at byte 0: expected `MATCH`",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e7-multilabel",
+          "refused": "query syntax at byte 17: expected `)` to close a node pattern",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e8-hyphen-reltype",
+          "refused": "query syntax at byte 12: unexpected character ```",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e9-unknown-reltype",
+          "refused": "unknown relationship type `nope`",
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e10-unknown-property",
+          "ms": {
+            "median": 1.654,
+            "min": 1.609,
+            "runs": 5
+          },
+          "peak_bytes": 9173530,
+          "rows": 1,
+          "set": "workshop-006",
+          "variant": "unsupported"
+        },
+        {
+          "id": "e11-return-relvar",
+          "ms": {
+            "median": 12.706,
+            "min": 12.384,
+            "runs": 5
+          },
+          "peak_bytes": 43220362,
+          "rows": 1,
+          "set": "workshop-006",
+          "variant": "unsupported"
+        }
+      ],
+      "slowest": "workshop-006/q5-analyst-only/subset",
+      "slowest_ms": 1048.312,
+      "sum_of_medians_ms": 4075.265
+    },
+    "encode_edges_ms": {
+      "median": 19.613,
+      "min": 18.922,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 1.544,
+      "min": 1.472,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 2.692,
+      "min": 2.519,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 1874.291,
+      "min": 1836.958,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 1.75,
+      "min": 1.709,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 185.993,
+      "min": 185.562,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.221,
+      "min": 0.219,
+      "runs": 5
+    },
+    "list_type_field_count": 2042,
+    "list_type_field_ms": {
+      "median": 0.03,
+      "min": 0.03,
+      "runs": 5
+    },
+    "list_type_status_count": 1244,
+    "list_type_status_ms": {
+      "median": 0.152,
+      "min": 0.149,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 397.935,
+      "min": 388.983,
+      "runs": 5
+    },
+    "load_peak_bytes": 148948552,
+    "mem_graph_bytes": 141771208,
+    "mem_hot_per_node_bytes": 227.0,
+    "mem_not_image_per_node_bytes": 427.0,
+    "mem_parts_bytes": {
+      "adjacency": 5599944,
+      "cold": 0,
+      "edge_columns": 9599872,
+      "field_columns": 774456,
+      "image": 99050426,
+      "node_columns": 7497430,
+      "word_index": 19248672
+    },
+    "mem_per_node_bytes": 1418.0,
+    "mem_word_index_per_node_bytes": 192.0,
+    "memory_bytes_over_alloc": 1.0,
+    "near_duplicate_insert_ms": {
+      "median": 0.011,
+      "min": 0.01,
+      "runs": 9
+    },
+    "path_hops_sum": 1356,
+    "path_us": {
+      "median": 845.18,
+      "min": 825.607,
+      "runs": 5
+    },
+    "rebuild_adjacency_ms": {
+      "median": 1.815,
+      "min": 1.621,
+      "runs": 9
+    },
+    "replace_one_line_ms": {
+      "median": 1.103,
+      "min": 1.092,
+      "runs": 9
+    },
+    "replace_one_node_ms": {
+      "median": 1.103,
+      "min": 1.081,
+      "runs": 9
+    },
+    "search_ms": {
+      "median": 11.905,
+      "min": 11.833,
+      "runs": 5
+    },
+    "title_find": {
+      "near_duplicate_insert_s06_ms": {
+        "median": 16.442,
+        "min": 15.951,
+        "runs": 9
+      },
+      "queries": {
+        "exact": {
+          "branch_ms": {
+            "median": 4.841,
+            "min": 4.627,
+            "runs": 9
+          },
+          "candidates": 15827,
+          "query": "Approval scope across regions",
+          "s06_ms": {
+            "median": 21.848,
+            "min": 21.048,
+            "runs": 9
+          },
+          "same_top20": true
+        },
+        "near_duplicate_existing": {
+          "branch_ms": {
+            "median": 0.426,
+            "min": 0.412,
+            "runs": 9
+          },
+          "candidates": 794,
+          "query": "Approval scope across regions",
+          "s06_ms": {
+            "median": 21.745,
+            "min": 20.999,
+            "runs": 9
+          }
+        },
+        "typo": {
+          "branch_ms": {
+            "median": 4.296,
+            "min": 4.111,
+            "runs": 9
+          },
+          "candidates": 15115,
+          "query": "Approval scopexacross regions",
+          "s06_ms": {
+            "median": 22.112,
+            "min": 20.981,
+            "runs": 9
+          },
+          "same_top20": true
+        },
+        "worst": {
+          "branch_ms": {
+            "median": 13.196,
+            "min": 12.845,
+            "runs": 9
+          },
+          "candidates": 44876,
+          "query": "Pricing quality for the pilot",
+          "s06_ms": {
+            "median": 22.678,
+            "min": 21.909,
+            "runs": 9
+          },
+          "same_top20": true
+        }
+      },
+      "s06_title_text_per_node_bytes": 36.0,
+      "terms": 64
+    },
+    "title_find_large_vocabulary": {
+      "nodes": 100000,
+      "queries": {
+        "exact": {
+          "branch_ms": {
+            "median": 7.635,
+            "min": 7.25,
+            "runs": 9
+          },
+          "candidates": 17,
+          "s06_ms": {
+            "median": 23.07,
+            "min": 22.452,
+            "runs": 9
+          },
+          "same_top20": true,
+          "term_scan_ms": {
+            "median": 8.136,
+            "min": 7.498,
+            "runs": 9
+          }
+        },
+        "typo": {
+          "branch_ms": {
+            "median": 8.036,
+            "min": 7.325,
+            "runs": 9
+          },
+          "candidates": 12,
+          "s06_ms": {
+            "median": 21.638,
+            "min": 20.818,
+            "runs": 9
+          },
+          "same_top20": true,
+          "term_scan_ms": {
+            "median": 7.424,
+            "min": 6.123,
+            "runs": 9
+          }
+        }
+      },
+      "terms": 59525
+    },
+    "vectors": {
+      "apply_mem_per_node_bytes": 1314.225,
+      "apply_memory_bytes_over_alloc": 1.0,
+      "count": 400000,
+      "decode_ms": {
+        "median": 245.154,
+        "min": 232.817,
+        "runs": 5
+      },
+      "decode_peak_over_blocks": 0.007,
+      "dims": 256,
+      "field_bytes_per_vector": 264.0,
+      "graph_and_vectors_load_ms": {
+        "median": 627.915,
+        "min": 609.035,
+        "runs": 5
+      },
+      "graph_load_ms": {
+        "median": 384.974,
+        "min": 369.517,
+        "runs": 5
+      },
+      "mem_bytes": 106813522,
+      "mem_per_node_bytes": 1068.135,
+      "memory_bytes_over_alloc": 1.0,
+      "per_node": 4,
+      "reembed_one_node": {
+        "bytes_written": 159371,
+        "files_written": 1,
+        "over_mean_shard": 0.993
+      },
+      "scan_checks": [
+        483220,
+        439154,
+        2012694
+      ],
+      "scan_every_block_ms": {
+        "median": 1.666,
+        "min": 1.662,
+        "runs": 9
+      },
+      "scan_whole_ms": {
+        "median": 0.437,
+        "min": 0.431,
+        "runs": 9
+      },
+      "scan_whole_tenth_ms": {
+        "median": 0.127,
+        "min": 0.114,
+        "runs": 9
+      },
+      "shard_bytes": 164300000,
+      "shard_bytes_per_line": 410.75,
+      "shard_files": 1024,
+      "shard_mean_bytes": 160449.219,
+      "similarity": {
+        "edges": 1000000,
+        "floor": -1.0,
+        "k": 10,
+        "load_stored_lists_ms": {
+          "median": 57.947,
+          "min": 57.263,
+          "runs": 5
+        },
+        "lock_apply_ms": 2.322,
+        "lock_snapshot_ms": 0.439,
+        "mem_bytes": 16500019,
+        "memory_bytes_over_alloc": 1.0,
+        "one_node_change_ms": {
+          "median": 19.035,
+          "min": 14.631,
+          "runs": 5
+        },
+        "one_node_update_ms": {
+          "median": 4.435,
+          "min": 4.37,
+          "runs": 5
+        },
+        "rebuild_ms": 25605.508,
+        "reverse_bytes_per_edge": 8.4,
+        "reverse_rebuild_ms": {
+          "median": 2.144,
+          "min": 2.137,
+          "runs": 5
+        },
+        "slots_per_node_bytes": 81.0
+      },
+      "whole_bytes_per_vector": 276.125
+    },
+    "walk_depth3_reached": 230.75,
+    "walk_depth3_us": {
+      "median": 1.46,
+      "min": 1.353,
+      "runs": 5
+    },
+    "within_1pct_count": 266,
+    "within_1pct_ms": {
+      "median": 0.002,
+      "min": 0.001,
+      "runs": 5
+    },
+    "within_root_count": 99999,
+    "within_root_ms": {
+      "median": 2.237,
+      "min": 2.09,
+      "runs": 5
+    },
+    "word_index_build_ms": {
+      "median": 241.332,
+      "min": 235.207,
+      "runs": 9
+    },
+    "word_query_common4_hits": 100,
+    "word_query_common4_ms": {
+      "median": 3.008,
+      "min": 2.899,
+      "runs": 5
+    },
+    "word_query_common4_scoped_ms": {
+      "median": 1.578,
+      "min": 1.545,
+      "runs": 5
+    },
+    "word_query_scope_nodes": 10013,
+    "word_query_scoped_hits": 100,
+    "word_query_uncommon2_ms": {
+      "median": 0.614,
+      "min": 0.61,
+      "runs": 5
+    },
+    "word_query_uncommon_common_ms": {
+      "median": 1.336,
+      "min": 1.291,
+      "runs": 5
+    },
+    "word_query_words": {
+      "common": [
+        "was",
+        "to",
+        "tied",
+        "the"
+      ],
+      "rare": [
+        "forecast",
+        "security"
+      ]
+    },
+    "word_update_one_node_ms": {
+      "median": 0.196,
+      "min": 0.19,
+      "runs": 9
+    },
+    "writes": {
+      "add_ms": {
+        "max": 49.976,
+        "n": 20,
+        "p50": 37.772,
+        "p95": 45.2
+      },
+      "add_parent_ms": {
+        "max": 180.268,
+        "n": 20,
+        "p50": 148.043,
+        "p95": 168.41
+      },
+      "add_with_model_ms": {
+        "max": 54.909,
+        "n": 20,
+        "p50": 45.582,
+        "p95": 51.227
+      },
+      "reembed_dry_run_cost": {
+        "estimated_tokens": 33977251,
+        "nodes": 100020,
+        "texts": 300040
+      },
+      "reembed_dry_run_ms": {
+        "max": 434.218,
+        "n": 3,
+        "p50": 432.484,
+        "p95": 434.218
+      }
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

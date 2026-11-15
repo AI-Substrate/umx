@@ -1,0 +1,293 @@
+{
+  "cli": null,
+  "commit": "4844de7d7eb8",
+  "conditions": "nice -n 19, release, ws004 s11",
+  "date": "2026-11-10T10:09:14Z",
+  "fixture": {
+    "bytes": {
+      "edges": 5481770,
+      "graph": 1311,
+      "nodes": 9935628
+    },
+    "edges": 29994,
+    "edges_per_node": 3,
+    "generate_ms": 54.102,
+    "kind": "rich",
+    "nodes": 10000,
+    "seed": 1,
+    "vectors_per_node": 4
+  },
+  "in_process": {
+    "add_node_3_edges_ms": {
+      "median": 0.448,
+      "min": 0.4,
+      "runs": 9
+    },
+    "encode_edges_ms": {
+      "median": 1.903,
+      "min": 1.894,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 0.134,
+      "min": 0.133,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 1.565,
+      "min": 1.507,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 1644.125,
+      "min": 1625.917,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 1.333,
+      "min": 1.292,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 18.17,
+      "min": 17.957,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.204,
+      "min": 0.182,
+      "runs": 5
+    },
+    "list_type_field_count": 190,
+    "list_type_field_ms": {
+      "median": 0.004,
+      "min": 0.003,
+      "runs": 5
+    },
+    "list_type_status_count": 108,
+    "list_type_status_ms": {
+      "median": 0.009,
+      "min": 0.008,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 37.982,
+      "min": 35.78,
+      "runs": 5
+    },
+    "load_peak_bytes": 14647607,
+    "mem_graph_bytes": 14558839,
+    "mem_hot_per_node_bytes": 227.0,
+    "mem_not_image_per_node_bytes": 462.0,
+    "mem_parts_bytes": {
+      "adjacency": 559912,
+      "cold": 0,
+      "edge_columns": 959808,
+      "field_columns": 78456,
+      "image": 9935628,
+      "node_columns": 752241,
+      "title_text": 359846,
+      "word_index": 1912540
+    },
+    "mem_per_node_bytes": 1456.0,
+    "mem_title_text_per_node_bytes": 36.0,
+    "mem_word_index_per_node_bytes": 191.0,
+    "memory_bytes_over_alloc": 1.0,
+    "near_duplicate_insert_ms": {
+      "median": 1.555,
+      "min": 1.514,
+      "runs": 9
+    },
+    "path_hops_sum": 1082,
+    "path_us": {
+      "median": 56.691,
+      "min": 56.209,
+      "runs": 5
+    },
+    "rebuild_adjacency_ms": {
+      "median": 0.155,
+      "min": 0.118,
+      "runs": 9
+    },
+    "replace_one_line_ms": {
+      "median": 0.121,
+      "min": 0.108,
+      "runs": 9
+    },
+    "replace_one_node_ms": {
+      "median": 0.121,
+      "min": 0.121,
+      "runs": 9
+    },
+    "search_ms": {
+      "median": 0.68,
+      "min": 0.665,
+      "runs": 5
+    },
+    "title_text_build_ms": {
+      "median": 0.702,
+      "min": 0.668,
+      "runs": 9
+    },
+    "vectors": {
+      "apply_mem_per_node_bytes": 1557.831,
+      "apply_memory_bytes_over_alloc": 1.0,
+      "count": 40000,
+      "decode_ms": {
+        "median": 21.267,
+        "min": 20.795,
+        "runs": 5
+      },
+      "decode_peak_over_blocks": 0.008,
+      "dims": 256,
+      "field_bytes_per_vector": 264.0,
+      "graph_and_vectors_load_ms": {
+        "median": 57.089,
+        "min": 56.225,
+        "runs": 5
+      },
+      "graph_load_ms": {
+        "median": 34.698,
+        "min": 33.816,
+        "runs": 5
+      },
+      "mem_bytes": 10522178,
+      "mem_per_node_bytes": 1052.218,
+      "memory_bytes_over_alloc": 1.0,
+      "per_node": 4,
+      "reembed_one_node": {
+        "bytes_written": 14787,
+        "files_written": 1,
+        "over_mean_shard": 0.922
+      },
+      "scan_checks": [
+        41972,
+        41074,
+        196812
+      ],
+      "scan_every_block_ms": {
+        "median": 0.17,
+        "min": 0.169,
+        "runs": 9
+      },
+      "scan_whole_ms": {
+        "median": 0.048,
+        "min": 0.045,
+        "runs": 9
+      },
+      "scan_whole_tenth_ms": {
+        "median": 0.01,
+        "min": 0.009,
+        "runs": 9
+      },
+      "shard_bytes": 16430000,
+      "shard_bytes_per_line": 410.75,
+      "shard_files": 1024,
+      "shard_mean_bytes": 16044.922,
+      "whole_bytes_per_vector": 260.126
+    },
+    "walk_depth3_reached": 232.4,
+    "walk_depth3_us": {
+      "median": 1.004,
+      "min": 0.92,
+      "runs": 5
+    },
+    "within_1pct_count": 61,
+    "within_1pct_ms": {
+      "median": 0.0,
+      "min": 0.0,
+      "runs": 5
+    },
+    "within_root_count": 9999,
+    "within_root_ms": {
+      "median": 0.121,
+      "min": 0.097,
+      "runs": 5
+    },
+    "word_index_build_ms": {
+      "median": 22.034,
+      "min": 21.18,
+      "runs": 9
+    },
+    "word_query_common4_hits": 100,
+    "word_query_common4_ms": {
+      "median": 0.336,
+      "min": 0.318,
+      "runs": 5
+    },
+    "word_query_common4_scoped_ms": {
+      "median": 0.165,
+      "min": 0.16,
+      "runs": 5
+    },
+    "word_query_scope_nodes": 975,
+    "word_query_scoped_hits": 100,
+    "word_query_uncommon2_ms": {
+      "median": 0.081,
+      "min": 0.078,
+      "runs": 5
+    },
+    "word_query_uncommon_common_ms": {
+      "median": 0.15,
+      "min": 0.145,
+      "runs": 5
+    },
+    "word_query_words": {
+      "common": [
+        "was",
+        "to",
+        "tied",
+        "the"
+      ],
+      "rare": [
+        "forecast",
+        "security"
+      ]
+    },
+    "word_update_one_node_ms": {
+      "median": 0.027,
+      "min": 0.027,
+      "runs": 9
+    },
+    "writes": {
+      "add_ms": {
+        "max": 27.37,
+        "n": 20,
+        "p50": 16.043,
+        "p95": 21.993
+      },
+      "add_parent_ms": {
+        "max": 70.801,
+        "n": 20,
+        "p50": 59.012,
+        "p95": 67.753
+      },
+      "add_with_model_ms": {
+        "max": 16.95,
+        "n": 20,
+        "p50": 15.933,
+        "p95": 16.082
+      },
+      "reembed_dry_run_cost": {
+        "estimated_tokens": 3394222,
+        "nodes": 10020,
+        "texts": 30040
+      },
+      "reembed_dry_run_ms": {
+        "max": 42.518,
+        "n": 3,
+        "p50": 40.994,
+        "p95": 42.518
+      }
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

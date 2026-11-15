@@ -1,0 +1,2 @@
+# A private import in one file, re-exported from another through crate:: (bindings cross files on crate:: paths).
+expect = ["r-inward"]

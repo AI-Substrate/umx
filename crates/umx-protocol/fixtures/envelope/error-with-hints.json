@@ -1,0 +1,36 @@
+{
+  "umx": 81,
+  "command": "batch",
+  "status": "error",
+  "data": null,
+  "warnings": [],
+  "hints": [
+    {
+      "code": "batch_use_ref_field",
+      "message": "Line 4 gives a ref in node, which takes an id, prefix or address. Use node_ref.",
+      "next": "umx batch --file <file> --dry-run",
+      "line": 4
+    }
+  ],
+  "errors": [
+    {
+      "code": "batch_failed",
+      "message": "The batch was not applied: 1 of its lines failed. Nothing was written.",
+      "next": "umx batch --file <file> --dry-run"
+    },
+    {
+      "code": "node_not_found",
+      "message": "No node matches that reference in demo.",
+      "next": "umx node find <text> --graph demo",
+      "line": 4
+    }
+  ],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

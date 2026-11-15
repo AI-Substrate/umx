@@ -1,0 +1,3 @@
+# F119: std::os::unix renamed by a private use in the crate root (visible to every module), then its fs renamed
+# again in another file through crate::u and used by the new name.
+expect = ["r-fs-in-adapters"]

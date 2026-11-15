@@ -1,0 +1,12 @@
+[package]
+name = "umx"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-daemon = { path = "../umx-daemon" }
+
+[features]
+default = ["stub"]
+stub = ["umx-daemon/stub"]

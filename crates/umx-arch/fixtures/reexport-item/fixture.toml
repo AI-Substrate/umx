@@ -1,0 +1,2 @@
+# umx-daemon re-exports an item of umx-compose that is not the listed Config.
+expect = ["r-inward"]

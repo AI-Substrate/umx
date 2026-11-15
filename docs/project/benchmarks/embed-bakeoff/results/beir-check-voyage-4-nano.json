@@ -1,0 +1,26 @@
+{
+ "model": "voyage-4-nano",
+ "cos_cat_kitten": 0.5571942329406738,
+ "cos_cat_carburetor": 0.18066340684890747,
+ "pass": true,
+ "query_sample": "Represent the query for retrieving supporting documents: how long may soup cool",
+ "doc_sample": "Represent the document for retrieval: T body",
+ "last_tokens": [
+  "\u0120may",
+  "\u0120soup",
+  "\u0120cool"
+ ],
+ "eos_token": "<|endoftext|>",
+ "modules": [
+  "Transformer",
+  "Pooling",
+  "Normalize"
+ ],
+ "pooling": {
+  "embedding_dimension": 2048,
+  "pooling_mode": "mean",
+  "include_prompt": true
+ },
+ "device": "mps:0",
+ "max_seq_length": 2048
+}

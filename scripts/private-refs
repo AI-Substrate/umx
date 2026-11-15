@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# D72g: shipped files never cite the project's private governance files: a brief (the `briefs` folder) or the harness
+# folder (`.harness`), each followed by a slash. Those files stay private, so a citation of one points a reader at
+# nothing (and some briefs hold research that must not be named). Write the decision id instead (D57, D69, D71) or
+# "an internal review". The three private folders (D72d: docs/plans, docs/project/workshops,
+# docs/project/workstreams) may cite them and are not checked. Binary files are read as text too (`-a`), so a citation
+# in a .pyc or a log with NUL bytes is found.
+#
+#   scripts/private-refs [<checkout>]    exit 0 when clean; 1 and one `<file>:<line>` per hit; 2 when git grep fails
+set -euo pipefail
+
+cd "${1:-$(git rev-parse --show-toplevel)}"
+
+code=0
+hits=$(git grep -n -a -E '(^|[^A-Za-z0-9_.-])(briefs|\.harness)/' -- . \
+    ':(exclude,literal)docs/plans' ':(exclude,literal)docs/project/workshops' \
+    ':(exclude,literal)docs/project/workstreams' 2>/dev/null | LC_ALL=C tr -d '\000' | cut -d: -f1,2) || code=$?
+if [ "$code" -gt 1 ]; then
+    echo "private-refs: git grep failed (exit $code), so the check did not run" >&2
+    exit 2
+fi
+if [ -n "$hits" ]; then
+    printf '%s\n' "$hits" >&2
+    echo "private-refs: $(printf '%s\n' "$hits" | wc -l | tr -d ' ') line(s) cite a private brief or harness file; cite the decision id or \"an internal review\" instead (D72g)" >&2
+    exit 1
+fi

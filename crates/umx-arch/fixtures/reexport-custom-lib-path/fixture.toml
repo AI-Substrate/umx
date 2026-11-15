@@ -1,0 +1,2 @@
+# Review R2: [lib] path = "daemon.rs" moves the library root out of src/.
+expect = ["r-inward"]

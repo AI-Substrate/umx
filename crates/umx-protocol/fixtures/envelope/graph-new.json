@@ -1,0 +1,47 @@
+{
+  "umx": 81,
+  "command": "graph new",
+  "status": "ok",
+  "data": {
+    "actor_tier": "<actor-tier>",
+    "graph": {
+      "alias": "launch",
+      "downgraded": null,
+      "effective_embedder": "any",
+      "effective_policy": "open",
+      "effective_visibility": "open",
+      "embedding": null,
+      "id": "<id>",
+      "loaded": true,
+      "path": "<path>",
+      "vectors_held": null,
+      "vectors_pending": null
+    },
+    "graphfile": null,
+    "next": [
+      "umx ontology add type risk --graph launch",
+      "umx ontology add relation mitigates --graph launch",
+      "umx ontology add status parked --graph launch",
+      "umx graph set launch --title \"Launch planning\"",
+      "umx graph set launch --policy secured",
+      "umx graph set launch --purpose \"Decide how to launch in spring\"",
+      "umx graph set launch --conventions \"Titles are short noun phrases\"",
+      "umx graph set launch --description \"status:open=Not worked on yet\""
+    ],
+    "ontology": {
+      "relations": 13,
+      "statuses": 8,
+      "types": 10
+    }
+  },
+  "warnings": [],
+  "errors": [],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

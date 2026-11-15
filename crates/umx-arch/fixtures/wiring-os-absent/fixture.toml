@@ -1,0 +1,4 @@
+# describe() lists the port in real mode on a host the OS table does not name (only plan9): n-13 says it wires none.
+expect = ["r-wiring-matches-docs"]
+active_ports = ["service-manager"]
+rules = "rules.toml"

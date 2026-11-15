@@ -1,0 +1,13 @@
+[package]
+name = "umx-services"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+umx-core = { path = "../umx-core" }
+umx-graph = { path = "../umx-graph" }
+
+[features]
+bench = []
+test-hooks = []

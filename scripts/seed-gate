@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# D72i L4: the seed gate. Checks the exact tree that would be pushed to the public repository.
+#
+#   scripts/seed-gate <STAGE> [--receipt FILE]
+#   scripts/seed-gate <STAGE> --control --control-names FILE [--control-hosts FILE] [--receipt FILE]
+#
+# STAGE is a seed folder (scripts/seed-export makes one): staged but not yet committed, or already committed with
+# one parentless commit. It is read through git (the staged index or HEAD's tree), never the working folder, and it
+# must not be the repository this runs from. Output is pass/fail and counts per check; a check that fails prints a
+# fix hint. Locations (`<path>:<line>`) go to the terminal only. No matched term and no matched line is ever
+# printed or written to the receipt. Exit 0 only when every check passes; `pending` (no commit yet) is not a pass for
+# the commit check, so a seed pass needs a committed stage, and L10 runs this again on the exact commit.
+#
+# The real run reads the names list only from ~/.config/unimatrix/customer-names (it fails closed when the list is
+# missing or short) and ignores UMX_CUSTOMER_NAMES. --control is the only place a list may be given: it runs the
+# negative controls (scripts/seed-gate-test), marks its receipt CONTROL and can never produce a seed pass.
+# SEED_GATE_MAX_BYTES sets the size cap (default 1048576).
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/.." && pwd)
+
+# The secret check runs umx's own scan (umx_core::secrets::scan) through an example built from this checkout.
+scanner="$repo/target/release/examples/secret-scan-stream"
+if [ ! -x "$scanner" ] || [ "$repo/crates/umx-core/src/secrets.rs" -nt "$scanner" ] ||
+    [ "$repo/crates/umx-core/examples/secret-scan-stream.rs" -nt "$scanner" ]; then
+    (cd "$repo" && UMX_CARGO_PRIORITY="${UMX_CARGO_PRIORITY:-gate}" CARGO_BUILD_JOBS=4 nice -n 10 \
+        scripts/cargo-slot build -q --release -p umx-core --example secret-scan-stream) >&2 ||
+        {
+            echo "seed-gate: could not build the secret scan (scripts/cargo-slot build -p umx-core --example secret-scan-stream); fix that first" >&2
+            exit 2
+        }
+fi
+
+unset UMX_CUSTOMER_NAMES
+exec python3 -I "$here/seed-gate.py" "$repo" "$scanner" "$@"

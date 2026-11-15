@@ -1,0 +1,2 @@
+# src/lib.rs says #![no_std], but [lib] path builds core.rs, which does not. The check reads cargo metadata.
+expect = ["r-core-no-std"]

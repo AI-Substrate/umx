@@ -1,0 +1,2 @@
+# umx-contracts as a normal dependency, so contract code would ship.
+expect = ["r-contracts-dev-only", "r-inward"]

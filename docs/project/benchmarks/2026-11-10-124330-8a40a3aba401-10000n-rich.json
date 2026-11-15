@@ -1,0 +1,430 @@
+{
+  "cli": {
+    "add_ms": {
+      "max": 44.726,
+      "n": 50,
+      "p50": 24.023,
+      "p95": 36.386
+    },
+    "add_parent_ms": {
+      "max": 192.154,
+      "n": 50,
+      "p50": 62.899,
+      "p95": 96.079
+    },
+    "find_ms": {
+      "median": 7.474,
+      "min": 6.668,
+      "runs": 5
+    },
+    "list_100_ms": {
+      "median": 7.449,
+      "min": 6.078,
+      "runs": 5
+    },
+    "load_ms": 44.572,
+    "nodes_bytes_after_adds": 9947368,
+    "rss_kb": {
+      "after_adds": 51712,
+      "idle": 7296,
+      "loaded": 30224
+    }
+  },
+  "commit": "8a40a3aba401",
+  "conditions": "nice -n 19, release",
+  "date": "2026-11-10T12:43:30Z",
+  "fixture": {
+    "bytes": {
+      "edges": 5481770,
+      "graph": 1311,
+      "nodes": 9935628
+    },
+    "edges": 29994,
+    "edges_per_node": 3,
+    "generate_ms": 57.291,
+    "kind": "rich",
+    "nodes": 10000,
+    "seed": 1,
+    "vectors_per_node": 4
+  },
+  "in_process": {
+    "add_node_3_edges_ms": {
+      "median": 0.449,
+      "min": 0.427,
+      "runs": 9
+    },
+    "encode_edges_ms": {
+      "median": 1.868,
+      "min": 1.847,
+      "runs": 5
+    },
+    "encode_nodes_ms": {
+      "median": 0.138,
+      "min": 0.134,
+      "runs": 5
+    },
+    "find_ms": {
+      "median": 0.292,
+      "min": 0.241,
+      "runs": 5
+    },
+    "get_node_ns": {
+      "median": 1773.958,
+      "min": 1698.666,
+      "runs": 5
+    },
+    "get_title_ns": {
+      "median": 1.458,
+      "min": 1.458,
+      "runs": 5
+    },
+    "list_all_ms": {
+      "median": 18.832,
+      "min": 18.691,
+      "runs": 5
+    },
+    "list_filtered_ms": {
+      "median": 0.196,
+      "min": 0.192,
+      "runs": 5
+    },
+    "list_type_field_count": 190,
+    "list_type_field_ms": {
+      "median": 0.004,
+      "min": 0.003,
+      "runs": 5
+    },
+    "list_type_status_count": 108,
+    "list_type_status_ms": {
+      "median": 0.014,
+      "min": 0.013,
+      "runs": 5
+    },
+    "load_ms": {
+      "median": 38.312,
+      "min": 37.391,
+      "runs": 5
+    },
+    "load_peak_bytes": 14307761,
+    "mem_graph_bytes": 14218993,
+    "mem_hot_per_node_bytes": 227.0,
+    "mem_not_image_per_node_bytes": 428.0,
+    "mem_parts_bytes": {
+      "adjacency": 559912,
+      "cold": 0,
+      "edge_columns": 959808,
+      "field_columns": 78456,
+      "image": 9935628,
+      "node_columns": 752241,
+      "word_index": 1932540
+    },
+    "mem_per_node_bytes": 1422.0,
+    "mem_word_index_per_node_bytes": 193.0,
+    "memory_bytes_over_alloc": 1.0,
+    "near_duplicate_insert_ms": {
+      "median": 0.009,
+      "min": 0.007,
+      "runs": 9
+    },
+    "path_hops_sum": 1082,
+    "path_us": {
+      "median": 58.659,
+      "min": 58.184,
+      "runs": 5
+    },
+    "rebuild_adjacency_ms": {
+      "median": 0.163,
+      "min": 0.141,
+      "runs": 9
+    },
+    "replace_one_line_ms": {
+      "median": 0.128,
+      "min": 0.12,
+      "runs": 9
+    },
+    "replace_one_node_ms": {
+      "median": 0.122,
+      "min": 0.122,
+      "runs": 9
+    },
+    "search_ms": {
+      "median": 1.079,
+      "min": 1.058,
+      "runs": 5
+    },
+    "title_find": {
+      "near_duplicate_insert_s06_ms": {
+        "median": 1.972,
+        "min": 1.694,
+        "runs": 9
+      },
+      "queries": {
+        "exact": {
+          "branch_ms": {
+            "median": 0.638,
+            "min": 0.548,
+            "runs": 9
+          },
+          "candidates": 1648,
+          "query": "Audit scope for enterprise accounts",
+          "s06_ms": {
+            "median": 2.52,
+            "min": 2.245,
+            "runs": 9
+          },
+          "same_top20": true
+        },
+        "near_duplicate_existing": {
+          "branch_ms": {
+            "median": 0.219,
+            "min": 0.205,
+            "runs": 9
+          },
+          "candidates": 1035,
+          "query": "Audit scope for enterprise accounts",
+          "s06_ms": {
+            "median": 2.488,
+            "min": 2.336,
+            "runs": 9
+          }
+        },
+        "typo": {
+          "branch_ms": {
+            "median": 0.55,
+            "min": 0.467,
+            "runs": 9
+          },
+          "candidates": 1525,
+          "query": "Audit scope for exterprise accounts",
+          "s06_ms": {
+            "median": 2.5,
+            "min": 2.22,
+            "runs": 9
+          },
+          "same_top20": true
+        },
+        "worst": {
+          "branch_ms": {
+            "median": 1.383,
+            "min": 1.296,
+            "runs": 9
+          },
+          "candidates": 4832,
+          "query": "Inventory churn for the pilot",
+          "s06_ms": {
+            "median": 2.527,
+            "min": 2.332,
+            "runs": 9
+          },
+          "same_top20": true
+        }
+      },
+      "s06_title_text_per_node_bytes": 36.0,
+      "terms": 64
+    },
+    "title_find_large_vocabulary": {
+      "nodes": 100000,
+      "queries": {
+        "exact": {
+          "branch_ms": {
+            "median": 7.824,
+            "min": 6.806,
+            "runs": 9
+          },
+          "candidates": 17,
+          "s06_ms": {
+            "median": 22.323,
+            "min": 21.779,
+            "runs": 9
+          },
+          "same_top20": true,
+          "term_scan_ms": {
+            "median": 7.861,
+            "min": 6.619,
+            "runs": 9
+          }
+        },
+        "typo": {
+          "branch_ms": {
+            "median": 7.801,
+            "min": 6.17,
+            "runs": 9
+          },
+          "candidates": 12,
+          "s06_ms": {
+            "median": 22.241,
+            "min": 21.773,
+            "runs": 9
+          },
+          "same_top20": true,
+          "term_scan_ms": {
+            "median": 8.529,
+            "min": 8.247,
+            "runs": 9
+          }
+        }
+      },
+      "terms": 59525
+    },
+    "vectors": {
+      "apply_mem_per_node_bytes": 1557.831,
+      "apply_memory_bytes_over_alloc": 1.0,
+      "count": 40000,
+      "decode_ms": {
+        "median": 22.583,
+        "min": 22.276,
+        "runs": 5
+      },
+      "decode_peak_over_blocks": 0.008,
+      "dims": 256,
+      "field_bytes_per_vector": 264.0,
+      "graph_and_vectors_load_ms": {
+        "median": 58.139,
+        "min": 56.892,
+        "runs": 5
+      },
+      "graph_load_ms": {
+        "median": 35.126,
+        "min": 34.492,
+        "runs": 5
+      },
+      "mem_bytes": 10522178,
+      "mem_per_node_bytes": 1052.218,
+      "memory_bytes_over_alloc": 1.0,
+      "per_node": 4,
+      "reembed_one_node": {
+        "bytes_written": 14787,
+        "files_written": 1,
+        "over_mean_shard": 0.922
+      },
+      "scan_checks": [
+        41972,
+        41074,
+        196812
+      ],
+      "scan_every_block_ms": {
+        "median": 0.189,
+        "min": 0.178,
+        "runs": 9
+      },
+      "scan_whole_ms": {
+        "median": 0.052,
+        "min": 0.046,
+        "runs": 9
+      },
+      "scan_whole_tenth_ms": {
+        "median": 0.012,
+        "min": 0.011,
+        "runs": 9
+      },
+      "shard_bytes": 16430000,
+      "shard_bytes_per_line": 410.75,
+      "shard_files": 1024,
+      "shard_mean_bytes": 16044.922,
+      "whole_bytes_per_vector": 260.126
+    },
+    "walk_depth3_reached": 232.4,
+    "walk_depth3_us": {
+      "median": 1.102,
+      "min": 1.018,
+      "runs": 5
+    },
+    "within_1pct_count": 61,
+    "within_1pct_ms": {
+      "median": 0.0,
+      "min": 0.0,
+      "runs": 5
+    },
+    "within_root_count": 9999,
+    "within_root_ms": {
+      "median": 0.082,
+      "min": 0.047,
+      "runs": 5
+    },
+    "word_index_build_ms": {
+      "median": 22.923,
+      "min": 22.488,
+      "runs": 9
+    },
+    "word_query_common4_hits": 100,
+    "word_query_common4_ms": {
+      "median": 0.327,
+      "min": 0.325,
+      "runs": 5
+    },
+    "word_query_common4_scoped_ms": {
+      "median": 0.169,
+      "min": 0.162,
+      "runs": 5
+    },
+    "word_query_scope_nodes": 975,
+    "word_query_scoped_hits": 100,
+    "word_query_uncommon2_ms": {
+      "median": 0.08,
+      "min": 0.078,
+      "runs": 5
+    },
+    "word_query_uncommon_common_ms": {
+      "median": 0.149,
+      "min": 0.148,
+      "runs": 5
+    },
+    "word_query_words": {
+      "common": [
+        "was",
+        "to",
+        "tied",
+        "the"
+      ],
+      "rare": [
+        "forecast",
+        "security"
+      ]
+    },
+    "word_update_one_node_ms": {
+      "median": 0.028,
+      "min": 0.028,
+      "runs": 9
+    },
+    "writes": {
+      "add_ms": {
+        "max": 18.077,
+        "n": 20,
+        "p50": 14.083,
+        "p95": 16.971
+      },
+      "add_parent_ms": {
+        "max": 63.723,
+        "n": 20,
+        "p50": 49.813,
+        "p95": 57.152
+      },
+      "add_with_model_ms": {
+        "max": 29.853,
+        "n": 20,
+        "p50": 17.973,
+        "p95": 28.306
+      },
+      "reembed_dry_run_cost": {
+        "estimated_tokens": 3394222,
+        "nodes": 10020,
+        "texts": 30040
+      },
+      "reembed_dry_run_ms": {
+        "max": 47.796,
+        "n": 3,
+        "p50": 43.469,
+        "p95": 47.796
+      }
+    }
+  },
+  "machine": {
+    "arch": "aarch64",
+    "cores": 16,
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macos"
+  },
+  "profile": "release",
+  "umx_bench": 2
+}

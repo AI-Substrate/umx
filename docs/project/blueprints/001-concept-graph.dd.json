@@ -1,0 +1,1114 @@
+{
+	"dd": {
+		"schema": "pij/blueprint"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Blueprint 001: Concept Graph",
+				"status": "review",
+				"updated": "2026-11-11",
+				"owner": "architect",
+				"summary": "How umx is built: strict ports and adapters in a Rust workspace whose crates are the layers, with every architecture rule kept as a data row and proven to fire. Thin by design (D16): workstream 001's ports in full, later ports named only."
+			}
+		},
+		{
+			"name": "overview",
+			"value": "One binary, umx, holds the CLI and the daemon (D13). The CLI is a thin client over an owner-only Unix socket; the daemon composes services from adapters and owns every write. umx-core (no_std) holds the domain types, deterministic file encoding and the port traits; umx-graph is our own in-memory graph and Cypher engine (D18, decision d-1); umx-services composes ports and the graph into use cases. Adapters wrap each external thing, one crate per technology; only umx-compose wires them, and fakes run only in stub mode. The exemplar slice is GraphFiles from file to CLI verb. The method follows workshop 004-architecture."
+		},
+		{
+			"name": "components",
+			"value": [
+				{
+					"id": "c-workspace",
+					"name": "Cargo workspace and layer allow-lists",
+					"kind": "file",
+					"where": "Cargo.toml",
+					"responsibility": "Declares every umx-* crate and pins every external crate once in [workspace.dependencies]. The allowed dependencies of each crate are listed in crates/umx-arch/rules.toml (see decision d-4).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s01."
+				},
+				{
+					"id": "c-arch",
+					"name": "umx-arch: architecture rule checker",
+					"kind": "module",
+					"where": "crates/umx-arch/",
+					"responsibility": "Test-only crate (dev-dependency only). Owns the canonical machine policy, crates/umx-arch/rules.toml (decision d-4): per-crate allowed workspace and external crates with dependency kinds and features, the capability owners, and each rule's active-from step. It checks the real workspace with `cargo metadata --no-deps --offline`, and checks that d-4's layer table in this blueprint equals the table rendered from rules.toml. Its self-test proves every rule fires through that rule's real enforcer (decision d-10).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s01."
+				},
+				{
+					"id": "c-check",
+					"name": "just check",
+					"kind": "file",
+					"where": "justfile",
+					"responsibility": "One command that runs build, clippy, all tests and the rule checks; CI runs it on every push. `just dev` rebuilds, restarts the daemon and reinstalls the binary.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-42",
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s01 (check) and s02 (dev)."
+				},
+				{
+					"id": "c-core",
+					"name": "umx-core: domain and ports",
+					"kind": "module",
+					"where": "crates/umx-core/",
+					"responsibility": "#![no_std] + alloc. Domain types (graph, node, edge, ontology, evidence locator, address, 128-bit id), ontology resolution with inheritance and soft warnings, address parsing, deterministic JSONL encode and decode (bytes in, bytes out: sorted records, fixed field order), and the port traits. Vocabulary carries meaning only: no colour, shape or border per type, status or relation; presentation belongs to the UI (D42). External crates: serde, serde_json, thiserror, toml (config codec), sha2.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-02",
+						"../prds/001-concept-graph.dd.json#requirements/req-08",
+						"../prds/001-concept-graph.dd.json#requirements/req-09",
+						"../prds/001-concept-graph.dd.json#requirements/req-10",
+						"../prds/001-concept-graph.dd.json#requirements/req-11",
+						"../prds/001-concept-graph.dd.json#requirements/req-13",
+						"../prds/001-concept-graph.dd.json#requirements/req-14",
+						"../prds/001-concept-graph.dd.json#requirements/req-16",
+						"../prds/001-concept-graph.dd.json#requirements/req-18",
+						"../prds/001-concept-graph.dd.json#requirements/req-55"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s01 creates it; s05 fills it."
+				},
+				{
+					"id": "c-graph",
+					"name": "umx-graph: in-memory graph",
+					"kind": "module",
+					"where": "crates/umx-graph/",
+					"responsibility": "#![no_std] + alloc, like umx-core (d-3). Our own graph engine (d-1), laid out per workshop 008: each graph is id-sorted columns addressed by dense u32 handles (handle order is id order; tombstones keep rows), packed adjacency built at load, and the indexes built at load and kept current by each write (id, adjacency, scalar field columns, title text). There is no hierarchy index: `--within X` walks incoming part_of edges from X over the packed adjacency into a bitset over handles (workshop 008 section 2.4). Callers get NodeRef/EdgeRef views; handles (NodeIx, EdgeIx) never leave the crate across a write and callers cannot construct them. Modules: vectors (one i8 block per model@dims and field, rows keyed by handle, 1/length via libm; the scan kernel stays in umx-core), similar_to lists (top k per node, with the reverse list built at load), the word index (BM25 over every text field, built at load and updated in each write, never stored). External edge ends are handles with the top bit set into a small table, resolved by services. Results come in a stable order (score, then handle). External crates: hashbrown and libm. The Cypher subset runs outside this crate (c-cypher, c-query) over its public reads, so the generic executor never rebuilds with it (workshop 006 section 2.6).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-13",
+						"../prds/001-concept-graph.dd.json#requirements/req-16",
+						"../prds/001-concept-graph.dd.json#requirements/req-21",
+						"../prds/001-concept-graph.dd.json#requirements/req-28",
+						"../prds/001-concept-graph.dd.json#requirements/req-29",
+						"../prds/001-concept-graph.dd.json#requirements/req-30",
+						"../prds/001-concept-graph.dd.json#requirements/req-31",
+						"../prds/001-concept-graph.dd.json#requirements/req-32",
+						"../prds/001-concept-graph.dd.json#requirements/req-54",
+						"../prds/001-concept-graph.dd.json#requirements/req-65",
+						"../prds/001-concept-graph.dd.json#requirements/req-68"
+					],
+					"state": "planned",
+					"note": "Workstream 003 builds the 008 layout. Cypher execution is workstream 005 (c-cypher, c-query)."
+				},
+				{
+					"id": "c-cypher",
+					"name": "umx-cypher: vendored Cypher parser and executor",
+					"kind": "module",
+					"where": "crates/umx-cypher/",
+					"responsibility": "A fork of cypher-parser 0.8.1 (MIT, Shopify; crates.io checksum 6ada60f869dbe5818d0ee40b06ad988627cc0d692d1ed42d692353bf0af8ddb6): lexer, parser, AST and the executor generic over GraphProvider. #![no_std] + alloc, with BTreeMap and BTreeSet in place of std's hash collections, so rows come in the same order on every run. It depends on no workspace crate and no external crate, so the fork stays diffable against upstream: the first commit is the pristine source, and every change after it is listed in VENDORED.md. LICENSE.md is kept verbatim, the crate states license = \"MIT\" itself, and the notice ships with the binary. Only umx-query may depend on it.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-27"
+					],
+					"state": "planned",
+					"note": "Workstream 005 s01."
+				},
+				{
+					"id": "c-query",
+					"name": "umx-query: Cypher over umx-graph",
+					"kind": "module",
+					"where": "crates/umx-query/",
+					"responsibility": "#![no_std] + alloc. Implements GraphProvider over a view of umx_graph::Graph and its similar_to lists, and exposes one non-generic run(view, text, budget), so only this crate instantiates the executor. It maps the fork's errors to stable catalogue codes. A deterministic work budget is the primary limit; a time backstop comes in as a cancel closure that services build from the Clock port, so this crate never reads a clock. An untyped step never follows similar_to (workshop 008 ruling 8).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-27",
+						"../prds/001-concept-graph.dd.json#requirements/req-65"
+					],
+					"state": "planned",
+					"note": "Built in workstream 005 s02; services call it from s04."
+				},
+				{
+					"id": "c-services",
+					"name": "umx-services: use cases",
+					"kind": "module",
+					"where": "crates/umx-services/",
+					"responsibility": "#![no_std] + alloc. Use cases over ports and umx-graph, split by capability (d-12): GraphStore owns the files, clock and id ports, the loaded graphs and every write to graph files (private fields, so other services use it only through its pub fns); EmbeddingService holds only the Embedder port and takes &GraphStore to read and &mut GraphStore to write per call; ConfigServices holds only the ConfigFiles and Secrets ports. Services is a thin facade over them, so daemon and compose callers do not change. Capabilities: graph (new, load, unload, list, idle unload, set), node, edge, ontology, resolve, check, diff, embedding, config, and search (composes the word index and the vector scan). The graph table keys loaded graphs by graph id, with copies <alias>@<copy> (req-69), scopes over several graphs, and the cross-graph incoming index. Keeps similar_to edges current. Repeated ids (req-67) and dangling edges (req-76) are kept byte for byte and reported. Services return values and warnings; they never format output. Each operation writes its files as one set; on an error nothing changed, so it puts back the one record it changed (undo by record, no whole-file snapshot). recovery_conflict is reported with the files, and umx check lists them. A read over several graphs (search, similarity, hybrid search, cross-graph walks and queries) covers a secured graph only when the request names it; unnamed graphs are filtered on effective_policy == Open, and the result carries a count-only secured_graphs_skipped note (d-20). Edges reach graphs only through Services methods that return results; Services::graph() and loaded_graph() narrow to crate-private plus test hooks once s08 search lands (s08 follow-ups).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-03",
+						"../prds/001-concept-graph.dd.json#requirements/req-04",
+						"../prds/001-concept-graph.dd.json#requirements/req-07",
+						"../prds/001-concept-graph.dd.json#requirements/req-08",
+						"../prds/001-concept-graph.dd.json#requirements/req-10",
+						"../prds/001-concept-graph.dd.json#requirements/req-12",
+						"../prds/001-concept-graph.dd.json#requirements/req-15",
+						"../prds/001-concept-graph.dd.json#requirements/req-17",
+						"../prds/001-concept-graph.dd.json#requirements/req-21",
+						"../prds/001-concept-graph.dd.json#requirements/req-22",
+						"../prds/001-concept-graph.dd.json#requirements/req-23",
+						"../prds/001-concept-graph.dd.json#requirements/req-33",
+						"../prds/001-concept-graph.dd.json#requirements/req-50",
+						"../prds/001-concept-graph.dd.json#requirements/req-57",
+						"../prds/001-concept-graph.dd.json#requirements/req-58",
+						"../prds/001-concept-graph.dd.json#requirements/req-59",
+						"../prds/001-concept-graph.dd.json#requirements/req-60",
+						"../prds/001-concept-graph.dd.json#requirements/req-61",
+						"../prds/001-concept-graph.dd.json#requirements/req-62",
+						"../prds/001-concept-graph.dd.json#requirements/req-65",
+						"../prds/001-concept-graph.dd.json#requirements/req-66",
+						"../prds/001-concept-graph.dd.json#requirements/req-67",
+						"../prds/001-concept-graph.dd.json#requirements/req-68",
+						"../prds/001-concept-graph.dd.json#requirements/req-69",
+						"../prds/001-concept-graph.dd.json#requirements/req-71",
+						"../prds/001-concept-graph.dd.json#requirements/req-72",
+						"../prds/001-concept-graph.dd.json#requirements/req-75",
+						"../prds/001-concept-graph.dd.json#requirements/req-76"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05 for graph, node, edge, ontology."
+				},
+				{
+					"id": "c-port-graph-files",
+					"name": "GraphFiles port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/graph_files.rs",
+					"responsibility": "Read, list and resolve one graph's files, write one file or a set of files as a unit. Removing a file is a Change with bytes None in a set; .gitignore is never removed. Files: graph.json, nodes.jsonl, edges.jsonl, and the sharded embeddings/ and similar/ files (the EmbeddingShards port folds in here, because a set cannot be atomic across two ports). A set write syncs every temp file, then a marker naming them with each target's expected size and hash, then renames; once the marker is synced the write is durable and reports success. Recovery runs inside the adapter before any read of the folder: it finishes the renames, or reports recovery_conflict and leaves the files if a target changed (a pull, a checkout). Temp and marker files share the .umx-tmp- prefix, never show in read or list, never leave the roots, and graph new writes a .gitignore line for them. resolve gives a folder's physical identity (every spelling, symlinks included, gives one value). The exemplar port: every later port copies its shape (trait, contract suite, fake, real adapter, matrix row). The call is write_set_checked(dir, changes, expect), each Change a file and its bytes or None to remove it; with expect, a content file whose stamp moved since the load refuses the set with FilesError::Changed, checked just before the first rename (F144). The unchecked write_set and write (a one-change set) are off the port, in umx-core's setup::GraphFilesSetup, for tests and setup (r-checked-graph-writes). FilesError::Invalid refuses an empty set, a file named twice and any removal of .gitignore; FilesError::RecoveryConflict names the files that changed since a cut-off set. GraphFile::GitIgnore is the folder's .gitignore: read and written, never removed, never listed (GraphFile::ALL stays the three data files). Each file kind has a size cap (graph.json 1 MiB, .gitignore 64 KiB, a vector shard 64 MiB, nodes.jsonl and edges.jsonl u32::MAX bytes, matching umx-graph's image limit). read_ref refuses an over-cap file with FilesError::TooLarge, checked on the open handle and re-checked while reading, so its body is never held; a set write refuses an over-cap change the same way, so umx never writes a file it would refuse to read (gf_c26, gf_c27).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-01",
+						"../prds/001-concept-graph.dd.json#requirements/req-02",
+						"../prds/001-concept-graph.dd.json#requirements/req-04",
+						"../prds/001-concept-graph.dd.json#requirements/req-36",
+						"../prds/001-concept-graph.dd.json#requirements/req-67"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05."
+				},
+				{
+					"id": "c-port-clock",
+					"name": "Clock port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/clock.rs",
+					"responsibility": "Current instant in milliseconds. The only way core and services read time.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-11",
+						"../prds/001-concept-graph.dd.json#requirements/req-12"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05."
+				},
+				{
+					"id": "c-port-id",
+					"name": "IdGenerator port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/id.rs",
+					"responsibility": "Mints a 128-bit sortable id. The only way core and services get a new id.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-14"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05."
+				},
+				{
+					"id": "c-contracts",
+					"name": "umx-contracts: one contract suite per port",
+					"kind": "module",
+					"where": "crates/umx-contracts/",
+					"responsibility": "Generic test functions per port, one per clause, named by clause id (for example gf_c1_write_then_read_is_identical). Every adapter and fake runs the same suite. Contracts pin ordering, atomicity and copy semantics so a lax fake cannot pass where the real adapter fails. Dev-dependency only. The GraphFiles suite's set clauses (gf_c14 to gf_c24) take crash, restart and tamper inputs through a SetHarness trait each adapter implements in its own tests.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05."
+				},
+				{
+					"id": "c-fakes",
+					"name": "umx-fakes: strict fakes",
+					"kind": "module",
+					"where": "crates/umx-fakes/",
+					"responsibility": "One in-memory fake per port (graph files as a path to bytes map, settable clock, sequential ids; later a deterministic hash embedder and a recording network). Wired only in stub mode. fake.graph-files models a set's steps (temps, marker, renames, cleanup) over state shared with its restart copy, with the same crash points, recovery and tamper hook as the contract's inputs.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44",
+						"../prds/001-concept-graph.dd.json#requirements/req-51"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05 (fakes); s06 (stub mode)."
+				},
+				{
+					"id": "c-adapter-fs",
+					"name": "umx-adapter-fs: file system adapters",
+					"kind": "module",
+					"where": "crates/umx-adapter-fs/",
+					"responsibility": "fs.graph-files now. Later fs.embedding-shards, fs.source-reader (root-confined paths, req-47) and fs.change-feed (notify). Never imports another adapter. fs.graph-files writes a set as: each temp file synced; the marker .umx-tmp-set.json (JSON lines: target, temp or remove, and each target's size and hash before and after, under the named hash fnv1a64-words-v1: FNV-1a 64 over little-endian u64 words; a marker naming another hash is a conflict) synced and the folder synced, the point of no return; the renames; the marker removed. Recovery runs once per folder per process before any call: it finishes the renames, removes orphan temp files left before a point of no return, or returns RecoveryConflict and leaves everything when a target changed. A marker may name only graph files and bare .umx-tmp- names.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-01",
+						"../prds/001-concept-graph.dd.json#requirements/req-02",
+						"../prds/001-concept-graph.dd.json#requirements/req-04",
+						"../prds/001-concept-graph.dd.json#requirements/req-05",
+						"../prds/001-concept-graph.dd.json#requirements/req-19",
+						"../prds/001-concept-graph.dd.json#requirements/req-20",
+						"../prds/001-concept-graph.dd.json#requirements/req-47"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05 for fs.graph-files."
+				},
+				{
+					"id": "c-adapter-system",
+					"name": "umx-adapter-system: clock and ids",
+					"kind": "module",
+					"where": "crates/umx-adapter-system/",
+					"responsibility": "system.clock (wall clock) and system.id-generator (ULID).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-11",
+						"../prds/001-concept-graph.dd.json#requirements/req-14"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05."
+				},
+				{
+					"id": "c-protocol",
+					"name": "umx-protocol: daemon wire types",
+					"kind": "schema",
+					"where": "crates/umx-protocol/",
+					"responsibility": "Request and response types and the JSON envelope (status, data, warnings, errors with code and next; node text marked untrusted). serde only. Shared by CLI, daemon and the later UI.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-38",
+						"../prds/001-concept-graph.dd.json#requirements/req-40",
+						"../prds/001-concept-graph.dd.json#requirements/req-41"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s02 and s03."
+				},
+				{
+					"id": "c-compose",
+					"name": "umx-compose: the composition root",
+					"kind": "module",
+					"where": "crates/umx-compose/",
+					"responsibility": "The only crate that names adapters. compose(mode, config) builds the services; describe(mode) returns port to adapter id and must equal the matrix in decision d-6. Reads env and config once (the only place allowed to). Fakes only under the test-only `stub` feature.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44",
+						"../prds/001-concept-graph.dd.json#requirements/req-51"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s05; stub in s06."
+				},
+				{
+					"id": "c-daemon",
+					"name": "umx-daemon: daemon edge",
+					"kind": "module",
+					"where": "crates/umx-daemon/",
+					"responsibility": "Serves umx-protocol over an owner-only Unix socket (0600 in a 0700 directory, no TCP). Holds the single-writer queue that applies every write in order, the idle-unload deadline, per-graph memory figures and the logs (addresses and counts, never node text).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-03",
+						"../prds/001-concept-graph.dd.json#requirements/req-06",
+						"../prds/001-concept-graph.dd.json#requirements/req-38",
+						"../prds/001-concept-graph.dd.json#requirements/req-45",
+						"../prds/001-concept-graph.dd.json#requirements/req-48",
+						"../prds/001-concept-graph.dd.json#requirements/req-52",
+						"../prds/001-concept-graph.dd.json#requirements/req-54"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s02; writer queue in s05."
+				},
+				{
+					"id": "c-cli",
+					"name": "umx-cli: CLI client",
+					"kind": "module",
+					"where": "crates/umx-cli/",
+					"responsibility": "Parses commands, sends them to the daemon, prints the envelope or human text, and carries the built-in docs (agents-start-here, docs list, docs get). Depends only on umx-protocol, so every command goes through the daemon.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-38",
+						"../prds/001-concept-graph.dd.json#requirements/req-39",
+						"../prds/001-concept-graph.dd.json#requirements/req-40",
+						"../prds/001-concept-graph.dd.json#requirements/req-41",
+						"../prds/001-concept-graph.dd.json#requirements/req-57",
+						"../prds/001-concept-graph.dd.json#requirements/req-58",
+						"../prds/001-concept-graph.dd.json#requirements/req-59",
+						"../prds/001-concept-graph.dd.json#requirements/req-63",
+						"../prds/001-concept-graph.dd.json#requirements/req-64"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s02 onward."
+				},
+				{
+					"id": "c-skill",
+					"name": "/umx agent skill",
+					"kind": "skill",
+					"where": "skills/umx/",
+					"responsibility": "A short SKILL.md router plus one route module per job (start, build, ingest, explore, doctor and so on), loaded one at a time. It routes to `umx docs` instead of repeating them and is built from the usage notes in docs/project/usage/. It holds no rule that the code or the usage notes do not, so it cannot drift on its own (anti-pattern ap-05).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-70"
+					],
+					"state": "in-progress",
+					"note": "Workstream 002 s06."
+				},
+				{
+					"id": "c-bin",
+					"name": "umx: the binary",
+					"kind": "verb",
+					"where": "crates/umx/",
+					"responsibility": "main() dispatches: `umx daemon ...` runs umx-daemon with the composition; every other command runs umx-cli. One binary, two small roots.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-38",
+						"../prds/001-concept-graph.dd.json#requirements/req-42"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s02."
+				},
+				{
+					"id": "c-bench",
+					"name": "umx-bench: benchmark root",
+					"kind": "module",
+					"where": "crates/umx-bench/",
+					"responsibility": "Composes the real adapters and calls services directly (no socket), runs standard fixtures and writes a dated result file, so each feature's cost shows as a before and after.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-43"
+					],
+					"state": "planned",
+					"note": "Workstream 001. s07."
+				},
+				{
+					"id": "c-port-embedder",
+					"name": "Embedder port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/embedder.rs",
+					"responsibility": "Sync (d-5): turns a batch of texts into normalised vectors for a model and dimensions, and reports the model identity. Vectors are keyed by model@dims, never by instance name (D4, d-15). Named instances live in machine config (embedders.<name>.*, snake_case names); embedder.active picks one. A secured graph (req-46) always gets a local embedder whatever config, env or flag says. Adapters: c-adapter-azure-openai (hosted), c-adapter-llamacpp (local). The fake is chosen by stub mode, never by config. The [[port]] row stays planned until the first real adapter is wired; until then real mode wires no embedder and search reports embedder_unavailable (req-53). ready() checks the embedder could run without sending text (doctor).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-34",
+						"../prds/001-concept-graph.dd.json#requirements/req-35",
+						"../prds/001-concept-graph.dd.json#requirements/req-37",
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-49",
+						"../prds/001-concept-graph.dd.json#requirements/req-53",
+						"../prds/001-concept-graph.dd.json#requirements/req-73",
+						"../prds/001-concept-graph.dd.json#requirements/req-74",
+						"../prds/001-concept-graph.dd.json#requirements/req-75"
+					],
+					"state": "planned",
+					"note": "Workstream 004 s01 builds the port, its fake and contract suite, and the d-12 split."
+				},
+				{
+					"id": "c-adapter-azure-openai",
+					"name": "umx-adapter-azure-openai: hosted embedder",
+					"kind": "module",
+					"where": "crates/umx-adapter-azure-openai/",
+					"responsibility": "azure-openai.embedder. Sync HTTP with ureq 3 (the only crate that may use it): rustls with the platform verifier, max redirects 0 and any 3xx an error, connect and global timeouts, a response size cap, no proxy from umx config. Auth cli | api_key (D27a): the token comes from az, then azd, run with fixed argv and no shell; stdout JSON only, stderr discarded; kept in memory and refreshed before expiry. The api key comes through an env lookup that compose passes in (d-9). Token and key print as <redacted>. Azure's error text is never copied into an error. Retries only 429, 502, 503 and 504, three attempts, wait capped at 20 s, so it must never be called on the daemon's writer thread (d-7).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-73"
+					],
+					"state": "in-progress",
+					"note": "Workstream 004 s02 (architect PASS at 98f64ee). Not wired into compose yet."
+				},
+				{
+					"id": "c-adapter-fastembed",
+					"name": "umx-adapter-fastembed: local embedder",
+					"kind": "module",
+					"where": "crates/umx-adapter-fastembed/",
+					"responsibility": "local.embedder over fastembed and ort (owned only here). No network at embed time. Model choice by the workshop 009 bake-off (req-74). Where ort's binaries and the model weights come from, and where they are cached, needs the security role's review before it lands.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-74"
+					],
+					"state": "dropped",
+					"note": "Dropped 2026-11-10: none of the bake-off models is in fastembed's catalogue and two need last-token pooling, so the local adapter drives ort directly. Replaced by c-adapter-onnx."
+				},
+				{
+					"id": "c-adapter-onnx",
+					"name": "umx-adapter-onnx: local embedder",
+					"kind": "module",
+					"where": "crates/umx-adapter-onnx/",
+					"responsibility": "local.embedder over ONNX Runtime: ort and tokenizers are owned only by this crate. umx's own tokenizer setup, pooling (mean or last-token, per model) and prompts, so any bake-off model fits (req-74). locality() is Local, and the embed path does no network I/O. tokenizers has default features off (no Hugging Face hub download, no progress bar), and model and tokenizer files load from disk, fetched only by a deliberate step. ort links a system or pinned onnxruntime, or names the build-time download source and checksum for the security role's review.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-74"
+					],
+					"state": "dropped",
+					"note": "Dropped 2026-11-10: the ws004 GPU spike showed llama.cpp (GGUF BF16) 4-5x faster with about 70x less CPU and parity 0.99981; replaced by c-adapter-llamacpp. The Embedder port stays the seam if ort is ever needed."
+				},
+				{
+					"id": "c-adapter-llamacpp",
+					"name": "umx-adapter-llamacpp: local embedder",
+					"kind": "module",
+					"where": "crates/umx-adapter-llamacpp/",
+					"responsibility": "llamacpp.embedder over llama.cpp through llama-cpp-2 and llama-cpp-sys-2, owned only by this crate (pinned by full git commit until a crates.io release supports gemma-embedding2; the pin is security-reviewed). locality() is Local, and the crate has no network by construction: default features off, no download or curl features. Models load from disk only, after a sha256 check, because GGUF is parsed by C++. Metal through a macOS-only target feature, CPU elsewhere and in CI, CUDA opt-in and never default. No unsafe beyond the crate's API without an architect yes. Builds in every just check (77 s clean CPU-only, 22 s warm).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-74"
+					],
+					"state": "planned",
+					"note": "Workstream 004 s04."
+				},
+				{
+					"id": "c-port-model-fetcher",
+					"name": "ModelFetcher port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/model_fetcher.rs",
+					"responsibility": "Downloads a pinned model revision's files into the models folder, checks each file's sha256 and writes it atomically. A deliberate user step through its own verb, never automatic on embed.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-74"
+					],
+					"state": "planned",
+					"note": "Workstream 004 s14."
+				},
+				{
+					"id": "c-adapter-model-fetch",
+					"name": "umx-adapter-model-fetch: model downloads",
+					"kind": "module",
+					"where": "crates/umx-adapter-model-fetch/",
+					"responsibility": "hf.model-fetcher over ureq (its second owner): max redirects 0 unless an explicit host allow-list is shown to need them, platform verifier, timeouts, no token, no proxy from repo config. Kept apart from the local embedder so that crate has no network dependency at all.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-74"
+					],
+					"state": "planned",
+					"note": "Workstream 004 s14."
+				},
+				{
+					"id": "c-doctor",
+					"name": "umx doctor",
+					"kind": "verb",
+					"where": "crates/umx-daemon/src/doctor.rs",
+					"responsibility": "req-85: an offline health check run from the binary root, asking the daemon only existing requests. Exits 0 ok, 5 degraded, 6 broken (the highest warning exit); --fix is a closed enum that only tightens. Reads graph folders through resolve (never recovers, gf_c25) and the embedder through ready() (sends no text). Today all checks live in the daemon edge; the graph, config and embedder checks move into a services DoctorService before a second edge needs them (anti-pattern ap-23).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-85"
+					],
+					"state": "in-progress",
+					"note": "Workstream 002 s09."
+				},
+				{
+					"id": "c-port-service-manager",
+					"name": "ServiceManager port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/service_manager.rs",
+					"responsibility": "req-86: install, uninstall, restart and report the per-user daemon service. launchd.service-manager (macOS) and systemd.service-manager (Linux) in umx-adapter-system, chosen by OS through the [[port]] row's OS table; fixed argv, no shell, never sudo. The service runs `umx daemon start --service`, which exits 0 when a daemon already runs, so the service manager never polls.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-86"
+					],
+					"state": "planned",
+					"note": "Active since workstream 002 s10."
+				},
+				{
+					"id": "c-port-local-state",
+					"name": "LocalState port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/local_state.rs",
+					"responsibility": "This machine's record of each graph's confirmed policy, kept outside the repo in $UMX_HOME so a pulled graph.json cannot lower it. fs.local-state reuses the config files' owner-only atomic write and trust checks and fails closed: an unreadable record makes every graph count as secured. GraphStore owns it through Ports.state, and effective_policy is the higher of graph.json and the record, read fresh once per plan. Lowering a policy needs the record first (policy_not_recorded) and a /dev/tty confirm in the CLI, a speed bump not a barrier (C33, usage note 059).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46"
+					],
+					"state": "planned",
+					"note": "Active since workstream 004 s06 A2."
+				},
+				{
+					"id": "c-config",
+					"name": "umx-core config module and ConfigServices",
+					"kind": "module",
+					"where": "crates/umx-core/src/config.rs; crates/umx-services/src/config.rs",
+					"responsibility": "req-72 first-class config. A typed catalogue in umx-core: each key's type, doc line, default, the layers that may set it, its env or flag override, and when it applies. Precedence: default < machine ($UMX_HOME/config.toml, 0600) < repo (<repo>/.umx/config.toml, allowed keys only) < env < flag. Machine-only: roots, daemon.idle_unload, every embedders.<name>.* key. The repo layer may set embedder.active only to none or a local instance, and never applies a machine-only or secret-looking key (a loud warning instead). Invalid roots or a refused machine file (symlink, wrong owner, group- or other-writable): the daemon starts with no roots and graph verbs return config_invalid. Verbs: umx config show | set | unset | check. Only the daemon resolves config; anything acting on a graph resolves the repo layer from the graph's folder, not the caller's cwd.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-72"
+					],
+					"state": "planned",
+					"note": "Workstream 002 s07."
+				},
+				{
+					"id": "c-port-config-files",
+					"name": "ConfigFiles port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/config_files.rs",
+					"responsibility": "Read and atomically write the machine and repo config files, and find the repo root (nearest .git above a folder, only while inside the roots). May touch exactly $UMX_HOME/config.toml and <repo>/.umx/config.toml. fs.config-files and fake.config-files.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-72"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-port-secrets",
+					"name": "Secrets port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/secrets.rs",
+					"responsibility": "Look up a secret by env var NAME ([A-Z_][A-Z0-9_]{0,63}): env first, then $UMX_HOME/secrets.env (plain NAME=value lines, read only if a regular file owned by the user with mode 0600 or tighter). The value type has no Display or Serialize, and its Debug prints <redacted>. umx never writes secrets. fs.secrets and fake.secrets.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-72",
+						"../prds/001-concept-graph.dd.json#requirements/req-73"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-port-vector-store",
+					"name": "VectorStore port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/vector_store.rs",
+					"responsibility": "Holds vectors per model and dimensions; exact top-k for a query within an id scope; upsert and remove by key. First adapter is an in-memory brute-force scan; the int8 kernel is a pure function in umx-core.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-29",
+						"../prds/001-concept-graph.dd.json#requirements/req-30",
+						"../prds/001-concept-graph.dd.json#requirements/req-31",
+						"../prds/001-concept-graph.dd.json#requirements/req-32",
+						"../prds/001-concept-graph.dd.json#requirements/req-50"
+					],
+					"state": "dropped",
+					"note": "Dropped 2026-11-10 (workshop 008 section 2.5, decision 7): vectors are plain data in umx-graph; a port is extracted when a second vector store is wanted. Its requirements moved to c-graph."
+				},
+				{
+					"id": "c-port-embedding-shards",
+					"name": "EmbeddingShards port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/embedding_shards.rs",
+					"responsibility": "Reads and writes sorted, sharded embedding lines keyed by node, field, model with dimensions and content hash; committed or local cache per graph.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-36"
+					],
+					"state": "dropped",
+					"note": "Dropped 2026-11-10: folded into c-port-graph-files so a set of files can be written as a unit (workshop 008 section 4.1)."
+				},
+				{
+					"id": "c-port-source-reader",
+					"name": "SourceReader port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/source_reader.rs",
+					"responsibility": "Resolves an evidence locator (transcript sequence range, line range, quote with prefix and suffix) to text and a content hash, inside allowed roots only.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-18",
+						"../prds/001-concept-graph.dd.json#requirements/req-19",
+						"../prds/001-concept-graph.dd.json#requirements/req-20",
+						"../prds/001-concept-graph.dd.json#requirements/req-47"
+					],
+					"state": "planned",
+					"note": "Later workstream; listed so the port is named now and the rules already cover it."
+				},
+				{
+					"id": "c-port-change-feed",
+					"name": "ChangeFeed port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/change_feed.rs",
+					"responsibility": "Reports changed graph files under watched roots from OS notifications, never by polling.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-05",
+						"../prds/001-concept-graph.dd.json#requirements/req-06"
+					],
+					"state": "planned",
+					"note": "Later workstream; listed so the port is named now and the rules already cover it."
+				},
+				{
+					"id": "c-port-registry",
+					"name": "GraphRegistry port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/registry.rs",
+					"responsibility": "The per-machine record of graph id, alias and folder, with alias redirects. Until it lands, aliases come from each loaded graph's graph.json.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-03",
+						"../prds/001-concept-graph.dd.json#requirements/req-56"
+					],
+					"state": "planned",
+					"note": "Later workstream; listed so the port is named now and the rules already cover it."
+				},
+				{
+					"id": "c-port-agent-identity",
+					"name": "AgentIdentity port",
+					"kind": "module",
+					"where": "crates/umx-core/src/ports/agent_identity.rs",
+					"responsibility": "Who is writing, resolved client-side once per write command (pij seat, else harness env, else cli user, else unknown). Composed in the binary root only; the daemon never resolves identity. Adapters pij.agent-identity and env.agent-identity in umx-adapter-system; fake.agent-identity; contract ai_c*. The client-only inventory joins the compose wiring test and is intentionally absent from daemon Ports.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-93"
+					],
+					"state": "in-progress",
+					"note": "ws007 s02, plan097; architect-approved port and composition boundary."
+				}
+			]
+		},
+		{
+			"name": "decisions",
+			"value": [
+				{
+					"id": "d-1",
+					"decision": "q-12 decided: the in-memory graph is our own core code (crate umx-graph), not a port with an adapter. Services call umx-graph's API directly. If a second store ever earns its place (for example LadybugDB, which D18 removes from v1), we extract a GraphStore trait from that API then.",
+					"why": "A port is for an external thing; the in-memory graph is our own pure code, so a fake of it would be a copy of it. Freezing a store interface before s04's verb grammar and the self-use loop would guess at the wrong shape (D16: cheap to change). Keeping umx-graph a separate crate with a narrow API makes the later extraction a mechanical change.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-27",
+						"../prds/001-concept-graph.dd.json#requirements/req-28"
+					]
+				},
+				{
+					"id": "d-2",
+					"decision": "D18 and D19 applied: v1 has no LadybugDB; Cypher is parsed with cypher-parser and executed by umx-graph. The binary is `umx` and every crate is named umx-*; addresses are umx:<alias>/<id>.",
+					"why": "Project decisions. cypher-parser lives only in umx-graph (rule r-vendor-crates-owned).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-27"
+					]
+				},
+				{
+					"id": "d-3",
+					"decision": "umx-core, umx-graph and umx-services are #![no_std] + alloc.",
+					"why": "The compiler then enforces the pure core: no files, network, env, clock, threads, processes, stdout or randomly ordered HashMap in our code. Measured 2026-11-09 (workshop 004): serde, serde_json and thiserror build in no_std; planted clock, fs, env and HashMap uses fail to compile. umx-graph is included because services call it directly; the first review showed a std graph crate could do I/O on the services' behalf. hashbrown gives no_std hash indexes. If cypher-parser needs std, it links std for itself only; umx-graph's source still has no std path.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-4",
+					"decision": "Rules are data, with one canonical machine policy: crates/umx-arch/rules.toml. It holds each crate's allowed workspace and external crates (with dependency kind and features), the capability owners (r-vendor-crates-owned), the port rows and the re-exports allowed by name (E-2). This blueprint keeps the r-* rows (the meaning) and the layer table below, which `cargo run -p umx-arch -- render` produces from rules.toml; umx-arch fails if the ids differ or the table here differs from the render. Layer table (normal dependencies): umx-core: none; umx-graph: umx-core; umx-cypher: none; umx-query: umx-core, umx-graph, umx-cypher; umx-services: umx-core, umx-graph, umx-query; umx-contracts: umx-core; umx-fakes: umx-core; umx-adapter-*: umx-core; umx-protocol: none; umx-compose: umx-core, umx-graph, umx-services, umx-adapter-*, umx-fakes (optional, feature stub); umx-daemon: umx-compose, umx-services, umx-core, umx-protocol; umx-cli: umx-protocol; umx: umx-cli, umx-daemon, umx-protocol, umx-compose, umx-core; umx-bench: umx-compose, umx-services, umx-core, umx-graph, umx-query; umx-arch: none. umx-contracts and umx-arch appear only as dev-dependencies.",
+					"why": "One editable policy, with the human copy generated and checked, so a policy change cannot hide behind unchanged ids (first review). Cargo already refuses cycles and undeclared crates, so an allow-list per crate covers every inward-dependency rule.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-5",
+					"decision": "Ports are synchronous traits in umx-core (Send + Sync), coarse (a batch in, a batch out), returning owned values and a typed error. Services hold them as Arc<dyn Port>.",
+					"why": "Keeps core free of an async runtime. One virtual call per query is negligible against the work behind it; the daemon runs service calls on worker threads.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-6",
+					"decision": "Adapter matrix (port: stub / real), each row with its own state. graph-files: fake.graph-files / fs.graph-files (active since s05a). clock: fake.clock / system.clock (active since s05a). id-generator: fake.id-generator / system.id-generator (active since s05a). config-files: fake.config-files / fs.config-files and secrets: fake.secrets / fs.secrets (active since workstream 002 s07). vector-cache: fake.graph-files / fs.graph-files, a second instance rooted at $UMX_HOME/vectors for secured graphs' shards (active since workstream 004 s12). local-state: fake.local-state / fs.local-state (active since workstream 004 s06 A2). service-manager: fake.service-manager / macos launchd.service-manager, linux systemd.service-manager (active since workstream 002 s10). embedder: fake.embedder / azure-openai.embedder, planned until workstream 004 s05 wires it. A row is enforced by r-fake-per-port and r-wiring-matches-docs once its state leaves planned, which happened for these three in s05a, the change that landed their ports, fakes and adapters. Planned rows are listed by the checker as `planned (not enforced yet)`, never silently skipped. describe(mode) must equal the enforced rows. A row's `real` is one adapter id, or a list (config chooses one, or none), or a table keyed by operating system (the OS chooses; an OS missing from the table wires none). Every id in a list or table runs the full contract. Agent-identity: fake.agent-identity / pij.agent-identity or env.agent-identity (client-side only, active in ws007 s02). It is not a daemon service port: the compose test merges client_adapters with the service/config inventory without running discovery.",
+					"why": "The composition and the documents cannot drift (OSK wiring-matches-docs).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44",
+						"../prds/001-concept-graph.dd.json#requirements/req-51"
+					]
+				},
+				{
+					"id": "d-7",
+					"decision": "Every write goes through one writer queue in the daemon, which applies changes in order and writes the files before replying.",
+					"why": "Agents call the CLI at the same moment; one writer makes lost updates impossible without file locks.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-04",
+						"../prds/001-concept-graph.dd.json#requirements/req-52"
+					]
+				},
+				{
+					"id": "d-8",
+					"decision": "The exemplar slice is GraphFiles end to end: port, contract suite, fake, fs adapter, matrix row, service, verbs. Later ports copy it; they never import it.",
+					"why": "One complete pattern before breadth (D16 use it early). The architect gives a verdict on it before more ports start.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-01",
+						"../prds/001-concept-graph.dd.json#requirements/req-04"
+					]
+				},
+				{
+					"id": "d-9",
+					"decision": "Config and secrets are read only in umx-compose. A workspace clippy.toml bans std::env::var and friends; the one loader carries #[expect(clippy::disallowed_methods)].",
+					"why": "One place decides what is real and where secrets come from.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-10",
+					"decision": "Every rule's self-test plant goes through the rule's real enforcer, matching the expected failure, beside an allowed control that must pass. Compiler rules: `cargo build --manifest-path <fixture>` must fail with E0433 on a no_std crate naming std::fs, std::time, std::env and std::process, and the allowed no_std fixture must build. Clippy rule: `cargo clippy --manifest-path <fixture>` with the workspace clippy.toml must report clippy::disallowed_methods for std::env::var outside umx-compose, and pass inside it. Metadata rules: the checker over fixture workspaces. r-no-fakes-in-release: `cargo tree -e normal -i` on a fixture where the fakes are a plain dependency must find them. Wiring and fake-per-port: the same assertion functions the real tests call (check_wiring, check_fakes), fed a mismatched fixture. r-rules-fire itself: the coverage check, given a rule table with an unplanted rule, must report it SILENT. Fixtures have no external dependencies, so each build takes about a second.",
+					"why": "A metadata check passing proves nothing about a compiler, Clippy or compose rule (first review). The plant must fail where the real rule fails.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-11",
+					"decision": "No staged activation: every rule runs on the real workspace and in the self-test from the moment it lands. A new rule must pass on main in the PR that adds it. Port rows are the one gate: r-fake-per-port and r-wiring-matches-docs enforce a [[port]] row once its state leaves planned (d-6), and the checker prints each planned row by name.",
+					"why": "s01 had to pass honestly without building s05 early (D16), and a skipped check must be visible, not silent (first review).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-12",
+					"decision": "Services are split by capability once ports grow past the first three. Done shape (agreed for workstream 004 s01 and workstream 002 s07): GraphStore owns the graph files, clock and id ports, the loaded graphs and every graph write; EmbeddingService holds only the Embedder and takes the GraphStore per call; ConfigServices holds only ConfigFiles and Secrets; Services is a thin facade over them. Every later capability is its own struct over only the ports it uses, composing others through their public calls.",
+					"why": "Services are the composition layer. With more ports, one struct lets every capability reach every port and hides which capability needs what (anti-pattern list c-1, ap-26).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-13",
+					"decision": "Next-step commands stay chosen by services but become structured data before a second edge. umx_core::Command is today a String starting with `umx`. Before the UI (or any second edge) consumes errors, it becomes a verb label plus typed parts (words, names, ids, addresses, placeholders), and only umx-protocol renders it to `umx ...` text.",
+					"why": "A next step is part of the error contract (req-40) and must be built from typed parts (req-41), so the service choosing it is right; CLI text in the pure core is not (anti-pattern list c-2, ap-24). The builder already takes typed parts, so the change stays inside Command.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-40",
+						"../prds/001-concept-graph.dd.json#requirements/req-41"
+					]
+				},
+				{
+					"id": "d-14",
+					"decision": "docs/project/blueprints/001-anti-patterns.md is part of this blueprint: the ways this codebase has gone wrong or could, each with where it was seen and what guards it. The architect owns it; reviewers add a row in the same review round they find a new one.",
+					"why": "Rules prove what they check; the list covers what only review can catch, so reviews measure new work against one shared list.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "d-15",
+					"decision": "Workshop 008 (not published) is the storage design. Accepted with the architect's conditions: vectors are a module inside umx-graph with no VectorStore port (decision 7 changes D12 and D14); one GraphFiles call writes a set of files as a unit with a roll-forward marker, durable once the marker is synced; EmbeddingShards folds into GraphFiles; handles and columns stay inside umx-graph behind NodeRef/EdgeRef views, with a test that two loads of the same files give the same handles; libm supplies sqrt and log in no_std.",
+					"why": "Measured at 100k nodes the layout meets the speed goals, and each condition keeps a rule true by construction: handles in one crate, atomic multi-file writes at the port, no port without an external thing behind it (d-1).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-01",
+						"../prds/001-concept-graph.dd.json#requirements/req-04",
+						"../prds/001-concept-graph.dd.json#requirements/req-29",
+						"../prds/001-concept-graph.dd.json#requirements/req-36",
+						"../prds/001-concept-graph.dd.json#requirements/req-54",
+						"../prds/001-concept-graph.dd.json#requirements/req-65",
+						"../prds/001-concept-graph.dd.json#requirements/req-68"
+					]
+				},
+				{
+					"id": "d-16",
+					"decision": "Repeated ids and unknown keys are kept, never dropped (req-67): the last line is in use, earlier lines are written back byte for byte before it, byte-identical repeats included; edits to a repeated id are allowed and warned (duplicate_id, at most 20 per load plus a count); umx check reads the files from disk. Unknown keys in graph.json are kept through load and save and warned (unknown_key). A newer format version is refused with graph_format_newer.",
+					"why": "Files are the truth (req-01) and the tool informs rather than polices (D7, D11); a git merge must never lose a record without a word (anti-pattern ap-12).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-01",
+						"../prds/001-concept-graph.dd.json#requirements/req-67"
+					]
+				},
+				{
+					"id": "d-17",
+					"decision": "Many graphs share one space (req-66): graphs are keyed by graph id; copies load side by side as <alias>@<copy> (req-69); an edge is stored in the graph its author chooses and either end may name another graph by graph id plus node id; overlays are retired (req-24 to req-26 dropped). similar_to is followed only when a query names it, an accepted exception to req-27 (decision 8).",
+					"why": "Decisions of 2026-11-10 (workshop 008 sections 2.6, 9 and 10). One space without merging keeps each graph's files and handles its own.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-21",
+						"../prds/001-concept-graph.dd.json#requirements/req-27",
+						"../prds/001-concept-graph.dd.json#requirements/req-65",
+						"../prds/001-concept-graph.dd.json#requirements/req-66",
+						"../prds/001-concept-graph.dd.json#requirements/req-69"
+					]
+				},
+				{
+					"id": "d-18",
+					"decision": "Every wire change bumps PROTOCOL by one in the PR that makes it: a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed meaning. serde(default) does not exempt it, because an older daemon ignores an unknown field and would still write. A new catalogue code is not a shape change. Whichever PR merges later rebases and takes main + 1. A wire fingerprint test (in place: a hash of one canonical sample of every Op, Request and Envelope, equal to a constant beside PROTOCOL) makes a change without a bump fail CI. An additive field inside a command's `data` (a JSON value) is not a shape change; the shapes are Request, Op and Envelope.",
+					"why": "The daemon refuses a mismatched protocol before running anything (A7), which only protects anyone if every shape change is numbered. Two PRs in one day changed the wire without a bump (two early changes).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-38",
+						"../prds/001-concept-graph.dd.json#requirements/req-41"
+					]
+				},
+				{
+					"id": "d-19",
+					"decision": "Config is layered and the machine owns everything that reaches outside the repo: roots, the daemon's idle unload, and every embedder instance (endpoint, deployment, model, dims, auth, api key env name) are machine only. A repo may narrow the embedder (none or a local instance) but never widen it. Security-narrowing keys fail closed (no roots), and the config verbs stay usable so the fix is one command. A secured graph's local-only policy beats every layer, env and flag.",
+					"why": "A cloned repo's committed config must not be able to route graph text or a token to another endpoint or widen the folders umx may touch (security review, 2026-11-10).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46",
+						"../prds/001-concept-graph.dd.json#requirements/req-47",
+						"../prds/001-concept-graph.dd.json#requirements/req-72"
+					]
+				},
+				{
+					"id": "d-20",
+					"decision": "Multi-graph reads skip secured graphs unless named. Any read that covers more than one graph without the request naming each one (unscoped search, similarity, hybrid search, cross-graph walks and queries, and any later multi-graph verb) leaves out every graph whose effective_policy is not Open, including a policy that cannot be read. A secured graph's nodes appear only when --graph (or an address) names it. The result carries a count-only note, secured_graphs_skipped with N, never the skipped graphs' names or nodes. Security ruling SEC-5 (q-05), 2026-11-10, first applied in workstream 004. Enforced by a test per multi-graph verb: one secured and one open graph loaded, an unscoped read returns only the open graph's hits plus the note, and a named read returns the secured one.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-46"
+					],
+					"why": "A user who never named a secured graph should not see its titles or notes mixed into a broad search, an agent pasting results onward included. Naming the graph is the consent. A count keeps the omission visible without leaking it."
+				},
+				{
+					"id": "r-core-no-std",
+					"decision": "Rule: umx-core, umx-graph, umx-cypher, umx-query and umx-services start with #![no_std] and contain no `extern crate std`. Enforced by the compiler and umx-arch's text scan; plants for each crate and for each half (d-10).",
+					"why": "The extern crate std hole builds (measured), so a scan closes it.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-inward",
+					"decision": "Rule: every crate's dependencies (kind and features included) are within its allow-list in rules.toml, and d-4's layer table equals the render of rules.toml. Enforced by umx-arch; plants include a crate outside its allow-list and a same-id, different-policy table.",
+					"why": "Dependencies point inward.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-adapters-isolated",
+					"decision": "Rule: an adapter crate never depends on another adapter, umx-services, umx-compose, umx-daemon or umx-cli. Enforced by umx-arch.",
+					"why": "Adapters stay swappable.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-only-compose-wires",
+					"decision": "Rule: only umx-compose depends on adapter crates or umx-fakes (tests excepted). Enforced by umx-arch.",
+					"why": "One place decides what is real.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-vendor-crates-owned",
+					"decision": "Rule: each capability library has its owner crates, and no others may use it: notify (and any file-watching crate) umx-adapter-fs; ulid umx-adapter-system; libc umx-adapter-fs (one safe getuid wrapper); ureq umx-adapter-azure-openai (and umx-adapter-model-fetch, target, workstream 004 s14); llama-cpp-2 and llama-cpp-sys-2 umx-adapter-llamacpp (target, workstream 004 s04). tokio, reqwest, azure_core, azure_identity, fastembed, ort, tokenizers and cypher-parser have no owner: no async runtime, no Azure SDK, no fastembed or ONNX Runtime (2026-11-10). Shared libraries (serde, serde_json, thiserror, hashbrown, toml, libm, sha2) are not owned; they may appear wherever a crate's external allow-list in rules.toml permits. A whole-crate re-export of a workspace or external crate, or any re-export of a workspace item, fails unless rules.toml lists it (anti-pattern ap-10; in place). Enforced by umx-arch from rules.toml. cypher-parser from crates.io is never used: its vendored fork is the workspace crate umx-cypher (c-cypher, workstream 005).",
+					"why": "Technology stays behind its adapter, while plain data and error libraries are shared.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-cli-is-a-client",
+					"decision": "Rule: umx-cli depends on no workspace crate but umx-protocol. Enforced by umx-arch.",
+					"why": "Every command goes through the daemon (D13).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-38",
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-contracts-dev-only",
+					"decision": "Rule: umx-contracts is only ever a dev-dependency. Enforced by umx-arch.",
+					"why": "Contract code never ships.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-no-fakes-in-release",
+					"decision": "Rule: `cargo tree -p umx -e normal -i umx-fakes` finds nothing; with --features stub it does. Enforced by umx-arch.",
+					"why": "The release binary holds no fakes.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44",
+						"../prds/001-concept-graph.dd.json#requirements/req-51"
+					]
+				},
+				{
+					"id": "r-fake-per-port",
+					"decision": "Rule: every port in the matrix (d-6) has a fake, and the fake and every real adapter list every clause test of its contract suite. Enforced by umx-arch.",
+					"why": "Fakes plus one contract suite per port.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-wiring-matches-docs",
+					"decision": "Rule: describe(mode) equals the matrix in d-6 for every mode. Enforced by a umx-compose test.",
+					"why": "Code and documents cannot drift.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44",
+						"../prds/001-concept-graph.dd.json#requirements/req-51"
+					]
+				},
+				{
+					"id": "r-env-in-compose",
+					"decision": "Rule: env is read only in umx-compose (d-9). Enforced by clippy and umx-arch's scan for the expect.",
+					"why": "Secrets have one entry point.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-command-in-adapters",
+					"decision": "Rule: std::process::Command appears only in adapter crates (umx-adapter-*) and the tools umx-arch and umx-bench, in shipped source (src/); tests/, #[cfg(test)] code and build scripts (build-time tooling such as the commit stamp) are skipped. One fn is let through by file and name with its reason in rules.toml: umx-daemon/src/lib.rs relaunch, the daemon restart re-exec (F46/F64), to move behind ServiceManager or an adapter later. Enforced by umx-arch's token scan; the plants command-outside-adapters (a grouped import and a second Command beside the excepted fn) and command-nested-test-module (a shipped Command beside an inline module whose inner attribute is #![cfg(test)]: that attribute hides only its module) fire, and the control command-control (an adapter, the excepted fn, #[cfg(test)] code, an inline #![cfg(test)] module, a whole #![cfg(test)] file, a comment and a string) passes.",
+					"why": "Starting a process is an external effect like any other: it goes through a port, so services and the daemon stay testable with fakes and every launch has one owner (ws009 s2, umx ui).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-fs-in-adapters",
+					"decision": "Rule: the filesystem (std::fs, use std::fs, fs::<fn>( calls, File::open, File::create, OpenOptions and std::os::unix::fs) appears only in adapter crates (umx-adapter-*), the tools umx-arch and umx-bench, umx-contracts (test infrastructure shipped as a library: its contract suites drive real adapters against real temp dirs), umx-compose, the binary umx and the process shell umx-daemon (run folder, socket, pid, logs and doctor's own mode checks; its reads of user content go through ports or adapter fns, enforced by review), in shipped source (src/); tests/, #[cfg(test)] code and build scripts are skipped, and a use in a fn's signature belongs to that fn. Use trees are resolved (R251 B1): a use rooted at std that names fs anywhere (groups, as renames, single fns, an aliased File) fires at the use, and a local name for std, std::os or std::os::unix (use std as s, a renamed or grouped module, extern crate std as s) fires wherever a path through it reaches fs. A use path not rooted at std, core or alloc is also read at each later segment that is one of the crate's names for std, as expression paths are, so a private use std as s in module m reached from a child as use crate::m::s::fs as f fires (F133, architect); paths rooted at std, core or alloc are never rewritten (R270-1). Denied by construction: umx-services, umx-graph, umx-query, umx-cypher, umx-protocol, umx-fakes' shipped code and umx-cli. Three fns are let through by file and name with their reasons in rules.toml: umx-cli/src/batch.rs read (the client reads its own --file input; it never reaches the daemon as a path; its imports sit inside it), umx-cli/src/lib.rs open_tty (the person's terminal for the confirmation prompt, s06) and umx-fakes/src/lib.rs fetch (the fake ModelFetcher writes the fetched file so the shared contract can check it on disk; stub builds only). Enforced by umx-arch's token scan; the plants fs-outside-adapters (a services module calling fs::read_to_string) and fs-second-in-excepted-file (a second use in batch.rs beside the excepted fn) fire, one plant per B1 form fires (fs-group-rename, fs-std-root-rename, fs-unix-group-rename, fs-group-single-fns, fs-aliased-file, fs-unix-module-rename), no-std-raw-std-graph and no-std-spaced-alias-core fire it beside r-core-no-std, fs-private-module-alias-use and fs-module-alias-use (a reviewer's N1) fire it through a module path (F133), and the control fs-control (an adapter, the excepted fns, #[cfg(test)] code, tests/, a comment, a string, and std uses that never reach fs, grouped and renamed) passes (F114, architect).",
+					"why": "Adapters for every external thing: the filesystem is external like a process or the network, so services, the graph and the query engine reach files only through a port, stay testable with fakes, and every file effect has one owner.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-no-std-reexport",
+					"decision": "Rule: no use and no extern crate that is wider than private (pub, pub(crate), pub(super), pub(in path)) brings in std, std::os or std::os::unix themselves, any std path with an fs segment (std::fs, std::fs::File, std::os::unix::fs), or a glob of one of these. That holds in every workspace crate, adapters included. The path is read through the crate's local names for std (F119), including a private alias of a filesystem module (std::fs, std::os::unix::fs, renamed or not), so pub use s::os as o fires after use std as s, and pub use disk::* or pub use disk::File as Handle after use std::fs as disk (R302-B1). It applies to shipped source only (src/; tests/ and #[cfg(test)] skipped, as r-fs-in-adapters). Private uses stay allowed. So do re-exports of std items off the way to fs (std::fmt::Display, std::io::Read, std::collections::HashMap) and anything from core or alloc, which have no fs. Enforced by umx-arch's token scan; the plants reexport-std-root (pub use std;), reexport-std-fs (pub use std::fs;), reexport-std-fs-renamed (pub use std::fs as f;) and reexport-crate-std-module (pub(crate) use std as s in module m, with use crate::m::s::fs as f elsewhere), reexport-fs-alias-glob, reexport-fs-alias-member and reexport-unix-fs-alias-member (a public glob or member re-export through a private fs-module alias) fire, and the control reexport-std-control (an adapter's private use std::fs, a private std::fs alias used only privately, a pub use of an external crate's item, pub use std::fmt::Display, a non-fs std alias re-exported, pub use core::fmt) passes.",
+					"why": "r-fs-in-adapters reads names for std across a crate's own files, at the root of a path. A re-export makes std or its fs module reachable under a name the rule never records: from another crate, or inside one crate through a module path (F133, security review).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-checked-graph-writes",
+					"decision": "Rule: umx-services writes graph folders only through GraphFiles::write_set_checked. The unchecked writes (write_set, write) are not on GraphFiles: they live in umx-core's setup::GraphFilesSetup (a blanket impl over GraphFiles; outside ports, since it is no port, and re-exported nowhere). In shipped source (src/; tests/, #[cfg(test)] code and build scripts are skipped), no crate in umx-services' normal dependency closure (umx-services included) but umx-core names GraphFilesSetup or a `setup` path segment, so no alias, glob, fully qualified call, re-export or glob-and-alias chain hands them to the services. Enforced by umx-arch's token scan; the plants graph-write-alias (use umx_core::setup::GraphFilesSetup as W, then W::write_set), graph-write-glob (use umx_core::setup::*, then files.write_set), graph-write-qualified (umx_core::setup::GraphFilesSetup::write_set with no use), graph-write-reexport (umx-graph re-exporting it as Unchecked) and graph-write-glob-chain (reviewer R4: umx-graph's use umx_core::*; use self::setup as seed; pub use self::seed::*) fire, and the control graph-write-control (write_set_checked, a ConfigFiles write held as `files`, a LocalState write, a one-argument write as io::Write's, a #[cfg(test)] use of the setup trait, the names in a comment and a string, and the trait used by a crate umx-services does not ship with) passes (F144, architect).",
+					"why": "A loaded graph's write carries the stamps of the files it was loaded from, so a checkout, a pull or a hand edit since is refused rather than written over; the unchecked writes are for tests and setup, and keeping them off the port makes reaching them a visible import rather than a call that reads like any other.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-01"
+					]
+				},
+				{
+					"id": "r-rules-fire",
+					"decision": "Rule: every r-* rule has at least one planted violation that its real enforcer reports (d-10), every allowed control passes, and the coverage check itself reports a rule with no plant as SILENT. Enforced by umx-arch's self-test.",
+					"why": "A rule with no planted violation rots silently.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-gate-features",
+					"decision": "Rule: every cargo feature a workspace crate declares is either built by the lint gate (rules.toml gate list, which `just clippy` reads from umx-arch) or listed in gate_excluded with a reason, so no shipped configuration escapes the gate silently (anti-pattern ap-11). Excluded today: umx-adapter-llamacpp/cuda and its forwarders (needs the CUDA toolkit; covered by just check-cuda on the GPU box). Enforced by umx-arch from rules.toml; plant gate-feature-unlisted.",
+					"why": "--all-features (E-3) builds a feature that needs a toolkit the Mac gate lacks (CUDA, ws004 s19). A hand-kept list instead would let a new feature drop out of the gate unseen (ap-11).",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44"
+					]
+				},
+				{
+					"id": "r-identity-client-only",
+					"decision": "Rule: identity discovery calls run only in crates/umx, umx-compose, umx-contracts, umx-bench (bench tool) and test code, never in daemon or services production code. AgentIdentity remains absent from daemon Ports. Enforced by the umx-arch production-token scanner, with identity-daemon-call as the negative plant and identity-client-control as the allowed control.",
+					"why": "The writer is the CLI caller, not the environment that started the daemon. Captured identity is a claim, never authority.",
+					"realises": [
+						"../prds/001-concept-graph.dd.json#requirements/req-44",
+						"../prds/001-concept-graph.dd.json#requirements/req-93"
+					]
+				}
+			]
+		},
+		{
+			"name": "costs",
+			"value": [
+				{
+					"id": "k-1",
+					"what": "The daemon while idle.",
+					"rate": "1 process per machine, started by hand; 0 CPU when idle (no polling loop)",
+					"scaling": "with loaded graph size (memory), not with seats or time",
+					"component": [
+						"#components/c-daemon"
+					]
+				},
+				{
+					"id": "k-2",
+					"what": "Idle unload of loaded graphs.",
+					"rate": "one sleep until the earliest unload deadline, reset by each request; no periodic tick",
+					"scaling": "with requests, not with seats or time",
+					"component": [
+						"#components/c-daemon"
+					]
+				},
+				{
+					"id": "k-3",
+					"what": "just check in CI.",
+					"rate": "once per push",
+					"scaling": "with pushes and crate count",
+					"component": [
+						"#components/c-check",
+						"#components/c-arch"
+					]
+				},
+				{
+					"id": "k-4",
+					"what": "Watching graph files for outside changes (later).",
+					"rate": "OS notifications only; 0 launches",
+					"scaling": "with file changes, not with seats or time",
+					"component": [
+						"#components/c-port-change-feed"
+					]
+				},
+				{
+					"id": "k-5",
+					"what": "Background embedding (later).",
+					"rate": "one batch per write burst, only for changed text",
+					"scaling": "with edited fields",
+					"component": [
+						"#components/c-port-embedder"
+					]
+				},
+				{
+					"id": "k-6",
+					"what": "Keeping similar_to current on a write.",
+					"rate": "one whole-node vector scan per changed node (about 0.4 ms at 100k nodes), inside the write",
+					"scaling": "with writes and graph size, not with seats or time",
+					"component": [
+						"#components/c-services",
+						"#components/c-graph"
+					]
+				},
+				{
+					"id": "k-7",
+					"what": "Set-write recovery check.",
+					"rate": "one marker lookup on first access to a graph folder; 0 launches",
+					"scaling": "with graphs loaded, not with time",
+					"component": [
+						"#components/c-port-graph-files"
+					]
+				},
+				{
+					"id": "k-8",
+					"what": "Word index and reverse similar_to lists.",
+					"rate": "built once per load (about 270 ms at 100k nodes), updated inside each write; never on a read",
+					"scaling": "with graph size",
+					"component": [
+						"#components/c-graph"
+					]
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-09",
+					"by": "architect",
+					"change": "First draft for workstream 001 s01: crate layers, ports, rules as r-* rows, matrix, exemplar slice; decides q-12 (d-1)."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "architect",
+					"change": "Round 1 review fixes: umx-graph is no_std (d-3, r-core-no-std); rules.toml is the one machine policy and d-4's table must equal its render (d-4, r-inward); staged activation (d-11, d-6 row states); self-test uses each rule's real enforcer with controls and a coverage-negative plant (d-10, r-rules-fire); vendor rule scoped to capability libraries; Cypher execution moved out of s04 (c-graph note)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "GraphFiles gains resolve and remove; d-6 rows active since s05a; d-11 wording fixed (F6: no-fakes-in-release is whole in s01, s06 adds no activation; F7: s05 is s05a); added d-12 (split services before the fourth port), d-13 (structured next-step commands before a second edge) and d-14 (anti-pattern list as a companion document)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "Workshop 008 and PRD changes: c-graph, c-services and c-port-graph-files rewritten for the 008 layout; c-port-vector-store and c-port-embedding-shards dropped; overlays retired; req-63 to req-69 realised; added d-15 (008 accepted with conditions), d-16 (repeated ids and unknown keys kept), d-17 (one space for many graphs, similar_to exception); cost rows k-6 to k-8."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "Review round 1: c-graph no longer claims a hierarchy index (workshop 008 section 2.4: --within walks incoming part_of adjacency)."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "Workstreams 002 s07 and 004: added c-adapter-azure-openai, c-adapter-fastembed, c-config, c-port-config-files and c-port-secrets; c-port-embedder and c-services updated (d-12 split shape); d-12 reworded to the done shape; r-vendor-crates-owned lists the new owners and the re-export rule; added d-18 (every wire change bumps PROTOCOL) and d-19 (config layers, machine-only keys, fail closed). Usage note 051 (secured graphs embed locally); config usage itself is notes 030 and 031."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "c-adapter-fastembed dropped and replaced by c-adapter-onnx (ort and tokenizers, own pooling and prompts); r-vendor-crates-owned marks each owner as in place or target, adds sha2 as shared and gives fastembed no owner; d-18's fingerprint test marked planned (review notes). Review round 1: libc in umx-adapter-fs is target until the config adapters land."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "coder, architect ruling",
+					"change": "ws002 s05 (E-1, E-2, E-7): rule staging removed (d-11 rewritten); d-4: umx depends on umx-protocol directly, rules.toml holds port rows and allowed re-exports, not active-from steps."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "coder, approved by architect",
+					"change": "Workstream 002 s07 (req-72): d-6 rows for config-files and secrets, which are now active with fakes, fs adapters and contract suites; c-config, c-port-config-files, c-port-secrets and d-19 as written in its plan."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "c-adapter-onnx dropped for c-adapter-llamacpp (ws004 spike); added c-port-model-fetcher and c-adapter-model-fetch (ws004 s14), c-doctor (ws002 s09) and c-port-service-manager (ws002 s10); c-core states D42; r-vendor-crates-owned matches main and the new owners; d-18 records the fingerprint test as in place and that data fields are not wire shapes; d-6 describes the three forms of `real`."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect",
+					"change": "d-20: multi-graph reads skip secured graphs unless named (security SEC-5); c-services states it and the planned narrowing of Services::graph(); c-port-local-state added (ws004 s06 A2); d-6 lists vector-cache (ws004 s12), local-state (ws004 s06 A2), service-manager (ws002 s10) and the planned embedder row."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "architect, landed in workstream 005 s01",
+					"change": "c-cypher (vendored cypher-parser fork) and c-query (planned) added; c-graph no longer holds Cypher or cypher-parser; cypher-parser from crates.io has no owner; r-core-no-std and d-4 gain umx-cypher."
+				},
+				{
+					"date": "2026-11-10",
+					"by": "coder for the architect, workstream 005 s02",
+					"change": "umx-query built (c-query note); r-core-no-std includes umx-query; d-4 gains umx-query: umx-core, umx-graph, umx-cypher, and umx-bench gains umx-query."
+				},
+				{
+					"date": "2026-11-11",
+					"by": "coder for the architect, workstream 004 s19",
+					"change": "r-gate-features added: the gate's clippy builds an explicit feature list kept in rules.toml in place of --all-features, so umx-adapter-llamacpp/cuda (and its forwarders) can stay out of the Mac gate by name with a reason."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "coder, architect ruling",
+					"change": "ws002 F144 (plan 148): r-checked-graph-writes added. GraphFiles gains write_set_checked (the one write path, with expected content-file stamps), read_stamped and stamps; the unchecked write_set and write move off the port to umx-core's setup::GraphFilesSetup (outside ports, re-exported nowhere), which shipped umx-services never names (round 2: structural rule, architect)."
+				},
+				{
+					"date": "2026-11-12",
+					"by": "coder for the architect, F133 plan 155",
+					"change": "r-no-std-reexport added: no std, std::os, std::os::unix, std fs path or glob of one re-exported wider than private, in any workspace crate. r-fs-in-adapters reads a use path not rooted at std, core or alloc at every later segment that is a name for std, closing the private-module-path escape (a reviewer's N1). A private alias of std::fs or std::os::unix::fs counts as a name for std, so a re-export through it is refused too (reviewer R302-B1)."
+				}
+			]
+		}
+	]
+}

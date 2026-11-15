@@ -1,0 +1,2 @@
+# Review R1: a whole external crate re-exported through `self` in a group, with an alias.
+expect = ["r-inward"]

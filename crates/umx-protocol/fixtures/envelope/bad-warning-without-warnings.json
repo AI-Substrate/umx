@@ -1,0 +1,16 @@
+{
+  "umx": 81,
+  "command": "version",
+  "status": "warning",
+  "data": {},
+  "warnings": [],
+  "errors": [],
+  "untrusted": [
+    "data",
+    "data.events[].command.note",
+    "data.rows[].title",
+    "warnings[].candidates",
+    "hints[].candidates",
+    "errors[].candidates"
+  ]
+}

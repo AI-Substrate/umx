@@ -1,0 +1,3 @@
+# umx-daemon starts a process outside the excepted fn: an import in a group, and a second Command in the file of
+# the exception.
+expect = ["r-command-in-adapters"]

@@ -1,0 +1,3 @@
+# An adapter on the embedder row's real list skips contract clause em_c2.
+expect = ["r-fake-per-port"]
+active_ports = ["embedder"]

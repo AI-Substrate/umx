@@ -1,0 +1,26 @@
+[package]
+name = "umx-compose"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+umx-core.workspace = true
+umx-graph.workspace = true
+umx-services.workspace = true
+umx-adapter-fs.workspace = true
+umx-adapter-system.workspace = true
+umx-adapter-azure-openai.workspace = true
+umx-adapter-llamacpp.workspace = true
+umx-adapter-model-fetch.workspace = true
+umx-fakes = { workspace = true, optional = true }
+
+[dev-dependencies]
+umx-arch.workspace = true
+
+[features]
+# Test-only: wires the fakes (stub mode). Never in a release build.
+stub = ["dep:umx-fakes"]
+# The local embedder on CUDA (ws004 s19); off by default, needs the CUDA toolkit to build.
+cuda = ["umx-adapter-llamacpp/cuda"]

@@ -1,0 +1,4 @@
+# Allowed control: the table names the host OS, and describe() lists exactly that adapter.
+expect = []
+active_ports = ["service-manager"]
+rules = "rules.toml"

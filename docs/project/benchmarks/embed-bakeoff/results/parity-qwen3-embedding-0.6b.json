@@ -1,0 +1,18 @@
+{
+  "batch": 16,
+  "docs": {
+    "mean": 0.9998762369155884,
+    "min": 0.9997847676277161,
+    "n": 20
+  },
+  "load_avg_1m_at_end": 126.82421875,
+  "load_avg_1m_at_start": 123.8642578125,
+  "max_length": 2048,
+  "model": "qwen3-embedding-0.6b",
+  "pass": true,
+  "queries": {
+    "mean": 0.9998396277427674,
+    "min": 0.9997010231018066,
+    "n": 20
+  }
+}

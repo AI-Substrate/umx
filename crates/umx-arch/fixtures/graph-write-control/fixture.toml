@@ -1,0 +1,4 @@
+# Allowed in umx-services: write_set_checked, ConfigFiles' write held as `files`, a LocalState write, a one-argument
+# write as io::Write's, the setup trait in #[cfg(test)] code, and GraphFilesSetup / umx_core::setup as words in a
+# comment or a string; and in umx-contracts, which umx-services does not ship with, the setup trait itself.
+expect = []

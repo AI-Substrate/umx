@@ -1,0 +1,1540 @@
+{
+ "source": "plan 104's search-fixture.sh (not published), real umx against the synthetic graph searchfix",
+ "graph": "searchfix",
+ "graph_list": {
+  "umx": 29,
+  "command": "graph list",
+  "status": "ok",
+  "data": {
+   "columns": [
+    "alias",
+    "id",
+    "nodes",
+    "edges",
+    "kept_lines",
+    "last_used",
+    "unloads_in_s",
+    "embedding",
+    "effective_policy",
+    "effective_visibility",
+    "effective_embedder",
+    "downgraded",
+    "vectors_pending",
+    "vectors_held"
+   ],
+   "rows": [
+    {
+     "alias": "searchfix",
+     "downgraded": null,
+     "edges": 30,
+     "effective_embedder": "any",
+     "effective_policy": "open",
+     "effective_visibility": "open",
+     "embedding": null,
+     "id": "01M752CWSYZ3P0MA1VK62ZJMK9",
+     "kept_lines": 0,
+     "last_used": "2026-11-11T10:28:06Z",
+     "nodes": 21,
+     "unloads_in_s": 1800,
+     "vectors_held": 0,
+     "vectors_pending": 0
+    }
+   ],
+   "total": 1,
+   "truncated": false
+  },
+  "warnings": [],
+  "errors": [],
+  "untrusted": [
+   "data",
+   "warnings[].candidates",
+   "errors[].candidates"
+  ]
+ },
+ "nodes": [
+  [
+   "01M752CX073BV3D55R4CYWW71G",
+   "project",
+   "Community garden irrigation",
+   "open"
+  ],
+  [
+   "01M752CX073BV3D55R4CYWW71H",
+   "system",
+   "Water pump for the rain tank",
+   "open"
+  ],
+  [
+   "01M752CX073BV3D55R4CYWW71J",
+   "decision",
+   "Irrigation schedule: dawn watering",
+   "agreed"
+  ],
+  [
+   "01M752CX073BV3D55R4CYWW71K",
+   "risk",
+   "Summer drought empties the tank",
+   "open"
+  ],
+  [
+   "01M752CX073BV3D55R4CYWW71M",
+   "action",
+   "Spread mulch to keep soil moist",
+   "done"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN7Z",
+   "question",
+   "Which seeds suit dry beds?",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN80",
+   "option",
+   "Hand watering with a hose",
+   "ruled_out"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN81",
+   "system",
+   "Old cracked water tank",
+   "retired"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN82",
+   "project",
+   "Neighbourhood bakery ovens",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN83",
+   "system",
+   "Deck oven with stone hearth",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN84",
+   "topic",
+   "Sourdough starter feeding",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN85",
+   "risk",
+   "Flour delivery delays",
+   "blocked"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN86",
+   "decision",
+   "Overnight proofing in the cool room",
+   "proposed"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN87",
+   "question",
+   "Why is the crust pale?",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN88",
+   "project",
+   "Bicycle repair workshop",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN89",
+   "action",
+   "Replace worn bicycle chains",
+   "open"
+  ],
+  [
+   "01M752CX080N94QP3QATYBZN8A",
+   "risk",
+   "Brake pads worn thin",
+   "open"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6J",
+   "system",
+   "Workshop tool wall",
+   "agreed"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6K",
+   "question",
+   "Tubeless tyres or inner tubes?",
+   "contested"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6M",
+   "session",
+   "Recording of the planning chat",
+   "open"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6N",
+   "session",
+   "Recording of the bake day",
+   "open"
+  ]
+ ],
+ "edges": [
+  [
+   "01M752CX09D8J5H3RRYE4KBD6P",
+   "part_of",
+   "01M752CX073BV3D55R4CYWW71H",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6Q",
+   "part_of",
+   "01M752CX073BV3D55R4CYWW71J",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6R",
+   "part_of",
+   "01M752CX073BV3D55R4CYWW71K",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6S",
+   "part_of",
+   "01M752CX073BV3D55R4CYWW71M",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6T",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN7Z",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6V",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN80",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6W",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN81",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6X",
+   "blocks",
+   "01M752CX073BV3D55R4CYWW71K",
+   "01M752CX073BV3D55R4CYWW71J"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6Y",
+   "supports",
+   "01M752CX073BV3D55R4CYWW71M",
+   "01M752CX073BV3D55R4CYWW71J"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD6Z",
+   "alternative_to",
+   "01M752CX073BV3D55R4CYWW71H",
+   "01M752CX080N94QP3QATYBZN80"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD70",
+   "raises",
+   "01M752CX080N94QP3QATYBZN7Z",
+   "01M752CX073BV3D55R4CYWW71K"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD71",
+   "depends_on",
+   "01M752CX073BV3D55R4CYWW71H",
+   "01M752CX080N94QP3QATYBZN81"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD72",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN83",
+   "01M752CX080N94QP3QATYBZN82"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD73",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN84",
+   "01M752CX080N94QP3QATYBZN82"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD74",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN85",
+   "01M752CX080N94QP3QATYBZN82"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD75",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN86",
+   "01M752CX080N94QP3QATYBZN82"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD76",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN87",
+   "01M752CX080N94QP3QATYBZN82"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD77",
+   "blocks",
+   "01M752CX080N94QP3QATYBZN85",
+   "01M752CX080N94QP3QATYBZN86"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD78",
+   "raises",
+   "01M752CX080N94QP3QATYBZN87",
+   "01M752CX080N94QP3QATYBZN83"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD79",
+   "supports",
+   "01M752CX080N94QP3QATYBZN84",
+   "01M752CX080N94QP3QATYBZN86"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7A",
+   "depends_on",
+   "01M752CX080N94QP3QATYBZN86",
+   "01M752CX080N94QP3QATYBZN83"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7B",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN89",
+   "01M752CX080N94QP3QATYBZN88"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7C",
+   "part_of",
+   "01M752CX080N94QP3QATYBZN8A",
+   "01M752CX080N94QP3QATYBZN88"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7D",
+   "part_of",
+   "01M752CX09D8J5H3RRYE4KBD6J",
+   "01M752CX080N94QP3QATYBZN88"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7E",
+   "part_of",
+   "01M752CX09D8J5H3RRYE4KBD6K",
+   "01M752CX080N94QP3QATYBZN88"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7F",
+   "depends_on",
+   "01M752CX080N94QP3QATYBZN89",
+   "01M752CX09D8J5H3RRYE4KBD6J"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7G",
+   "blocks",
+   "01M752CX080N94QP3QATYBZN8A",
+   "01M752CX080N94QP3QATYBZN88"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7H",
+   "raises",
+   "01M752CX09D8J5H3RRYE4KBD6K",
+   "01M752CX080N94QP3QATYBZN8A"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7J",
+   "supports",
+   "01M752CX09D8J5H3RRYE4KBD6M",
+   "01M752CX073BV3D55R4CYWW71G"
+  ],
+  [
+   "01M752CX09D8J5H3RRYE4KBD7K",
+   "supports",
+   "01M752CX09D8J5H3RRYE4KBD6N",
+   "01M752CX080N94QP3QATYBZN82"
+  ]
+ ],
+ "queries": {
+  "find": [
+   "watr pump",
+   "oven",
+   "bicycle chians",
+   "-oven"
+  ],
+  "search": [
+   "water tank",
+   "sourdough",
+   "keeping plants from drying out",
+   "-oven",
+   "pump"
+  ]
+ },
+ "similar": {
+  "Water pump for the rain tank": "01M752CX073BV3D55R4CYWW71H",
+  "Deck oven with stone hearth": "01M752CX080N94QP3QATYBZN83",
+  "Replace worn bicycle chains": "01M752CX080N94QP3QATYBZN89"
+ },
+ "early": {
+  "argv": [
+   "search",
+   "water tank",
+   "--graph",
+   "searchfix",
+   "--limit",
+   "20"
+  ],
+  "env": {
+   "umx": 29,
+   "command": "search",
+   "status": "warning",
+   "data": {
+    "columns": [
+     "graph",
+     "address",
+     "policy",
+     "id",
+     "type",
+     "title",
+     "status",
+     "legs",
+     "exact",
+     "word_rank",
+     "bm25",
+     "word_field",
+     "coverage",
+     "vector_rank",
+     "cosine",
+     "vector_field",
+     "fused"
+    ],
+    "floors": [],
+    "rows": [
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN81",
+      "bm25": 2.4376030338366945,
+      "cosine": null,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.01639344262295082,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN81",
+      "legs": "word",
+      "policy": "open",
+      "status": "retired",
+      "title": "Old cracked water tank",
+      "type": "system",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "title",
+      "word_rank": 1
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71H",
+      "bm25": 2.366941944795277,
+      "cosine": null,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.016129032258064516,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71H",
+      "legs": "word",
+      "policy": "open",
+      "status": "open",
+      "title": "Water pump for the rain tank",
+      "type": "system",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "title",
+      "word_rank": 2
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71K",
+      "bm25": 1.1002319909988536,
+      "cosine": null,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.015873015873015872,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71K",
+      "legs": "word",
+      "policy": "open",
+      "status": "open",
+      "title": "Summer drought empties the tank",
+      "type": "risk",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "title",
+      "word_rank": 3
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN84",
+      "bm25": 0.8463813635104225,
+      "cosine": null,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.015625,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN84",
+      "legs": "word",
+      "policy": "open",
+      "status": "open",
+      "title": "Sourdough starter feeding",
+      "type": "topic",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "note",
+      "word_rank": 4
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71G",
+      "bm25": 0.8138282341446369,
+      "cosine": null,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.015384615384615384,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71G",
+      "legs": "word",
+      "policy": "open",
+      "status": "open",
+      "title": "Community garden irrigation",
+      "type": "project",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "note",
+      "word_rank": 5
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71J",
+      "bm25": 0.7836864476948354,
+      "cosine": null,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.015151515151515152,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71J",
+      "legs": "word",
+      "policy": "open",
+      "status": "agreed",
+      "title": "Irrigation schedule: dawn watering",
+      "type": "decision",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "note",
+      "word_rank": 6
+     }
+    ],
+    "total": 6,
+    "truncated": false,
+    "word_leg": null
+   },
+   "warnings": [
+    {
+     "code": "similarity_unavailable",
+     "message": "Similarity was not used for searchfix: it has no vectors yet. Those results are word matches only.",
+     "next": "umx docs get search"
+    }
+   ],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  }
+ },
+ "calls": {
+  "[\"search\", \"water tank\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "search",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "graph",
+     "address",
+     "policy",
+     "id",
+     "type",
+     "title",
+     "status",
+     "legs",
+     "exact",
+     "word_rank",
+     "bm25",
+     "word_field",
+     "coverage",
+     "vector_rank",
+     "cosine",
+     "vector_field",
+     "fused"
+    ],
+    "floors": [
+     {
+      "calibrated": true,
+      "floor": 0.4090000092983246,
+      "floor_run": "fc-2026-11-11-06902fe",
+      "floor_source": "calibrated",
+      "model": "text-embedding-3-large@256"
+     }
+    ],
+    "rows": [
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71H",
+      "bm25": 2.366941944795277,
+      "cosine": 0.6496283411979675,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03252247488101534,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71H",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Water pump for the rain tank",
+      "type": "system",
+      "vector_field": "title",
+      "vector_rank": 1,
+      "word_field": "title",
+      "word_rank": 2
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN81",
+      "bm25": 2.4376030338366945,
+      "cosine": 0.627995491027832,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03252247488101534,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN81",
+      "legs": "both",
+      "policy": "open",
+      "status": "retired",
+      "title": "Old cracked water tank",
+      "type": "system",
+      "vector_field": "@node",
+      "vector_rank": 2,
+      "word_field": "title",
+      "word_rank": 1
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71K",
+      "bm25": 1.1002319909988536,
+      "cosine": 0.5349315404891968,
+      "coverage": 0.5,
+      "exact": null,
+      "fused": 0.023809523809523808,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71K",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Summer drought empties the tank",
+      "type": "risk",
+      "vector_field": "title",
+      "vector_rank": 3,
+      "word_field": "title",
+      "word_rank": 3
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71G",
+      "bm25": 0.8138282341446369,
+      "cosine": 0.519099235534668,
+      "coverage": 0.5,
+      "exact": null,
+      "fused": 0.023317307692307693,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71G",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Community garden irrigation",
+      "type": "project",
+      "vector_field": "@node",
+      "vector_rank": 4,
+      "word_field": "note",
+      "word_rank": 5
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN80",
+      "bm25": null,
+      "cosine": 0.4394051432609558,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015384615384615384,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN80",
+      "legs": "vector",
+      "policy": "open",
+      "status": "ruled_out",
+      "title": "Hand watering with a hose",
+      "type": "option",
+      "vector_field": "title",
+      "vector_rank": 5,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN84",
+      "bm25": 0.8463813635104225,
+      "cosine": null,
+      "coverage": 0.5,
+      "exact": null,
+      "fused": 0.0078125,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN84",
+      "legs": "word",
+      "policy": "open",
+      "status": "open",
+      "title": "Sourdough starter feeding",
+      "type": "topic",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "note",
+      "word_rank": 4
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71J",
+      "bm25": 0.7836864476948354,
+      "cosine": null,
+      "coverage": 0.5,
+      "exact": null,
+      "fused": 0.007575757575757576,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71J",
+      "legs": "word",
+      "policy": "open",
+      "status": "agreed",
+      "title": "Irrigation schedule: dawn watering",
+      "type": "decision",
+      "vector_field": null,
+      "vector_rank": null,
+      "word_field": "note",
+      "word_rank": 6
+     }
+    ],
+    "total": 7,
+    "truncated": false,
+    "word_leg": null
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"node\", \"find\", \"watr pump\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "node find",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "id",
+     "type",
+     "title",
+     "status",
+     "score"
+    ],
+    "rows": [
+     {
+      "id": "01M752CX073BV3D55R4CYWW71H",
+      "score": 0.462,
+      "status": "open",
+      "title": "Water pump for the rain tank",
+      "type": "system"
+     }
+    ],
+    "total": 1,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"node\", \"find\", \"oven\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "node find",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "id",
+     "type",
+     "title",
+     "status",
+     "score"
+    ],
+    "rows": [
+     {
+      "id": "01M752CX080N94QP3QATYBZN83",
+      "score": 0.561,
+      "status": "open",
+      "title": "Deck oven with stone hearth",
+      "type": "system"
+     }
+    ],
+    "total": 1,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"node\", \"find\", \"bicycle chians\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "node find",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "id",
+     "type",
+     "title",
+     "status",
+     "score"
+    ],
+    "rows": [
+     {
+      "id": "01M752CX080N94QP3QATYBZN89",
+      "score": 0.558,
+      "status": "open",
+      "title": "Replace worn bicycle chains",
+      "type": "action"
+     },
+     {
+      "id": "01M752CX080N94QP3QATYBZN88",
+      "score": 0.41,
+      "status": "open",
+      "title": "Bicycle repair workshop",
+      "type": "project"
+     }
+    ],
+    "total": 2,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"node\", \"find\", \"-oven\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "node find",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "id",
+     "type",
+     "title",
+     "status",
+     "score"
+    ],
+    "rows": [
+     {
+      "id": "01M752CX080N94QP3QATYBZN83",
+      "score": 0.561,
+      "status": "open",
+      "title": "Deck oven with stone hearth",
+      "type": "system"
+     }
+    ],
+    "total": 1,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"search\", \"sourdough\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "search",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "graph",
+     "address",
+     "policy",
+     "id",
+     "type",
+     "title",
+     "status",
+     "legs",
+     "exact",
+     "word_rank",
+     "bm25",
+     "word_field",
+     "coverage",
+     "vector_rank",
+     "cosine",
+     "vector_field",
+     "fused"
+    ],
+    "floors": [
+     {
+      "calibrated": true,
+      "floor": 0.4090000092983246,
+      "floor_run": "fc-2026-11-11-06902fe",
+      "floor_source": "calibrated",
+      "model": "text-embedding-3-large@256"
+     }
+    ],
+    "rows": [
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN84",
+      "bm25": 1.408174126622741,
+      "cosine": 0.6033425331115723,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03278688524590164,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN84",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Sourdough starter feeding",
+      "type": "topic",
+      "vector_field": "title",
+      "vector_rank": 1,
+      "word_field": "title",
+      "word_rank": 1
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN83",
+      "bm25": 0.980415725260239,
+      "cosine": 0.5762612223625183,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03200204813108039,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN83",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Deck oven with stone hearth",
+      "type": "system",
+      "vector_field": "note",
+      "vector_rank": 2,
+      "word_field": "note",
+      "word_rank": 3
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN82",
+      "bm25": 1.021266380479415,
+      "cosine": 0.48028483986854553,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.031754032258064516,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN82",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Neighbourhood bakery ovens",
+      "type": "project",
+      "vector_field": "note",
+      "vector_rank": 4,
+      "word_field": "note",
+      "word_rank": 2
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN86",
+      "bm25": null,
+      "cosine": 0.5048338770866394,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015873015873015872,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN86",
+      "legs": "vector",
+      "policy": "open",
+      "status": "proposed",
+      "title": "Overnight proofing in the cool room",
+      "type": "decision",
+      "vector_field": "note",
+      "vector_rank": 3,
+      "word_field": null,
+      "word_rank": null
+     }
+    ],
+    "total": 4,
+    "truncated": false,
+    "word_leg": null
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"search\", \"keeping plants from drying out\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "search",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "graph",
+     "address",
+     "policy",
+     "id",
+     "type",
+     "title",
+     "status",
+     "legs",
+     "exact",
+     "word_rank",
+     "bm25",
+     "word_field",
+     "coverage",
+     "vector_rank",
+     "cosine",
+     "vector_field",
+     "fused"
+    ],
+    "floors": [
+     {
+      "calibrated": true,
+      "floor": 0.4090000092983246,
+      "floor_run": "fc-2026-11-11-06902fe",
+      "floor_source": "calibrated",
+      "model": "text-embedding-3-large@256"
+     }
+    ],
+    "rows": [
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71K",
+      "bm25": 1.4919874140278615,
+      "cosine": 0.5453371405601501,
+      "coverage": 0.2,
+      "exact": null,
+      "fused": 0.01940772078265468,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71K",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Summer drought empties the tank",
+      "type": "risk",
+      "vector_field": "note",
+      "vector_rank": 2,
+      "word_field": "note",
+      "word_rank": 1
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN7Z",
+      "bm25": null,
+      "cosine": 0.57471764087677,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.01639344262295082,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN7Z",
+      "legs": "vector",
+      "policy": "open",
+      "status": "open",
+      "title": "Which seeds suit dry beds?",
+      "type": "question",
+      "vector_field": "note",
+      "vector_rank": 1,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71M",
+      "bm25": null,
+      "cosine": 0.5424796342849731,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015873015873015872,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71M",
+      "legs": "vector",
+      "policy": "open",
+      "status": "done",
+      "title": "Spread mulch to keep soil moist",
+      "type": "action",
+      "vector_field": "@node",
+      "vector_rank": 3,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71J",
+      "bm25": null,
+      "cosine": 0.5106874704360962,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015625,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71J",
+      "legs": "vector",
+      "policy": "open",
+      "status": "agreed",
+      "title": "Irrigation schedule: dawn watering",
+      "type": "decision",
+      "vector_field": "note",
+      "vector_rank": 4,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71H",
+      "bm25": null,
+      "cosine": 0.49899229407310486,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015384615384615384,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71H",
+      "legs": "vector",
+      "policy": "open",
+      "status": "open",
+      "title": "Water pump for the rain tank",
+      "type": "system",
+      "vector_field": "note",
+      "vector_rank": 5,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71G",
+      "bm25": null,
+      "cosine": 0.49012571573257446,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015151515151515152,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71G",
+      "legs": "vector",
+      "policy": "open",
+      "status": "open",
+      "title": "Community garden irrigation",
+      "type": "project",
+      "vector_field": "title",
+      "vector_rank": 6,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN80",
+      "bm25": null,
+      "cosine": 0.4251025319099426,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.014925373134328358,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN80",
+      "legs": "vector",
+      "policy": "open",
+      "status": "ruled_out",
+      "title": "Hand watering with a hose",
+      "type": "option",
+      "vector_field": "title",
+      "vector_rank": 7,
+      "word_field": null,
+      "word_rank": null
+     }
+    ],
+    "total": 7,
+    "truncated": false,
+    "word_leg": null
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"search\", \"-oven\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "search",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "graph",
+     "address",
+     "policy",
+     "id",
+     "type",
+     "title",
+     "status",
+     "legs",
+     "exact",
+     "word_rank",
+     "bm25",
+     "word_field",
+     "coverage",
+     "vector_rank",
+     "cosine",
+     "vector_field",
+     "fused"
+    ],
+    "floors": [
+     {
+      "calibrated": true,
+      "floor": 0.4090000092983246,
+      "floor_run": "fc-2026-11-11-06902fe",
+      "floor_source": "calibrated",
+      "model": "text-embedding-3-large@256"
+     }
+    ],
+    "rows": [
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN83",
+      "bm25": 1.5077404549852509,
+      "cosine": 0.6354184150695801,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03278688524590164,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN83",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Deck oven with stone hearth",
+      "type": "system",
+      "vector_field": "title",
+      "vector_rank": 1,
+      "word_field": "title",
+      "word_rank": 1
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN87",
+      "bm25": 1.1598675847915527,
+      "cosine": 0.5548475384712219,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03200204813108039,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN87",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Why is the crust pale?",
+      "type": "question",
+      "vector_field": "note",
+      "vector_rank": 3,
+      "word_field": "note",
+      "word_rank": 2
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN82",
+      "bm25": null,
+      "cosine": 0.5637527704238892,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.016129032258064516,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN82",
+      "legs": "vector",
+      "policy": "open",
+      "status": "open",
+      "title": "Neighbourhood bakery ovens",
+      "type": "project",
+      "vector_field": "note",
+      "vector_rank": 2,
+      "word_field": null,
+      "word_rank": null
+     },
+     {
+      "address": "umx:searchfix/01M752CX080N94QP3QATYBZN86",
+      "bm25": null,
+      "cosine": 0.45439082384109497,
+      "coverage": null,
+      "exact": null,
+      "fused": 0.015625,
+      "graph": "searchfix",
+      "id": "01M752CX080N94QP3QATYBZN86",
+      "legs": "vector",
+      "policy": "open",
+      "status": "proposed",
+      "title": "Overnight proofing in the cool room",
+      "type": "decision",
+      "vector_field": "title",
+      "vector_rank": 4,
+      "word_field": null,
+      "word_rank": null
+     }
+    ],
+    "total": 4,
+    "truncated": false,
+    "word_leg": null
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"search\", \"pump\", \"--graph\", \"searchfix\", \"--limit\", \"20\"]": {
+   "umx": 29,
+   "command": "search",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "graph",
+     "address",
+     "policy",
+     "id",
+     "type",
+     "title",
+     "status",
+     "legs",
+     "exact",
+     "word_rank",
+     "bm25",
+     "word_field",
+     "coverage",
+     "vector_rank",
+     "cosine",
+     "vector_field",
+     "fused"
+    ],
+    "floors": [
+     {
+      "calibrated": true,
+      "floor": 0.4090000092983246,
+      "floor_run": "fc-2026-11-11-06902fe",
+      "floor_source": "calibrated",
+      "model": "text-embedding-3-large@256"
+     }
+    ],
+    "rows": [
+     {
+      "address": "umx:searchfix/01M752CX073BV3D55R4CYWW71H",
+      "bm25": 2.002755397196709,
+      "cosine": 0.5146130323410034,
+      "coverage": 1.0,
+      "exact": null,
+      "fused": 0.03278688524590164,
+      "graph": "searchfix",
+      "id": "01M752CX073BV3D55R4CYWW71H",
+      "legs": "both",
+      "policy": "open",
+      "status": "open",
+      "title": "Water pump for the rain tank",
+      "type": "system",
+      "vector_field": "title",
+      "vector_rank": 1,
+      "word_field": "title",
+      "word_rank": 1
+     }
+    ],
+    "total": 1,
+    "truncated": false,
+    "word_leg": null
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"neighbours\", \"01M752CX073BV3D55R4CYWW71H\", \"--graph\", \"searchfix\", \"--relation\", \"similar_to\", \"--direction\", \"out\", \"--limit\", \"100\"]": {
+   "umx": 29,
+   "command": "neighbours",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "way",
+     "relation",
+     "edge",
+     "score",
+     "derived",
+     "id",
+     "type",
+     "title",
+     "status"
+    ],
+    "rows": [
+     {
+      "derived": true,
+      "edge": null,
+      "edge_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "from": "01M752CX073BV3D55R4CYWW71H",
+      "from_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "id": "01M752CX073BV3D55R4CYWW71G",
+      "relation": "similar_to",
+      "score": 0.7873,
+      "status": "open",
+      "title": "Community garden irrigation",
+      "to": "01M752CX073BV3D55R4CYWW71G",
+      "to_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "type": "project",
+      "way": "out"
+     },
+     {
+      "derived": true,
+      "edge": null,
+      "edge_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "from": "01M752CX073BV3D55R4CYWW71H",
+      "from_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "id": "01M752CX080N94QP3QATYBZN81",
+      "relation": "similar_to",
+      "score": 0.701,
+      "status": "retired",
+      "title": "Old cracked water tank",
+      "to": "01M752CX080N94QP3QATYBZN81",
+      "to_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "type": "system",
+      "way": "out"
+     },
+     {
+      "derived": true,
+      "edge": null,
+      "edge_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "from": "01M752CX073BV3D55R4CYWW71H",
+      "from_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "id": "01M752CX073BV3D55R4CYWW71K",
+      "relation": "similar_to",
+      "score": 0.6369,
+      "status": "open",
+      "title": "Summer drought empties the tank",
+      "to": "01M752CX073BV3D55R4CYWW71K",
+      "to_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "type": "risk",
+      "way": "out"
+     }
+    ],
+    "similarity": {
+     "floor": 0.6133,
+     "floor_calibrated": true,
+     "floor_run": "fc-2026-11-11-06902fe",
+     "floor_source": "calibrated",
+     "k": 10,
+     "model": "text-embedding-3-large@256"
+    },
+    "total": 3,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"neighbours\", \"01M752CX080N94QP3QATYBZN83\", \"--graph\", \"searchfix\", \"--relation\", \"similar_to\", \"--direction\", \"out\", \"--limit\", \"100\"]": {
+   "umx": 29,
+   "command": "neighbours",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "way",
+     "relation",
+     "edge",
+     "score",
+     "derived",
+     "id",
+     "type",
+     "title",
+     "status"
+    ],
+    "rows": [
+     {
+      "derived": true,
+      "edge": null,
+      "edge_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "from": "01M752CX080N94QP3QATYBZN83",
+      "from_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "id": "01M752CX080N94QP3QATYBZN82",
+      "relation": "similar_to",
+      "score": 0.7331,
+      "status": "open",
+      "title": "Neighbourhood bakery ovens",
+      "to": "01M752CX080N94QP3QATYBZN82",
+      "to_graph": "01M752CWSYZ3P0MA1VK62ZJMK9",
+      "type": "project",
+      "way": "out"
+     }
+    ],
+    "similarity": {
+     "floor": 0.6133,
+     "floor_calibrated": true,
+     "floor_run": "fc-2026-11-11-06902fe",
+     "floor_source": "calibrated",
+     "k": 10,
+     "model": "text-embedding-3-large@256"
+    },
+    "total": 1,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  },
+  "[\"neighbours\", \"01M752CX080N94QP3QATYBZN89\", \"--graph\", \"searchfix\", \"--relation\", \"similar_to\", \"--direction\", \"out\", \"--limit\", \"100\"]": {
+   "umx": 29,
+   "command": "neighbours",
+   "status": "ok",
+   "data": {
+    "columns": [
+     "way",
+     "relation",
+     "edge",
+     "score",
+     "derived",
+     "id",
+     "type",
+     "title",
+     "status"
+    ],
+    "rows": [],
+    "similarity": {
+     "floor": 0.6133,
+     "floor_calibrated": true,
+     "floor_run": "fc-2026-11-11-06902fe",
+     "floor_source": "calibrated",
+     "k": 10,
+     "model": "text-embedding-3-large@256"
+    },
+    "total": 0,
+    "truncated": false
+   },
+   "warnings": [],
+   "errors": [],
+   "untrusted": [
+    "data",
+    "warnings[].candidates",
+    "errors[].candidates"
+   ]
+  }
+ }
+}

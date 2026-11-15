@@ -1,0 +1,38 @@
+# floor-calibration probe mode, 2026-11-11 ~04:35 UTC, text-embedding-3-large@256 (instance azure). The probe phrases
+# ran against several private graphs; only counts are recorded, by probe line number. Top 10 per probe.
+probe line 1: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 5 vector
+probe line 2: floor 0.5: 10 hits, 2 vector; floor 0.409: 10 hits, 10 vector
+probe line 3: floor 0.5: 10 hits, 6 vector; floor 0.409: 10 hits, 10 vector
+probe line 4: floor 0.5: 0 hits, 0 vector; floor 0.409: 0 hits, 0 vector
+probe line 5: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 10 vector
+probe line 6: floor 0.5: 10 hits, 8 vector; floor 0.409: 10 hits, 10 vector
+probe line 7: floor 0.5: 10 hits, 2 vector; floor 0.409: 10 hits, 10 vector
+probe line 8: floor 0.5: 10 hits, 3 vector; floor 0.409: 10 hits, 10 vector
+probe line 9: floor 0.5: 1 hits, 1 vector; floor 0.409: 7 hits, 7 vector
+probe line 10: floor 0.5: 10 hits, 1 vector; floor 0.409: 10 hits, 10 vector
+probe line 11: floor 0.5: 10 hits, 3 vector; floor 0.409: 10 hits, 10 vector
+probe line 12: floor 0.5: 10 hits, 2 vector; floor 0.409: 10 hits, 10 vector
+probe line 13: floor 0.5: 10 hits, 2 vector; floor 0.409: 10 hits, 10 vector
+probe line 14: floor 0.5: 0 hits, 0 vector; floor 0.409: 2 hits, 2 vector
+probe line 15: floor 0.5: 10 hits, 1 vector; floor 0.409: 10 hits, 10 vector
+probe line 16: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 10 vector
+probe line 17: floor 0.5: 10 hits, 4 vector; floor 0.409: 10 hits, 10 vector
+probe line 18: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 10 vector
+probe line 19: floor 0.5: 10 hits, 1 vector; floor 0.409: 10 hits, 10 vector
+probe line 20: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 10 vector
+probe line 21: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 3 vector
+probe line 22: floor 0.5: 10 hits, 1 vector; floor 0.409: 10 hits, 10 vector
+probe line 23: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 7 vector
+probe line 24: floor 0.5: 3 hits, 0 vector; floor 0.409: 4 hits, 2 vector
+probe line 25: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 6 vector
+probe line 26: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 10 vector
+probe line 27: floor 0.5: 10 hits, 0 vector; floor 0.409: 10 hits, 1 vector
+probe line 28: floor 0.5: 8 hits, 0 vector; floor 0.409: 9 hits, 4 vector
+probe line 29: floor 0.5: 1 hits, 1 vector; floor 0.409: 10 hits, 10 vector
+probe line 30: floor 0.5: 0 hits, 0 vector; floor 0.409: 2 hits, 2 vector
+probe line 31: floor 0.5: 0 hits, 0 vector; floor 0.409: 2 hits, 2 vector
+probe line 32: floor 0.5: 0 hits, 0 vector; floor 0.409: 4 hits, 4 vector
+probe line 33: floor 0.5: 1 hits, 0 vector; floor 0.409: 1 hits, 0 vector
+probe line 34: floor 0.5: 10 hits, 1 vector; floor 0.409: 10 hits, 10 vector
+floor 0.5: 16 of 34 probes have at least one vector row
+floor 0.409: 32 of 34 probes have at least one vector row

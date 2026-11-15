@@ -1,0 +1,2 @@
+# umx-graph depends on umx-query: the dependency must point inward, never back.
+expect = ["r-inward"]

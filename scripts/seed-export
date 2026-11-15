@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# D72i L3: export one commit of this repository as the tree of the public seed, with no private git objects.
+#
+#   scripts/seed-export <SOURCE_SHA> <STAGE> <CONTROL>
+#
+# SOURCE_SHA  a commit of the repository this runs from.
+# STAGE       a folder that does not exist yet, whose parent is not inside any git repository. It is created, filled
+#             with the tree, initialised as a NEW repository (empty template, no global or system git config) and
+#             staged with `git add --all --force`. It is NOT committed here: L7 builds the one parentless commit.
+# CONTROL     an existing folder for the receipts: seed-files.txt (every staged path, sorted), seed-listing-proof.txt
+#             (counts of staged entries under each excluded tree and pattern) and seed-prd-transform.json.
+#
+# What it does: `git archive` of SOURCE_SHA (no .git, no history), unpacked with Python's `data` tar filter; a link or
+# special file refuses the export. It drops docs/plans, docs/project/workshops and docs/project/workstreams (D72d),
+# any path with a `briefs` or `.harness` component, and every __pycache__ folder and .pyc file. It clears
+# `delivered_by` at every depth of docs/project/prds/*.dd.json in the STAGE copy only (those values are private PR
+# numbers) and rebuilds the views with ddocs. Output is counts and pass/fail: no path of a dropped file is printed.
+# Exit 0 only when the listing proof holds; run scripts/seed-gate on STAGE next.
+set -euo pipefail
+
+die() {
+    echo "seed-export: $1" >&2
+    exit "${2:-1}"
+}
+
+[ "$#" = 3 ] || die "usage: scripts/seed-export <SOURCE_SHA> <STAGE> <CONTROL>" 64
+sha=$1 stage=$2 control=$3
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || die "run it inside the repository to export from"
+full=$(git -C "$repo" rev-parse --verify --quiet "$sha^{commit}") || die "SOURCE_SHA '$sha' is not a commit of this repository; fetch it first"
+[ -d "$control" ] || die "CONTROL '$control' is not an existing folder; mkdir it first"
+[ ! -e "$stage" ] && [ ! -L "$stage" ] || die "STAGE already exists; the export needs a new folder, so remove it yourself if it is a failed attempt"
+parent=$(cd "$(dirname "$stage")" 2>/dev/null && pwd -P) || die "the parent of STAGE does not exist"
+if git -C "$parent" rev-parse --git-dir >/dev/null 2>&1; then
+    die "the parent of STAGE is inside a git repository; pick a folder outside every repository"
+fi
+stage="$parent/$(basename "$stage")"
+case "$stage/" in "$repo"/*) die "STAGE is inside the repository being exported" ;; esac
+
+# No config reaches the new repository: not the user's, not the system's.
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+
+mkdir -m 0700 "$stage"
+# A refused or failed export leaves no half-made STAGE behind: this run made the folder, so it removes only that one.
+template=""
+done_ok=0
+cleanup() {
+    [ -z "$template" ] || rm -rf "$template"
+    if [ "$done_ok" = 0 ] && [ -n "$stage" ] && [ -d "$stage" ]; then rm -rf "$stage"; fi
+}
+trap cleanup EXIT
+python3 -I - "$repo" "$full" "$stage" "$control" <<'EXPORT'
+import pathlib
+import subprocess
+import sys
+import tarfile
+
+repo, sha, stage, control = sys.argv[1:]
+EXCLUDED_TREES = ("docs/plans", "docs/project/workshops", "docs/project/workstreams")
+EXCLUDED_PARTS = ("briefs", ".harness", "__pycache__", ".git")
+
+
+def dropped(name):
+    parts = pathlib.PurePosixPath(name).parts
+    if any(name == tree or name.startswith(tree + "/") for tree in EXCLUDED_TREES):
+        return True
+    return any(part in EXCLUDED_PARTS for part in parts) or name.endswith(".pyc")
+
+
+archive = pathlib.Path(stage + ".source.tar")
+with archive.open("xb") as target:
+    subprocess.run(["git", "-C", repo, "archive", "--format=tar", sha], stdout=target, check=True)
+try:
+    kept, drops = [], 0
+    with tarfile.open(archive) as source:
+        for member in source.getmembers():
+            name = member.name.rstrip("/")
+            parts = pathlib.PurePosixPath(name).parts
+            if member.name.startswith("/") or ".." in parts:
+                sys.exit("seed-export: the archive holds an unsafe path; refused")
+            if not (member.isdir() or member.isfile()):
+                # Links and special files refuse the whole export: a source link needs a reviewed decision.
+                sys.exit("seed-export: the tree holds a link or special file; refused (nothing was exported)")
+            if dropped(name):
+                drops += 1
+            else:
+                kept.append(member)
+        source.extractall(stage, members=kept, filter="data")
+finally:
+    archive.unlink()
+print(f"seed-export: unpacked {len(kept)} entries, dropped {drops}")
+EXPORT
+
+python3 -I - "$stage" "$control" <<'TRANSFORM'
+import json
+import pathlib
+import sys
+
+stage, control = map(pathlib.Path, sys.argv[1:])
+
+
+def clear(value):
+    removed = 0
+    if isinstance(value, dict):
+        if "delivered_by" in value:
+            del value["delivered_by"]
+            removed += 1
+        for item in list(value.values()):
+            removed += clear(item)
+    elif isinstance(value, list):
+        for item in value:
+            removed += clear(item)
+    return removed
+
+
+counts = {}
+for path in sorted((stage / "docs/project/prds").glob("*.dd.json")):
+    value = json.loads(path.read_text())
+    count = clear(value)
+    if count:
+        path.write_text(json.dumps(value, ensure_ascii=False, indent="\t") + "\n")
+    counts[str(path.relative_to(stage))] = count
+(control / "seed-prd-transform.json").write_text(json.dumps(counts, indent=2) + "\n")
+print("seed-export: delivered_by cleared:", sum(counts.values()), "in", len(counts), "PRD file(s)")
+TRANSFORM
+
+(
+    cd "$stage"
+    for prd in docs/project/prds/*.dd.json; do
+        [ -e "$prd" ] || continue
+        ddocs validate "$prd" >/dev/null || die "ddocs validate failed on a PRD after the transform; run it by hand in STAGE for the reason"
+        ddocs build "$prd" >/dev/null || die "ddocs build failed on a PRD after the transform; run it by hand in STAGE for the reason"
+    done
+    ddocs doctor --path docs/project >/dev/null || die "ddocs doctor is not clean after the transform; run it by hand in STAGE for the reason"
+)
+
+template=$(mktemp -d)
+git init -q --template="$template" --initial-branch=main "$stage"
+# --force: a tracked file that an exported .gitignore matches must not drop out of the seed unseen.
+git -C "$stage" add --all --force
+
+git -C "$stage" ls-files -z | LC_ALL=C sort -z | tr '\0' '\n' >"$control/seed-files.txt"
+
+python3 -I - "$stage" "$control" <<'PROOF'
+import pathlib
+import re
+import subprocess
+import sys
+
+stage, control = sys.argv[1:]
+files = subprocess.check_output(["git", "-C", stage, "ls-files", "-z"]).split(b"\0")[:-1]
+names = [f.decode("utf-8", "surrogateescape") for f in files]
+rows = []
+for tree in ("docs/plans", "docs/project/workshops", "docs/project/workstreams"):
+    rows.append((f"under {tree}", sum(1 for n in names if n == tree or n.startswith(tree + "/"))))
+rows.append(("with a briefs component", sum(1 for n in names if "briefs" in n.split("/"))))
+rows.append(("with a .harness component", sum(1 for n in names if ".harness" in n.split("/"))))
+rows.append(("in a __pycache__ folder or a .pyc file", sum(1 for n in names if "__pycache__" in n.split("/") or n.endswith(".pyc"))))
+ok = all(count == 0 for _, count in rows)
+lines = [f"{label}: {count}" for label, count in rows]
+lines.append(f"staged entries: {len(names)}")
+lines.append("listing proof: " + ("PASS" if ok else "FAIL"))
+pathlib.Path(control, "seed-listing-proof.txt").write_text("\n".join(lines) + "\n")
+print("\n".join("seed-export: " + l for l in lines))
+sys.exit(0 if ok else 1)
+PROOF
+done_ok=1

@@ -1,0 +1,2 @@
+# R251 B1: std::fs::File imported under another name, then opened.
+expect = ["r-fs-in-adapters"]

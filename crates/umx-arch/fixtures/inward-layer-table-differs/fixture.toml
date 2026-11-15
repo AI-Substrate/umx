@@ -1,0 +1,3 @@
+# Same rule ids, different policy: the blueprint's d-4 table no longer equals the render.
+expect = ["r-inward"]
+layer_table = "umx-core: umx-graph; umx-graph: umx-core"

@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time spine replay: visualisation exemplar</title>
+<style>
+  :root {
+    --bg: #04080c; --bg2: #07111a; --ink: #cfeeff; --ink-dim: #6f97ad; --chrome: #1b3d50; --chrome-hi: #2f6b89;
+    --accent: #ffb454; --agent: #4da3ff; --panel: rgba(6, 16, 24, 0.82); --grid: rgba(47, 107, 137, 0.10);
+  }
+  html[data-theme="light"] {
+    --bg: #eef1f2; --bg2: #e4e9eb; --ink: #1b2a33; --ink-dim: #5d727e; --chrome: #b7c3c9; --chrome-hi: #7f949f;
+    --accent: #985300; --agent: #1463c9; --panel: rgba(246, 248, 249, 0.90); --grid: rgba(95, 120, 133, 0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(120% 90% at 50% 40%, var(--bg2), var(--bg));
+    color: var(--ink); overflow: hidden;
+    font: 11px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.02em;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .panel {
+    position: fixed; background: var(--panel); border: 1px solid var(--chrome); padding: 10px 12px; z-index: 2;
+  }
+  .panel::before, .panel::after {
+    content: ""; position: absolute; width: 9px; height: 9px; border: 1px solid var(--chrome-hi); pointer-events: none;
+  }
+  .panel::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+  .panel::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+  .k { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
+  .v { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .big { font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; }
+  #title { top: 14px; left: 14px; width: 400px; }
+  #read { top: 14px; right: 14px; width: 270px; }
+  #read .row, #now .row { display: flex; justify-content: space-between; gap: 12px; }
+  #now { top: 162px; right: 14px; width: 270px; }
+  #detail { top: 330px; right: 14px; width: 270px; display: none; }
+  #detail .ttl { font: 13px/1.35 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0; margin: 4px 0 6px; }
+  #legend { left: 14px; top: 100px; width: 210px; }
+  #legend .row { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.hollow { background: transparent !important; border: 1.5px solid var(--ink-dim); }
+  #controls { left: 14px; bottom: 112px; display: flex; gap: 6px; padding: 8px; }
+  button {
+    font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--chrome-hi);
+    padding: 5px 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  #agent { left: 14px; bottom: 164px; width: 560px; display: none; border-color: var(--agent); }
+  #agent .cmd { color: var(--agent); font-size: 12px; margin-top: 2px; }
+  #agent .cmd::after { content: "▌"; animation: blink 1s steps(2) 6; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #note {
+    position: fixed; display: none; z-index: 3; max-width: 300px; background: var(--panel);
+    border: 1px solid var(--agent); padding: 8px 10px;
+    font: 12px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0;
+  }
+  #note .k { color: var(--agent); display: block; margin-bottom: 2px; font-family: ui-monospace, Menlo, monospace; }
+  #scrub { left: 14px; right: 14px; bottom: 14px; height: 86px; padding: 8px 10px 6px; cursor: ew-resize; user-select: none; }
+  #bands { position: absolute; left: 10px; right: 10px; top: 22px; bottom: 20px; display: flex; align-items: flex-end; }
+  #bands .b { height: 100%; border-left: 1px solid var(--chrome); position: relative; display: flex; align-items: flex-end; }
+  #bands .b:last-child { border-right: 1px solid var(--chrome); }
+  #bands .bar { width: 100%; background: var(--chrome-hi); opacity: 0.55; }
+  #bands .b.cur .bar { background: var(--accent); opacity: 0.9; }
+  #bands .t { position: absolute; bottom: -16px; left: 2px; color: var(--ink-dim); font-size: 9px; white-space: nowrap; }
+  #cursor { position: absolute; top: 18px; bottom: 16px; width: 1px; background: var(--accent); pointer-events: none; }
+  #scrub .head { display: flex; justify-content: space-between; }
+  #help { position: fixed; left: 50%; transform: translateX(-50%); top: 14px; color: var(--ink-dim); z-index: 2; text-align: center; }
+  #card { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 3; text-align: center; pointer-events: none; display: none; }
+  #card .t { font-size: 26px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 18px var(--accent); white-space: nowrap; }
+  html[data-theme="light"] #card .t { text-shadow: none; }
+  #card .s { color: var(--ink-dim); letter-spacing: 0.34em; text-transform: uppercase; margin-top: 6px; }
+  #card.show { display: block; animation: card 3s ease-out forwards; }
+  @keyframes card { 0% { opacity: 0; letter-spacing: 0.7em; } 14% { opacity: 1; letter-spacing: 0.02em; } 82% { opacity: 1; } 100% { opacity: 0; } }
+  #lock { position: fixed; display: none; z-index: 3; width: 340px; background: var(--panel); border: 1px solid var(--accent); padding: 8px 10px; }
+  #lock .k:first-child { color: var(--accent); }
+  #lock .ttl { font: 14px/1.35 -apple-system, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0; margin: 4px 0; min-height: 38px; }
+  #log { left: 14px; bottom: 164px; width: 560px; height: 124px; display: none; overflow: hidden; }
+  #log-lines div { white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--ink-dim); }
+  #log-lines div:last-child { color: var(--ink); }
+  #rec { position: fixed; top: 44px; left: 50%; transform: translateX(-50%); z-index: 3; display: none; color: var(--accent); letter-spacing: 0.3em; }
+  body.replay::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.20) 0 1px, transparent 1px 3px), radial-gradient(120% 95% at 50% 50%, transparent 55%, rgba(0,0,0,0.6)); }
+  html[data-theme="light"] body.replay::after { background: repeating-linear-gradient(0deg, rgba(0,0,0,0.04) 0 1px, transparent 1px 3px); }
+  body.replay #legend, body.replay #help, body.replay #detail, body.replay #title { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { #agent .cmd::after { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="panel" id="title">
+  <div class="k">Concept space // visualisation exemplar</div>
+  <div class="big" id="galias"></div>
+  <div class="k" id="gsub"></div>
+</div>
+
+<div class="panel" id="legend">
+  <div class="k">Around the spine</div>
+  <div id="fams"></div>
+  <div class="k" style="margin-top:8px">How it was placed</div>
+  <div class="row"><span class="dot" style="background:var(--ink)"></span><span>by data (a link says so)</span></div>
+  <div class="row"><span class="dot hollow"></span><span>by rule (sits with neighbours)</span></div>
+  <div class="row"><span class="dot" style="background:var(--agent)"></span><span>agent highlight</span></div>
+</div>
+
+<div id="help" class="k">1 strip · 2 funnel · 3 flight · R replay · ← → travel · drag to look · T theme · L links · A agent demo</div>
+<div id="rec" class="k"></div>
+<div id="card"><div class="t" id="card-t"></div><div class="s" id="card-s"></div></div>
+<div class="panel" id="lock"><div class="k" id="lock-k"></div><div class="ttl" id="lock-t"></div><div class="k" id="lock-s"></div></div>
+<div class="panel" id="log"><div class="k">Event log · nodes as they are raised</div><div id="log-lines"></div></div>
+
+<div class="panel" id="read">
+  <div class="row"><span class="k">Nodes / links</span><span class="v" id="r-size"></span></div>
+  <div class="row"><span class="k">On the spine so far</span><span class="v" id="r-sofar"></span></div>
+  <div class="row"><span class="k">Placed by data</span><span class="v" id="r-data"></span></div>
+  <div class="row"><span class="k">Placed by rule</span><span class="v" id="r-rule"></span></div>
+  <div class="row"><span class="k">Off this axis</span><span class="v" id="r-off"></span></div>
+  <div class="row"><span class="k">In more than one band</span><span class="v" id="r-multi"></span></div>
+  <div class="row"><span class="k">Camera</span><span class="v" id="r-cam"></span></div>
+</div>
+
+<div class="panel" id="now">
+  <div class="k">You are here</div>
+  <div class="v" id="n-title" style="font-size:12px"></div>
+  <div class="row"><span class="k">Clock</span><span class="v" id="n-clock"></span></div>
+  <div class="row"><span class="k">Nodes in band</span><span class="v" id="n-count"></span></div>
+  <div id="n-fams"></div>
+</div>
+
+<div class="panel" id="detail">
+  <div class="k" id="d-kind"></div>
+  <div class="ttl" id="d-title"></div>
+  <div class="row"><span class="k">Placed</span> <span class="v" id="d-placed"></span></div>
+  <div class="row"><span class="k">Links</span> <span class="v" id="d-links"></span></div>
+</div>
+
+<div class="panel" id="agent">
+  <div class="k">Agent · via CLI (placeholder verbs)</div>
+  <div class="cmd" id="a-cmd"></div>
+</div>
+<div id="note"><span class="k">Agent note</span><span id="note-text"></span></div>
+
+<div class="panel" id="controls">
+  <button data-mode="strip">Strip</button>
+  <button data-mode="funnel">Funnel</button>
+  <button data-mode="flight">Flight</button>
+  <button id="b-replay">Replay</button>
+  <button id="b-links">Links</button>
+  <button id="b-theme">Theme</button>
+  <button id="b-demo">Agent demo</button>
+</div>
+
+<div class="panel" id="scrub">
+  <div class="head"><span class="k">Time spine · bar height is nodes in the band</span><span class="k" id="s-clock"></span></div>
+  <div id="bands"></div>
+  <div id="cursor"></div>
+</div>
+
+<script>
+// Loads one data file that sits beside this page: sample-data.js by default, or #data=<name>.js for your own export.
+(function () {
+  const src = new URLSearchParams(location.hash.slice(1)).get("data") || "sample-data.js";
+  const fail = why => { document.body.textContent = why; };
+  if (!/^[A-Za-z0-9_.-]+\.js$/.test(src)) return fail("The data file must be a .js file in this folder.");
+  const el = document.createElement("script"); el.src = src;
+  el.onload = () => (window.POC_DATA ? boot() : fail(src + " did not set window.POC_DATA."));
+  el.onerror = () => fail("Could not load " + src + ". Run export-graph.py or make-sample.py first.");
+  document.head.append(el);
+})();
+</script>
+<script>
+// An exemplar, not product code. Our own perspective sums on a 2D canvas: no libraries, no network, text only.
+function boot() {
+"use strict";
+const D = window.POC_DATA, N = D.nodes, E = D.edges;
+const CFG = Object.assign({
+  bandType: "segment",                       // the node type whose nodes are the bands along the spine
+  alongLabel: "time (raised in a segment)",  // shown in the title block
+  placeRelations: ["raised_in", "part_of"],  // a link of this kind to a band node places a node by data
+  structuralRelations: ["raised_in", "attended", "member_of", "works_for", "sourced_from", "mentions", "raised_by", "owns"], // left out of ribbons
+  shelfTypes: ["meeting", "project"],        // never placed by rule; they are the spine's parents
+}, D.config || {});
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.hash.slice(1));
+const STILL = params.has("still");
+
+// ---------- small maths ----------
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const mix = (a, b, t) => a + (b - a) * t;
+const mix3 = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+function hash(i, salt) { let t = (i * 2654435761 + salt * 1013904223) >>> 0; t ^= t >>> 15; t = Math.imul(t, 2246822519); t ^= t >>> 13; t = Math.imul(t, 3266489917); t ^= t >>> 16; return (t >>> 0) / 4294967296; }
+let hasClock = true; // false when the band nodes carry no HH:MM start and end; the bands are then numbered
+const mins = s => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s)); return m ? (+m[1]) * 60 + (+m[2]) : NaN; };
+const clock = m => { if (!hasClock) return "#" + (Math.floor(m + 1e-9) + 1); const t = Math.round(m); return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"); };
+
+// ---------- the pivot: along = time through segments, around = kind of thing ----------
+const FAM_COLOURS = [{ dark: "#3fe0c5", light: "#0d8a78" }, { dark: "#ff6f6f", light: "#c0392f" }, { dark: "#b596ff", light: "#6247c0" }, { dark: "#ffc861", light: "#a8720a" }];
+const DEFAULT_FAMS = [
+  { name: "Options and mechanisms", types: ["option", "mechanism", "capability"] },
+  { name: "Problems and questions", types: ["problem", "tension", "question", "criterion", "risk"] },
+  { name: "Decisions and lessons", types: ["decision", "action", "lesson", "precedent", "topic"] },
+  { name: "People and sources", types: ["person", "team", "organisation", "document", "transcript", "board", "system", "place", "project", "meeting"] },
+];
+// up to four groups, one per quadrant; a type in no group goes in the last one
+const FAMS = (D.families && D.families.length ? D.families : DEFAULT_FAMS).slice(0, 4).map((f, i) => Object.assign({}, f, FAM_COLOURS[i]));
+const famOf = t => { const i = FAMS.findIndex(f => f.types.includes(t)); return i < 0 ? FAMS.length - 1 : i; };
+
+// Bands: the band nodes in order. Order is the step number when there is one, else the start time, else file order.
+const segs = N.map((n, i) => ({ n, i })).filter(x => x.n.t === CFG.bandType);
+hasClock = segs.length > 0 && segs.every(x => mins(x.n.b) > mins(x.n.a));
+const stepped = segs.filter(x => x.n.step != null).sort((a, b) => a.n.step - b.n.step), loose = segs.filter(x => x.n.step == null);
+const main = !hasClock ? stepped.concat(loose) : stepped.length ? stepped : loose.slice().sort((a, b) => mins(a.n.a) - mins(b.n.a));
+const subs = hasClock && stepped.length ? loose : []; // a band node with a time but no step sits inside the band that contains it
+const bands = main.map((x, k) => ({ k, i: x.i, title: x.n.n, t0: hasClock ? mins(x.n.a) : k, t1: hasClock ? mins(x.n.b) : k + 1, count: 0, fam: [0, 0, 0, 0] }));
+const segBand = new Map(); // band node index -> {band, f0, f1}
+main.forEach((x, k) => segBand.set(x.i, { band: k, f0: 0, f1: 1 }));
+subs.forEach(x => {
+  const a = mins(x.n.a), b = mins(x.n.b);
+  const p = bands.find(B => a >= B.t0 && a < B.t1) || bands[0];
+  segBand.set(x.i, { band: p.k, f0: (a - p.t0) / (p.t1 - p.t0), f1: (b - p.t0) / (p.t1 - p.t0) });
+});
+const PLACE = new Set(CFG.placeRelations), SHELF = new Set(CFG.shelfTypes);
+
+const adj = N.map(() => []);
+E.forEach(([a, b, t]) => { adj[a].push([b, t]); adj[b].push([a, t]); });
+const P = N.map((n, i) => ({ i, n, fam: famOf(n.t), by: "off", band: -1, bands: [], f: 0.5, u: 0, deg: adj[i].length, beat: false, seg: n.t === CFG.bandType }));
+
+// placed by data: a placing link (CFG.placeRelations) to a band node
+E.forEach(([a, b, t]) => {
+  if (PLACE.has(t) && segBand.has(b) && !P[a].seg) {
+    const sb = segBand.get(b); P[a].by = "data";
+    if (!P[a].bands.includes(sb.band)) P[a].bands.push(sb.band);
+    if (P[a].band < 0 || sb.band < P[a].band) { P[a].band = sb.band; P[a].sub = sb; }
+  }
+});
+P.forEach(p => { p.bands.sort((a, b) => a - b); if (p.by === "data") bands[p.band].count++; });
+// order inside a band: by where the evidence sits in the transcript, when we have it
+bands.forEach(B => {
+  const inB = P.filter(p => p.by === "data" && p.band === B.k);
+  const keyed = inB.filter(p => p.n.ev).sort((a, b) => (a.n.ev[0] + String(a.n.ev[1]).padStart(7, "0")).localeCompare(b.n.ev[0] + String(b.n.ev[1]).padStart(7, "0")));
+  keyed.forEach((p, r) => { p.f = (r + 0.5) / keyed.length; });
+  inB.filter(p => !p.n.ev).forEach(p => { p.f = hash(p.i, 7); });
+  inB.forEach(p => { if (p.sub && (p.sub.f0 > 0 || p.sub.f1 < 1)) p.f = mix(p.sub.f0, p.sub.f1, hash(p.i, 9)); });
+});
+// band widths: part clock time, part how much is in it
+const totT = bands.reduce((s, B) => s + (B.t1 - B.t0), 0), totC = bands.reduce((s, B) => s + B.count + 3, 0);
+let acc = 0;
+bands.forEach(B => { B.w = 0.4 * (B.t1 - B.t0) / totT + 0.6 * (B.count + 3) / totC; B.u0 = acc; acc += B.w; B.u1 = acc; });
+const bandAt = u => bands.find(B => u >= B.u0 && u < B.u1) || bands[u < 0 ? 0 : bands.length - 1];
+P.forEach(p => {
+  if (p.seg) { const sb = segBand.get(p.i), B = bands[sb.band]; p.band = sb.band; p.by = "spine"; p.u = mix(B.u0, B.u1, (sb.f0 + sb.f1) / 2); p.main = sb.f0 === 0 && sb.f1 === 1; }
+  else if (p.by === "data") { const B = bands[p.band]; p.u = mix(B.u0, B.u1, 0.06 + 0.88 * p.f); }
+});
+// placed by rule: no link of its own, so it sits at the middle of its placed neighbours
+P.forEach(p => {
+  if (p.by !== "off" || SHELF.has(p.n.t)) return;
+  const us = adj[p.i].map(([j]) => P[j]).filter(q => q.by === "data").map(q => q.u).sort((a, b) => a - b);
+  if (us.length) { p.ruleU = us[Math.floor(us.length / 2)]; }
+});
+P.forEach(p => { if (p.ruleU != null) { p.by = "rule"; p.u = p.ruleU; p.band = bandAt(p.u).k; bands[p.band].count++; } });
+P.forEach(p => { if (p.by === "data" || p.by === "rule") bands[p.band].fam[p.fam]++; });
+// beats: a few per band get a label on a leader
+bands.forEach(B => {
+  const c = P.filter(p => p.by === "data" && p.band === B.k)
+    .map(p => ({ p, s: p.deg + (p.n.s === "agreed" ? 8 : 0) + (p.n.s === "contested" ? 5 : 0) + (p.n.t === "decision" ? 3 : 0) }))
+    .sort((a, b) => b.s - a.s);
+  c.slice(0, B.count >= 20 ? 3 : B.count >= 6 ? 2 : 1).forEach(x => { x.p.beat = true; });
+});
+const placedTotal = bands.reduce((s, B) => s + B.count, 0);
+let run = 0; bands.forEach(B => { B.c0 = run / placedTotal; run += B.count; B.c1 = run / placedTotal; });
+const shelf = P.filter(p => p.by === "off");
+
+// ---------- the scene: one set of placements, used by every camera ----------
+const L = 120, R0 = 4.5, R1 = 21, LANE = 8.5, AXIS_Y = -2 * LANE - 5;
+const cum = u => { const B = bandAt(clamp(u, 0, 0.9999)); return mix(B.c0, B.c1, clamp((u - B.u0) / (B.u1 - B.u0), 0, 1)); };
+const radius = u => R0 + (R1 - R0) * Math.pow(cum(u), 0.75);
+const spine = u => [L * (u - 0.5), 0.07 * L * Math.sin(u * 3.6 + 0.3), 0.10 * L * Math.sin(u * 2.4 + 1.2)];
+function frame(u) {
+  const T = norm(sub(spine(u + 0.004), spine(u - 0.004)));
+  const up = [0, 1, 0];
+  const Nn = norm(sub(up, mul(T, dot(up, T))));
+  return { S: spine(u), T, N: Nn, B: cross(T, Nn) };
+}
+const at3d = (u, th, r) => { const f = frame(u); return add(f.S, add(mul(f.N, r * Math.sin(th)), mul(f.B, r * Math.cos(th)))); };
+const atStrip = (u, th) => [L * (u - 0.5), (th / (2 * Math.PI) * 4 - 2) * LANE, 0];
+const spineStrip = u => [L * (u - 0.5), AXIS_Y, 0];
+P.forEach(p => {
+  if (p.by === "off") return;
+  if (p.seg) { p.p3 = p.main ? spine(p.u) : at3d(p.u, Math.PI / 2, 1.4); p.ps = [L * (p.u - 0.5), AXIS_Y + (p.main ? 0 : 1.6), 0]; return; }
+  p.th = (p.fam + 0.07 + 0.86 * hash(p.i, 1)) * Math.PI / 2;
+  p.r = radius(p.u) * (p.beat ? 1.0 : 0.30 + 0.60 * Math.sqrt(hash(p.i, 2)));
+  p.p3 = at3d(p.u, p.th, p.r); p.ps = atStrip(p.u, p.th);
+});
+
+// ---------- links between bands, as ribbons ----------
+const STRUCT = new Set(CFG.structuralRelations);
+const pair = new Map();
+E.forEach(([a, b, t]) => {
+  const pa = P[a], pb = P[b];
+  if (STRUCT.has(t) || pa.seg || pb.seg || pa.by === "off" || pb.by === "off" || pa.band === pb.band) return;
+  const k = Math.min(pa.band, pb.band) + ":" + Math.max(pa.band, pb.band); pair.set(k, (pair.get(k) || 0) + 1);
+});
+const ribbons = [...pair.entries()].map(([k, c]) => { const [a, b] = k.split(":").map(Number); return { a, b, c }; }).sort((x, y) => y.c - x.c).slice(0, 9);
+
+// ---------- state ----------
+const S = {
+  mode: params.get("view") || "funnel", theme: params.get("theme") || "dark", uc: +(params.get("u") || 0.30),
+  m: 0, cam: null, from: null, to: null, t0: 0, dur: 900, yaw: 0, pitch: 0, links: params.get("links") !== "0",
+  hover: -1, pin: -1, hl: null, note: null, demo: -1, replay: null,
+};
+const vis = p => !S.replay || (p.seg && p.main ? bands[p.band].u0 <= S.replay.u : p.u <= S.replay.u);
+const canvas = $("c"), ctx = canvas.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+function resize() { DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; canvas.width = W * DPR; canvas.height = H * DPR; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); if (!S.from && !S.replay) S.cam = camFor(S.mode); }
+function camFor(mode) {
+  const aspect = W / H;
+  if (mode === "strip") {
+    const fov = 22 * Math.PI / 180, d = (1.16 * L) / (2 * Math.tan(fov / 2) * aspect);
+    return { pos: [0, -3, Math.max(d, 150)], target: [0, -3, 0], up: [0, 1, 0], fov, m: 1 };
+  }
+  if (mode === "flight") {
+    const f = frame(S.uc - 0.035), g = frame(S.uc);
+    return { pos: add(f.S, mul(g.N, 1.6)), target: spine(S.uc + 0.16), up: g.N, fov: 72 * Math.PI / 180, m: 0 };
+  }
+  const fov = 36 * Math.PI / 180, dist = Math.max(120, 1.22 * L / (2 * Math.tan(fov / 2) * aspect));
+  const yaw = (24 * Math.PI / 180) + S.yaw, pitch = (19 * Math.PI / 180) + S.pitch, tg = [0.02 * L, -7, 0];
+  return { pos: add(tg, [Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist]), target: tg, up: [0, 1, 0], fov, m: 0 };
+}
+function setMode(mode) {
+  if (S.replay) return stopReplay(mode);
+  S.mode = mode; S.from = S.cam; S.to = camFor(mode); S.t0 = performance.now();
+  if (STILL) { S.cam = S.to; S.from = null; }
+  document.querySelectorAll("#controls [data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
+  $("r-cam").textContent = mode;
+}
+function setU(u) { if (S.replay) return seekReplay(u); S.uc = clamp(u, 0, 0.999); if (S.mode === "flight" && !S.from) S.cam = camFor("flight"); updateNow(); }
+function travel(u) { // a camera move along the spine
+  if (S.mode !== "flight" || STILL) return setU(u);
+  const a = S.uc, b = clamp(u, 0, 0.999), t0 = performance.now(), dur = 1400;
+  (function step() { const t = clamp((performance.now() - t0) / dur, 0, 1); setU(mix(a, b, ease(t))); if (t < 1) requestAnimationFrame(step); })();
+}
+
+// ---------- projection ----------
+let Fw, Rt, Up, focal, CP;
+function setCam(c) { CP = c.pos; Fw = norm(sub(c.target, c.pos)); Rt = norm(cross(Fw, c.up)); Up = cross(Rt, Fw); focal = (H / 2) / Math.tan(c.fov / 2); }
+function proj(p) { const d = sub(p, CP), z = dot(d, Fw); if (z < 0.6) return null; const s = focal / z; return { x: W / 2 + dot(d, Rt) * s, y: H / 2 - dot(d, Up) * s, s, z }; }
+const world = (p3, ps) => S.m <= 0 ? p3 : S.m >= 1 ? ps : mix3(p3, ps, S.m);
+
+// ---------- drawing ----------
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let C = {};
+function readTheme() {
+  document.documentElement.dataset.theme = S.theme;
+  C = { ink: css("--ink"), dim: css("--ink-dim"), chrome: css("--chrome"), hi: css("--chrome-hi"), accent: css("--accent"), agent: css("--agent"), bg: css("--bg"), dark: S.theme === "dark" };
+  C.fam = FAMS.map(f => C.dark ? f.dark : f.light);
+  $("fams").textContent = "";
+  FAMS.forEach((f, i) => { const r = document.createElement("div"); r.className = "row"; const d = document.createElement("span"); d.className = "dot"; d.style.background = C.fam[i]; const t = document.createElement("span"); t.textContent = f.name; r.append(d, t); $("fams").append(r); });
+  updateNow();
+}
+function line(pts, color, width, alpha) {
+  ctx.beginPath(); let pen = false;
+  for (const w of pts) { const q = proj(w); if (!q) { pen = false; continue; } if (pen) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); pen = true; }
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.globalAlpha = alpha; ctx.stroke(); ctx.globalAlpha = 1;
+}
+const placedLabels = [];
+function label(text, x, y, color, alignRight, force) {
+  ctx.font = "11px ui-monospace, Menlo, monospace";
+  const w = ctx.measureText(text).width, bx = alignRight ? x - w : x, box = [bx - 3, y - 9, bx + w + 3, y + 5];
+  if (box[0] < 4 || box[2] > W - 4 || box[1] < 4 || box[3] > H - 100) { if (!force) return false; }
+  if (!force) for (const b of placedLabels) if (box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]) return false;
+  placedLabels.push(box);
+  ctx.globalAlpha = 0.78; ctx.fillStyle = C.bg; ctx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+  ctx.globalAlpha = 1; ctx.fillStyle = color; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillText(text, bx, y);
+  return true;
+}
+const short = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+let screen = [], T_OFF = 0, SIM = false;
+function draw(now) {
+  now += T_OFF;
+  if (S.from) {
+    const t = clamp((now - S.t0) / S.dur, 0, 1), e = ease(t);
+    S.cam = { pos: mix3(S.from.pos, S.to.pos, e), target: mix3(S.from.target, S.to.target, e), up: norm(mix3(S.from.up, S.to.up, e)), fov: mix(S.from.fov, S.to.fov, e), m: mix(S.from.m, S.to.m, e) };
+    if (t >= 1) { S.cam = S.to; S.from = null; }
+  }
+  if (S.replay) { stepReplay(now); if (S.replay) { const d = camReplay(now); S.cam = STILL ? d : blendCam(S.cam, d, 0.07); } }
+  S.m = S.cam.m; setCam(S.cam);
+  ctx.clearRect(0, 0, W, H); placedLabels.length = 0;
+  const rp = S.replay, head = rp ? rp.u : 1;
+  const flight = S.mode === "flight" && !S.from, cur = bandAt(S.uc);
+  const fog = z => rp ? clamp(1.25 - z / 190, 0.2, 1) : flight ? clamp(1.15 - z / 70, 0.10, 1) : clamp(1.25 - z / 420, 0.45, 1);
+  if (rp) { ctx.fillStyle = C.hi; dust.forEach(d => { const q = proj(d); if (q) { ctx.globalAlpha = clamp(q.s / 14, 0.1, 0.7); ctx.fillRect(q.x, q.y, 1.5, 1.5); } }); ctx.globalAlpha = 1; }
+
+  // funnel surface: a ring at each band edge, and the four dividers between quadrants
+  const us = bands.map(B => B.u0).concat([0.9999]);
+  us.forEach((u, k) => {
+    if (u > head) return;
+    const pts = []; const r = radius(u);
+    for (let a = 0; a <= 48; a++) { const th = a / 48 * 2 * Math.PI; pts.push(world(at3d(u, th, r), atStrip(u, Math.min(th, 2 * Math.PI - 1e-6)))); }
+    const edge = k === cur.k || k === cur.k + 1;
+    line(pts, edge ? C.accent : C.hi, edge ? 1.2 : 1, edge ? 0.75 : 0.45);
+  });
+  for (let q = 0; q <= 4; q++) {
+    const th = Math.min(q * Math.PI / 2, 2 * Math.PI - 1e-6), pts = [];
+    for (let a = 0; a <= 70; a++) { const u = a / 70 * 0.9999; if (u > head) break; pts.push(world(at3d(u, th, radius(u)), atStrip(u, th))); }
+    line(pts, C.chrome, 1, 0.9);
+  }
+  // faint ribs so the funnel reads as a shape
+  if (S.m < 0.5) for (let a = 1; a < 40; a++) {
+    const u = a / 40, r = radius(u), pts = []; if (u > head) break;
+    for (let k = 0; k <= 36; k++) pts.push(at3d(u, k / 36 * 2 * Math.PI, r));
+    line(pts, C.chrome, 1, (flight ? 0.8 : 0.55) * (1 - S.m * 2));
+  }
+  // the spine
+  { const pts = []; for (let a = 0; a <= 90; a++) { const u = a / 90; if (u > head) break; pts.push(world(spine(u), spineStrip(u))); }
+    if (rp) pts.push(spine(Math.min(head, 1)));
+    if (C.dark) { ctx.shadowColor = C.accent; ctx.shadowBlur = 10; } line(pts, C.accent, 2, 1); ctx.shadowBlur = 0;
+    if (rp) { const q = proj(spine(Math.min(head, 1))); if (q) { const pr = 5 + (STILL ? 0 : 2 * Math.sin(now / 160)); ctx.beginPath(); ctx.arc(q.x, q.y, pr, 0, 7); ctx.fillStyle = C.accent; if (C.dark) { ctx.shadowColor = C.accent; ctx.shadowBlur = 26; } ctx.fill(); ctx.shadowBlur = 0; } } }
+
+  // ribbons: links between bands, added up
+  if (S.links && !flight) ribbons.forEach(rb => {
+    if (rp && (bands[rb.b].u0 + bands[rb.b].u1) / 2 > head) return;
+    const ua = (bands[rb.a].u0 + bands[rb.a].u1) / 2, ub = (bands[rb.b].u0 + bands[rb.b].u1) / 2, um = (ua + ub) / 2;
+    const lift = 9 + 46 * (ub - ua), f = frame(um);
+    const A3 = spine(ua), B3 = spine(ub), M3 = add(f.S, mul(f.N, -lift * 1.25 - radius(um) * 0.2));
+    const As = spineStrip(ua), Bs = spineStrip(ub), Ms = [L * (um - 0.5), AXIS_Y - lift * 0.42, 0];
+    const pts = []; for (let i = 0; i <= 24; i++) { const t = i / 24, k0 = (1 - t) * (1 - t), k1 = 2 * t * (1 - t), k2 = t * t;
+      pts.push(world(add(add(mul(A3, k0), mul(M3, k1)), mul(B3, k2)), add(add(mul(As, k0), mul(Ms, k1)), mul(Bs, k2)))); }
+    line(pts, C.hi, 1 + Math.sqrt(rb.c) * 0.55, 0.55);
+    const q = proj(pts[12]); if (q) label(String(rb.c) + " links", q.x - 20, q.y + 14, C.dim, false, false);
+  });
+
+  // nodes
+  screen = [];
+  P.forEach(p => { if (p.by === "off" || !vis(p)) return; const q = proj(world(p.p3, p.ps)); if (q) screen.push({ p, x: q.x, y: q.y, s: q.s, z: q.z }); });
+  screen.sort((a, b) => b.z - a.z);
+  const focus = S.pin >= 0 ? S.pin : S.hover, near = new Set();
+  if (focus >= 0) adj[focus].forEach(([j]) => near.add(j));
+  const pos = new Map(screen.map(o => [o.p.i, o]));
+  if (rp) { // links flash as each new node wires itself to what is already there
+    wires = wires.filter(w => now - w[2] < 1200); ctx.lineWidth = 1;
+    wires.forEach(w => { const a = pos.get(w[0]), b = pos.get(w[1]); if (!a || !b) return; ctx.globalAlpha = (1 - (now - w[2]) / 1200) * 0.75; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = C.fam[P[w[0]].fam]; ctx.stroke(); });
+    ctx.globalAlpha = 1;
+  }
+  if (focus >= 0 && pos.has(focus)) { // the focused node's own links, including its thread to every band it touches
+    const o = pos.get(focus); ctx.beginPath();
+    adj[focus].forEach(([j]) => { const t = pos.get(j); if (t) { ctx.moveTo(o.x, o.y); ctx.lineTo(t.x, t.y); } });
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  for (const o of screen) {
+    const p = o.p, hl = S.hl && S.hl.has(p.i), dimmed = (S.hl && !hl && !p.seg) || (focus >= 0 && p.i !== focus && !near.has(p.i) && !p.seg);
+    const base = p.seg ? (p.main ? 1.0 : 0.6) : p.beat ? 0.85 : 0.5;
+    const pop = rp && p.born > 0 && now - p.born < 900 ? 1 - (now - p.born) / 900 : 0;
+    const r = clamp(base * o.s, p.seg ? 3 : 1.6, flight ? 20 : rp ? 15 : 11) * (1 + 1.8 * pop * pop);
+    if (pop > 0) { ctx.globalAlpha = pop; ctx.beginPath(); ctx.arc(o.x, o.y, r + (1 - pop) * 34, 0, 7); ctx.strokeStyle = p.seg ? C.accent : C.fam[p.fam]; ctx.lineWidth = 1.5; ctx.stroke(); }
+    o.r = r; ctx.globalAlpha = fog(o.z) * (dimmed ? 0.22 : 1);
+    const col = p.seg ? C.accent : C.fam[p.fam];
+    if (hl) { ctx.beginPath(); ctx.arc(o.x, o.y, r + 5, 0, 7); ctx.strokeStyle = C.agent; ctx.lineWidth = 2; if (C.dark) { ctx.shadowColor = C.agent; ctx.shadowBlur = 14; } ctx.stroke(); ctx.shadowBlur = 0; }
+    ctx.beginPath();
+    if (p.seg) { ctx.rect(o.x - r, o.y - r, r * 2, r * 2); ctx.fillStyle = C.bg; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke(); }
+    else if (p.by === "rule") { ctx.arc(o.x, o.y, r, 0, 7); ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.stroke(); }
+    else { ctx.arc(o.x, o.y, r, 0, 7); ctx.fillStyle = col; ctx.fill(); if (p.beat) { ctx.beginPath(); ctx.arc(o.x, o.y, r + 3, 0, 7); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke(); } }
+    if (p.i === focus) { ctx.beginPath(); ctx.arc(o.x, o.y, r + 4, 0, 7); ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+
+  // labels: bands first, then the focused node, then a capped number of beats on leaders
+  const byNear = screen.slice().sort((a, b) => a.z - b.z);
+  byNear.filter(o => o.p.seg && o.p.main).forEach(o => {
+    const B = bands[o.p.band]; if (flight && Math.abs(B.k - cur.k) > 2) return;
+    label(clock(B.t0) + "  " + short(B.title, 30), o.x + 8, o.y + (S.m > 0.5 ? 18 : -10), B.k === cur.k ? C.accent : C.dim, false, B.k === cur.k);
+  });
+  if (focus >= 0 && pos.has(focus)) { const o = pos.get(focus); label(short(o.p.n.n, 64), o.x + o.r + 8, o.y + 4, C.ink, false, true); }
+  let beats = 0;
+  const cx0 = W / 2, cy0 = H / 2;
+  byNear.filter(o => o.p.beat && (!S.hl || S.hl.has(o.p.i))).forEach(o => {
+    if (beats >= 12 || (flight && o.z > 60)) return;
+    const sp = proj(world(spine(o.p.u), spineStrip(o.p.u))); const dx = o.x - (sp ? sp.x : cx0), dy = o.y - (sp ? sp.y : cy0), l = Math.hypot(dx, dy) || 1;
+    const ex = o.x + dx / l * 26, ey = o.y + dy / l * 26, right = dx < 0;
+    if (label(short(o.p.n.n, 44), ex + (right ? -4 : 4), ey + 4, C.ink, right, false)) {
+      beats++; ctx.beginPath(); ctx.moveTo(o.x + dx / l * (o.r + 3), o.y + dy / l * (o.r + 3)); ctx.lineTo(ex, ey); ctx.strokeStyle = C.dim; ctx.lineWidth = 1; ctx.stroke();
+    }
+  });
+  if (rp) FAMS.forEach((f, i) => { const u = Math.min(head, 0.999), q = proj(at3d(u, (i + 0.5) * Math.PI / 2, radius(u) * 1.2)); if (q) label(f.name.toUpperCase(), q.x - 70, q.y, C.fam[i], false, false); });
+  // replay: lock on to a major node and linger
+  const lk = $("lock");
+  if (rp && rp.linger && pos.has(rp.linger.p.i)) {
+    const o = pos.get(rp.linger.p.i), p = o.p, age = now - rp.linger.t0, a = ease(clamp(age / 450, 0, 1)), sz = mix(110, o.r + 12, a);
+    ctx.save(); ctx.translate(o.x, o.y); ctx.rotate((1 - a) * 2.4 + (STILL ? 0 : age / 5000)); ctx.strokeStyle = C.accent; ctx.lineWidth = 2;
+    if (C.dark) { ctx.shadowColor = C.accent; ctx.shadowBlur = 12; }
+    for (let c = 0; c < 4; c++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(sz, sz - 11); ctx.lineTo(sz, sz); ctx.lineTo(sz - 11, sz); ctx.stroke(); }
+    ctx.restore(); ctx.shadowBlur = 0;
+    const left = o.x > W - 760, bx = left ? o.x - 420 : o.x + 80, by = clamp(o.y - 130, 120, H - 330);
+    ctx.beginPath(); ctx.moveTo(o.x + (left ? -1 : 1) * (sz + 4), o.y - sz); ctx.lineTo(left ? bx + 340 : bx, by + 34); ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.stroke();
+    lk.style.display = "block"; lk.style.left = bx + "px"; lk.style.top = by + "px";
+    $("lock-k").textContent = p.n.t + " // " + (p.n.s || "") + " // " + p.deg + " links";
+    $("lock-t").textContent = STILL ? p.n.n : p.n.n.slice(0, Math.floor(age / 16));
+    $("lock-s").textContent = "raised " + clockAt(p.u) + " · " + short(bands[p.band].title, 30);
+  } else lk.style.display = "none";
+  if (flight) { // quadrant names on the ring ahead
+    FAMS.forEach((f, i) => { const u = S.uc + 0.11, q = proj(at3d(u, (i + 0.5) * Math.PI / 2, radius(u) * 0.62)); if (q) label(f.name.toUpperCase(), q.x - 70, q.y, C.fam[i], false, true); });
+  }
+
+  if (S.m > 0.6) FAMS.forEach((f, i) => { const q = proj(atStrip(0, (i + 0.93) * Math.PI / 2)); if (q) label(f.name.toUpperCase(), q.x + 6, q.y + 6, C.fam[i], false, true); });
+  // the shelf: nodes this dimension says nothing about
+  if (!flight && !rp) {
+    const x0 = 580, y0 = H - 146; ctx.fillStyle = C.dim; ctx.font = "10px ui-monospace, Menlo, monospace"; ctx.textAlign = "left";
+    ctx.fillText("OFF THIS AXIS · " + shelf.length, x0, y0 - 10);
+    shelf.forEach((p, k) => { const x = x0 + (k % 35) * 11 + 4, y = y0 + Math.floor(k / 35) * 11; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.strokeStyle = C.fam[p.fam]; ctx.globalAlpha = 0.8; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1; screen.push({ p, x, y, r: 3, z: 0, s: 1 }); });
+  }
+
+  // agent note: a box tied to the highlighted nodes
+  const nb = $("note");
+  if (S.note && S.hl) {
+    let sx = 0, sy = 0, c = 0; S.hl.forEach(i => { const o = pos.get(i); if (o) { sx += o.x; sy += o.y; c++; } });
+    if (c) { sx /= c; sy /= c; const bx = clamp(sx + 70, 430, W - 620), by = clamp(sy - 150, 112, H - 330);
+      nb.style.display = "block"; nb.style.left = bx + "px"; nb.style.top = by + "px";
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(bx, by + 30); ctx.strokeStyle = C.agent; ctx.lineWidth = 1; ctx.stroke(); }
+  } else nb.style.display = "none";
+
+  if (!SIM) requestAnimationFrame(draw);
+}
+
+// ---------- readouts ----------
+function updateNow() {
+  const B = bandAt(S.uc), t = mix(B.t0, B.t1, clamp((S.uc - B.u0) / (B.u1 - B.u0), 0, 1));
+  $("n-title").textContent = B.title; $("n-clock").textContent = hasClock ? clock(B.t0) + " to " + clock(B.t1) : clock(B.t0); $("n-count").textContent = B.count;
+  $("n-fams").textContent = "";
+  FAMS.forEach((f, i) => { const r = document.createElement("div"); r.className = "row"; const a = document.createElement("span"); a.className = "k"; a.textContent = f.name; a.style.color = C.fam ? C.fam[i] : ""; const b = document.createElement("span"); b.className = "v"; b.textContent = B.fam[i]; r.append(a, b); $("n-fams").append(r); });
+  $("s-clock").textContent = clock(t);
+  const bw = $("bands").getBoundingClientRect(), sw = $("scrub").getBoundingClientRect();
+  $("cursor").style.left = (bw.left - sw.left + S.uc * bw.width) + "px";
+  document.querySelectorAll("#bands .b").forEach((el, k) => el.classList.toggle("cur", k === B.k));
+}
+function showDetail(i) {
+  const d = $("detail"); if (i < 0) { d.style.display = "none"; return; }
+  const p = P[i]; d.style.display = "block";
+  $("d-kind").textContent = p.n.t + " · " + (p.n.s || "");
+  $("d-title").textContent = p.n.n;
+  $("d-placed").textContent = p.by === "data" ? "by data, " + p.bands.length + (p.bands.length > 1 ? " bands" : " band") : p.by === "rule" ? "by rule (neighbours)" : p.by === "spine" ? "on the spine" : "off this axis";
+  $("d-links").textContent = p.deg;
+}
+function buildStatic() {
+  $("galias").textContent = D.graph.alias; $("gsub").textContent = "Along: " + CFG.alongLabel + " · Around: kind of thing";
+  $("r-size").textContent = N.length + " / " + D.graph.edges;
+  $("r-data").textContent = P.filter(p => p.by === "data").length;
+  $("r-rule").textContent = P.filter(p => p.by === "rule").length;
+  $("r-off").textContent = shelf.length;
+  $("r-multi").textContent = P.filter(p => p.bands.length > 1).length;
+  const max = Math.max(...bands.map(B => B.count));
+  bands.forEach(B => { const el = document.createElement("div"); el.className = "b"; el.style.width = (B.w * 100) + "%";
+    const bar = document.createElement("div"); bar.className = "bar"; bar.style.height = Math.max(2, B.count / max * 100) + "%";
+    const t = document.createElement("span"); t.className = "t"; t.textContent = B.w > 0.045 ? clock(B.t0) : "";
+    el.append(bar, t); $("bands").append(el); });
+}
+
+// ---------- the agent demo: what driving the view from the CLI could feel like ----------
+// Every number in a note is counted from the data, so the demo works on any graph.
+function demoSteps() {
+  const full = bands.slice().sort((a, b) => b.count - a.count), b1 = full[0], b2 = full[1] || full[0];
+  const inBand = (B, f) => P.filter(p => p.band === B.k && p.by === "data" && f(p)); // notes count only what data placed
+  const topType = B => { const c = {}; inBand(B, () => true).forEach(p => { c[p.n.t] = (c[p.n.t] || 0) + 1; }); return Object.keys(c).sort((x, y) => c[y] - c[x])[0] || "node"; };
+  const pl = (n, w) => (n === 0 ? "no" : n) + " " + w + (n === 1 ? "" : "s"), mid = B => (B.u0 + B.u1) / 2, t1 = topType(b1), t2 = topType(b2);
+  const hubs = P.filter(p => p.by === "data").sort((a, b) => b.deg - a.deg).slice(0, 5);
+  const half = bands.length / 2, first = bands.filter(B => B.k < half).reduce((n, B) => n + B.count, 0), second = placedTotal - first;
+  const ids = list => new Set(list.map(p => p.i));
+  return [
+    { cmd: "umx ui view --along time --camera funnel", go() { S.hl = null; S.note = null; setMode("funnel"); } },
+    { cmd: "umx ui goto <band: " + short(b1.title, 32) + ">", go() { travel(mid(b1)); } },
+    { cmd: "umx ui highlight --band <band> --type " + t1 + " --note …", go() { S.hl = ids(inBand(b1, p => p.n.t === t1)); S.note = "This is the fullest band. " + pl(S.hl.size, t1) + " placed here by data, out of " + b1.count + " nodes in the band."; } },
+    { cmd: "umx ui view --camera flight", go() { setMode("flight"); } },
+    { cmd: "umx ui goto <band: " + short(b2.title, 32) + ">", go() { travel(mid(b2) - 0.02); S.hl = ids(inBand(b2, p => p.n.t === t2)); S.note = "The second fullest band. The most common kind here is " + t2 + ": " + S.hl.size + " placed by data."; } },
+    { cmd: "umx ui highlight --most-linked 5 --note …", go() { S.hl = ids(hubs); if (hubs.length) travel(hubs[0].u - 0.03); S.note = "The five most linked nodes on the spine. The top one has " + pl(hubs.length ? hubs[0].deg : 0, "link") + "."; } },
+    { cmd: "umx ui view --camera strip", go() { setMode("strip"); S.hl = ids(P.filter(p => (p.by === "data" || p.by === "rule") && p.band >= half)); S.note = pl(second, "node") + " in the second half of the spine against " + first + " in the first."; } },
+    { cmd: "umx ui clear", go() { S.hl = null; S.note = null; } },
+  ];
+}
+let demoTimer = null;
+function demoStep(k) {
+  const st = demoSteps(); if (k >= st.length) { $("agent").style.display = "none"; $("b-demo").classList.remove("on"); S.demo = -1; return; }
+  S.demo = k; $("agent").style.display = "block"; $("a-cmd").textContent = "$ " + st[k].cmd; st[k].go();
+  $("note-text").textContent = S.note || "";
+  if (!STILL) demoTimer = setTimeout(() => demoStep(k + 1), 4200);
+}
+
+// ---------- replay: the meeting happening, nodes popping in, lingering on the major ones ----------
+const clockAt = u => { const B = bandAt(clamp(u, 0, 0.9999)); return clock(mix(B.t0, B.t1, clamp((u - B.u0) / (B.u1 - B.u0), 0, 1))); };
+const scoreOf = p => p.deg + (p.n.s === "agreed" ? 8 : 0) + (p.n.s === "contested" ? 5 : 0) + (p.n.t === "decision" ? 3 : 0);
+const stops = (() => {
+  const beats = P.filter(p => p.beat).sort((a, b) => scoreOf(b) - scoreOf(a)), pick = new Set(beats.slice(0, 12));
+  bands.forEach(B => { const b = beats.find(p => p.band === B.k); if (b) pick.add(b); });
+  return [...pick].sort((a, b) => a.u - b.u);
+})();
+const dust = Array.from({ length: 260 }, (_, k) => [L * (hash(k, 31) - 0.5) * 1.5, (hash(k, 32) - 0.5) * 110, (hash(k, 33) - 0.5) * 110]);
+const onAxis = P.filter(p => p.by !== "off").length;
+let wires = [];
+const blendCam = (a, b, k) => ({ pos: mix3(a.pos, b.pos, k), target: mix3(a.target, b.target, k), up: norm(mix3(a.up, b.up, k)), fov: mix(a.fov, b.fov, k), m: mix(a.m, b.m, k) });
+function card(t, sub) { const el = $("card"); $("card-t").textContent = short(t, 58); $("card-s").textContent = sub; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
+function logLine(p) {
+  const el = document.createElement("div"); el.textContent = clockAt(p.u) + "  " + p.n.t.toUpperCase().padEnd(10) + " " + p.n.n;
+  const box = $("log-lines"); box.append(el); while (box.childElementCount > 6) box.firstChild.remove();
+}
+function startReplay(u0) {
+  clearTimeout(demoTimer); S.demo = -1; S.hl = null; S.note = null; $("agent").style.display = "none"; $("b-demo").classList.remove("on");
+  S.pin = -1; S.hover = -1; S.from = null; S.mode = "replay"; wires = []; u0 = u0 || 0;
+  S.replay = { u: u0, last: performance.now(), next: stops.filter(s => s.u < u0).length, linger: null, band: -1, paused: false, shown: -1, end: 0, speed: 1, tick: 0 };
+  P.forEach(p => { p.born = u0 > 0 && p.by !== "off" && vis(p) ? -1e7 : 0; });
+  document.body.classList.add("replay"); $("b-replay").classList.add("on"); $("log").style.display = "block"; $("rec").style.display = "block"; $("log-lines").textContent = "";
+  document.querySelectorAll("#controls [data-mode]").forEach(b => b.classList.remove("on")); $("r-cam").textContent = "replay";
+}
+function stopReplay(mode) {
+  S.replay = null; document.body.classList.remove("replay"); $("b-replay").classList.remove("on");
+  ["log", "rec", "lock"].forEach(id => { $(id).style.display = "none"; }); $("card").classList.remove("show");
+  $("r-sofar").textContent = onAxis; setMode(mode || "funnel");
+}
+function seekReplay(u) { const rp = S.replay; rp.u = clamp(u, 0, 1); rp.next = stops.filter(s => s.u < rp.u).length; rp.linger = null; rp.end = 0; }
+function stepReplay(now) {
+  const rp = S.replay, dt = Math.min(0.1, (now - rp.last) / 1000); rp.last = now;
+  if (rp.linger && now - rp.linger.t0 > rp.linger.dur) rp.linger = null;
+  if (!rp.paused && !rp.linger && !rp.end) rp.u = Math.min(1, rp.u + dt * rp.speed / 80); // the whole day in about 80 seconds, plus the lingers
+  let shown = 0;
+  P.forEach(p => {
+    if (p.by === "off" || !vis(p)) return; shown++;
+    if (!p.born) { p.born = now; if (!p.seg) { logLine(p); adj[p.i].forEach(([j]) => { if (P[j].born && P[j].by !== "off" && vis(P[j])) wires.push([p.i, j, now]); }); } }
+  });
+  if (shown !== rp.shown) { rp.shown = shown; $("r-sofar").textContent = shown + " of " + onAxis; }
+  const B = bandAt(Math.min(rp.u, 0.9999));
+  if (B.k !== rp.band) { rp.band = B.k; card(clock(B.t0) + " // " + B.title, B.count ? B.count + " nodes in this " + CFG.bandType : "nothing placed here"); }
+  S.uc = Math.min(rp.u, 0.999);
+  if (now - rp.tick > 200) { rp.tick = now; updateNow(); $("rec").textContent = (rp.paused ? "❚❚ paused" : "● replay") + " ×" + rp.speed + " · " + clockAt(rp.u); }
+  if (!rp.linger && !rp.paused && rp.next < stops.length && rp.u >= stops[rp.next].u) { rp.linger = { p: stops[rp.next], t0: now, dur: 3000 }; rp.next++; }
+  if (rp.u >= 1 && !rp.end) { rp.end = now; card(clock(bands[bands.length - 1].t1) + " // session ends", shown + " nodes on the spine"); }
+  if (rp.end && now - rp.end > 3400) stopReplay("funnel");
+}
+function camReplay(now) { // ahead of the playhead, looking back along the day, so history recedes and new nodes arrive up close
+  const rp = S.replay, u = Math.min(rp.u, 0.999), f = frame(u), sway = STILL ? 0.1 : Math.sin(now / 6500) * 0.3;
+  const off = add(add(mul(f.B, Math.cos(sway) * 27), mul(f.T, 15 + Math.sin(sway) * 20)), mul(f.N, 11));
+  let anchor = f.S, target = spine(u - 0.05), k = 1;
+  if (rp.linger) {
+    const a = clamp((now - rp.linger.t0) / 600, 0, 1), b = clamp((rp.linger.t0 + rp.linger.dur - now) / 600, 0, 1), e = ease(Math.min(a, b));
+    anchor = mix3(f.S, rp.linger.p.p3, e); target = mix3(target, rp.linger.p.p3, e); k = mix(1, 0.6, e);
+  }
+  return { pos: add(anchor, mul(off, k)), target, up: [0, 1, 0], fov: 56 * Math.PI / 180, m: 0 };
+}
+
+// ---------- input ----------
+document.querySelectorAll("#controls [data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+$("b-theme").addEventListener("click", () => { S.theme = S.theme === "dark" ? "light" : "dark"; readTheme(); });
+$("b-links").addEventListener("click", () => { S.links = !S.links; $("b-links").classList.toggle("on", S.links); });
+$("b-replay").addEventListener("click", () => { if (S.replay) stopReplay("funnel"); else startReplay(0); });
+$("b-demo").addEventListener("click", () => { if (S.replay) stopReplay("funnel"); clearTimeout(demoTimer); if (S.demo >= 0) { S.hl = null; S.note = null; demoStep(99); } else { $("b-demo").classList.add("on"); demoStep(0); } });
+addEventListener("keydown", e => {
+  if (e.key === "1") setMode("strip"); else if (e.key === "2") setMode("funnel"); else if (e.key === "3") setMode("flight");
+  else if (e.key === "ArrowRight") setU(S.uc + 0.012); else if (e.key === "ArrowLeft") setU(S.uc - 0.012);
+  else if (e.key === "t" || e.key === "T") $("b-theme").click(); else if (e.key === "l" || e.key === "L") $("b-links").click();
+  else if (e.key === "r" || e.key === "R") $("b-replay").click();
+  else if (e.key === " " && S.replay) { S.replay.paused = !S.replay.paused; e.preventDefault(); }
+  else if (e.key === "=" && S.replay) S.replay.speed = Math.min(4, S.replay.speed * 2); else if (e.key === "-" && S.replay) S.replay.speed = Math.max(0.5, S.replay.speed / 2);
+  else if (e.key === "a" || e.key === "A") $("b-demo").click(); else if (e.key === "Escape") { S.pin = -1; showDetail(-1); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); setU(S.uc + e.deltaY * 0.00035); }, { passive: false });
+let drag = null;
+canvas.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, yaw: S.yaw, pitch: S.pitch, moved: false }; });
+addEventListener("pointerup", e => { if (drag && !drag.moved && e.target === canvas) { S.pin = S.hover; showDetail(S.pin); } drag = null; scrubbing = false; });
+canvas.addEventListener("pointermove", e => {
+  if (drag && S.mode === "funnel") { // soft 3D: a small look-around, not free roam
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    S.yaw = clamp(drag.yaw - dx * 0.004, -0.6, 0.6); S.pitch = clamp(drag.pitch + dy * 0.003, -0.22, 0.45); if (!S.from) S.cam = camFor("funnel"); return;
+  }
+  let best = -1, bd = 14; for (const o of screen) { const d = Math.hypot(o.x - e.clientX, o.y - e.clientY) - (o.r || 3); if (d < bd) { bd = d; best = o.p.i; } }
+  S.hover = best; canvas.style.cursor = best >= 0 ? "pointer" : "default"; if (S.pin < 0) showDetail(best);
+});
+let scrubbing = false;
+const scrubTo = e => { const r = $("bands").getBoundingClientRect(); setU((e.clientX - r.left) / r.width); };
+$("scrub").addEventListener("pointerdown", e => { scrubbing = true; scrubTo(e); });
+addEventListener("pointermove", e => { if (scrubbing) scrubTo(e); });
+addEventListener("resize", () => { resize(); updateNow(); });
+
+// ---------- go ----------
+buildStatic(); resize(); readTheme(); S.cam = camFor(S.mode); setMode(S.mode); $("b-links").classList.toggle("on", S.links);
+if (params.has("demo")) { const k = +params.get("demo"); const st = demoSteps(); for (let i = 0; i < k; i++) st[i].go(); $("b-demo").classList.add("on"); demoStep(k); }
+$("r-sofar").textContent = onAxis;
+if (params.has("play")) startReplay(0);
+if (params.has("sim")) { // test hook: run N seconds of replay at once, then carry on from there
+  startReplay(0); SIM = true; const base = performance.now(), n = Math.round(+params.get("sim") * 60);
+  for (let k = 0; k < n; k++) draw(base + k * 16.7);
+  SIM = false; T_OFF = n * 16.7;
+}
+if (params.has("replay")) { startReplay(+params.get("replay")); S.replay.paused = true;
+  if (params.has("lock")) { const st = stops.filter(x => x.u <= S.replay.u).pop(); if (st) S.replay.linger = { p: st, t0: performance.now() - 1500, dur: 1e12 }; } }
+updateNow(); requestAnimationFrame(draw);
+}
+</script>
+</body>
+</html>

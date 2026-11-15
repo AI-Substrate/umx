@@ -1,0 +1,2 @@
+# R302-B1: an adapter renames std::fs privately, then re-exports all of it through the alias.
+expect = ["r-no-std-reexport"]

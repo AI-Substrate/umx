@@ -1,0 +1,3 @@
+# Control: umx-compose's one loader reads env under the expect.
+enforcer = "clippy"
+expect = []

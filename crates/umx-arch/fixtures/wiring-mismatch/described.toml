@@ -1,0 +1,9 @@
+[[row]]
+mode = "stub"
+port = "clock"
+adapter = "system.clock"
+
+[[row]]
+mode = "real"
+port = "clock"
+adapter = "system.clock"

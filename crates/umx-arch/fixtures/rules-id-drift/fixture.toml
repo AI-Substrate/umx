@@ -1,0 +1,3 @@
+# The blueprint and rules.toml disagree on rule ids (both directions).
+expect = ["r-rules-fire"]
+rule_ids = ["r-inward", "r-new-in-blueprint"]

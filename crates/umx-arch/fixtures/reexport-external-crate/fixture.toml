@@ -1,0 +1,3 @@
+# umx-core re-exports the whole of serde_json, so crates with no serde_json in their allow-list reach it.
+# Its item re-export (serde_json::Value) is API and needs no row.
+expect = ["r-inward"]

@@ -1,0 +1,18 @@
+[package]
+name = "umx-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Bench-only API (rebuild_adjacency, rebuild_title_text as pub); umx-bench turns it on.
+bench = []
+
+[dependencies]
+umx-core.workspace = true
+libm.workspace = true
+hashbrown.workspace = true
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["alloc"] }

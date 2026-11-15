@@ -1,0 +1,2 @@
+# Control: alloc, core aliases, and std only in comments and strings are allowed.
+expect = []

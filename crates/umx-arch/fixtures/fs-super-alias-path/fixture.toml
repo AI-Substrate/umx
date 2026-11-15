@@ -1,0 +1,2 @@
+# F119: std renamed in the crate root, then fs reached from a child module's file through super::s.
+expect = ["r-fs-in-adapters"]

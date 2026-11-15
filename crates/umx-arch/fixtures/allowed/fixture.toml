@@ -1,0 +1,7 @@
+# Allowed sample: the whole layer graph wired legally, all ports active, as a whole workspace (every crate a
+# rule names exists). Also: port traits with rows, the listed Config re-export, a pub(crate) re-export and a
+# `path` binding that is not an attribute, and every feature the real gate list names, with the cuda chain
+# forwarding to the excluded feature (r-gate-features). Nothing may fire.
+expect = []
+active_ports = ["graph-files", "clock", "id-generator"]
+whole_workspace = true

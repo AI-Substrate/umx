@@ -1,0 +1,10 @@
+[
+  {"id":"cross-directed-count","cypher":"MATCH ()-[r]->() RETURN count(r) AS edge_count","expected":[["2"]],"ordered":true,"conformance":true},
+  {"id":"cross-undirected-count","cypher":"MATCH ()-[r]-() RETURN count(r) AS edge_count","expected":[["4"]],"ordered":true,"conformance":true},
+  {"id":"cross-typed-two-hops","cypher":"MATCH (a {title: 'A'})-[:blocks]->()-[:blocks]->(c) RETURN c.title AS title","expected":[["C"]],"ordered":true,"conformance":true},
+  {"id":"cross-untyped-two-hops","cypher":"MATCH (a {title: 'A'})-[]->()-[]->(c) RETURN c.title AS title","expected":[["C"]],"ordered":true,"conformance":true},
+  {"id":"cross-incoming","cypher":"MATCH (b {title: 'B'})<-[r:blocks]-(a) RETURN a.title AS title","expected":[["A"]],"ordered":true,"conformance":true},
+  {"id":"cross-outgoing","cypher":"MATCH (a {title: 'A'})-[r]->(b) RETURN b.title AS title","expected":[["B"]],"ordered":true,"conformance":true},
+  {"id":"cross-reverse-two-hops","cypher":"MATCH (c {title: 'C'})<-[:blocks]-()<-[:blocks]-(a) RETURN a.title AS title","expected":[["A"]],"ordered":true,"conformance":true},
+  {"id":"cross-undirected-pairs","cypher":"MATCH (a)-[r]-(b) RETURN a.title AS from_title, b.title AS to_title ORDER BY from_title, to_title","expected":[["A","B"],["B","A"],["B","C"],["C","B"]],"ordered":true,"conformance":true}
+]

@@ -1,0 +1,19 @@
+{
+  "corpus_mean_tokens": 299.92,
+  "corpus_texts": 125,
+  "docs_per_s": 26.30534763516503,
+  "first_load_s": 1.159411833,
+  "load_avg_1m_at_end": 25.18408203125,
+  "load_avg_1m_at_start": 28.87353515625,
+  "mode": "pool",
+  "model": "embeddinggemma-300m",
+  "peak_rss_mb": 7663.171875,
+  "query_ms": {
+    "n": 80,
+    "p50": 11.714,
+    "p95": 13.350708
+  },
+  "sessions": 4,
+  "threads_per_session": 1,
+  "warm_load_s_per_session": 1.095733573
+}

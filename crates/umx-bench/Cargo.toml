@@ -1,0 +1,16 @@
+[package]
+name = "umx-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+umx-compose.workspace = true
+umx-services = { workspace = true, features = ["bench"] }
+umx-core.workspace = true
+umx-graph = { workspace = true, features = ["bench"] }
+umx-query.workspace = true
+serde_json = { workspace = true, features = ["std"] }
+# floor-calibration: BEIR zip checks and its vector cache keys (ws004 s26).
+sha2.workspace = true
