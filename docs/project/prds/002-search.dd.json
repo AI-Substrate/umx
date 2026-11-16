@@ -1,0 +1,397 @@
+{
+  "dd": {
+    "schema": "pij/prd"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PRD 002: Search",
+        "status": "draft",
+        "updated": "2026-11-16",
+        "owner": "project lead",
+        "summary": "Search is how an agent or the operator gets from loose words to the right nodes in a graph. This PRD describes the whole feature as it should be, not a change to it: one command that finds nodes by exact value, by words and by meaning, says how and how strongly each was found, and gives the caller enough in one reply to judge the hits and take the next step. Each row is the desired state. A row is `shipped` when umx behaves that way today, and `planned` or `in-progress` when it does not yet; its note says which part is missing. When search changes, the row that describes that behaviour is rewritten here, so this document always reads as the feature."
+      }
+    },
+    {
+      "name": "why",
+      "value": "An agent using a graph starts almost every task by searching it. The agent is a capable model, so it is the judge of what is relevant: search does not need to be clever on its behalf, it needs to hand over what the agent needs to judge quickly. Today a search hit gives an id, a type, a title and scoring numbers. It gives none of the node's text, none of its links and no hints, so the agent spends more calls opening hits than searching.\n\nA review on a private graph of 536 nodes (2026-11-16) also showed that what gets embedded matters more than how it is ranked. Label fields with three distinct values held 29% of the graph's vectors. A search for one label value returned eight rows with the same score, and 92% of each node's nearest neighbours by meaning shared its label (34% by chance). Each of those vectors was an embedder call that made search worse. Inside one graph the calibrated floor cut almost nothing: 55% of all node pairs scored above it, because everything in a graph is on the same subject.\n\nMeaning and structure do different jobs. An embedding says two things are near each other; it cannot say how they are related. The graph's typed links say exactly that. So search by meaning is the way in, and the links are how the caller moves on. This PRD keeps both in one reply.\n\nThe project lead ruled three things on 2026-11-16: only prose is embedded (a custom string field is data unless declared content); no second model is added to umx (no reranker); and the tooling is tuned so agents need fewer calls."
+    },
+    {
+      "name": "actors",
+      "value": [
+        {
+          "id": "a-agent",
+          "name": "external agent",
+          "need": "Find the right nodes for a loosely worded question in one call, judge them without opening each one, and know the next command to run."
+        },
+        {
+          "id": "a-operator",
+          "name": "the operator",
+          "need": "Search graphs from the UI with the same results an agent gets, and trust that labels and ids are found exactly."
+        },
+        {
+          "id": "a-builder",
+          "name": "graph-building agent",
+          "need": "Know which fields are searched by meaning and be told when a field is in the wrong group."
+        }
+      ]
+    },
+    {
+      "name": "goals",
+      "value": [
+        {
+          "id": "g-1",
+          "goal": "One search call returns hits an agent can judge and act on without a follow-up read for each hit."
+        },
+        {
+          "id": "g-2",
+          "goal": "Every hit says how it was found and how strong it is; everything left out or weak is said in a hint with the command to run next."
+        },
+        {
+          "id": "g-3",
+          "goal": "Only prose is searched by meaning. Labels, ids, names and times are found exactly and never cost an embedder call."
+        },
+        {
+          "id": "g-4",
+          "goal": "The same graphs and query give the same list on every machine."
+        },
+        {
+          "id": "g-5",
+          "goal": "Search works, and says what is missing, when there is no embedder."
+        }
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        {
+          "id": "ng-1",
+          "text": "A reranker or any second model inside umx. The calling agent is the judge (project lead, 2026-11-16). The one embedder stays."
+        },
+        {
+          "id": "ng-2",
+          "text": "An approximate vector index. Every vector search is an exact scan, which is fast enough at the sizes graphs reach."
+        },
+        {
+          "id": "ng-3",
+          "text": "A vector per word (late interaction). It multiplies storage about 50 times in files that are committed to git."
+        },
+        {
+          "id": "ng-4",
+          "text": "Embeddings trained on the graph's links. Graphs have too few links for it today."
+        },
+        {
+          "id": "ng-5",
+          "text": "Typo tolerance and phrase search in `umx search`. `umx node find` tolerates typos in titles."
+        },
+        {
+          "id": "ng-6",
+          "text": "Embedder providers, where vectors are stored, secured-graph rules, floors and their calibration, and the similarity verbs (similar_to, similarity pairs, most like this set). Those stay in PRD 001 until they have a feature PRD of their own; this PRD names them only where search depends on them."
+        }
+      ]
+    },
+    {
+      "name": "requirements",
+      "value": [
+        {
+          "id": "search-01",
+          "title": "One list from three ways of finding",
+          "statement": "`umx search <words>` finds nodes three ways and returns one ranked list. Exact: the whole query equals a title, id, type, status, or the value of a field that is not prose. Words: the query's words appear in the title, the note or a string field, ranked so a rare word counts for more than a common one and a title match for more than a note match. Meaning: the node's vectors are close to the query's, so a paraphrase with none of the node's words can find it. Exact hits come first; words and meaning are fused by rank. Every hit says which ways found it, the field that matched in each, and its rank and score in each.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "shipped",
+          "done_when": "A search for an id returns that node by exact match; a paraphrase with none of a node's words returns it by meaning; a node holding the words in its note is returned by words; each hit names its legs and matching fields.",
+          "source": "PRD 001 req-30, req-68",
+          "replaces": [
+            "001-concept-graph.dd.json#requirements/req-30",
+            "001-concept-graph.dd.json#requirements/req-68"
+          ]
+        },
+        {
+          "id": "search-02",
+          "title": "Word forms and prefixes",
+          "statement": "A query word also matches its other English forms (vendor finds vendors) and, from 4 letters, words that start with it. An exact word ranks above another form, which ranks above a prefix. Prefix matching is capped and says when it was. Each hit lists the word it met and how. Words with digits or non-English letters match exactly only.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "shipped",
+          "done_when": "With no embedder: `umx search vendor` finds a node titled 'Pre-approve listed vendors'; an exact match outranks a stem match, which outranks a prefix match; a capped prefix warns `word_prefix_capped`.",
+          "source": "PRD 001 req-92",
+          "replaces": [
+            "001-concept-graph.dd.json#requirements/req-92"
+          ]
+        },
+        {
+          "id": "search-03",
+          "title": "Common words earn nothing",
+          "statement": "A word's credit in the word leg follows how rare it is in the graphs searched. Question and function words (what, should, we, do, the, before) earn no credit at all, however rare they happen to be in a small graph, so a long question is ranked by its content words. The reply lists the query words that were ignored.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On the search fixture, for a question of 8 words of which 2 are content words, no node that matches only the function words appears above a node in the meaning leg's top 3; the reply's `ignored_words` lists the function words.",
+          "source": "Search review 2026-11-16 (a question query ranked nodes matching 'what' and 'starts' above the two best matches by meaning)",
+          "note": "Shipped today: words in more than a quarter of the nodes give no coverage credit. Missing: function words that are rare in a small graph still count."
+        },
+        {
+          "id": "search-04",
+          "title": "Only prose is searched by meaning",
+          "statement": "The title and the note of every node are embedded, each on its own and together as the whole-node text. A custom string field is data by default: it gets no vector and is left out of the whole-node text. It is embedded only when its type declares it content (`umx ontology add field <type> <name>:string --role content`, or `umx ontology set field`). Numbers, dates, booleans, lists and provenance are always data. Data fields are still found by exact match, by words and by `--where`. In a graph made before this rule, a field with no recorded role keeps the vectors it has until a person runs `umx embeddings reembed`, which shows the cost first; nothing is embedded again or dropped on load.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A string field added with no role gets no field vector and is absent from the whole-node text; the same field with `--role content` gets both; a graph made before the rule loads with zero embed calls and its fields unchanged; after `reembed`, fields with no recorded role hold no vectors.",
+          "source": "Project lead ruling 2026-11-16; changes the default in PRD 001 req-97 and req-34",
+          "note": "Shipped today: roles exist (PRD 001 req-97) but a string field is content by default. The std person fields job_title and org are data (q-01)."
+        },
+        {
+          "id": "search-05",
+          "title": "A field in the wrong group is pointed out",
+          "statement": "umx never changes a field's role by itself. It hints, with the exact command, in both directions: a data field whose values are mostly long and mostly distinct (prose) is hinted to become content; a content field whose values are few and short (labels) is hinted to become data, with how many embedder calls that saves. The hints appear on `umx ontology add field`, `umx graph guide` and `umx embeddings status`.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On a fixture with a label field of 3 distinct values declared content and a prose field declared data, `umx graph guide` gives one hint for each, each naming the `umx ontology set field ... --role` command; neither role changes until that command is run.",
+          "source": "Project lead rulings 2026-11-16 (data by default) and 2026-11-12 (hints are part of every feature)"
+        },
+        {
+          "id": "search-06",
+          "title": "A text scores as itself",
+          "statement": "The query and the stored texts are prepared for the embedder in forms that match, so searching for the exact words of a short field or title scores that field near the top of the model's scale. A change to either form is a new text form version and needs the floors measured again.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "For each calibrated model, searching for the exact text of a title of 1 to 3 words returns that node first in the meaning leg, with a cosine of at least 0.9.",
+          "source": "Search review 2026-11-16 (a one-word value scored 0.71 against itself; the cause, a wrapper on stored text and none on the query, was inferred and is not yet confirmed in the hosted adapter)",
+          "note": "First step is to confirm the cause."
+        },
+        {
+          "id": "search-07",
+          "title": "Each hit carries the text that matched",
+          "statement": "Each hit holds a cut of about 200 characters from the field that found it (the word match's field, else the best vector's field, else the start of the note), named with its field. The agent can judge a hit without reading the node. The text is graph data and is marked untrusted in the reply.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A hit found through its note carries `text` with `field: note` and at most 200 characters around the matched words; a hit with no note carries its best field or nothing; the reply's `untrusted` list names the path.",
+          "source": "Project lead ruling 2026-11-16 (on by default)",
+          "note": "Shipped today: hits carry title only."
+        },
+        {
+          "id": "search-08",
+          "title": "Each hit carries its place in the graph",
+          "statement": "Each hit holds up to 3 of its links, the stored ones a person or agent wrote, as relation, direction and the other node's id and title, with a count of the rest. `part_of` and other containment links come first. Derived `similar_to` links and provenance are never listed. Only links inside the graphs being searched are shown.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A hit with 7 stored links shows 3 with `more: 4`, its `part_of` parent first; a hit with none shows an empty list; no `similar_to` row appears.",
+          "source": "Project lead ruling 2026-11-16 (on by default)"
+        },
+        {
+          "id": "search-09",
+          "title": "Several phrasings in one call",
+          "statement": "A caller may give up to 5 phrasings of one question (`umx search \"<a>\" --also \"<b>\" --also \"<c>\"`) and gets one fused list. Each hit says which phrasings found it. The phrasings are embedded in one embedder call.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "Three phrasings return one list in which a node found by two of them ranks above a node found at the same rank by one; each hit lists its phrasings; the embedder is called once.",
+          "source": "Project lead ruling 2026-11-16 (fewer calls for agents)"
+        },
+        {
+          "id": "search-10",
+          "title": "Strength in plain words",
+          "statement": "Each hit found by meaning is labelled strong, fair or weak. The label measures the hit against the scores of all the nodes searched for this query, not against a fixed number, because inside one graph most nodes are near each other. When no hit is strong the reply says so in a hint, so the caller rewords or stops. The model's calibrated floor still removes noise before this.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On the search fixture, a paraphrase query labels its target strong; a query about a subject the graph does not hold returns no strong hit and the hint `no_strong_match`; the labels are the same on every machine.",
+          "source": "Project lead ruling 2026-11-16; search review (55% of all node pairs in one graph scored above the floor)",
+          "note": "How the cut points are set is for design; they must be exact and repeatable."
+        },
+        {
+          "id": "search-11",
+          "title": "What the hits have in common",
+          "statement": "Under the list, the reply counts the hits by type and names any node that 3 or more hits link to (for example the method most of them belong to). Each line carries the command that narrows the search to it.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "A reply whose 10 hits include 6 linked to one parent names that parent with `--within <it>`; the type counts add up to the hits and each carries `--type <type>`.",
+          "source": "Project lead ruling 2026-11-16"
+        },
+        {
+          "id": "search-12",
+          "title": "Narrowing a search",
+          "statement": "A search may be limited to named graphs or a saved scope, to the nodes under one node (`--within`), to a range along a spine (`--along` with `--after` and `--before`), and to one or more types (`--type`). Narrowing happens before ranking, so a strong match outside never crowds out a weaker one inside. Word rarity is still judged over the whole of the graphs searched, so a node scores the same inside and outside the narrowed set. The reply counts what was left out.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "in-progress",
+          "done_when": "`--within <node>` returns only nodes under it and `--along` only nodes placed in the range; `--type technique` returns only that type and counts the other hits left out; a node's word score is the same with and without narrowing.",
+          "source": "PRD 001 req-29 (within), req-149 (along); type filter from this PRD",
+          "note": "Shipped today: graphs, scopes, --within, --along. Missing: --type."
+        },
+        {
+          "id": "search-13",
+          "title": "Every search reply carries hints",
+          "statement": "A search reply uses the hints list for everything the caller might otherwise miss, each with the next command: no strong match; a narrower search (search-11); results cut by `--limit`; nodes with no vector yet; graphs searched by words only and why; secured graphs left out.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Each case above, set up on a fixture, yields its hint with a runnable command; a reply with hints keeps status ok.",
+          "source": "Project lead ruling 2026-11-12 (hints are part of every feature); depends on PRD 001 req-139",
+          "note": "Shipped today: search has warnings for the degraded cases and no hints."
+        },
+        {
+          "id": "search-14",
+          "title": "A lean reply when asked",
+          "statement": "`--rows ids` returns each hit as graph, id, type, legs and fused score only, the same hits in the same order, for a caller that will read the nodes anyway. The full row is the default.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "`--rows ids` gives the same ids in the same order as the full reply, with no text or links.",
+          "source": "Search review 2026-11-16 (the full row grows from about 200 to about 600 bytes)"
+        },
+        {
+          "id": "search-15",
+          "title": "Search says when meaning was not used",
+          "statement": "Search never fails for want of vectors. It returns exact and word matches and says, per graph, why meaning took no part: no embedder, an embedder that failed or timed out (never more than 5 s), another model's vectors, a secured graph with only hosted embedders, or nodes not embedded yet. An empty result then reads as 'no word matched', never as 'nothing is similar'.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "shipped",
+          "done_when": "With the embedder faked offline, `umx search <phrase>` returns word matches and `similarity_unavailable`; a graph on another model is named with `embedder_mismatch`.",
+          "source": "PRD 001 req-53",
+          "replaces": [
+            "001-concept-graph.dd.json#requirements/req-53"
+          ]
+        },
+        {
+          "id": "search-16",
+          "title": "The same list every time",
+          "statement": "The same graphs and query give the same hits in the same order on every machine. Ties are broken by the better single rank, then graph, then id. Nothing in search depends on a model run at query time other than the query's own embedding.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "shipped",
+          "done_when": "Two machines with the same graph files and model return byte-identical rows for the fixture queries.",
+          "source": "PRD 001 req-30"
+        },
+        {
+          "id": "search-17",
+          "title": "Which graphs are searched",
+          "statement": "With no graph named, search covers every loaded open graph, one copy of each. Secured graphs are left out and only counted. A named graph is searched whatever its policy, and the reply says that its text is now in the output. A query is never sent to a hosted embedder on behalf of a graph that does not allow it; that graph is searched by words only and named.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "shipped",
+          "done_when": "An unnamed search skips a secured graph and reports `secured_graphs_skipped: 1`; naming it searches it; with only a hosted embedder its hits have no vector leg and the reply says why.",
+          "source": "PRD 001 req-46, req-50, req-91",
+          "note": "The text in each hit (search-07) and the links (search-08) follow the same rule: a secured graph's text appears only when that graph was named."
+        },
+        {
+          "id": "search-18",
+          "title": "Provenance stays out",
+          "statement": "Provenance records are hidden from search unless `--provenance` is given, and then only exact matches find them. They are never embedded.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "shipped",
+          "done_when": "A search for a session's title returns nothing without `--provenance` and the session with it, by exact match only.",
+          "source": "PRD 001 req-95",
+          "replaces": [
+            "001-concept-graph.dd.json#requirements/req-95"
+          ]
+        },
+        {
+          "id": "search-19",
+          "title": "Finding a node by a half-remembered title",
+          "statement": "`umx node find <words>` matches titles only, tolerates typos, and finds a long title from a few of its words. It is the tool for naming one node; search is the tool for asking which nodes are about something. Each one's docs and hints point to the other.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "shipped",
+          "done_when": "`umx node find aproval` finds 'Approval'; a title of 12 words is found from 3 of them.",
+          "source": "PRD 001 req-57, req-122",
+          "replaces": [
+            "001-concept-graph.dd.json#requirements/req-57",
+            "001-concept-graph.dd.json#requirements/req-122"
+          ]
+        },
+        {
+          "id": "search-20",
+          "title": "The operator's search is the same search",
+          "statement": "Search in the UI calls the same daemon operation and shows the same hits, text, links, strength and hints. Vectors never reach the browser.",
+          "actor": "a-operator",
+          "priority": "should",
+          "state": "in-progress",
+          "done_when": "For the same input the UI's results equal `umx search`'s; clicking a hit pans to it; the matching text and strength are shown.",
+          "source": "PRD 001 req-112",
+          "note": "Shipped today: results and pan. Missing: text, links, strength, hints (they do not exist yet).",
+          "replaces": [
+            "001-concept-graph.dd.json#requirements/req-112"
+          ]
+        },
+        {
+          "id": "search-21",
+          "title": "Agents are taught the one-call pattern",
+          "statement": "The search docs topic, `agents-start-here`, the usage note and the /umx skill's explore and build routes describe search as it is in this PRD: read the text and links in the hit before opening a node, give several phrasings in one call, act on the strength label and the hints, and declare prose fields as content when building a graph. They change in the same pull request as the behaviour.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Each of those four places names `--also`, `--type`, the strength labels and `--role content`; the docs check passes.",
+          "source": "Project lead rulings 2026-11-12 (docs are part of done) and 2026-11-16 (update the prompting in the skill with every such change)"
+        },
+        {
+          "id": "search-22",
+          "title": "Search is measured by calls saved",
+          "statement": "The benchmark set reports, for a fixed list of questions over the search fixture: recall in the top 10, the size of the reply, and how many follow-up reads an agent would need to see the text and parent of the top 5 hits (zero when search-07 and search-08 hold). It reports and does not gate.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "The benchmark report has the three figures before and after search-03 to search-10 land.",
+          "source": "PRD 001 req-43; project lead 2026-11-16 (optimise for fewer agent turns)"
+        }
+      ]
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "id": "q-01",
+          "question": "Are the std person fields job_title and org data, or content?",
+          "default": "Data. They are short labels and are found by words and exact match.",
+          "status": "answered",
+          "answer": "Data (project lead, 2026-11-16)."
+        },
+        {
+          "id": "q-02",
+          "question": "Do rows in a feature PRD use their own ids (search-NN) or the req-NN series the project manager allocates for PRD 001?",
+          "default": "Their own ids, so a feature PRD can be read and amended alone. The project manager confirms before this PRD is merged.",
+          "status": "answered",
+          "answer": "Their own ids (project lead, 2026-11-16). ddocs addresses a row as file#requirements/id and ids are unique per file, so the file makes the id unique everywhere and no shared ledger is needed."
+        },
+        {
+          "id": "q-03",
+          "question": "What happens to the PRD 001 rows this PRD takes over (req-30, 53, 57, 68, 92, 95, 112, 122 and the search parts of req-29, 34, 97)?",
+          "default": "They keep their state and are not edited. A row here that fully takes one over links to it with `replaces`, so `ddocs links` on the old row shows where it went; rows taken over in part are named in `source`.",
+          "status": "answered",
+          "answer": "Left unedited; the new row links back to the old one with replaces (project lead, 2026-11-16)."
+        },
+        {
+          "id": "q-04",
+          "question": "Is the lean form (`--rows ids`) wanted, or should the full row be the only form?",
+          "default": "Keep it: it costs little and the similarity pairs verb already has the same switch.",
+          "status": "answered",
+          "answer": "Keep it (project lead, 2026-11-16)."
+        }
+      ]
+    },
+    {
+      "name": "changelog",
+      "value": [
+        {
+          "date": "2026-11-16",
+          "by": "architecture reviewer",
+          "change": "First draft. Written as the whole search feature in its desired state, at the project lead's request that a PRD describe the feature and not a change to it. Folds in the search rows of PRD 001 (named in each row's source) and adds the 2026-11-16 rulings: data by default, no second model, and a reply an agent can act on in one call (search-03 to search-14, search-21, search-22)."
+        },
+        {
+          "date": "2026-11-16",
+          "by": "architecture reviewer",
+          "change": "Rows that fully take over a PRD 001 row link to it with `replaces`. q-01 and q-02 answered. The change that produced the planned rows is recorded in change request 001 (docs/project/changes/001-search-agent-ready.dd.json)."
+        }
+      ]
+    }
+  ]
+}

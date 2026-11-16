@@ -1,0 +1,271 @@
+{
+  "dd": {
+    "schema": "pij/change"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Change 001: Search an agent can act on in one call",
+        "status": "accepted",
+        "asked_by": "project lead",
+        "date": "2026-11-16",
+        "owner": "architecture reviewer",
+        "summary": "Only prose is embedded, no second model is added, and a search reply carries what an agent needs to judge the hits and take the next step. Written as the first trial of the change request document."
+      }
+    },
+    {
+      "name": "why",
+      "value": "The project lead asked for a review of how graphs are embedded and whether search behaves well, given that an embedding groups things by language and the graph is a concept space. The review found that the design is sound and that paraphrase search works, but that label fields were being embedded and that a search reply gives an agent too little to act on. The rulings below followed in the same conversation."
+    },
+    {
+      "name": "evidence",
+      "value": [
+        {
+          "id": "e-01",
+          "finding": "Label fields hold a large share of the vectors and each was an embedder call.",
+          "measure": "On a private graph of 536 nodes, 666 of 2,283 vectors (29%) were for label-like fields; one field with 3 distinct values had 536 vectors. Only one custom field, with 10 vectors, was prose."
+        },
+        {
+          "id": "e-02",
+          "finding": "Label vectors flood the meaning leg and skew neighbourhoods.",
+          "measure": "A search for one label value returned 8 rows with the identical score, all matched on that field. 92% of each node's top 10 neighbours by meaning shared its label (34% by chance), against 39% sharing its type."
+        },
+        {
+          "id": "e-03",
+          "finding": "The calibrated floor cuts almost nothing inside one graph.",
+          "measure": "55% of all node pairs scored above the search floor of 0.409; the median pair scored 0.42."
+        },
+        {
+          "id": "e-04",
+          "finding": "A search hit gives an agent nothing to judge by but the title.",
+          "measure": "A hit holds id, type, title, status and scoring fields; no node text, no links; the reply has no hints."
+        },
+        {
+          "id": "e-05",
+          "finding": "Function words earn credit in the word leg.",
+          "measure": "For a question of 8 words, the two best matches by meaning (0.65 and 0.61) ranked 5th and 6th behind nodes matching 'what' and 'starts'."
+        },
+        {
+          "id": "e-06",
+          "finding": "A short text does not score as itself.",
+          "measure": "A one-word query scored 0.71 against a field holding the same word. The cause is inferred, not confirmed."
+        },
+        {
+          "id": "e-07",
+          "finding": "Meaning finds real links the graph does not have.",
+          "measure": "Only 13% of top 10 neighbours were already linked; the closest unlinked pairs were a technique and the artifact it produces (0.83 to 0.89)."
+        }
+      ]
+    },
+    {
+      "name": "rulings",
+      "value": [
+        {
+          "id": "r-01",
+          "ruling": "A custom string field is data by default and is embedded only when declared content.",
+          "by": "project lead",
+          "date": "2026-11-16",
+          "why": "Label fields should not be included in vector search, and embedding them wastes calls to the embedder. A prose field wrongly left as data fails softly (words still find it); a label wrongly embedded fails loudly.",
+          "not_chosen": "Keeping content as the default with a warning; switching a field's role automatically from its values.",
+          "change_if": "Graph builders routinely forget to declare prose fields and the hint (search-05) does not catch it."
+        },
+        {
+          "id": "r-02",
+          "ruling": "No reranker and no other second model inside umx.",
+          "by": "project lead",
+          "date": "2026-11-16",
+          "why": "The calling agent is already a capable model and is the judge. The tooling should be optimised so agents need fewer turns.",
+          "not_chosen": "A small local reranker through the existing local model adapter (recommended by the reviewer, then withdrawn); a hosted rerank service.",
+          "change_if": "Search gains a caller that is not a model and cannot judge hits itself."
+        },
+        {
+          "id": "r-03",
+          "ruling": "A search reply carries the matching text and the nearest links of each hit by default, and takes several phrasings in one call, labels strength in plain words, shows what the hits have in common, and gives hints throughout.",
+          "by": "project lead",
+          "date": "2026-11-16",
+          "why": "An agent that does not know a flag exists gains nothing from it, so the useful form is the default.",
+          "not_chosen": "Putting the text and links behind a flag.",
+          "change_if": "The larger reply measurably costs agents more than the follow-up reads it saves (search-22)."
+        },
+        {
+          "id": "r-04",
+          "ruling": "The std person fields job_title and org are data.",
+          "by": "project lead",
+          "date": "2026-11-16",
+          "why": "They are short labels."
+        },
+        {
+          "id": "r-05",
+          "ruling": "Every such change updates the docs and the prompting in the skill in the same piece of work.",
+          "by": "project lead",
+          "date": "2026-11-12 and 2026-11-16"
+        }
+      ]
+    },
+    {
+      "name": "changes",
+      "value": [
+        {
+          "id": "c-01",
+          "kind": "amend",
+          "row": "../prds/002-search.dd.json#requirements/search-04",
+          "summary": "The default role of a custom string field becomes data; existing graphs keep their vectors until reembed.",
+          "ruling": [
+            "#rulings/r-01",
+            "#rulings/r-04"
+          ]
+        },
+        {
+          "id": "c-02",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-05",
+          "summary": "Hints in both directions when a field is in the wrong group; no automatic switching.",
+          "ruling": [
+            "#rulings/r-01"
+          ]
+        },
+        {
+          "id": "c-03",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-03",
+          "summary": "Function words earn no credit in the word leg.",
+          "ruling": [
+            "#rulings/r-02"
+          ]
+        },
+        {
+          "id": "c-04",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-06",
+          "summary": "Query and stored text are prepared in matching forms; first confirm the cause.",
+          "ruling": [
+            "#rulings/r-02"
+          ]
+        },
+        {
+          "id": "c-05",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-07",
+          "summary": "Each hit carries about 200 characters of the field that matched.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-06",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-08",
+          "summary": "Each hit carries up to 3 of its stored links and a count of the rest.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-07",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-09",
+          "summary": "Up to 5 phrasings in one call, one fused list.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-08",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-10",
+          "summary": "Strong, fair or weak against the graph's own background; a hint when nothing is strong.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-09",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-11",
+          "summary": "Hits by type and shared neighbours, each with the command to narrow.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-10",
+          "kind": "amend",
+          "row": "../prds/002-search.dd.json#requirements/search-12",
+          "summary": "Adds narrowing by type, which the hints in search-11 need.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-11",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-13",
+          "summary": "Search replies carry hints for every omission and weak result.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-12",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-14",
+          "summary": "A lean reply form on request.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-13",
+          "kind": "amend",
+          "row": "../prds/002-search.dd.json#requirements/search-20",
+          "summary": "The UI shows the text, links, strength and hints once they exist.",
+          "ruling": [
+            "#rulings/r-03"
+          ]
+        },
+        {
+          "id": "c-14",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-21",
+          "summary": "Docs, usage note and the skill teach the one-call pattern in the same pull request.",
+          "ruling": [
+            "#rulings/r-05"
+          ]
+        },
+        {
+          "id": "c-15",
+          "kind": "add",
+          "row": "../prds/002-search.dd.json#requirements/search-22",
+          "summary": "The benchmark reports recall, reply size and follow-up reads saved.",
+          "ruling": [
+            "#rulings/r-02",
+            "#rulings/r-03"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "id": "q-01",
+          "question": "Is the lean reply form wanted?",
+          "default": "Yes.",
+          "status": "answered",
+          "answer": "Yes (project lead, 2026-11-16)."
+        }
+      ]
+    },
+    {
+      "name": "changelog",
+      "value": [
+        {
+          "date": "2026-11-16",
+          "by": "architecture reviewer",
+          "change": "Written after the fact from the review conversation, as the first trial of this document type. Status accepted: the rulings are given and the PRD rows are written; it becomes landed when every linked row is shipped or dropped."
+        }
+      ]
+    }
+  ]
+}

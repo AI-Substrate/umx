@@ -1,0 +1,221 @@
+{
+	"dd_schema": 1,
+	"description": "A pij change request: one asked-for change to one or more features. It holds who asked, the evidence, the rulings with why and what was not chosen, and one row per requirement row it adds, amends or drops, each a typed link to that PRD row. The PRD holds the desired state; this holds how it came to be.",
+	"enums": {
+		"change_status": {
+			"values": [
+				"proposed",
+				"accepted",
+				"landed",
+				"rejected"
+			]
+		},
+		"change_kind": {
+			"values": [
+				"add",
+				"amend",
+				"drop"
+			]
+		},
+		"question_status": {
+			"values": [
+				"open",
+				"answered"
+			]
+		}
+	},
+	"sections": {
+		"meta": {
+			"required": true,
+			"shape": {
+				"type": "object",
+				"required": [
+					"title",
+					"status"
+				],
+				"fields": {
+					"title": {
+						"type": "string"
+					},
+					"status": {
+						"type": "enum",
+						"enum": "change_status"
+					},
+					"asked_by": {
+						"type": "string"
+					},
+					"date": {
+						"type": "string"
+					},
+					"owner": {
+						"type": "string"
+					},
+					"summary": {
+						"type": "text"
+					}
+				}
+			}
+		},
+		"why": {
+			"required": true,
+			"shape": {
+				"type": "text"
+			}
+		},
+		"evidence": {
+			"shape": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"required": [
+						"id",
+						"finding"
+					],
+					"fields": {
+						"id": {
+							"type": "string"
+						},
+						"finding": {
+							"type": "text"
+						},
+						"measure": {
+							"type": "text"
+						}
+					}
+				}
+			}
+		},
+		"rulings": {
+			"shape": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"required": [
+						"id",
+						"ruling",
+						"by",
+						"date"
+					],
+					"fields": {
+						"id": {
+							"type": "string"
+						},
+						"ruling": {
+							"type": "text"
+						},
+						"by": {
+							"type": "string"
+						},
+						"date": {
+							"type": "string"
+						},
+						"why": {
+							"type": "text"
+						},
+						"not_chosen": {
+							"type": "text"
+						},
+						"change_if": {
+							"type": "text"
+						}
+					}
+				}
+			}
+		},
+		"changes": {
+			"required": true,
+			"shape": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"required": [
+						"id",
+						"kind",
+						"row",
+						"summary"
+					],
+					"fields": {
+						"id": {
+							"type": "string"
+						},
+						"kind": {
+							"type": "enum",
+							"enum": "change_kind"
+						},
+						"row": {
+							"type": "link",
+							"target": "pij/prd/section/requirements",
+							"rel": "changes"
+						},
+						"summary": {
+							"type": "text"
+						},
+						"ruling": {
+							"type": "array",
+							"items": {
+								"type": "link",
+								"target": "pij/change/section/rulings",
+								"rel": "ruled_by"
+							}
+						}
+					}
+				}
+			}
+		},
+		"open_questions": {
+			"shape": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"required": [
+						"id",
+						"question",
+						"status"
+					],
+					"fields": {
+						"id": {
+							"type": "string"
+						},
+						"question": {
+							"type": "text"
+						},
+						"default": {
+							"type": "text"
+						},
+						"answer": {
+							"type": "text"
+						},
+						"status": {
+							"type": "enum",
+							"enum": "question_status"
+						}
+					}
+				}
+			}
+		},
+		"changelog": {
+			"shape": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"required": [
+						"date",
+						"by",
+						"change"
+					],
+					"fields": {
+						"date": {
+							"type": "string"
+						},
+						"by": {
+							"type": "string"
+						},
+						"change": {
+							"type": "text"
+						}
+					}
+				}
+			}
+		}
+	}
+}

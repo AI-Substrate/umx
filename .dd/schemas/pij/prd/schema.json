@@ -1,6 +1,6 @@
 {
   "dd_schema": 1,
-  "description": "A pij project PRD: what is needed and why. Requirement rows carry a lifecycle state and a done-when check; a builder flips the state in the PR that delivers it. Rows are amended, never deleted; drop one with state dropped and a note.",
+  "description": "A pij project PRD: one feature, described in its desired state. A requirement row says how the feature should behave; its state says whether the product matches (shipped) or not yet (planned, in-progress), and its note says what is missing. Rows are rewritten in place when the feature changes, through a change request (pij/change), and are never deleted; drop one with state dropped and a note. Row ids are unique in the file. A row that takes over a row of another PRD links to it with replaces.",
   "enums": {
     "doc_status": {
       "values": [
@@ -180,6 +180,14 @@
             },
             "note": {
               "type": "string"
+            },
+            "replaces": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/prd/section/requirements",
+                "rel": "replaces"
+              }
             }
           }
         }
