@@ -81,7 +81,7 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
   set field <type> <field> --role data|content`). Data fields are never embedded but word search still finds
   them; only string fields can be content (`role_not_embeddable`). On `text_form_outdated`, the old vectors are
   kept and searched; `umx embeddings reembed --dry-run` shows the cost of remaking them.
-- **usage 196**: declare a field that holds prose (sentences that differ from node to node) as content, and one
+- **usage 197**: declare a field that holds prose (sentences that differ from node to node) as content, and one
   that holds labels (a handful of short values: a tier, a region, a category) as data. When `umx graph guide`,
   `umx embeddings status` or `ontology add field` gives `field_looks_like_labels` or `field_looks_like_prose`,
   check the field is what the hint says, then run the `umx ontology set field ... --role` command it names; umx
