@@ -7442,3 +7442,24 @@ mod symmetric {
         );
     }
 }
+
+/// PRD 002 search-08: a search hit's links never list provenance (the session it was authored in, authored_by), only
+/// the links a person or agent stored.
+#[test]
+fn a_search_hits_links_leave_provenance_out() {
+    let (w, a, b, session) = provenance_read_world();
+    let links = w.svc.hit_links("demo", a).unwrap();
+    assert_eq!(
+        links
+            .shown
+            .iter()
+            .map(|l| (l.relation.as_str(), l.id))
+            .collect::<Vec<_>>(),
+        [("supports", b)]
+    );
+    assert_eq!(links.more, 0);
+    assert!(links.shown.iter().all(|l| l.id != session));
+    // The control: with provenance shown, a reads as authored in that session.
+    let shown = w.svc.graph_list_in(&provenance_ctx());
+    assert!(shown[0].edges > 1);
+}

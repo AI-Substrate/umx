@@ -86,8 +86,8 @@ pub use pairs::{
     PairRows, PairsAsk, PairsFound, PairsJob, PairsMin, PairsPart, PairsResult, Skipped,
 };
 pub use query::{
-    Direction, EdgeCell, NeighbourRow, NeighboursRequest, NodeCell, PathRequest, PathRow,
-    QueryService, WalkRequest, WalkRow, Way,
+    Direction, EdgeCell, HIT_LINKS, HitLink, HitLinks, NeighbourRow, NeighboursRequest, NodeCell,
+    PathRequest, PathRow, QueryService, WalkRequest, WalkRow, Way,
 };
 pub use service_agent::ServiceAgent;
 
@@ -2267,6 +2267,12 @@ impl Services {
             .role_hints(&done.value.alias, Some((type_name, &done.value.name)));
         done.notes.extend(hints);
         Ok(done)
+    }
+
+    /// PRD 002 search-08: a search hit's place in its graph (see [`query::hit_links`]). Read only for the hits a
+    /// search returns.
+    pub fn hit_links(&self, alias: &str, id: Id) -> Option<HitLinks> {
+        query::hit_links(&self.graph, alias, id)
     }
 
     /// search-05: the role hints of `alias` (see [`graph_store::GraphStore::role_hints`]).

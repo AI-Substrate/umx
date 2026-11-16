@@ -372,6 +372,31 @@ fn data(data: &Value, command: &str, style: Style) -> String {
     lines.iter().map(|l| format!("{l}\n")).collect()
 }
 
+/// A search hit's links (search-08) on one line: `part_of -> <id> <title>; supports <- <id> <title>; +2 more`, every
+/// part cleaned. A hidden value (a flagged title, F224) prints as it is; no links prints nothing.
+fn links_line(links: &Value, more: &Value) -> Option<String> {
+    let more = more.as_u64().unwrap_or(0);
+    let mut parts: Vec<String> = match links {
+        Value::Array(links) => links
+            .iter()
+            .map(|l| {
+                let arrow = if l["direction"] == "in" { "<-" } else { "->" };
+                format!(
+                    "{} {arrow} {} {}",
+                    clean(&text(&l["relation"])),
+                    clean(&text(&l["id"])),
+                    clean(&text(&l["title"]))
+                )
+            })
+            .collect(),
+        other => vec![clean(&text(other))],
+    };
+    if more > 0 {
+        parts.push(format!("+{more} more"));
+    }
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
 /// A header row, a rule and one aligned row per record; ids dim. Widths are terminal columns, before colour.
 /// Column names can come from the command line (`--columns`), so they are cleaned like graph text; rows are
 /// looked up by the raw name.
@@ -379,10 +404,13 @@ fn table(cols: &[&str], rows: &[Value], data: &Value, style: Style) -> String {
     // A search hit's cut (PRD 002 search-07) is printed under its row, one indented line, never as a column: the
     // table stays as wide as it was. It is graph text, so it goes through [`clean`] like every cell.
     let cut = cols.contains(&"text") && cols.contains(&"text_field");
+    // Its links (search-08) likewise: one indented line under the text, `+N more` for the rest.
+    let linked = cols.contains(&"links") && cols.contains(&"links_more");
     let shown: Vec<&str> = cols
         .iter()
         .copied()
         .filter(|c| !(cut && matches!(*c, "text" | "text_field")))
+        .filter(|c| !(linked && matches!(*c, "links" | "links_more")))
         .collect();
     let cols = shown.as_slice();
     let cells: Vec<Vec<String>> = rows
@@ -431,6 +459,9 @@ fn table(cols: &[&str], rows: &[Value], data: &Value, style: Style) -> String {
                 style.paint(DIM, &format!("{field}:")),
                 clean(text)
             ));
+        }
+        if linked && let Some(line) = links_line(&record["links"], &record["links_more"]) {
+            out.push_str(&format!("    {} {line}\n", style.paint(DIM, "links:")));
         }
     }
     if rows.is_empty() {

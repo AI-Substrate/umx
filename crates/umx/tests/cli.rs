@@ -25220,3 +25220,170 @@ fn a_named_graphs_text_shows_only_when_it_is_named() {
         env.to_json()
     );
 }
+
+/// The id of a node added with `title` (and any extra args).
+fn add_node(home: &Home, title: &str, extra: &[&str]) -> String {
+    let mut args = vec!["node", "add", "--type", "problem", "--title", title];
+    args.extend_from_slice(extra);
+    home.ok(&args).data["node"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn each_search_hit_carries_its_place_in_the_graph() {
+    // PRD 002 search-08 done_when: a hit with 7 stored links shows 3 with more 4, its part_of parent first; a hit
+    // with none shows an empty list; no similar_to row appears. Plus: inbound links say `in`; a link into another
+    // graph, open or read only when named, is neither listed nor counted; a flagged title flags `field:links`.
+    let mut home = Home::new("search-links");
+    home.graph();
+    let parent = add_node(&home, "Launch programme", &[]);
+    let hub = add_node(&home, "Zebra crossing review", &["--parent", &parent]);
+    for (i, relation) in ["supports", "supports", "depends_on"].iter().enumerate() {
+        let other = add_node(&home, &format!("Outward {i}"), &[]);
+        home.ok(&["edge", "add", &hub, relation, &other]);
+    }
+    for i in 0..3 {
+        let other = add_node(&home, &format!("Inward {i}"), &[]);
+        home.ok(&["edge", "add", &other, "blocks", &hub]);
+    }
+    add_node(&home, "Zebra lonely note", &[]);
+    // A link into another graph is never listed or counted: one open, one read only when named.
+    for alias in ["far", "vault"] {
+        let path = home.path.join(alias).display().to_string();
+        home.ok(&["graph", "new", &path, "--alias", alias]);
+        let far = home
+            .ok(&[
+                "node", "add", "--type", "problem", "--title", "Far end", "--graph", alias,
+            ])
+            .data["node"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        home.ok(&[
+            "edge",
+            "add",
+            &hub,
+            "blocks",
+            &format!("umx:{alias}/{far}"),
+            "--graph",
+            "demo",
+        ]);
+    }
+    home.ok(&["graph", "set", "vault", "--visibility", "named"]);
+
+    for args in [
+        &["search", "zebra", "--graph", "demo"][..],
+        &["search", "zebra", "--graph", "demo,far"][..],
+    ] {
+        let env = home.ok(args);
+        assert!(
+            env.untrusted
+                .iter()
+                .any(|p| p == "data.rows[].links[].title"),
+            "{}",
+            env.to_json()
+        );
+        let row = hit(&env, "Zebra crossing review");
+        let links = row["links"].as_array().unwrap();
+        assert_eq!(
+            (links.len(), &row["links_more"]),
+            (3, &json!(4)),
+            "{}",
+            env.to_json()
+        );
+        assert_eq!(
+            links[0],
+            json!({ "relation": "part_of", "direction": "out", "id": parent, "title": "Launch programme" })
+        );
+        // Then by relation: blocks (all inbound here) before depends_on and supports.
+        assert_eq!(
+            (
+                links[1]["relation"].as_str(),
+                links[1]["direction"].as_str()
+            ),
+            (Some("blocks"), Some("in"))
+        );
+        assert!(!env.to_json().contains("similar_to"), "{}", env.to_json());
+        assert!(!env.to_json().contains("Far end"), "{}", env.to_json());
+        let lonely = hit(&env, "Zebra lonely note");
+        assert_eq!(
+            (&lonely["links"], &lonely["links_more"]),
+            (&json!([]), &json!(0))
+        );
+    }
+
+    // Human output: one indented line, `+N more` for the rest.
+    let text = home.human(&["search", "zebra", "--graph", "demo"]);
+    assert!(
+        text.contains(&format!(
+            "    links: part_of -> {parent} Launch programme; blocks <- "
+        )),
+        "{text}"
+    );
+    assert!(text.contains("; +4 more\n"), "{text}");
+
+    // A flagged title at the other end flags the links and --human hides them.
+    let secret = add_node(
+        &home,
+        &format!("Keys {}", fake_aws_key()),
+        &["--graph", "demo"],
+    );
+    let flagged = add_node(&home, "Yak shaving", &["--graph", "demo"]);
+    home.ok(&[
+        "edge",
+        "add",
+        &flagged,
+        "depends_on",
+        &secret,
+        "--graph",
+        "demo",
+    ]);
+    let env = home.ok(&["search", "yak", "--graph", "demo"]);
+    let row = hit(&env, "Yak shaving");
+    assert!(
+        row["secret_suspected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f == "field:links"),
+        "{}",
+        env.to_json()
+    );
+    let text = home.human(&["search", "yak", "--graph", "demo"]);
+    assert!(text.contains("links: [secret suspected, hidden]"), "{text}");
+    assert!(!text.contains("AKIA"), "{text}");
+}
+
+#[test]
+fn a_hub_hit_lists_three_links_and_counts_the_rest() {
+    // PRD 002 search-08: a node with 500 stored links carries 3 and `links_more: 497`, read from its own edges.
+    let mut home = Home::new("search-hub");
+    home.graph();
+    let hub = add_node(&home, "Quokka hub", &[]);
+    let mut ops = String::new();
+    for i in 0..500 {
+        ops.push_str(&format!(
+            "{{\"op\":\"node add\",\"ref\":\"n{i}\",\"type\":\"problem\",\"title\":\"Spoke {i}\"}}\n{{\"op\":\"edge add\",\"from_ref\":\"n{i}\",\"relation\":\"supports\",\"to\":\"{hub}\"}}\n"
+        ));
+    }
+    let file = home.path.join("hub.jsonl");
+    fs::write(&file, ops).unwrap();
+    home.ok(&["batch", "--file", file.to_str().unwrap()]);
+    let env = home.ok(&["search", "quokka"]);
+    let row = hit(&env, "Quokka hub");
+    assert_eq!(
+        (row["links"].as_array().unwrap().len(), &row["links_more"]),
+        (3, &json!(497)),
+        "{}",
+        env.to_json()
+    );
+    assert!(
+        row["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["direction"] == "in")
+    );
+}

@@ -40,7 +40,8 @@ counts or filters across edges.
 - **meaning**: nodes whose vectors are close to the query's, when the graph has vectors.
 
 Each row says how it was found (`legs`) and why (`cosine`, `bm25`, `coverage`), and carries `text`: up to 200
-characters of the field that found it (`text_field`), graph data to judge the hit by before opening the node. `similarity_unavailable` means the
+characters of the field that found it (`text_field`), graph data to judge the hit by before opening the node, and
+`links`: up to 3 of its stored links (`part_of` first) with `links_more` for the rest. `similarity_unavailable` means the
 results are words and exact matches only. Try the other word form, or `umx node find` for titles.
 
 ## Similarity is a hint

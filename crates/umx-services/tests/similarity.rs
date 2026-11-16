@@ -2038,3 +2038,31 @@ fn the_vectors_digest_moves_with_applied_vectors_only() {
     reload(&mut w);
     assert_eq!(digest_now(&w).0, applied);
 }
+
+/// PRD 002 search-08: a search hit's links are the stored ones only; its similar_to list is never listed or counted.
+#[test]
+fn a_search_hits_links_never_list_similar_to() {
+    let mut w = world();
+    let a = add(&mut w, "shared cat food");
+    let b = add(&mut w, "shared cat food");
+    run(&mut w);
+    let g = w.svc.loaded_graph("demo").unwrap();
+    assert!(
+        !g.similar_out(g.node_ix(a).unwrap()).is_empty(),
+        "the control: a similar_to list exists"
+    );
+    assert_eq!(w.svc.hit_links("demo", a), Some(Default::default()));
+    w.svc
+        .edge_add(&ctx(), &a.to_text(), "supports", &b.to_text(), &[])
+        .unwrap();
+    let links = w.svc.hit_links("demo", a).unwrap();
+    assert_eq!(links.more, 0);
+    assert_eq!(
+        links
+            .shown
+            .iter()
+            .map(|l| (l.relation.as_str(), l.way.as_str(), l.id))
+            .collect::<Vec<_>>(),
+        [("supports", "out", b)]
+    );
+}

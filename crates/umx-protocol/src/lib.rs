@@ -158,12 +158,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `graph guide` and `embeddings status`.
 /// 83: search rows carry `text_field` and `text`, a cut of the field that found the hit (PRD 002 search-07), flagged
 /// `field:text` as node get flags the field; `data.rows[].text` joins `untrusted`.
+/// 84: search rows carry `links` (up to 3 stored links in the hit's own graph: relation, direction, the other node's
+/// id and title) and `links_more` (PRD 002 search-08), flagged `field:links` when a title is; `data.rows[].links[].title`
+/// joins `untrusted`.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 83;
+pub const PROTOCOL: u32 = 84;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -172,16 +175,17 @@ pub const PROTOCOL: u32 = 83;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (83, 0x77c6_0657_68cd_094d);
+const WIRE_FINGERPRINT: (u32, u64) = (84, 0x5836_8401_8996_8cbe);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
 /// those (the graph view) knows they are an agent's note and graph titles.
-pub const UNTRUSTED: [&str; 7] = [
+pub const UNTRUSTED: [&str; 8] = [
     "data",
     "data.events[].command.note",
     "data.rows[].title",
     "data.rows[].text",
+    "data.rows[].links[].title",
     "warnings[].candidates",
     "hints[].candidates",
     "errors[].candidates",

@@ -1,5 +1,5 @@
 {
-  "umx": 83,
+  "umx": 84,
   "command": "node add",
   "status": "warning",
   "data": {
@@ -19,6 +19,7 @@
     "data.events[].command.note",
     "data.rows[].title",
     "data.rows[].text",
+    "data.rows[].links[].title",
     "warnings[].candidates",
     "hints[].candidates",
     "errors[].candidates"

@@ -1,5 +1,5 @@
 {
-  "umx": 83,
+  "umx": 84,
   "command": "version",
   "status": "warning",
   "data": null,
@@ -22,6 +22,7 @@
     "data.events[].command.note",
     "data.rows[].title",
     "data.rows[].text",
+    "data.rows[].links[].title",
     "warnings[].candidates",
     "hints[].candidates",
     "errors[].candidates"

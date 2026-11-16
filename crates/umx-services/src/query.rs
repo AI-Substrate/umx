@@ -806,3 +806,69 @@ mod tests {
         }
     }
 }
+
+/// PRD 002 search-08: how many of a search hit's links it carries.
+pub const HIT_LINKS: usize = 3;
+
+/// One stored link a search hit carries: its relation, which way it points from the hit, and the other node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HitLink {
+    pub relation: String,
+    pub way: Way,
+    pub id: Id,
+    pub title: String,
+}
+
+/// A search hit's place in its graph (PRD 002 search-08): up to [`HIT_LINKS`] of its stored links and how many more
+/// there are.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HitLinks {
+    pub shown: Vec<HitLink>,
+    pub more: usize,
+}
+
+/// PRD 002 search-08: the stored links of node `id` in loaded graph `alias`, read through the same adjacency
+/// `neighbours` reads ([`hops`]), so only that one node's edges are read. Kept: links a person or agent stored, both
+/// ends in this graph and visible to a read (provenance nodes hidden). Left out and not counted: derived relations
+/// (`similar_to`, `authored_by`, `edited_by`), provenance relations, and any link with an end in another graph,
+/// which this graph's adjacency does not hold. Order: `part_of` (the hierarchy `--parent` writes and `--within`
+/// walks) first, then by relation, out before in, then the other node's id; titles are read only for those shown.
+/// None when the graph is not loaded or the node is not in it.
+pub(crate) fn hit_links(store: &GraphStore, alias: &str, id: Id) -> Option<HitLinks> {
+    let l = store.loaded(alias)?;
+    let g = &l.graph;
+    let at = g.node_ix(id)?;
+    let symmetric = l.meta.ontology.symmetric_kinds();
+    let mut links: Vec<(bool, String, Way, Id, NodeIx)> =
+        hops(g, at, Direction::Both, None, &symmetric, false)
+            .into_iter()
+            .filter(|h| {
+                !h.edge.derived
+                    && !umx_core::ontology::is_derived_relation(&h.edge.relation)
+                    && !umx_core::ontology::PROVENANCE_RELATIONS.contains(&h.edge.relation.as_str())
+            })
+            .map(|h| {
+                let other = g.node_at(h.other).id();
+                (
+                    h.edge.relation != umx_core::ontology::PART_OF,
+                    h.edge.relation,
+                    h.edge.way,
+                    other,
+                    h.other,
+                )
+            })
+            .collect();
+    links.sort_by(|a, b| (a.0, &a.1, a.2 == Way::In, a.3).cmp(&(b.0, &b.1, b.2 == Way::In, b.3)));
+    let more = links.len().saturating_sub(HIT_LINKS);
+    let shown = links
+        .into_iter()
+        .take(HIT_LINKS)
+        .map(|(_, relation, way, id, ix)| HitLink {
+            relation,
+            way,
+            id,
+            title: g.node_at(ix).title().to_string(),
+        })
+        .collect();
+    Some(HitLinks { shown, more })
+}

@@ -1493,7 +1493,10 @@ pub fn search_finish(
 /// flags carries `secret_suspected: ["field:title"]` (F228), and `field:word_terms` too when it has word terms: a
 /// matched term is the node's whole word, which a prefix query spells out, and the terms do not say which field they
 /// came from, so all of them are flagged (R398-1). Each row's `text` is a cut of the field named in `text_field`
-/// (PRD 002 search-07): graph data, listed untrusted, and flagged `field:text` when that field's value is.
+/// (PRD 002 search-07): graph data, listed untrusted, and flagged `field:text` when that field's value is. `links`
+/// holds up to 3 of the hit's stored links in its own graph (relation, direction, the other node's id and title) and
+/// `links_more` how many more (PRD 002 search-08); each title is listed untrusted, and a flagged one flags
+/// `field:links`.
 fn search_json(services: &Services, result: &umx_services::HybridResult) -> Value {
     let titles: Vec<_> = result
         .hits
@@ -1522,6 +1525,18 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
             {
                 flags.push(umx_core::place::named_place("text"));
             }
+            // search-08: up to 3 stored links in the hit's own graph and a count of the rest. Each other end's title is
+            // graph data, flagged by the rule every read applies to a title it shows (F228); one flagged title flags
+            // `field:links`, which --human hides whole.
+            let links = services.hit_links(&h.alias, h.node.id).unwrap_or_default();
+            let ends: Vec<_> = links
+                .shown
+                .iter()
+                .map(|l| (GraphKey::Alias(&h.alias), l.id, l.title.as_str()))
+                .collect();
+            if services.titles_flagged(&ends).into_iter().any(|on| on) {
+                flags.push(umx_core::place::named_place("links"));
+            }
             let mut row = json!({
                 "graph": h.alias,
                 "address": umx_services::address(&h.alias, h.node.id),
@@ -1548,6 +1563,17 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
                 "fused": h.fused,
                 "text_field": text.as_ref().map(|(field, _)| field),
                 "text": text.as_ref().map(|(_, cut)| cut),
+                "links": links
+                    .shown
+                    .iter()
+                    .map(|l| json!({
+                        "relation": l.relation,
+                        "direction": l.way.as_str(),
+                        "id": l.id.to_text(),
+                        "title": l.title,
+                    }))
+                    .collect::<Vec<_>>(),
+                "links_more": links.more,
             });
             if result.copies {
                 row["copy"] = json!(h.alias);
@@ -1576,6 +1602,8 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
         "fused",
         "text_field",
         "text",
+        "links",
+        "links_more",
     ];
     if any_flagged(&rows) {
         columns.push(SECRET_SUSPECTED);

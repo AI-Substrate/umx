@@ -180,7 +180,7 @@
           "statement": "Each hit holds up to 3 of its links, the stored ones a person or agent wrote, as relation, direction and the other node's id and title, with a count of the rest. `part_of` and other containment links come first. Derived `similar_to` links and provenance are never listed. Only links inside the graphs being searched are shown.",
           "actor": "a-agent",
           "priority": "must",
-          "state": "planned",
+          "state": "shipped",
           "done_when": "A hit with 7 stored links shows 3 with `more: 4`, its `part_of` parent first; a hit with none shows an empty list; no `similar_to` row appears.",
           "source": "Project lead ruling 2026-11-16 (on by default)"
         },
@@ -317,7 +317,7 @@
           "state": "in-progress",
           "done_when": "For the same input the UI's results equal `umx search`'s; clicking a hit pans to it; the matching text and strength are shown.",
           "source": "PRD 001 req-112",
-          "note": "Shipped today: results and pan. Missing: text, links, strength, hints (they do not exist yet).",
+          "note": "Shipped today: results and pan. Missing in the view: text and links (the search reply carries them since search-07 and search-08), strength and hints (not built yet).",
           "replaces": [
             "001-concept-graph.dd.json#requirements/req-112"
           ]
