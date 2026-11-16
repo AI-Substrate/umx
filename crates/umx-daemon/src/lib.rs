@@ -1911,7 +1911,7 @@ impl Daemon {
                         let queries =
                             plan.embed_with(&admitted, &|e, text| self.queries.embed(e, text));
                         match self.services.read() {
-                            Ok(services) => verbs::search_finish(&services, plan, queries),
+                            Ok(services) => verbs::search_finish(&services, request, plan, queries),
                             Err(_) => Envelope::fail(command, internal("writer_stopped")),
                         }
                     }

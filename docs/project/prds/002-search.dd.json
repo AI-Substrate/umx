@@ -233,10 +233,10 @@
           "statement": "A search reply uses the hints list for everything the caller might otherwise miss, each with the next command: no strong match; a narrower search (search-11); results cut by `--limit`; nodes with no vector yet; graphs searched by words only and why; secured graphs left out.",
           "actor": "a-agent",
           "priority": "must",
-          "state": "planned",
+          "state": "in-progress",
           "done_when": "Each case above, set up on a fixture, yields its hint with a runnable command; a reply with hints keeps status ok.",
           "source": "Project lead ruling 2026-11-12 (hints are part of every feature); depends on PRD 001 req-139",
-          "note": "Shipped today: search has warnings for the degraded cases and no hints."
+          "note": "Shipped today: hints for results cut by `--limit` (`search_results_cut`), nodes with no vector yet (`similarity_incomplete`), graphs searched by words only and why (`similarity_unavailable`, `similarity_no_embedder`) and secured graphs left out (`secured_graphs_skipped`), each with a command; status stays ok. Missing: no strong match (comes with search-10) and a narrower search (comes with search-11)."
         },
         {
           "id": "search-14",
@@ -318,7 +318,7 @@
           "state": "in-progress",
           "done_when": "For the same input the UI's results equal `umx search`'s; clicking a hit pans to it; the matching text and strength are shown.",
           "source": "PRD 001 req-112",
-          "note": "Shipped today: results and pan. Missing in the view: text and links (the search reply carries them since search-07 and search-08), strength and hints (not built yet).",
+          "note": "Shipped today: results and pan, and the reply's hints as umx gives them (search-13, in part). Missing in the view: text and links (the search reply carries them since search-07 and search-08) and strength (not built yet).",
           "replaces": [
             "001-concept-graph.dd.json#requirements/req-112"
           ]

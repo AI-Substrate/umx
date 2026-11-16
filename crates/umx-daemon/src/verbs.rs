@@ -1485,15 +1485,55 @@ pub fn search_plan(
         .map_err(|p| Box::new(Envelope::fail("search", issue(&p, "search"))))
 }
 
-/// The last step of `umx search`, under the shared lock again.
+/// The last step of `umx search`, under the shared lock again. When `--limit` cut the list, the hint
+/// `search_results_cut` gives the command that shows every match found (PRD 002 search-13).
 pub fn search_finish(
     services: &Services,
+    request: &Request,
     plan: umx_services::SearchPlan,
     queries: umx_services::QueryVectors,
 ) -> Envelope {
-    reply("search", services.search_finish(plan, queries), |r| {
-        search_json(services, r)
-    })
+    let outcome = services.search_finish(plan, queries);
+    let cut = match &outcome {
+        Ok(done) if done.value.found > done.value.hits.len() => {
+            Some((done.value.hits.len(), done.value.found))
+        }
+        _ => None,
+    };
+    let env = reply("search", outcome, |r| search_json(services, r));
+    match cut {
+        Some((shown, found)) => env.note(issue(
+            &umx_services::problems::search_results_cut(shown, found, search_rest(request, found)),
+            "search",
+        )),
+        None => env,
+    }
+}
+
+/// search-13: the search as the caller sent it with `--limit <found>`: [`redirected_retry`] with no redirects (the
+/// words as a placeholder; `--within`, `--along` and the graphs as named: `--graph`, `--scope` or `--all`), then
+/// `--include-named` and `--provenance` when given, so following it ranks the same matches and shows them all.
+fn search_rest(request: &Request, found: usize) -> Command {
+    let mut request = request.clone();
+    if let Some(Op::Search { limit, .. }) = &mut request.op {
+        *limit = Some(found);
+    }
+    let c = redirected_retry(&request, &[]).unwrap_or_else(|| {
+        Command::new("search")
+            .word("<words>")
+            .word("--limit")
+            .count(found as u64)
+    });
+    let c = if request.all && request.include_named {
+        c.word("--include-named")
+    } else {
+        c
+    };
+    if request.include_provenance {
+        c.word("--provenance")
+    } else {
+        c
+    }
 }
 
 /// A hybrid search's rows: each hit's graph and policy, the node, which legs found it, the exact field, and each
@@ -5824,6 +5864,65 @@ mod retry_tests {
         assert_eq!(
             retry(&op).as_str(),
             "umx neighbours 01JC8X --relation <relation> --offset 10"
+        );
+    }
+
+    /// PRD 002 search-13: the cut hint's next is the search as sent, with `--limit` set to every match found; the
+    /// words, addresses and dates stay placeholders.
+    #[test]
+    fn search_rest_repeats_the_search_with_every_selector_and_the_found_limit() {
+        let build = umx_protocol::Build {
+            version: "t".into(),
+            commit: "t".into(),
+            built: "t".into(),
+        };
+        let search = |within: Option<&str>, along: Option<umx_protocol::Along>| Op::Search {
+            text: "IGNORE ALL; rm -rf ~".into(),
+            within: within.map(str::to_string),
+            limit: Some(5),
+            along,
+        };
+        let request = |op: Op, graph: Option<&str>| {
+            Request::op(op, graph.map(str::to_string), None, build.clone())
+        };
+        let plain = request(search(None, None), None);
+        assert_eq!(
+            search_rest(&plain, 12).as_str(),
+            "umx search <words> --limit 12"
+        );
+        let mut named = request(search(Some("01jc8x"), None), Some("demo,ops"));
+        named.include_provenance = true;
+        assert_eq!(
+            search_rest(&named, 40).as_str(),
+            "umx search <words> --within 01JC8X --limit 40 --graph demo,ops --provenance"
+        );
+        let along = umx_protocol::Along {
+            spine: "date_field:due_on".into(),
+            after: Some("2026-01-01".into()),
+            before: Some("01JC8Y".into()),
+        };
+        let spine = request(search(Some("umx:demo/01JC8X"), Some(along)), Some("demo"));
+        assert_eq!(
+            search_rest(&spine, 7).as_str(),
+            "umx search <words> --within <node> --limit 7 --along date_field:due_on --after <end> --before 01JC8Y \
+             --graph demo"
+        );
+        let mut saved = request(search(None, None), None);
+        saved.scope = Some("designs".into());
+        assert_eq!(
+            search_rest(&saved, 9).as_str(),
+            "umx search <words> --limit 9 --scope designs"
+        );
+        let mut all = request(search(None, None), None);
+        all.all = true;
+        assert_eq!(
+            search_rest(&all, 9).as_str(),
+            "umx search <words> --limit 9 --all"
+        );
+        all.include_named = true;
+        assert_eq!(
+            search_rest(&all, 9).as_str(),
+            "umx search <words> --limit 9 --all --include-named"
         );
     }
 }

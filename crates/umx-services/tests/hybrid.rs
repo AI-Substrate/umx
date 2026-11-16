@@ -299,6 +299,22 @@ fn vector_candidates_ignore_provenance_and_reserved_fields_but_keep_user_agents(
     );
 }
 
+/// PRD 002 search-13: `found` counts every match fusion ranked; `--limit` cuts only the hits, which are the first of
+/// the same list.
+#[test]
+fn found_counts_the_matches_a_limit_cut() {
+    let (w, _) = demo();
+    let all = w.svc.search(&ctx(), "approval", None, 10).unwrap().value;
+    assert!(
+        all.found >= 2 && all.found == all.hits.len(),
+        "{}",
+        all.found
+    );
+    let cut = w.svc.search(&ctx(), "approval", None, 1).unwrap().value;
+    assert_eq!((cut.hits.len(), cut.found), (1, all.found));
+    assert_eq!(cut.hits[0].node.id, all.hits[0].node.id);
+}
+
 /// req-30 done_when: an id is found by exact match, a paraphrase by vector, and each result names its match.
 #[test]
 fn each_hit_names_its_match_an_id_exactly_and_a_paraphrase_by_vector() {

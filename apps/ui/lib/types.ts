@@ -116,11 +116,11 @@ export type SearchResult = {
   /** The text umx was given (trimmed, spaces collapsed); empty for similar. */
   query: string;
   hits: Hit[];
-  /** umx's warnings, as given (similarity_unavailable, similarity_incomplete, similar_to_incomplete...). */
+  /** umx's warnings, as given (embedder_mismatch, similar_to_incomplete...). */
   warnings: ApiError[];
   /** search's word_leg note, or the similar_to lists' model, k and floor. */
   note: string | null;
-  /** umx's hints, as given (D69 (9)). */
+  /** umx's hints, as given (D69 (9)): similarity_unavailable, similarity_incomplete, search_results_cut... */
   hints?: ApiError[];
   /** Rows left out because they are not nodes of the graph on screen. */
   foreign: number;

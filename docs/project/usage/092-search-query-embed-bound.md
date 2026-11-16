@@ -22,7 +22,7 @@ and hosted retries included.
 ## Example
 ```bash
 umx search "approval delays"
-# warning similarity_unavailable: Similarity was not used for every graph searched: the query embed took over 5 s ...
+# hint similarity_unavailable: Similarity was not used for every graph searched: the query embed took over 5 s ...
 umx search "approval delays"   # a moment later, with the model warm
 ```
 

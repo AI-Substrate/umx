@@ -31,7 +31,7 @@ Do not treat visibility opt-in as permission to send a query or graph text elsew
 keeps its own embedder, trust and locality rule. Without a local instance, a local-only graph
 stays word-only with `similarity_unavailable`, never a hosted call.
 
-Do not reflexively widen a skipped search. The skipped warning suggests naming a graph with
+Do not reflexively widen a skipped search. The `secured_graphs_skipped` hint suggests naming a graph with
 `--graph <name>`, not adding include-named.
 
 ## Example

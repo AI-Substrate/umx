@@ -4320,6 +4320,21 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 &[("XDG_CACHE_HOME", &cache)],
             )
         }
+        Code::SearchResultsCut => {
+            // PRD 002 search-13: 12 nodes hold the word, --limit 5 shows 5.
+            home.graph();
+            for i in 0..12 {
+                home.ok(&[
+                    "node",
+                    "add",
+                    "--type",
+                    "problem",
+                    "--title",
+                    &format!("Walrus report {i}"),
+                ]);
+            }
+            home.umx(&["search", "walrus", "--limit", "5"])
+        }
         Code::SecuredGraphsSkipped => {
             home.secured_graph();
             home.umx(&["search", "anything"])
@@ -10618,7 +10633,7 @@ fn an_unnamed_search_skips_secured_graphs_and_names_none() {
         (rows[0]["id"].as_str(), rows[0]["policy"].as_str()),
         (Some(open.as_str()), Some("open"))
     );
-    let note = issue(&env, Code::SecuredGraphsSkipped);
+    let note = hint_of(&env, Code::SecuredGraphsSkipped);
     let text = env.to_json();
     assert!(!text.contains("vault") && !text.contains(&secret), "{text}");
     assert!(
@@ -10639,8 +10654,9 @@ fn an_unnamed_search_skips_secured_graphs_and_names_none() {
     );
     assert!(
         !named
-            .warnings
+            .hints
             .iter()
+            .chain(&named.warnings)
             .any(|w| w.code() == "secured_graphs_skipped")
     );
     let both = home.ok(&["search", "approval", "delay", "--graph", "demo,vault"]);
@@ -11372,7 +11388,7 @@ fn all_graph_read_flags_work_on_search_and_query_and_reject_bad_combinations() {
                 .iter()
                 .all(|r| r["graph"] == "open")
         );
-        let skipped = issue(&all, Code::SecuredGraphsSkipped);
+        let skipped = hint_of(&all, Code::SecuredGraphsSkipped);
         for value in [skipped.message(), skipped.next()] {
             assert!(
                 !value.contains("include-named") && !value.contains("--all"),
@@ -13014,7 +13030,7 @@ fn umx_query_reads_secured_graphs_only_when_named() {
     let (env, _) = home.query(text, &[]);
     assert_eq!(query_rows(&env), [["notes", "notes thing"]]);
     assert!(
-        issue(&env, Code::SecuredGraphsSkipped)
+        hint_of(&env, Code::SecuredGraphsSkipped)
             .message()
             .contains('1')
     );
@@ -13276,7 +13292,7 @@ fn copies_of_one_graph_are_read_once_unless_named() {
     let (env, _) = home.query(count, &d1);
     assert_eq!(query_rows(&env), [["3"]]);
     assert!(
-        issue(&env, Code::SecuredGraphsSkipped)
+        hint_of(&env, Code::SecuredGraphsSkipped)
             .message()
             .contains('2')
     );
@@ -13500,7 +13516,7 @@ fn scopes_name_secured_members_and_resolve_only_primary_copies() {
     assert_eq!(nodes.data["rows"][0]["graph"], "design");
     assert_eq!(nodes.data["rows"][11]["graph"], "vault");
     let (unnamed, _) = home.umx(&["search", "approval"]);
-    issue(&unnamed, Code::SecuredGraphsSkipped);
+    hint_of(&unnamed, Code::SecuredGraphsSkipped);
     issue(&unnamed, Code::CopiesSkipped);
     assert!(
         !unnamed.to_json().contains("vault"),
@@ -13977,7 +13993,7 @@ fn all_graph_crossings_keep_visibility_and_owner_boundaries() {
     let hidden_search = all("search", "zephyrbridge");
     for env in [&hidden_query, &hidden_search] {
         assert!(env.data["rows"].as_array().unwrap().is_empty());
-        let aggregate = issue(env, Code::SecuredGraphsSkipped);
+        let aggregate = hint_of(env, Code::SecuredGraphsSkipped);
         assert!(aggregate.candidates().is_empty());
         assert!(!aggregate.message().contains("second"));
     }
@@ -13991,6 +14007,7 @@ fn all_graph_crossings_keep_visibility_and_owner_boundaries() {
             env.data.to_string().into_bytes(),
             env.warnings
                 .iter()
+                .chain(&env.hints)
                 .filter(|w| w.code() != "secured_graphs_skipped")
                 .map(|w| json!(w).to_string().into_bytes())
                 .collect::<Vec<_>>(),
@@ -14077,7 +14094,7 @@ fn scope_followups_report_primary_hints_moves_policy_and_copies() {
     home.design_copy("hidden_copy");
     home.umx(&["graph", "set", "hidden_copy", "--policy", "secured"]);
     let (hidden, _) = home.umx(&["node", "list", "--scope", "via_copy"]);
-    issue(&hidden, Code::SecuredGraphsSkipped);
+    hint_of(&hidden, Code::SecuredGraphsSkipped);
     assert!(
         !hidden.to_json().contains("hidden_copy"),
         "{}",
@@ -25475,4 +25492,178 @@ fn on_key_resolve_finds_the_node_holding_the_key() {
         "node", "add", "--type", "person", "--title", "x", "--on-key", "create",
     ]);
     assert_eq!((exit, env.errors[0].code()), (2, "usage_invalid"));
+}
+
+/// The hint with `code` in `env`'s hints list; never in its warnings.
+fn hint_of(env: &Envelope, code: Code) -> &Issue {
+    let code = code.spec().code;
+    assert!(
+        !env.warnings.iter().any(|w| w.code() == code),
+        "{code} is a hint, not a warning: {}",
+        env.to_json()
+    );
+    env.hints
+        .iter()
+        .find(|h| h.code() == code)
+        .unwrap_or_else(|| panic!("no hint {code} in {}", env.to_json()))
+}
+
+#[test]
+fn a_search_cut_by_its_limit_says_so_with_the_command_that_shows_the_rest() {
+    // PRD 002 search-13 (a): 12 matches, --limit 5. The hint never changes the rows or the status.
+    let mut home = Home::new("search-cut");
+    home.graph();
+    for i in 0..12 {
+        home.ok(&[
+            "node",
+            "add",
+            "--type",
+            "problem",
+            "--title",
+            &format!("Walrus report {i}"),
+        ]);
+    }
+    let cut = home.ok(&["search", "walrus", "--limit", "5"]);
+    assert_eq!(cut.status, Status::Ok, "{}", cut.to_json());
+    let hint = hint_of(&cut, Code::SearchResultsCut);
+    assert_eq!(hint.message(), "5 of the 12 matches found are shown.");
+    assert_eq!(hint.next(), "umx search <words> --limit 12");
+    let named = home.ok(&["search", "walrus", "--limit", "5", "--graph", "demo"]);
+    assert_eq!(
+        hint_of(&named, Code::SearchResultsCut).next(),
+        "umx search <words> --limit 12 --graph demo"
+    );
+    // The next repeats the selector as sent: a saved scope stays a scope, never its graphs.
+    home.ok(&["scope", "save", "walruses", "--graph", "demo"]);
+    let saved = home.ok(&["search", "walrus", "--limit", "5", "--scope", "walruses"]);
+    assert_eq!(
+        hint_of(&saved, Code::SearchResultsCut).next(),
+        "umx search <words> --limit 12 --scope walruses"
+    );
+    // The rows are the first 5 of the full list, in the same order with the same scores.
+    let all = home.ok(&["search", "walrus", "--limit", "12"]);
+    assert!(
+        !all.hints.iter().any(|h| h.code() == "search_results_cut"),
+        "{}",
+        all.to_json()
+    );
+    let ids = |env: &Envelope| {
+        env.data["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["id"].clone(), r["fused"].clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&cut), ids(&all)[..5]);
+}
+
+#[test]
+fn a_search_by_words_only_says_why_as_a_hint_and_stays_ok() {
+    // PRD 002 search-13 (c): no embedder configured; and a secured graph whose setting admits no instance here.
+    let mut home = Home::new("search-words-only");
+    home.graph();
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Kestrel survey",
+    ]);
+    let env = home.ok(&["search", "kestrel"]);
+    assert_eq!(env.status, Status::Ok, "{}", env.to_json());
+    let hint = hint_of(&env, Code::SimilarityUnavailable);
+    assert!(
+        hint.message().contains("no embedder is configured"),
+        "{}",
+        hint.message()
+    );
+    assert_eq!(hint.next(), "umx embeddings status");
+
+    let mut home = Home::new("search-no-embedder");
+    home.az_active("");
+    home.secured_graph();
+    let env = home.ok(&["search", "anything", "--graph", "demo"]);
+    assert_eq!(env.status, Status::Ok, "{}", env.to_json());
+    let hint = hint_of(&env, Code::SimilarityNoEmbedder);
+    assert!(
+        hint.message()
+            .contains("admits none of this machine's embedder instances"),
+        "{}",
+        hint.message()
+    );
+}
+
+#[test]
+fn secured_graphs_left_out_are_a_hint_in_every_verb_that_counts_them() {
+    // PRD 002 search-13 (d), ruled for every verb that raises it: the count and the runnable next are exactly as
+    // before, no secured alias or text is shown, and only the status word changes (warning to ok). Unnamed search and
+    // query; and the reads of a saved scope one of whose graphs was secured after it was saved.
+    let mut home = Home::new("secured-hint");
+    home.graph();
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Ledger hidden",
+        "--graph",
+        "demo",
+    ]);
+    let open = home.path.join("open").display().to_string();
+    home.ok(&["graph", "new", &open, "--alias", "open"]);
+    let id = |env: Envelope| env.data["node"]["id"].as_str().unwrap().to_owned();
+    let a = id(home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Ledger open",
+        "--graph",
+        "open",
+    ]));
+    let b = id(home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Ledger other",
+        "--graph",
+        "open",
+    ]));
+    home.ok(&["edge", "add", &a, "supports", &b, "--graph", "open"]);
+    home.ok(&["graph", "set", "demo", "--policy", "secured"]);
+    // Unnamed search and query here; node list over a scope with a secured copy, search and query with --all, and
+    // similarity pairs are checked as hints in their own tests (hint_of; s31_tests for pairs).
+    let verbs: [&[&str]; 2] = [
+        &["search", "ledger"],
+        &["query", "MATCH (n) RETURN n.title AS title"],
+    ];
+    for args in verbs {
+        let (env, exit) = home.umx(args);
+        assert_eq!(exit, 0, "{args:?}: {}", env.to_json());
+        let hint = hint_of(&env, Code::SecuredGraphsSkipped);
+        assert!(
+            hint.message().starts_with("1 secured graphs"),
+            "{args:?}: {}",
+            hint.message()
+        );
+        assert!(hint.next().starts_with("umx "), "{args:?}: {}", hint.next());
+        assert!(
+            !env.to_json().contains("Ledger hidden"),
+            "{args:?}: {}",
+            env.to_json()
+        );
+        assert!(
+            !env.warnings
+                .iter()
+                .any(|w| w.code() == "secured_graphs_skipped"),
+            "{args:?}: {}",
+            env.to_json()
+        );
+    }
 }

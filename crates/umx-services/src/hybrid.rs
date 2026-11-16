@@ -120,6 +120,10 @@ impl HybridHit {
 #[derive(Clone, Debug, PartialEq)]
 pub struct HybridResult {
     pub hits: Vec<HybridHit>,
+    /// How many matches fusion ranked before `--limit` cut the list (PRD 002 search-13): more than `hits` when it
+    /// cut. Every exact match is counted, but the word and vector legs each give fusion at most their best
+    /// [`LEG_DEPTH`], so this is not every node that holds the words.
+    pub found: usize,
     pub floors: Vec<(ModelKey, similarity::Floor)>,
     /// Why the word leg gave fusion nothing, when it did not: `no informative terms` (every query word is in more
     /// than [`WORD_MAX_DF_SHARE`] of the nodes searched).
@@ -876,8 +880,10 @@ impl Services {
                 }
             }
         }
+        let fused = fuse(&exact, &word, &vector);
+        let found = fused.len();
         let mut hits = Vec::new();
-        for ((alias, id), f) in fuse(&exact, &word, &vector).into_iter().take(limit) {
+        for ((alias, id), f) in fused.into_iter().take(limit) {
             let l = store.loaded(&alias).expect("checked");
             let node = l.graph.node(id).expect("a hit is a node").to_node();
             hits.push(HybridHit {
@@ -897,6 +903,7 @@ impl Services {
         Ok(Done {
             value: HybridResult {
                 hits,
+                found,
                 floors,
                 word_leg,
                 copies,

@@ -14,25 +14,24 @@ and exact matches only, so an empty result means no word matched, not that nothi
 word forms, or `umx node find <words>` for titles, and keep working.
 
 Tell the user that meaning search is off for that graph and give both fixes: add a local embedder instance
-(`umx docs get embeddings`), or, if the graph's owner chooses, allow hosted instances with the command the warning
+(`umx docs get embeddings`), or, if the graph's owner chooses, allow hosted instances with the command the hint
 prints, `umx graph set <graph> --embedder trusted`. Lowering a secured graph takes a person at their own terminal
 (`umx graph confirm-policy`).
 
 ## Don't
 Don't run `umx graph set <graph> --embedder trusted` yourself: whether a graph's text may go to a hosted instance is
-the owner's call. Don't read the empty reply of a graph that warned `similarity_no_embedder` as "nothing about
+the owner's call. Don't read the empty reply of a graph that gave the hint `similarity_no_embedder` as "nothing about
 this". Don't retry with `--include-named` or `--all` to get meaning: visibility never widens which instances a
 graph may use.
 
 ## Example
 ```bash
-umx search "vendor onboarding" --graph client_x
-# rows: (none)
-# warning: Similarity was not used for client_x: its embedder setting is local, which admits none of this
-#   machine's embedder instances. Those results are word matches only. Add a local instance
-#   (umx docs get embeddings), or its owner may allow hosted ones: umx graph set client_x --embedder trusted.
-#   [similarity_no_embedder]
-#   next: umx docs get embeddings
+umx search "vendor onboarding" --graph notes --human
+# (no rows; status ok, exit 0)
+# hint: Similarity was not used for notes: its embedder setting is local, which admits none of this machine's
+#   embedder instances. Those results are word matches only. Add a local instance (umx docs get embeddings), or its
+#   owner may allow hosted ones: umx graph set notes --embedder trusted. (next: umx docs get embeddings)
+# In JSON it is in `hints` with code similarity_no_embedder.
 ```
 
 ## Why

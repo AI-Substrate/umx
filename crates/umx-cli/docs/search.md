@@ -92,6 +92,8 @@ A model's floors must be measured again when its model, dims, prompt version or 
 ## When meaning is not used
 
 Search never fails for want of vectors: it returns word and exact matches and says why meaning was left out.
+`similarity_no_embedder`, `similarity_unavailable` and `similarity_incomplete` are hints (status stays ok, the
+`next` is a command to run); `embedder_mismatch` and `embedder_not_local_for_secured` are warnings.
 
 - `similarity_no_embedder`: a graph's embedder setting admits none of this machine's embedder instances (a
   secured or `local` graph where every instance is hosted). Its query is never sent; it is searched by words only,
@@ -108,7 +110,21 @@ Search never fails for want of vectors: it returns word and exact matches and sa
   searched by words only and named, with both models; vectors are only compared within one model.
 - `embedder_not_local_for_secured`: a secured graph records a model that only a hosted instance makes, while a
   local instance of another model is configured; its query is never sent and it is searched by words only.
-- `similarity_incomplete`: some nodes searched have no vector yet; only their words can find them.
+- `similarity_incomplete`: some nodes searched have no vector yet; only their words can find them. Its next,
+  `umx embeddings status`, shows how many are still pending.
+
+## Hints on a search reply
+
+A search reply carries hints for what it left out, each with a command to run: `search_results_cut` (`--limit`
+cut the list: "5 of the 12 matches found are shown"; its next repeats the search as sent, with its `--graph`,
+`--scope` or `--all`, `--within` and `--along`, and a limit that shows them all, `<words>` standing for your query),
+`similarity_unavailable`, `similarity_no_embedder` and `similarity_incomplete` (above), and `secured_graphs_skipped`
+(below). The count in `search_results_cut` is of the matches found: every exact match is counted, but the word and
+meaning legs each give at most their best 100, so more nodes may hold the words. A reply lists at most 8 hints, then
+`hints_truncated`; `search_results_cut` and `secured_graphs_skipped` are always among them, however many graphs
+gave a `similarity_unavailable`. Hints never change the rows, their order or their scores, and a reply with only
+hints has status ok. A search that nothing cut, that read every node by meaning and left no graph out has none of
+them.
 
 `word_prefix_capped` is about words, not meaning: a query word starts more than 64 words, and only the 64 most
 common were matched as prefixes. Type more of it, or the whole word.
@@ -154,8 +170,9 @@ coverage. Words with digits or other letters (`iso27001`, `v2`, `café`) match e
 - Copies of one graph are searched once when no graph is named (`copies_skipped` names the others); named copies
   are each searched, with `query_graph_twice`, and each hit gives its `copy` (`umx docs get graph`).
 - With no graph named, every loaded graph whose policy is open. Secured graphs (and any whose policy cannot be
-  read) are left out and only counted: `secured_graphs_skipped` says how many, never which. Name one with
-  `--graph` to search it.
+  read) are left out and only counted: the hint `secured_graphs_skipped` says how many, never which. Name one with
+  `--graph` to search it. It is a hint wherever umx raises it (search, query, similarity pairs and the reads of a
+  saved scope): the reply's status stays ok.
 - Over several graphs, word counts add up before scoring, so a word's rarity is judged over everything searched.
 - `--within <node>` scores only the nodes under that node by `part_of`, in its graph. With several graphs, give
   it as an address, `umx:<graph>/<id>`, naming one of them. The counts stay the whole

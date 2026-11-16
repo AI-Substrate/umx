@@ -273,7 +273,7 @@ fn a_secured_unnamed_graph_gives_no_lean_row_and_no_digest() {
     );
     assert!(
         unnamed
-            .warnings
+            .hints
             .iter()
             .any(|w| w.code() == "secured_graphs_skipped")
     );

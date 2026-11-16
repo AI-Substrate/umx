@@ -358,8 +358,9 @@ fn a_query_gets_its_slot_during_a_full_background_load() {
         "the query waited behind background calls: {took:?}"
     );
     assert!(
-        !env.warnings
+        !env.hints
             .iter()
+            .chain(&env.warnings)
             .any(|w| w.code() == "similarity_unavailable"),
         "{}",
         env.to_json()

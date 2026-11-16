@@ -165,12 +165,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// type already holds in the written graph resolves to that node and only appends or fills. A batch row's `existed`
 /// says so; a node add reply with `on_key` carries `resolved` and `changed`. New codes `on_key_ambiguous` and
 /// `on_key_field_held` (a hint).
+/// 86: PRD 002 search-13: the hint `search_results_cut`; `similarity_unavailable`, `similarity_no_embedder`,
+/// `similarity_incomplete` and `secured_graphs_skipped` are hints, no longer warnings (status ok; the D69 rule:
+/// advice, nothing the caller asked for left undone), in every verb that raises them.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 85;
+pub const PROTOCOL: u32 = 86;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -179,7 +182,7 @@ pub const PROTOCOL: u32 = 85;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (85, 0xe06b_6aac_89dd_9179);
+const WIRE_FINGERPRINT: (u32, u64) = (86, 0x46ee_2118_1066_8ac6);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -2251,6 +2254,11 @@ pub enum Kind {
 /// The most hints one reply lists, in catalogue order; when more were made, one `hints_truncated` follows them.
 pub const MAX_HINTS: usize = 8;
 
+/// Hints a reply lists whatever else the cap leaves out (PRD 002 search-13): the count of secured graphs a read left
+/// out, which is never silent (SEC-5), and a search cut by its limit. Hints raised once per graph rank ahead of both in
+/// the catalogue and would otherwise fill the [`MAX_HINTS`] slots.
+pub const KEPT_HINTS: &[Code] = &[Code::SearchResultsCut, Code::SecuredGraphsSkipped];
+
 /// One catalogue row.
 #[derive(Clone, Copy, Debug)]
 pub struct Spec {
@@ -2625,11 +2633,11 @@ catalogue! {
         "graph.json has a key under ontology or embedding that this umx does not know; it is kept and written back unchanged",
         "<file> has key <key>, which this umx does not know; it is kept.",
         "umx check --graph <graph>";
-    SimilarityUnavailable => "similarity_unavailable", Warning, 0,
+    SimilarityUnavailable => "similarity_unavailable", Hint, 0,
         "a search used no vectors for some or all graphs (no embedder, the embedder failed, no vectors yet, or the graph's model changed during the search); those results are word matches only, never an empty \"nothing similar\" (req-53)",
         "Similarity was not used for <scope>: <cause>. Those results are word matches only.",
-        "umx docs get search";
-    SimilarityNoEmbedder => "similarity_no_embedder", Warning, 0,
+        "umx embeddings status";
+    SimilarityNoEmbedder => "similarity_no_embedder", Hint, 0,
         "a search reached a graph whose embedder setting admits none of this machine's embedder instances (a secured or local graph where every instance is hosted): its query was never sent and it was searched by words only. A local instance, or its owner's choice to allow hosted ones, gives it similarity",
         "Similarity was not used for <graph>: its embedder setting is <setting>, which admits none of this machine's embedder instances. Those results are word matches only. Add a local instance (umx docs get embeddings), or its owner may allow hosted ones: <fix>.",
         "umx docs get embeddings";
@@ -2641,15 +2649,19 @@ catalogue! {
         "umx embeddings allow could not record the allow in this machine's secret-allows file (refused, unreadable, or full at 256); nothing was allowed and the text stays held",
         "Could not record the allow in <file>: <reason>. Nothing was allowed and the text stays held from hosted embedders.",
         "umx docs get embeddings";
-    SimilarityIncomplete => "similarity_incomplete", Warning, 0,
+    SimilarityIncomplete => "similarity_incomplete", Hint, 0,
         "nodes searched have no whole-node vector yet (pending, failed, held as a suspected secret, or awaiting a re-embed), so only their words can find them",
         "<n> nodes searched have no vector yet (<held> of them held as suspected secrets); only their words can find them.",
-        "umx docs get embeddings";
+        "umx embeddings status";
     WordPrefixCapped => "word_prefix_capped", Warning, 0,
         "a search word of 4 or more letters also matches the words that start with it, at most 64 of them, the most common first (req-92); more started with this one, so the rarer ones were not searched as prefix matches (exact and stem matches are never capped)",
         "<word> starts <n> words; word search used the <cap> most common as prefix matches.",
         "umx docs get search";
-    SecuredGraphsSkipped => "secured_graphs_skipped", Warning, 0,
+    SearchResultsCut => "search_results_cut", Hint, 0,
+        "a search found more matches than --limit returns; every exact match is counted, but the word and meaning legs each give fusion at most their best 100, so the count is of the matches found, not every node that holds the words (PRD 002 search-13)",
+        "<shown> of the <found> matches found are shown.",
+        "<fix>";
+    SecuredGraphsSkipped => "secured_graphs_skipped", Hint, 0,
         "umx search with no --graph searched only the loaded graphs whose policy is open; secured graphs (or graphs whose policy cannot be read) are searched only when named, and are only counted here",
         "<n> secured graphs were not searched; name one with --graph to search it.",
         "<fix>";
@@ -4178,8 +4190,9 @@ impl Envelope {
         }
     }
 
-    /// Puts the hints in catalogue order and keeps the first [`MAX_HINTS`], then one `hints_truncated` with how many
-    /// were left out. The daemon calls it once on every reply.
+    /// Puts the hints in catalogue order and keeps [`MAX_HINTS`] of them, then one `hints_truncated` with how many
+    /// were left out. The [`KEPT_HINTS`] are kept first; the rest of the slots go to the others in catalogue order,
+    /// and the kept ones are listed in catalogue order too. The daemon calls it once on every reply.
     pub fn settle_hints(mut self) -> Self {
         let rank = |i: &Issue| {
             Code::ALL
@@ -4190,10 +4203,18 @@ impl Envelope {
         self.hints.sort_by_key(rank);
         let made = self.hints.len();
         if made > MAX_HINTS {
-            self.hints.truncate(MAX_HINTS);
+            let kept = |i: &Issue| KEPT_HINTS.iter().any(|c| c.spec().code == i.code());
+            let mut must = self.hints.iter().filter(|i| kept(i)).count().min(MAX_HINTS);
+            let mut room = MAX_HINTS - must;
+            self.hints.retain(|i| {
+                let slots = if kept(i) { &mut must } else { &mut room };
+                let take = *slots > 0;
+                *slots = slots.saturating_sub(1);
+                take
+            });
             self.hints.push(Issue::fill(
                 Code::HintsTruncated,
-                &[("n", Fill::count((made - MAX_HINTS) as u64))],
+                &[("n", Fill::count((made - self.hints.len()) as u64))],
             ));
         }
         self
@@ -4821,6 +4842,51 @@ mod tests {
             over.check(),
             Err("more hints than MAX_HINTS and its hints_truncated")
         );
+    }
+
+    /// PRD 002 search-13: a secured skip and a limit cut are listed however many hints rank ahead of them (one
+    /// `similarity_unavailable` per graph, say); the others fill the remaining slots in catalogue order, and
+    /// `hints_truncated` counts what was left out.
+    #[test]
+    fn settled_hints_always_keep_the_secured_count_and_the_cut() {
+        let rank = |c: &str| Code::ALL.iter().position(|k| k.spec().code == c).unwrap();
+        let mut env = Envelope::ok("search", json!({}))
+            .hint(raw_issue("secured_graphs_skipped"))
+            .hint(raw_issue("search_results_cut"));
+        for _ in 0..9 {
+            env = env.hint(raw_issue("similarity_unavailable"));
+        }
+        for c in [
+            "graph_loaded_on_demand",
+            "alias_redirected",
+            "resource_elsewhere",
+        ] {
+            env = env.hint(raw_issue(c));
+        }
+        let env = env.settle_hints();
+        let listed: Vec<&str> = env.hints[..MAX_HINTS].iter().map(Issue::code).collect();
+        assert!(
+            listed.contains(&"secured_graphs_skipped") && listed.contains(&"search_results_cut"),
+            "{listed:?}"
+        );
+        let mut sorted = listed.clone();
+        sorted.sort_by_key(|c| rank(c));
+        assert_eq!(listed, sorted);
+        assert_eq!(
+            listed[..3],
+            [
+                "graph_loaded_on_demand",
+                "alias_redirected",
+                "resource_elsewhere"
+            ]
+        );
+        assert_eq!(env.hints.len(), MAX_HINTS + 1);
+        let last = &env.hints[MAX_HINTS];
+        assert_eq!(
+            (last.code(), last.message()),
+            ("hints_truncated", "6 more hints were left out.")
+        );
+        assert_eq!((env.status, env.check()), (Status::Ok, Ok(())));
     }
 
     #[test]

@@ -145,8 +145,9 @@ and is refused for now with `usage_invalid` (exit 2).
 `umx search <words>` is the text search. Exact matches (a title, id or field value equal to the query) come
 first, then word matches (whole words in the title, the note and string fields, ranked by BM25) and meaning
 matches (vectors close to the query's, when the graph has them) fused into one list. Each hit says which found it:
-`legs`, `exact`, `word_rank` and `bm25`, `vector_rank` and `cosine`. A warning that meaning was not used
-(`similarity_unavailable`, `similarity_no_embedder`, `embedder_mismatch`) still leaves correct word results; with
+`legs`, `exact`, `word_rank` and `bm25`, `vector_rank` and `cosine`. A hint (`similarity_unavailable`,
+`similarity_no_embedder`) or warning (`embedder_mismatch`) that meaning was not used still leaves correct word
+results; with
 `similarity_no_embedder` an empty result means no word matched. `--graph a,b` searches several graphs and
 `--within <node>` a subtree; see `umx docs get search`.
 

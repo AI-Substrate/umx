@@ -211,7 +211,8 @@ Pick the read that matches the question.
   finds them. With the local model, `umx search "sign-off is slow"` finds "Approval delays" with no shared
   word.
 
-Without an embedder, search still works: it returns word and exact matches and warns `similarity_unavailable`.
+Without an embedder, search still works: it returns word and exact matches and says so with the hint
+`similarity_unavailable`.
 Each hit says how it was found (`legs`: `exact`, `word`, `vector` or `both`) and its scores. See
 `umx docs get search`.
 

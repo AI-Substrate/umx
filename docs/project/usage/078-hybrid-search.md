@@ -12,10 +12,10 @@ Ask "which nodes are about this?" with `umx search <query>`. Exact matches come 
 
 Search one graph with `--graph demo`, several with `--graph demo,ops`, or every loaded open graph with neither; secured graphs are searched only when you name them (`secured_graphs_skipped` counts the rest, never names them). Narrow with `--within <node>` (an address `umx:<graph>/<id>` with several graphs).
 
-When a warning says meaning was not used (`similarity_unavailable`, `embedder_mismatch`, `embedder_not_local_for_secured`), the results are still right for words: keep working, and read the warning's next step if you need meaning. `similarity_incomplete` means some nodes have no vector yet; their words still find them.
+When a hint (`similarity_unavailable`) or a warning (`embedder_mismatch`, `embedder_not_local_for_secured`) says meaning was not used, the results are still right for words: keep working, and read its next step if you need meaning. `similarity_incomplete` means some nodes have no vector yet; their words still find them.
 
 ## Don't
-Don't read an empty vector leg as "nothing similar": a warning always says why it was not used. Don't compare `cosine` values between models, or `fused` between searches over different graphs. Don't expect typo tolerance from search; use `umx node find` to name a node by a half-remembered title. Don't expect a secured graph's nodes from a search that does not name it.
+Don't read an empty vector leg as "nothing similar": a hint or a warning always says why it was not used. Don't compare `cosine` values between models, or `fused` between searches over different graphs. Don't expect typo tolerance from search; use `umx node find` to name a node by a half-remembered title. Don't expect a secured graph's nodes from a search that does not name it.
 
 ## Example
 ```bash

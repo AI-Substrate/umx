@@ -339,8 +339,9 @@ fn a_query_embed_past_five_seconds_falls_back_to_words_at_the_bound() {
         took >= Duration::from_secs(5) && took < Duration::from_millis(6500),
         "bounded at 5 s: {took:?}"
     );
+    // A hint since search-13 (PRD 002): advice, status stays ok.
     let warning = env
-        .warnings
+        .hints
         .iter()
         .find(|w| w.code() == "similarity_unavailable")
         .unwrap_or_else(|| panic!("{}", env.to_json()));
@@ -397,8 +398,9 @@ fn a_query_during_ingest_finishes_inside_the_bound() {
         "waited behind one batch at most: {took:?}"
     );
     assert!(
-        !env.warnings
+        !env.hints
             .iter()
+            .chain(&env.warnings)
             .any(|w| w.code() == "similarity_unavailable"),
         "{}",
         env.to_json()
@@ -501,5 +503,149 @@ fn a_query_in_flight_on_one_instance_never_holds_another_instances_batches() {
         a.release_queries();
         let _ = stuck.join();
     });
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// PRD 002 search-13 (b): nodes with no vector yet are a hint, with the command that shows the embedding queue; the
+/// reply stays ok. Once every node has its vectors, a search that nothing cut and every graph answered by meaning
+/// carries none of this step's hints (no noise).
+#[test]
+fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
+    let root = root("hints");
+    let spy = Spy::new(
+        Locality::Hosted,
+        Duration::from_millis(1500),
+        Duration::ZERO,
+    );
+    let d = daemon(&root, &spy);
+    let g = root.join("g");
+    ok(d.handle(&op(Op::GraphNew {
+        path: g.display().to_string(),
+        alias: "demo".into(),
+        title: None,
+        empty: false,
+        embedding_model: None,
+        secured: false,
+        no_graphfile: false,
+        graphfile: false,
+    })));
+    add(&d, "Approval delays", "invoices wait for sign off");
+    eventually("the first node's vectors", || {
+        pending(&d, "demo") == 0 && shards(&g) > 0
+    });
+    add(&d, "Approval queue", "a second node, still being embedded");
+    let search = || {
+        d.handle(&op(Op::Search {
+            text: "approval".into(),
+            within: None,
+            limit: None,
+            along: None,
+        }))
+    };
+    let env = search();
+    assert_eq!(env.status, umx_protocol::Status::Ok, "{}", env.to_json());
+    let hint = env
+        .hints
+        .iter()
+        .find(|h| h.code() == "similarity_incomplete")
+        .unwrap_or_else(|| panic!("{}", env.to_json()));
+    assert_eq!(hint.next(), "umx embeddings status");
+    assert!(
+        !env.warnings
+            .iter()
+            .any(|w| w.code() == "similarity_incomplete")
+    );
+
+    eventually("every node's vectors", || pending(&d, "demo") == 0);
+    let env = search();
+    let ours = [
+        "search_results_cut",
+        "similarity_unavailable",
+        "similarity_no_embedder",
+        "similarity_incomplete",
+        "secured_graphs_skipped",
+    ];
+    assert!(
+        !env.hints
+            .iter()
+            .chain(&env.warnings)
+            .any(|h| ours.contains(&h.code())),
+        "{}",
+        env.to_json()
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// PRD 002 search-13: one `similarity_unavailable` per graph ranks ahead of the cut and the secured count in the
+/// catalogue. Nine open graphs with no vectors yet fill the hint cap, and both are still listed (review B1: they were
+/// dropped for `hints_truncated`), with the secured graph counted, never named.
+#[test]
+fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
+    let root = root("crowd_out");
+    // Slow enough that no vector lands before the search: each open graph is searched by words, "no vectors yet".
+    let spy = Spy::new(Locality::Hosted, Duration::from_secs(5), Duration::ZERO);
+    let d = daemon(&root, &spy);
+    let new = |alias: String, secured: bool| {
+        ok(d.handle(&op(Op::GraphNew {
+            path: root.join(&alias).display().to_string(),
+            alias,
+            title: None,
+            empty: false,
+            embedding_model: None,
+            secured,
+            no_graphfile: false,
+            graphfile: false,
+        })));
+    };
+    for i in 0..9 {
+        new(format!("g{i}"), false);
+    }
+    new("vault".into(), true);
+    for i in 0..9 {
+        ok(d.handle(&Request::op(
+            Op::NodeAdd {
+                raised_in: None,
+                kind: "problem".into(),
+                title: "Approval delays".into(),
+                status: None,
+                note: Some("invoices wait".into()),
+                sets: Vec::new(),
+                parent: None,
+                evidence: Vec::new(),
+                evidence_kind: None,
+                locator: None,
+                on_key: None,
+            },
+            Some(format!("g{i}")),
+            None,
+            build(),
+        )));
+    }
+    let env = d.handle(&op(Op::Search {
+        text: "approval".into(),
+        within: None,
+        limit: Some(1),
+        along: None,
+    }));
+    let codes: Vec<&str> = env.hints.iter().map(|h| h.code()).collect();
+    assert_eq!(env.status, umx_protocol::Status::Ok, "{}", env.to_json());
+    assert!(
+        codes.contains(&"secured_graphs_skipped")
+            && codes.contains(&"search_results_cut")
+            && codes.last() == Some(&"hints_truncated"),
+        "{}",
+        env.to_json()
+    );
+    let skipped = env
+        .hints
+        .iter()
+        .find(|h| h.code() == "secured_graphs_skipped")
+        .unwrap();
+    assert!(
+        skipped.message().starts_with("1 secured graphs"),
+        "{}",
+        skipped.message()
+    );
+    assert!(!env.to_json().contains("vault"), "{}", env.to_json());
     let _ = fs::remove_dir_all(&root);
 }

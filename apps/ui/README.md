@@ -53,7 +53,7 @@ command, or an envelope's `hints`) show on the canvas and in Find as umx gave th
 `lib/graph-set.ts`, so another picker replaces only the view.
 
 Find: Title runs `umx node find` (typos allowed), Search runs `umx search` (exact, words and meaning), in each open
-graph, and lists what umx returns in its order (graphs taking turns, rank by rank, each hit labelled with its graph), with its warnings as given (for example `similarity_unavailable`
+graph, and lists what umx returns in its order (graphs taking turns, rank by rank, each hit labelled with its graph), with its warnings and hints as given (for example the hint `similarity_unavailable`
 when meaning was not used). Click a result to select it and move to it; a hidden one says why (provenance, retired,
 a filtered type or status) and Show brings it back. "Similar to this node" in the node panel reads the node's
 similar_to list from the daemon (`umx neighbours <id> --relation similar_to`); vectors never reach the browser.

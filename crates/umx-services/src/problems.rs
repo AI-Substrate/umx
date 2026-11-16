@@ -19,6 +19,11 @@ use umx_core::{Command, FieldKind, Id, IdText, Policy, Problem, Role, SafeText, 
 /// never counted toward `batch_warnings_truncated`. The daemon's test checks this is exactly the catalogue's Hint
 /// rows that services return.
 pub const HINTS: &[&str] = &[
+    "search_results_cut",
+    "similarity_unavailable",
+    "similarity_no_embedder",
+    "similarity_incomplete",
+    "secured_graphs_skipped",
     "purpose_missing",
     "descriptions_missing",
     "field_looks_like_labels",
@@ -300,6 +305,7 @@ pub const CODES: &[&str] = &[
     "local_state_not_durable",
     "policy_confirm_needs_human",
     "policy_not_recorded",
+    "search_results_cut",
     "secured_graphs_skipped",
     "secured_graphs_read",
     "similarity_unavailable",
@@ -1626,6 +1632,15 @@ pub fn primary_is_secured() -> Problem {
 /// `umx query` found every query permit taken (graph-storage-expert F2); nothing ran.
 pub fn query_busy() -> Problem {
     Problem::new("query_busy")
+}
+
+/// PRD 002 search-13: a search found `found` matches and returned `shown` (its `--limit`). `fix` repeats the search with
+/// a limit that returns them all, on the graphs the caller named (never one it did not).
+pub fn search_results_cut(shown: usize, found: usize, fix: Command) -> Problem {
+    Problem::new("search_results_cut")
+        .with("shown", Slot::Count(shown as u64))
+        .with("found", Slot::Count(found as u64))
+        .with("fix", Slot::Command(fix))
 }
 
 pub fn secured_graphs_skipped(n: usize) -> Problem {
