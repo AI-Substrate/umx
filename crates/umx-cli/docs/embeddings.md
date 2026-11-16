@@ -30,6 +30,11 @@ at reembed, or at its next graph.json write once no node is outdated; never at l
 warning naming how many. A text planned before the change and not yet sent is dropped, so a field made data is not
 sent after the change returns.
 
+`umx embeddings status` also points out, for each open graph, a string field whose values say it is in the wrong
+group: the hints `field_looks_like_labels` (labels declared content: how many embedder calls data would save) and
+`field_looks_like_prose` (prose declared data: search by meaning never sees it), each naming the
+`umx ontology set field <type> <field> --role data|content` that moves it (`umx docs get ontology`).
+
 ## Secured graphs
 
 A graph whose `graph.json` says `"policy": "secured"` never sends text to an embedder that is not local: nothing of

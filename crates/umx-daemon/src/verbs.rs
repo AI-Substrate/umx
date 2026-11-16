@@ -3598,13 +3598,17 @@ pub fn embeddings_status(
             })
         })
         .collect();
-    Envelope::ok(
+    let env = Envelope::ok(
         "embeddings status",
         json!({
             "graphs": graphs,
             "reachable": "not checked: status sends nothing; run the check command of a graph to probe its embedder",
         }),
-    )
+    );
+    // search-05: a field in the wrong role group is pointed out where its vectors are counted (open graphs only).
+    rows.iter()
+        .flat_map(|r| services.role_hints_unnamed(&r.alias))
+        .fold(env, |env, p| env.note(issue(&p, "embeddings status")))
 }
 
 /// What `umx embeddings probe` found, as `data`. Never the vector or the text: only its width and length.

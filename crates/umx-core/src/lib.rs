@@ -24,6 +24,7 @@ pub mod ports;
 pub mod problem;
 pub mod provenance;
 pub mod registry;
+pub mod role_advice;
 pub mod scan;
 pub mod scopes;
 pub mod secret_allows;

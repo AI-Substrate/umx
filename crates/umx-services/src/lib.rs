@@ -2258,8 +2258,30 @@ impl Services {
         description: Option<&str>,
         role: Option<&str>,
     ) -> Outcome<OntologyAdded> {
-        self.graph
-            .ontology_add_field(ctx, type_name, spec, description, role)
+        let mut done = self
+            .graph
+            .ontology_add_field(ctx, type_name, spec, description, role)?;
+        // search-05: a field whose nodes already hold values (set before it was declared) is judged at once.
+        let hints = self
+            .graph
+            .role_hints(&done.value.alias, Some((type_name, &done.value.name)));
+        done.notes.extend(hints);
+        Ok(done)
+    }
+
+    /// search-05: the role hints of `alias` (see [`graph_store::GraphStore::role_hints`]).
+    pub fn role_hints(&self, alias: &str, only: Option<(&str, &str)>) -> Vec<Problem> {
+        self.graph.role_hints(alias, only)
+    }
+
+    /// search-05 for `umx embeddings status`, which lists every loaded graph: the role hints of an open graph only,
+    /// so a graph read only when named is never read for a listing.
+    pub fn role_hints_unnamed(&self, alias: &str) -> Vec<Problem> {
+        if self.graph.shown_unnamed(alias) {
+            self.graph.role_hints(alias, None)
+        } else {
+            Vec::new()
+        }
     }
 
     /// `umx graph guide <alias>` (plan 079).
@@ -2416,8 +2438,19 @@ impl Services {
         description: Option<&str>,
         role: Option<&str>,
     ) -> Result<Done<FieldsAdded>, Vec<Problem>> {
-        self.graph
-            .ontology_add_field_many(ctx, types, all, spec, description, role)
+        let mut done =
+            self.graph
+                .ontology_add_field_many(ctx, types, all, spec, description, role)?;
+        // search-05, as the single-type add.
+        let v = &done.value;
+        let hints: Vec<Problem> = v
+            .types
+            .iter()
+            .chain(&v.unchanged)
+            .flat_map(|t| self.graph.role_hints(&v.alias, Some((t, &v.name))))
+            .collect();
+        done.notes.extend(hints);
+        Ok(done)
     }
 
     /// F92: a custom field on a relation's edges (see the store's doc).

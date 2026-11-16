@@ -4326,6 +4326,38 @@ fn trigger(code: Code) -> (Envelope, u8) {
             home.graph();
             home.umx(&["graph", "guide", "demo"])
         }
+        Code::FieldLooksLikeLabels | Code::FieldLooksLikeProse => {
+            // PRD 002 search-05: a label field declared content and a prose field declared data.
+            home.graph();
+            home.ok(&["ontology", "add", "field", "deal", "tier:string"]);
+            home.ok(&[
+                "ontology",
+                "add",
+                "field",
+                "deal",
+                "summary:string",
+                "--role",
+                "data",
+            ]);
+            for i in 0..6 {
+                let tier = format!("tier={}", ["gold", "silver"][i % 2]);
+                let summary =
+                    format!("summary=the supplier asked for a longer review window in round {i}");
+                home.ok(&[
+                    "node",
+                    "add",
+                    "--type",
+                    "deal",
+                    "--title",
+                    &format!("Deal {i}"),
+                    "--set",
+                    &tier,
+                    "--set",
+                    &summary,
+                ]);
+            }
+            home.umx(&["graph", "guide", "demo"])
+        }
         Code::SettingSecretSuspected => {
             home.graph();
             home.umx(&["graph", "set", "demo", "--purpose", &fake_aws_key()])
@@ -24826,4 +24858,188 @@ fn hints_of(env: &Envelope, code: Code) -> Vec<&Issue> {
         .iter()
         .filter(|i| i.code() == code.spec().code)
         .collect()
+}
+
+/// The role hints of `env` for `field` (PRD 002 search-05), from the hints list only.
+fn role_hints<'a>(env: &'a Envelope, code: Code, field: &str) -> Vec<&'a Issue> {
+    let code = code.spec().code;
+    env.hints
+        .iter()
+        .filter(|i| i.code() == code && i.message().starts_with(&format!("Field {field} of type ")))
+        .collect()
+}
+
+/// The roles `ontology show` reports for the fields of `type_name`, by field name.
+fn roles(home: &Home, type_name: &str) -> std::collections::BTreeMap<String, String> {
+    let env = home.ok(&["ontology", "show"]);
+    env.data["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == type_name)
+        .unwrap()["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["name"].as_str().unwrap().to_owned(),
+                f["role"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// Runs the command a hint's next prints (`umx ...`), as printed.
+fn run_next(home: &Home, issue: &Issue) -> Envelope {
+    let next = issue.next().to_owned();
+    let args: Vec<&str> = next.strip_prefix("umx ").unwrap().split(' ').collect();
+    home.ok(&args)
+}
+
+#[test]
+fn a_field_in_the_wrong_role_group_is_pointed_out_and_keeps_its_role_until_set() {
+    // PRD 002 search-05 done_when: a label field of 3 distinct values declared content and a prose field declared
+    // data; `graph guide` gives one hint for each, naming `umx ontology set field ... --role`, and neither role
+    // changes until that command runs. The same hints on `embeddings status` and `ontology add field`.
+    let mut home = Home::new("role-hints");
+    home.graph();
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "deal",
+        "tier:string",
+        "--role",
+        "content",
+    ]);
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "deal",
+        "summary:string",
+        "--role",
+        "data",
+    ]);
+    let tiers = ["gold", "silver", "bronze"];
+    for i in 0..9 {
+        let tier = format!("tier={}", tiers[i % 3]);
+        let summary = format!(
+            "summary=the supplier asked for a longer review window before round {i} of the deal"
+        );
+        home.ok(&[
+            "node",
+            "add",
+            "--type",
+            "deal",
+            "--title",
+            &format!("Deal {i}"),
+            "--set",
+            &tier,
+            "--set",
+            &summary,
+        ]);
+    }
+
+    let env = home.ok(&["graph", "guide", "demo"]);
+    assert_eq!(env.status, Status::Ok, "{}", env.to_json());
+    let labels = role_hints(&env, Code::FieldLooksLikeLabels, "tier");
+    let prose = role_hints(&env, Code::FieldLooksLikeProse, "summary");
+    assert_eq!((labels.len(), prose.len()), (1, 1), "{}", env.to_json());
+    assert_eq!(
+        labels[0].next(),
+        "umx ontology set field deal tier --role data --graph demo"
+    );
+    assert_eq!(
+        prose[0].next(),
+        "umx ontology set field deal summary --role content --graph demo"
+    );
+    assert_eq!(
+        labels[0].message(),
+        "Field tier of type deal in demo is content, but its 9 values are 3 short labels. As data it would need 9 fewer \
+         embedder calls, and words and exact match still find it."
+    );
+    assert_eq!(
+        prose[0].message(),
+        "Field summary of type deal in demo is data, but 9 of its 9 values read as prose. As content, search by meaning \
+         would find them (9 embedder calls)."
+    );
+    // Counts only: no value of either field is in any hint.
+    let hints: String = env
+        .hints
+        .iter()
+        .map(|h| format!("{} {}\n", h.message(), h.next()))
+        .collect();
+    assert!(
+        !hints.contains("silver") && !hints.contains("supplier"),
+        "{hints}"
+    );
+
+    // Neither role changed by itself.
+    let before = roles(&home, "deal");
+    assert_eq!(
+        (before["tier"].as_str(), before["summary"].as_str()),
+        ("content", "data")
+    );
+
+    // embeddings status points out the same two fields, and stays ok.
+    let status = home.ok(&["embeddings", "status"]);
+    assert_eq!(
+        role_hints(&status, Code::FieldLooksLikeLabels, "tier").len(),
+        1,
+        "{}",
+        status.to_json()
+    );
+    assert_eq!(
+        role_hints(&status, Code::FieldLooksLikeProse, "summary").len(),
+        1,
+        "{}",
+        status.to_json()
+    );
+    assert!(status.errors.is_empty());
+
+    // ontology add field judges a field whose nodes already hold values (set before it was declared).
+    for i in 0..6 {
+        let region = format!("region={}", ["north", "south"][i % 2]);
+        home.ok(&[
+            "node",
+            "add",
+            "--type",
+            "deal",
+            "--title",
+            &format!("Region deal {i}"),
+            "--set",
+            &region,
+        ]);
+    }
+    let added = home.ok(&["ontology", "add", "field", "deal", "region:string"]);
+    let region = role_hints(&added, Code::FieldLooksLikeLabels, "region");
+    assert_eq!(region.len(), 1, "{}", added.to_json());
+    assert_eq!(
+        region[0].next(),
+        "umx ontology set field deal region --role data --graph demo"
+    );
+    // ... and only the field it adds.
+    assert!(role_hints(&added, Code::FieldLooksLikeLabels, "tier").is_empty());
+
+    // Running the printed commands changes the roles, and the hints go.
+    run_next(&home, labels[0]);
+    run_next(&home, prose[0]);
+    let after = roles(&home, "deal");
+    assert_eq!(
+        (after["tier"].as_str(), after["summary"].as_str()),
+        ("data", "content")
+    );
+    let env = home.ok(&["graph", "guide", "demo"]);
+    assert!(
+        role_hints(&env, Code::FieldLooksLikeLabels, "tier").is_empty(),
+        "{}",
+        env.to_json()
+    );
+    assert!(
+        role_hints(&env, Code::FieldLooksLikeProse, "summary").is_empty(),
+        "{}",
+        env.to_json()
+    );
 }

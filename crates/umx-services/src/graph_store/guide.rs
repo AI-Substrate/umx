@@ -330,6 +330,7 @@ impl GraphStore {
                 first.clone(),
             ));
         }
+        warnings.extend(self.role_hints(alias, None));
         Ok(Done {
             value: Guide {
                 alias: graph.as_str().to_string(),
@@ -350,5 +351,68 @@ impl GraphStore {
             },
             notes: warnings,
         })
+    }
+}
+
+impl GraphStore {
+    /// search-05: one hint per declared `string` field of `alias` whose values say it is in the wrong role group
+    /// ([`umx_core::role_advice`]): labels declared content, prose declared data. Each hint carries counts only and
+    /// names the `umx ontology set field` command; nothing is changed here. `only` keeps one `(type, field)`. One
+    /// pass over the nodes, reading only the candidate fields; nothing when the graph is not loaded.
+    pub fn role_hints(&self, alias: &str, only: Option<(&str, &str)>) -> Vec<umx_core::Problem> {
+        let Some(l) = self.graphs.get(alias) else {
+            return Vec::new();
+        };
+        let mut wanted: BTreeMap<&str, Vec<&umx_core::FieldDecl>> = BTreeMap::new();
+        for t in &l.meta.ontology.types {
+            for f in &t.fields {
+                let kept = only.is_none_or(|(ty, name)| ty == t.name && name == f.name);
+                if kept && f.kind == umx_core::FieldKind::String {
+                    wanted.entry(t.name.as_str()).or_default().push(f);
+                }
+            }
+        }
+        if wanted.is_empty() {
+            return Vec::new();
+        }
+        let mut values: BTreeMap<(&str, &str), Vec<String>> = BTreeMap::new();
+        for node in l.graph.nodes() {
+            let Some((type_name, fields)) = wanted.get_key_value(node.kind()) else {
+                continue;
+            };
+            for f in fields {
+                if let Some(umx_core::Value::String(s)) = node.field(&f.name) {
+                    values
+                        .entry((type_name, f.name.as_str()))
+                        .or_default()
+                        .push(s);
+                }
+            }
+        }
+        let graph = alias_name(alias);
+        let mut hints = Vec::new();
+        for (type_name, fields) in &wanted {
+            for f in fields {
+                let held = values.get(&(*type_name, f.name.as_str()));
+                let advice = umx_core::role_advice::role_advice(
+                    f,
+                    held.into_iter().flatten().map(String::as_str),
+                );
+                let (Some(advice), Some(t), Some(name)) =
+                    (advice, ValidName::new(type_name), ValidName::new(&f.name))
+                else {
+                    continue;
+                };
+                hints.push(match advice {
+                    umx_core::role_advice::RoleAdvice::BecomeData { values, distinct } => {
+                        problems::field_looks_like_labels(&graph, &t, &name, values, distinct)
+                    }
+                    umx_core::role_advice::RoleAdvice::BecomeContent { values, long } => {
+                        problems::field_looks_like_prose(&graph, &t, &name, values, long)
+                    }
+                });
+            }
+        }
+        hints
     }
 }

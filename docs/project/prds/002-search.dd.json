@@ -149,7 +149,7 @@
           "statement": "umx never changes a field's role by itself. It hints, with the exact command, in both directions: a data field whose values are mostly long and mostly distinct (prose) is hinted to become content; a content field whose values are few and short (labels) is hinted to become data, with how many embedder calls that saves. The hints appear on `umx ontology add field`, `umx graph guide` and `umx embeddings status`.",
           "actor": "a-builder",
           "priority": "must",
-          "state": "planned",
+          "state": "shipped",
           "done_when": "On a fixture with a label field of 3 distinct values declared content and a prose field declared data, `umx graph guide` gives one hint for each, each naming the `umx ontology set field ... --role` command; neither role changes until that command is run.",
           "source": "Project lead rulings 2026-11-16 (data by default) and 2026-11-12 (hints are part of every feature)"
         },

@@ -21,6 +21,8 @@ use umx_core::{Command, FieldKind, Id, IdText, Policy, Problem, Role, SafeText, 
 pub const HINTS: &[&str] = &[
     "purpose_missing",
     "descriptions_missing",
+    "field_looks_like_labels",
+    "field_looks_like_prose",
     "reason_missing",
     "near_duplicate",
     "near_duplicate_line",
@@ -306,6 +308,8 @@ pub const CODES: &[&str] = &[
     "setting_secret_suspected",
     "text_form_outdated",
     "role_changed",
+    "field_looks_like_labels",
+    "field_looks_like_prose",
     "role_not_embeddable",
     "field_not_declared",
 ];
@@ -1995,6 +1999,57 @@ pub fn role_changed(
         .with("field", name(field))
         .with("role", Slot::Word(role.as_str()))
         .with("count", Slot::Count(count as u64))
+}
+
+/// search-05: a content field that holds labels; `fix` is the `ontology set field ... --role data` that moves it.
+pub fn field_looks_like_labels(
+    graph: &ValidName,
+    type_name: &ValidName,
+    field: &ValidName,
+    count: usize,
+    distinct: usize,
+) -> Problem {
+    Problem::new("field_looks_like_labels")
+        .with("graph", name(graph))
+        .with("type", name(type_name))
+        .with("field", name(field))
+        .with("count", Slot::Count(count as u64))
+        .with("distinct", Slot::Count(distinct as u64))
+        .with(
+            "fix",
+            Slot::Command(set_role(graph, type_name, field, Role::Data)),
+        )
+}
+
+/// search-05: a data field that holds prose; `fix` is the `ontology set field ... --role content` that moves it.
+pub fn field_looks_like_prose(
+    graph: &ValidName,
+    type_name: &ValidName,
+    field: &ValidName,
+    count: usize,
+    long: usize,
+) -> Problem {
+    Problem::new("field_looks_like_prose")
+        .with("graph", name(graph))
+        .with("type", name(type_name))
+        .with("field", name(field))
+        .with("count", Slot::Count(count as u64))
+        .with("long", Slot::Count(long as u64))
+        .with(
+            "fix",
+            Slot::Command(set_role(graph, type_name, field, Role::Content)),
+        )
+}
+
+/// `umx ontology set field <type> <field> --role <role> --graph <graph>`: the one command that changes a role.
+fn set_role(graph: &ValidName, type_name: &ValidName, field: &ValidName, role: Role) -> Command {
+    Command::new("ontology set field")
+        .name(type_name)
+        .name(field)
+        .word("--role")
+        .word(role.as_str())
+        .word("--graph")
+        .name(graph)
 }
 
 pub fn role_not_embeddable(field: &ValidName, kind: FieldKind) -> Problem {

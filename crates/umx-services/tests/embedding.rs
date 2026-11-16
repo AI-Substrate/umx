@@ -2553,3 +2553,76 @@ fn a_moved_graph_keeps_its_vectors_and_queues_nothing() {
             .is_some()
     );
 }
+
+#[test]
+fn a_field_in_the_wrong_role_group_is_hinted_and_its_role_never_changes_by_itself() {
+    // PRD 002 search-05 on the fakes: `impact` (string, content by default) holds two short labels; `summary`,
+    // declared data, holds prose; `due` (a date) repeats one value and is never judged.
+    let mut w = world();
+    w.svc
+        .ontology_add_field_as(&ctx(), "problem", "summary:string", None, Some("data"))
+        .unwrap();
+    for i in 0..6 {
+        let id = add(
+            &mut w,
+            &format!("Node {i}"),
+            "A note.",
+            ["low", "high"][i % 2],
+        );
+        w.svc
+            .node_edit(
+                &ctx(),
+                &id.to_text(),
+                NodeEditRequest {
+                    sets: vec![
+                        (
+                            "summary".into(),
+                            SetValue::Str(format!(
+                                "the supplier asked for a longer review window before round {i}"
+                            )),
+                        ),
+                        ("due".into(), SetValue::Raw("2026-12-01".into())),
+                    ],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    let before = graph_json(&w);
+    let notes = w.svc.graph_guide(&ctx(), "demo").unwrap().notes;
+    let mut codes: Vec<&str> = notes
+        .iter()
+        .map(|p| p.code)
+        .filter(|c| c.starts_with("field_looks_like"))
+        .collect();
+    codes.sort_unstable();
+    assert_eq!(codes, ["field_looks_like_labels", "field_looks_like_prose"]);
+    // Pointing it out changes nothing: graph.json is byte for byte the same, and no vector is made pending.
+    assert_eq!(graph_json(&w), before);
+    assert_eq!(w.svc.role_hints("demo", None).len(), 2);
+    assert_eq!(
+        w.svc.role_hints("demo", Some(("problem", "impact"))).len(),
+        1
+    );
+    assert!(
+        w.svc
+            .role_hints("demo", Some(("problem", "due")))
+            .is_empty()
+    );
+    // After the role is set as the hint says, that field's hint goes.
+    w.svc
+        .ontology_set_field(&ctx(), "problem", "impact", "data")
+        .unwrap();
+    assert!(
+        w.svc
+            .role_hints("demo", Some(("problem", "impact")))
+            .is_empty()
+    );
+    // A graph read only when named is never read for the `embeddings status` listing.
+    assert_eq!(w.svc.role_hints_unnamed("demo").len(), 1);
+    w.svc
+        .graph_set(&ctx(), "demo", &[("visibility".into(), "named".into())])
+        .unwrap();
+    assert!(w.svc.role_hints_unnamed("demo").is_empty());
+    assert_eq!(w.svc.role_hints("demo", None).len(), 1);
+}

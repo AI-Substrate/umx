@@ -91,6 +91,16 @@ edited_by_session, entity_key` and the legacy identity keys `person_key, org_key
 still carry them), and provenance nodes, are never embedded, whatever is declared.
 A role needs graph.json format 4, so an older umx refuses the graph instead of embedding its data fields.
 
+umx never changes a role by itself, but it points out a string field whose values say it is in the wrong group,
+with the `umx ontology set field` command that moves it, as a hint on `ontology add field` (for the field it
+adds), `graph guide` and `embeddings status` (open graphs only). `field_looks_like_labels`: a content field
+whose values are labels (at least 6 values, at most 12 distinct, each used twice on average, none over 40
+characters); it says how many values it holds, each a field vector and an embedder call that data would save.
+`field_looks_like_prose`: a data field whose values are prose (at least 3 values, more than half of 8 words or
+more, at least 4 in 5 different). Hints carry counts only, never a value. Numbers, dates, booleans and lists,
+and the fields umx never embeds, are never pointed out. Act on a hint only when the field is what it says;
+the role stays as declared until the command runs.
+
 ## Edge fields
 
 Edges carry custom fields too (`umx edge add a supports b --set confidence=0.7`), with the same soft vocabulary
