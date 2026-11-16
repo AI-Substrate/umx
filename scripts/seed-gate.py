@@ -39,15 +39,16 @@ EMAIL_OK_DOMAINS = ("users.noreply.github.com", "example.com", "example.org", "e
 
 def usage():
     sys.exit("usage: scripts/seed-gate <STAGE> [--receipt FILE] [--control --control-names FILE [--control-hosts FILE]]\n"
-             "       scripts/seed-gate --range <base>..<head> | --range <head> [--repo DIR] [--receipt FILE] [--control ...]\n"
-             "       scripts/seed-gate --pre-push [--repo DIR]   (reads git's pre-push lines on stdin)")
+             "       scripts/seed-gate --range <base>..<head> [--repo DIR] [--receipt FILE] [--control ...]\n"
+             "       scripts/seed-gate --range <head> [--remote NAME] [--repo DIR] [--receipt FILE] [--control ...]\n"
+             "       scripts/seed-gate --pre-push [--remote NAME] [--repo DIR]   (reads git's pre-push lines on stdin)")
 
 
 def parse():
     if not ARGS:
         usage()
     opts = {"stage": None, "receipt": None, "control": False, "names": None, "hosts": None, "list_secrets": False,
-            "range": None, "repo": None, "pre_push": False}
+            "range": None, "repo": None, "pre_push": False, "remote": None}
     rest = list(ARGS)
     if not rest[0].startswith("--"):
         opts["stage"] = rest.pop(0)
@@ -55,6 +56,8 @@ def parse():
         flag = rest.pop(0)
         if flag == "--range" and rest:
             opts["range"] = rest.pop(0)
+        elif flag == "--remote" and rest:
+            opts["remote"] = rest.pop(0)
         elif flag == "--repo" and rest:
             opts["repo"] = rest.pop(0)
         elif flag == "--pre-push":
@@ -146,6 +149,12 @@ class Tree:
 
 
 ZERO = "0" * 40
+# What the range checks rely on and read from the pushed head: a change to one needs security's verdict (tripwire).
+GATE_FILES = {
+    "scripts/seed-gate", "scripts/seed-gate.py", "scripts/seed-gate-secret-baseline", "scripts/customer-names-exceptions",
+    "scripts/home-paths", "scripts/install-pre-push-hook", "crates/umx-core/examples/secret-scan-stream.rs",
+    "apps/ui/scripts/check-lock-sources.mjs",
+}
 
 
 class RangeTree:
@@ -667,6 +676,16 @@ class Gate:
                  "a new commit adds, changes or deletes a file under .github/workflows: security gives a verdict on the exact "
                  "head first (`git rev-parse HEAD` names it); push it only after that verdict")
 
+    # range mode: the gate cannot approve its own change. Its code, its baseline and exceptions, and the hook installer
+    # are read from the pushed head, so a change to any of them needs security's verdict on that exact head.
+    def gate_tripwire(self):
+        changed = sorted(p for p in self.tree.touched if p.decode("utf-8", "surrogateescape") in GATE_FILES)
+        for path in changed:
+            self.locate(path)
+        self.add("gate-change", not changed, len(changed),
+                 "a new commit changes the gate, its baseline or exceptions, or the hook installer: security gives a "
+                 "verdict on the exact head first (`git rev-parse HEAD` names it); push it only after that verdict")
+
     # range mode: the locks are judged when a new commit changes one (a local proxy rewrites them to internal URLs)
     def range_locks(self):
         if self.tree.touched & {b"Cargo.lock", b"apps/ui/pnpm-lock.yaml"}:
@@ -688,28 +707,49 @@ class Gate:
                      f"scripts/{name} failed on the seed (exit {run.returncode}); run it by hand on STAGE for the locations")
 
 
-def range_revs(repo, spec):
-    """rev-list arguments for `<base>..<head>`, or for `<head>` alone: the commits on no remote ref."""
+def remote_exclusion(repo, remote):
+    """rev-list arguments that leave out what one named remote already has, by its remote-tracking refs.
+
+    Only the remote being pushed to counts: a commit another remote holds is still new to this one (a branch made from
+    a second remote's commits must be checked). A remote this clone does not know by name (a push to a bare URL) has
+    no tracking refs, so nothing is left out and the whole history of the head is checked.
+    """
+    names = git(repo, "remote").stdout.decode().split()
+    if remote not in names:
+        return [], f"(not a named remote here, so the whole history)"
+    return ["--not", f"--remotes={remote}"], f"--not --remotes={remote}"
+
+
+def range_revs(repo, spec, remote=None):
+    """rev-list arguments for `<base>..<head>`, or for `<head>` alone: its commits that `remote` (default origin) lacks."""
     if ".." in spec:
+        if remote:
+            sys.exit("seed-gate: --remote goes with --range <head>, not with <base>..<head>")
         base, head = spec.split("..", 1)
         if not base or not head or "." in base[-1:] + head[:1]:
             sys.exit("seed-gate: --range takes <base>..<head> (two dots) or a single <head>")
         return [head, "^" + base], spec
-    return [spec, "--not", "--remotes"], spec + " --not --remotes"
+    remote = remote or "origin"
+    if remote not in git(repo, "remote").stdout.decode().split():
+        sys.exit(f"seed-gate: no remote named '{remote}' here; name the remote you push to with --remote "
+                 "(`git remote -v` lists them), or give the range as <base>..<head>")
+    exclusion, text = remote_exclusion(repo, remote)
+    return [spec, *exclusion], f"{spec} {text}"
 
 
 def check_range(opts, repo, revs, label):
     """Runs the range checks; prints the summary; returns (passed, receipt)."""
     for rev in revs:
         if rev.startswith("--"):
-            continue
+            continue  # --not, --remotes=<name>
         if git(repo, "rev-parse", "--verify", "--quiet", rev.lstrip("^") + "^{commit}", check=False).returncode != 0:
             sys.exit(f"seed-gate: {rev.lstrip('^')} is not a commit here; fetch it first (`git fetch`), then run again")
     tree = RangeTree(repo, revs, label)
     gate = Gate(opts, tree)
     prefix = "seed-gate:"
     receipt = {"mode": "CONTROL" if opts["control"] else "RANGE", "range": label, "head": tree.head,
-               "base": revs[1].lstrip("^") if revs[1].startswith("^") else "not on any remote",
+               "base": revs[1].lstrip("^") if len(revs) > 1 and revs[1].startswith("^") else
+                       (revs[2].replace("--remotes=", "not on remote ") if len(revs) > 2 else "none (whole history)"),
                "commits": tree.commits, "changed_blobs": 0, "range_pass": False}
     if tree.commits == 0:
         print(f"{prefix} range {label}: no new commits, nothing to push")
@@ -717,8 +757,8 @@ def check_range(opts, repo, revs, label):
         receipt["checks"] = {}
         return True, receipt
     for check in (gate.range_shape, gate.names, gate.private_infra, gate.home_paths, gate.personal, gate.secrets,
-                  gate.binaries, gate.sizes, gate.workflow_tripwire, gate.range_locks, gate.commit_identity,
-                  gate.commit_text):
+                  gate.binaries, gate.sizes, gate.workflow_tripwire, gate.gate_tripwire, gate.range_locks,
+                  gate.commit_identity, gate.commit_text):
         check()
     failed = [r for r in gate.results if r[1] == "fail"]
     print(f"{prefix} range {label}: {tree.commits} new commit(s), {len(tree.files())} changed blob(s)")
@@ -752,18 +792,35 @@ def list_secret_hits(gate):
 
 
 def pre_push(opts, repo):
-    """git's pre-push hook: one range per pushed ref, from the `<local ref> <local sha> <remote ref> <remote sha>` lines."""
+    """git's pre-push hook: one range per pushed ref, from the `<local ref> <local sha> <remote ref> <remote sha>` lines.
+
+    `--remote` is git's first hook argument: the name (or URL) of the remote being pushed to. A new branch is checked
+    for its commits that remote lacks; a line that is not four fields fails closed.
+    """
+    if not opts["remote"]:
+        sys.exit("seed-gate: --pre-push needs --remote <name or URL> (the hook passes git's $1); run "
+                 "scripts/install-pre-push-hook again to update the hook")
     ok = True
     for line in sys.stdin.read().splitlines():
+        if not line.strip():
+            continue
         fields = line.split()
-        if len(fields) != 4:
+        if len(fields) != 4 or not all(re.fullmatch(r"[0-9a-f]{40}([0-9a-f]{24})?", f) for f in (fields[1], fields[3])):
+            print("seed-gate: FAIL    pre-push-input count=1")
+            print("seed-gate: hint (pre-push-input): a pre-push line is not `<local ref> <local sha> <remote ref> "
+                  "<remote sha>`, so nothing was checked; push with plain `git push <remote> <branch>`")
+            ok = False
             continue
         _local_ref, local, remote_ref, remote = fields
-        if local == ZERO:
+        if set(local) == {"0"}:
             print(f"seed-gate: {remote_ref} is deleted, nothing to check")
             continue
-        known = remote != ZERO and git(repo, "cat-file", "-e", remote + "^{commit}", check=False).returncode == 0
-        revs, label = range_revs(repo, f"{remote}..{local}" if known else local)
+        known = set(remote) != {"0"} and git(repo, "cat-file", "-e", remote + "^{commit}", check=False).returncode == 0
+        if known:
+            revs, label = [local, "^" + remote], f"{remote}..{local}"
+        else:
+            exclusion, text = remote_exclusion(repo, opts["remote"])
+            revs, label = [local, *exclusion], f"{local} {text}"
         passed, _receipt = check_range(opts, repo, revs, label)
         ok = ok and passed
     if not ok:
@@ -780,7 +837,7 @@ def main():
             sys.exit("seed-gate: --repo is not a git repository")
         if opts["pre_push"]:
             sys.exit(0 if pre_push(opts, repo) else 1)
-        revs, label = range_revs(repo, opts["range"])
+        revs, label = range_revs(repo, opts["range"], opts["remote"])
         if opts["list_secrets"]:
             list_secret_hits(Gate(opts, RangeTree(repo, revs, label)))
         passed, receipt = check_range(opts, repo, revs, label)

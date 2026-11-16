@@ -117,6 +117,22 @@ plant "a file over the size cap" size-cap p_big SEED_GATE_MAX_BYTES=2048
 plant "a symlink" shape p_link
 plant "a workflow change" workflow-change p_workflow
 plant "a workflow deleted" workflow-change p_workflow_delete
+for gate_file in scripts/seed-gate scripts/seed-gate.py scripts/seed-gate-secret-baseline scripts/customer-names-exceptions \
+    scripts/home-paths scripts/install-pre-push-hook crates/umx-core/examples/secret-scan-stream.rs \
+    apps/ui/scripts/check-lock-sources.mjs; do
+    p_gate_file() { mkdir -p "$(dirname "$gate_file")" && echo "# changed" >>"$gate_file"; }
+    plant "a change to $gate_file" gate-change p_gate_file
+done
+
+# a push cannot approve itself: a secret, then a commit adding its baseline row, still fails (gate-change)
+dir=$(clone)
+(cd "$dir" && p_secret && git add -A && git commit -q -m "a change")
+check_range "a secret before its baseline row" "$dir" origin/main..HEAD 1 secret-scan
+mkdir -p "$dir/scripts"
+"$gate" --range origin/main..HEAD --repo "$dir" --control --control-names "$work/names" --control-hosts "$work/hosts" \
+    --list-secret-hits | grep -v '^#' >>"$dir/scripts/seed-gate-secret-baseline"
+(cd "$dir" && git add -A && git commit -q -m "baseline")
+check_range "a secret with its own baseline row" "$dir" origin/main..HEAD 1 gate-change
 
 # a plant in an earlier commit that a later commit removes is still published: every new commit is read
 dir=$(clone)
@@ -174,6 +190,25 @@ if ! grep -q 'nothing to push' "$out"; then
     fail=1
 fi
 
+# a commit another remote holds is still new to the remote being pushed to
+other="$work/other-remote"
+git clone -q "$base" "$other"
+(cd "$other" && printf 'built in /Users/%s/x\n' "$acct" >src/far.md && git add -A &&
+    GIT_AUTHOR_EMAIL="$(printf '%s@%s' someone realmail.com)" git commit -q -m "elsewhere")
+dir=$(clone)
+git -C "$dir" remote add second "$other"
+git -C "$dir" fetch -q second
+git -C "$dir" checkout -q -b from-second second/main
+check_range "a branch made from a second remote's commit" "$dir" HEAD 1 home-paths
+check_range "a branch made from a second remote's commit (identity)" "$dir" HEAD 1 commit-identity
+code=0
+"$gate" --range HEAD --remote nosuch --repo "$dir" --control --control-names "$work/names" \
+    --control-hosts "$work/hosts" >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || ! grep -q "no remote named" "$out"; then
+    echo "FAIL: --range <head> accepted a remote that does not exist" >&2
+    fail=1
+fi
+
 # the real run takes no list: --control-names without --control is refused
 code=0
 "$gate" --range origin/main..HEAD --repo "$dir" --control-names "$work/names" >"$out" 2>&1 || code=$?
@@ -185,6 +220,12 @@ code=0
 "$gate" --pre-push --repo "$dir" --control --control-names "$work/names" </dev/null >"$out" 2>&1 || code=$?
 if [ "$code" = 0 ]; then
     echo "FAIL: --pre-push accepted control lists" >&2
+    fail=1
+fi
+code=0
+echo "refs/heads/main abc refs/heads/main" | "$gate" --pre-push --remote origin --repo "$dir" >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || ! grep -q 'FAIL    pre-push-input' "$out"; then
+    echo "FAIL: --pre-push accepted a line that is not four fields" >&2
     fail=1
 fi
 
@@ -235,6 +276,31 @@ push "a clean fast-forward goes through" 0 good
 push "a delete goes through" 0 :good
 if git -C "$work/remote.git" rev-parse --verify --quiet refs/heads/good >/dev/null; then
     echo "FAIL: hook: the delete did not reach the remote" >&2
+    fail=1
+fi
+
+# the hook: a branch made from another remote's commits is checked against the remote being pushed to
+git -C "$pusher" remote add second "$other"
+git -C "$pusher" fetch -q second
+git -C "$pusher" checkout -q -b from-second second/main
+push "a branch from a second remote's bad commit is refused" 1 from-second
+if git -C "$work/remote.git" rev-parse --verify --quiet refs/heads/from-second >/dev/null; then
+    echo "FAIL: hook: the second remote's commit reached the remote" >&2
+    fail=1
+fi
+
+# a moved clone: the hook names a gate that is gone, so it refuses with the command to run
+mkdir -p "$work/tool/scripts"
+cp "$installer" "$work/tool/scripts/install-pre-push-hook"
+git clone -q "$work/remote.git" "$work/moved"
+"$work/tool/scripts/install-pre-push-hook" --repo "$work/moved" >/dev/null
+rm -rf "$work/tool"
+git -C "$work/moved" checkout -q -b fine
+(cd "$work/moved" && echo fine >>README.md && git add -A && git commit -q -m "a clean change")
+code=0
+HOME="$home" git -C "$work/moved" push -q origin fine >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || ! grep -q 'install-pre-push-hook again' "$out"; then
+    echo "FAIL: hook: a moved clone did not refuse with the installer hint" >&2
     fail=1
 fi
 

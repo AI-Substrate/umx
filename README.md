@@ -439,8 +439,12 @@ Maintainers who push run `scripts/install-pre-push-hook` once in their clone. Th
 binaries and file sizes in the files they change, and the names, email addresses and messages of the commits
 themselves. It refuses the push when a check fails, with a hint for the fix. It reads two lists kept outside the
 repository (`~/.config/unimatrix/customer-names` and `~/.config/unimatrix/private-hosts`) and fails closed without
-them. `scripts/seed-gate --range origin/main..HEAD` runs the same checks without pushing. Any change under
-`.github/workflows` fails it until security has reviewed that exact commit.
+them. `scripts/seed-gate --range origin/main..HEAD` runs the same checks without pushing. A change under
+`.github/workflows`, or to the gate itself (its scripts, secret baseline and exceptions), always fails it: such a
+push goes out only after security has reviewed that exact commit, from whoever owns pushes. The hook
+runs the gate and secret scanner of the clone that installed it, and reads the lists from the pushing user's home
+folder; if that clone moves, run the installer again. A new branch is checked for every commit the remote you push
+to does not have, even when another remote has it. `git push --no-verify` skips the hook.
 
 ## License
 

@@ -38,8 +38,14 @@ tmp=$(mktemp "$hooks/.pre-push.XXXXXX")
 cat >"$tmp" <<HOOK
 #!/usr/bin/env bash
 $marker (scripts/install-pre-push-hook writes it; run that again to update it)
-# git passes the remote name and URL as arguments and one line per pushed ref on stdin.
-exec "$here/seed-gate" --pre-push --repo "\$(git rev-parse --show-toplevel)"
+# git passes the remote's name (or URL) and URL as arguments and one line per pushed ref on stdin.
+gate="$here/seed-gate"
+if [ ! -x "\$gate" ]; then
+    echo "pre-push: \$gate is gone (the clone that installed this hook moved or was removed), so nothing was checked." >&2
+    echo "  Run scripts/install-pre-push-hook again in this clone, then push again." >&2
+    exit 1
+fi
+exec "\$gate" --pre-push --remote "\$1" --repo "\$(git rev-parse --show-toplevel)"
 HOOK
 chmod 0755 "$tmp"
 mv "$tmp" "$hook"
