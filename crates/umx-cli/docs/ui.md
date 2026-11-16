@@ -543,5 +543,5 @@ The request's op, and its answer:
      "changes":[{"graph":"acme","from_rev":12,"to_rev":14,"nodes":{"added":["01JC8XA4H7..."],"edited":[],"removed":[]},
      "edges":{"added":[],"edited":[],"removed":["01JC8XF6SV..."]}}]},...}
 
-`untrusted` names `data.events[].command.note` (an agent's text) and `data.rows[].title` (graph titles) besides
-`data`, so the view knows which strings to show only as text.
+`untrusted` names `data.events[].command.note` (an agent's text), `data.rows[].title` (graph titles) and
+`data.rows[].text` (a search hit's text) besides `data`, so the view knows which strings to show only as text.

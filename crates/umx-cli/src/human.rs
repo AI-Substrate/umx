@@ -376,6 +376,15 @@ fn data(data: &Value, command: &str, style: Style) -> String {
 /// Column names can come from the command line (`--columns`), so they are cleaned like graph text; rows are
 /// looked up by the raw name.
 fn table(cols: &[&str], rows: &[Value], data: &Value, style: Style) -> String {
+    // A search hit's cut (PRD 002 search-07) is printed under its row, one indented line, never as a column: the
+    // table stays as wide as it was. It is graph text, so it goes through [`clean`] like every cell.
+    let cut = cols.contains(&"text") && cols.contains(&"text_field");
+    let shown: Vec<&str> = cols
+        .iter()
+        .copied()
+        .filter(|c| !(cut && matches!(*c, "text" | "text_field")))
+        .collect();
+    let cols = shown.as_slice();
     let cells: Vec<Vec<String>> = rows
         .iter()
         .map(|row| cols.iter().map(|c| clean(&cell(&row[*c]))).collect())
@@ -407,7 +416,7 @@ fn table(cols: &[&str], rows: &[Value], data: &Value, style: Style) -> String {
     let rule: Vec<String> = widths.iter().map(|w| "─".repeat(*w)).collect();
     let mut out = line(&header, &|_, c| style.paint(HEADING, c));
     out.push_str(&line(&rule, &|_, c| style.paint(DIM, c)));
-    for row in &cells {
+    for (row, record) in cells.iter().zip(rows) {
         out.push_str(&line(row, &|i, c| {
             if cols[i] == "id" {
                 style.paint(DIM, c)
@@ -415,6 +424,14 @@ fn table(cols: &[&str], rows: &[Value], data: &Value, style: Style) -> String {
                 c.to_owned()
             }
         }));
+        if cut && let Some(text) = record["text"].as_str() {
+            let field = clean(record["text_field"].as_str().unwrap_or("text"));
+            out.push_str(&format!(
+                "    {} {}\n",
+                style.paint(DIM, &format!("{field}:")),
+                clean(text)
+            ));
+        }
     }
     if rows.is_empty() {
         out.push_str(&style.paint(DIM, "(none)"));

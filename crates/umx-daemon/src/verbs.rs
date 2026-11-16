@@ -1492,7 +1492,8 @@ pub fn search_finish(
 /// from (`calibrated`, `config` or `none`) and its calibration run (ws004 s26). A hit whose title umx's secret check
 /// flags carries `secret_suspected: ["field:title"]` (F228), and `field:word_terms` too when it has word terms: a
 /// matched term is the node's whole word, which a prefix query spells out, and the terms do not say which field they
-/// came from, so all of them are flagged (R398-1).
+/// came from, so all of them are flagged (R398-1). Each row's `text` is a cut of the field named in `text_field`
+/// (PRD 002 search-07): graph data, listed untrusted, and flagged `field:text` when that field's value is.
 fn search_json(services: &Services, result: &umx_services::HybridResult) -> Value {
     let titles: Vec<_> = result
         .hits
@@ -1506,6 +1507,20 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
         .map(|(h, mut flags)| {
             if !flags.is_empty() && h.word.as_ref().is_some_and(|w| !w.terms.is_empty()) {
                 flags.push(umx_core::place::named_place("word_terms"));
+            }
+            // search-07: the cut of the field that found the hit. Flagged when that field's whole value is, by the
+            // rule node get uses (a secret cut in half is still flagged); --human then hides it (F224).
+            let text = h.text();
+            if let Some((field, _)) = &text
+                && !services
+                    .secret_flags(
+                        &[(h.alias.as_str(), &h.node)],
+                        Some(std::slice::from_ref(field)),
+                    )
+                    .concat()
+                    .is_empty()
+            {
+                flags.push(umx_core::place::named_place("text"));
             }
             let mut row = json!({
                 "graph": h.alias,
@@ -1531,6 +1546,8 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
                 "cosine": h.vector.as_ref().map(|v| v.cosine),
                 "vector_field": h.vector.as_ref().map(|v| v.field.as_str()),
                 "fused": h.fused,
+                "text_field": text.as_ref().map(|(field, _)| field),
+                "text": text.as_ref().map(|(_, cut)| cut),
             });
             if result.copies {
                 row["copy"] = json!(h.alias);
@@ -1557,6 +1574,8 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
         "cosine",
         "vector_field",
         "fused",
+        "text_field",
+        "text",
     ];
     if any_flagged(&rows) {
         columns.push(SECRET_SUSPECTED);

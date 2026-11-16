@@ -8,6 +8,7 @@ pub mod batch;
 pub mod codec;
 pub mod config;
 pub mod config_import;
+pub mod cut;
 pub mod entity;
 pub mod evidence;
 pub mod graphfile;

@@ -1371,3 +1371,53 @@ fn floor_uncalibrated_names_each_use_left_without_a_floor() {
     assert!(load(with(Some(0.5), None)).is_empty());
     assert_eq!(load(Floors::default()), ["search"]);
 }
+
+/// PRD 002 search-07 on the fakes: a hit's text comes from the word leg's field, else the best vector's field (never
+/// the whole-node vector, which is no one field), else the note; a hit whose fields hold nothing carries none.
+#[test]
+fn each_hit_carries_a_cut_of_the_field_that_found_it() {
+    let (w, [cat, approval, _, words]) = demo();
+
+    // Words: the note the word leg matched, whole when short.
+    let (both, _) = search(&w, None, "approval delay");
+    let hit = both.hits.iter().find(|h| h.node.id == words).unwrap();
+    assert_eq!(
+        hit.text(),
+        Some(("note".into(), "the approval delay hits every vendor".into()))
+    );
+    let queue = both.hits.iter().find(|h| h.node.id == approval).unwrap();
+    let (field, _) = queue.text().unwrap();
+    assert_eq!(
+        Some(field.as_str()),
+        queue
+            .word
+            .as_ref()
+            .map(|w| w.field.as_str())
+            .or(Some("note"))
+    );
+
+    // Meaning only: "Cat food shortage" has no note, so its text is its best vector's field, or none when that was
+    // the whole-node vector.
+    let (para, _) = search(&w, None, "feline");
+    let first = &para.hits[0];
+    assert_eq!(first.node.id, cat);
+    let v = first.vector.as_ref().unwrap();
+    match v.field.starts_with('@') {
+        true => assert_eq!(first.text(), None),
+        false => assert_eq!(
+            first.text(),
+            Some((v.field.clone(), "Cat food shortage".into()))
+        ),
+    }
+
+    // The text never changes ranking: it is read from each ranked hit afterwards, and the same search gives the same
+    // order and scores.
+    let (again, _) = search(&w, None, "approval delay");
+    let order = |r: &HybridResult| {
+        r.hits
+            .iter()
+            .map(|h| (h.node.id, h.fused.to_bits()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(&both), order(&again));
+}

@@ -156,12 +156,14 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// a flagged title carries its own `field:title`; `query_column_reserved` refuses a column named `secret_suspected`.
 /// 82: the hints `field_looks_like_labels` and `field_looks_like_prose` (PRD 002 search-05) on `ontology add field`,
 /// `graph guide` and `embeddings status`.
+/// 83: search rows carry `text_field` and `text`, a cut of the field that found the hit (PRD 002 search-07), flagged
+/// `field:text` as node get flags the field; `data.rows[].text` joins `untrusted`.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 82;
+pub const PROTOCOL: u32 = 83;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -170,15 +172,16 @@ pub const PROTOCOL: u32 = 82;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (82, 0xa98e_387d_a3c9_df3c);
+const WIRE_FINGERPRINT: (u32, u64) = (83, 0x77c6_0657_68cd_094d);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
 /// those (the graph view) knows they are an agent's note and graph titles.
-pub const UNTRUSTED: [&str; 6] = [
+pub const UNTRUSTED: [&str; 7] = [
     "data",
     "data.events[].command.note",
     "data.rows[].title",
+    "data.rows[].text",
     "warnings[].candidates",
     "hints[].candidates",
     "errors[].candidates",

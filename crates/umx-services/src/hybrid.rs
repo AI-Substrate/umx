@@ -77,6 +77,34 @@ pub struct HybridHit {
 }
 
 impl HybridHit {
+    /// PRD 002 search-07: the field a hit's text comes from and its cut ([`umx_core::cut::cut`], at most
+    /// [`umx_core::cut::CUT_CHARS`] characters): the word leg's field, cut around the words it matched; else the best
+    /// vector's field (not the whole-node vector, which is no one field); else the note from its start. The first of
+    /// those that holds text wins; None when none does. Read from the hit's own node: no other node is read.
+    pub fn text(&self) -> Option<(String, String)> {
+        let word = self.word.as_ref().map(|w| {
+            let terms: Vec<&str> = w.terms.iter().map(|t| t.term.as_str()).collect();
+            (w.field.as_str(), terms)
+        });
+        let vector = self
+            .vector
+            .as_ref()
+            .map(|v| v.field.as_str())
+            .filter(|f| !f.starts_with('@'));
+        let tried = word
+            .into_iter()
+            .chain(vector.map(|f| (f, Vec::new())))
+            .chain([("note", Vec::new())]);
+        for (field, words) in tried {
+            if let Some(Value::String(text)) = self.node.field(field)
+                && !text.trim().is_empty()
+            {
+                return Some((field.to_string(), umx_core::cut::cut(&text, &words)));
+            }
+        }
+        None
+    }
+
     /// Which legs found it: `word`, `vector`, `both`, or `exact` when only the exact match did.
     pub fn legs(&self) -> &'static str {
         match (&self.word, &self.vector) {

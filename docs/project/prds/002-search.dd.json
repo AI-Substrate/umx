@@ -170,7 +170,7 @@
           "statement": "Each hit holds a cut of about 200 characters from the field that found it (the word match's field, else the best vector's field, else the start of the note), named with its field. The agent can judge a hit without reading the node. The text is graph data and is marked untrusted in the reply.",
           "actor": "a-agent",
           "priority": "must",
-          "state": "planned",
+          "state": "shipped",
           "done_when": "A hit found through its note carries `text` with `field: note` and at most 200 characters around the matched words; a hit with no note carries its best field or nothing; the reply's `untrusted` list names the path.",
           "source": "Project lead ruling 2026-11-16 (on by default)",
           "note": "Shipped today: hits carry title only."
