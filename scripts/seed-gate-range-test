@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# Negative controls for scripts/seed-gate --range and --pre-push, and for scripts/install-pre-push-hook.
+#
+# Each range control clones a small clean base repository, adds one commit with one plant, and proves that
+# `seed-gate --range origin/main..HEAD` exits 1, names the right check as FAIL, and echoes nothing planted in its output
+# or receipt. The base holds a file that already carries a planted name: a range that leaves it alone passes (only what
+# a push adds is read), and a range with no commits passes as "nothing to push". The hook controls push to a bare
+# repository: a new branch with a bad commit is refused, a clean push and a delete go through, and the installer
+# never replaces a hook it did not write.
+# Range controls use --control with a synthetic list; the hook controls run the real mode under a throwaway HOME whose
+# lists are synthetic. No real name, account or host is in this file: planted values are built from halves at run time.
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+gate="${SEED_GATE:-$here/seed-gate}"
+installer="$here/install-pre-push-hook"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+export GIT_AUTHOR_NAME=builder GIT_AUTHOR_EMAIL=1+builder@users.noreply.github.com
+export GIT_COMMITTER_NAME=builder GIT_COMMITTER_EMAIL=1+builder@users.noreply.github.com
+
+name=$(printf '%s%s' qzx vny)
+acct=$(printf '%s%s' zzp lantacct)
+host=$(printf '%s%s' plant-host- zz.corp)
+printf '# synthetic list\nOtherName\n%s\n' "$name" >"$work/names"
+printf '# synthetic hosts\n%s\n' "$host" >"$work/hosts"
+
+base="$work/base"
+mkdir -p "$base/.github/workflows" "$base/src" "$base/notes"
+printf 'name: check\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n' >"$base/.github/workflows/check.yml"
+printf 'fn main() {}\n' >"$base/src/main.rs"
+printf '# a clean repository\n' >"$base/README.md"
+printf 'nothing to see\n' >"$base/notes/clean.txt"
+printf 'an old note about %s\n' "$name" >"$base/notes/old-dirty.txt" # already pushed: a range that leaves it alone passes
+git init -q --initial-branch=main "$base"
+git -C "$base" add -A
+git -C "$base" commit -q -m base
+
+fail=0
+out="$work/out"
+receipt="$work/receipt.json"
+no_echo() { # <label>
+    for planted in "$name" "$acct" "$host"; do
+        if grep -qi "$planted" "$out" "$receipt" 2>/dev/null; then
+            echo "FAIL: $1: the output or receipt echoes a planted term" >&2
+            fail=1
+        fi
+    done
+}
+# check_range <label> <dir> <range> <want exit> <check that must read FAIL, or ''> [env...]
+check_range() {
+    local label=$1 dir=$2 range=$3 want=$4 check=$5 code=0
+    shift 5
+    rm -f "$receipt"
+    env "$@" "$gate" --range "$range" --repo "$dir" --control --control-names "$work/names" \
+        --control-hosts "$work/hosts" --receipt "$receipt" >"$out" 2>&1 || code=$?
+    if [ "$code" != "$want" ]; then
+        echo "FAIL: $label: exit $code, want $want" >&2
+        fail=1
+    elif [ -n "$check" ] && ! grep -q "^seed-gate: FAIL    $check count=[1-9]" "$out"; then
+        echo "FAIL: $label: check '$check' did not read FAIL" >&2
+        fail=1
+    elif [ "$want" = 0 ] && grep -q '^seed-gate: FAIL' "$out"; then
+        echo "FAIL: $label: a check failed" >&2
+        fail=1
+    fi
+    if ! grep -q '"mode": "CONTROL"' "$receipt" || ! grep -q '"range_pass": false' "$receipt"; then
+        echo "FAIL: $label: the receipt is not a CONTROL receipt that refuses a pass" >&2
+        fail=1
+    fi
+    no_echo "$label"
+}
+clone() { # prints a new clone of the base, whose origin/main is the base's main
+    local dir
+    dir=$(mktemp -d "$work/clone.XXXXXX")
+    git clone -q "$base" "$dir"
+    echo "$dir"
+}
+# plant <label> <check> <setup function> [env...]: a clone, one plant committed, the range must fail that check
+plant() {
+    local label=$1 check=$2 setup=$3 dir
+    shift 3
+    dir=$(clone)
+    (cd "$dir" && "$setup" && git add -A && git commit -q -m "a change")
+    check_range "$label" "$dir" origin/main..HEAD 1 "$check" "$@"
+}
+
+p_name() { printf 'notes about %s today\n' "$name" >src/notes.md; }
+p_name_path() { echo x >"src/report-$name.txt"; }
+p_host() { printf 'registry at %s\n' "$host" >src/reg.md; }
+p_home() { printf 'path /Users/%s/code\n' "$acct" >src/path.md; }
+p_email() { printf 'mail %s@%s\n' someone realmail.com >src/mail.md; }
+p_secret() { printf 'aws_key = "%s%s"\n' AKIA IOSFODNN7EXAMPLE >src/config.txt; }
+p_png() { printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89' >src/picture.txt; }
+p_zip() { printf 'PK\x03\x04\x14\x00\x00\x00\x08\x00' >src/data.dat; }
+p_nonutf8() { printf '\xff\xfe\xfd stream \x80\x81' >src/stream.dat; }
+p_big() { head -c 4000 /dev/zero | tr '\0' 'a' >src/big.txt; }
+p_link() { ln -s ../README.md src/link.md; }
+p_workflow() { printf '# a comment\n' >>.github/workflows/check.yml; }
+p_workflow_delete() { git rm -q .github/workflows/check.yml; }
+p_clean_to_dirty() { printf 'now about %s\n' "$name" >>notes/clean.txt; }
+p_key() { printf 'A=1\n' >.env; }
+
+plant "a name in a changed file" customer-names p_name
+plant "a name in a file name" customer-names p_name_path
+plant "a file clean in the base, dirty in the head" customer-names p_clean_to_dirty
+plant "a private host" private-infrastructure p_host
+plant "a home path" home-paths p_home
+plant "an email" personal-data p_email
+plant "an .env file" personal-data p_key
+plant "a secret-shaped string" secret-scan p_secret
+plant "a png named .txt" rasters p_png
+plant "a zip" opaque-and-binary p_zip
+plant "a non-UTF-8 file with no NUL byte" opaque-and-binary p_nonutf8
+plant "a file over the size cap" size-cap p_big SEED_GATE_MAX_BYTES=2048
+plant "a symlink" shape p_link
+plant "a workflow change" workflow-change p_workflow
+plant "a workflow deleted" workflow-change p_workflow_delete
+
+# a plant in an earlier commit that a later commit removes is still published: every new commit is read
+dir=$(clone)
+(cd "$dir" && p_name && git add -A && git commit -q -m one && git rm -q src/notes.md && git commit -q -m two)
+check_range "a name added then removed within the range" "$dir" origin/main..HEAD 1 customer-names
+
+# the commit's own text
+commit_text() { # <label> <author name> <committer name> <message> <check>
+    local dir
+    dir=$(clone)
+    echo change >>"$dir/README.md"
+    git -C "$dir" add -A
+    GIT_AUTHOR_NAME="$2" GIT_COMMITTER_NAME="$3" git -C "$dir" commit -q -m "$4"
+    check_range "commit text: $1" "$dir" origin/main..HEAD 1 "$5"
+}
+commit_text "a name in the message" builder builder "notes for $name" commit-text
+commit_text "a name as the author" "$name" builder "a change" commit-text
+commit_text "a name as the committer" builder "$name" "a change" commit-text
+commit_text "a private host in the message" builder builder "from $host" commit-text
+commit_text "a home path in the message" builder builder "built in /Users/$acct/x" commit-text
+commit_text "an email in the message" builder builder "$(printf 'by %s@%s' someone realmail.com)" commit-text
+
+# identity: author and committer each a noreply address, checked apart
+for who in author committer; do
+    dir=$(clone)
+    echo change >>"$dir/README.md"
+    git -C "$dir" add -A
+    if [ "$who" = author ]; then
+        GIT_AUTHOR_EMAIL=someone@example.com git -C "$dir" commit -q -m "a change"
+    else
+        GIT_COMMITTER_EMAIL=someone@example.com git -C "$dir" commit -q -m "a change"
+    fi
+    check_range "a non-noreply $who" "$dir" origin/main..HEAD 1 commit-identity
+done
+
+# what passes: an untouched old dirty file, a clean change, a new branch's own commits, an empty range
+dir=$(clone)
+(cd "$dir" && echo fine >>notes/clean.txt && git add -A && git commit -q -m "a clean change")
+check_range "a clean change beside an untouched dirty file" "$dir" origin/main..HEAD 0 ""
+if ! grep -q '^seed-gate: CONTROL RUN PASS' "$out"; then
+    echo "FAIL: a clean range did not pass" >&2
+    fail=1
+fi
+git -C "$dir" checkout -q -b topic
+(cd "$dir" && echo more >>README.md && git add -A && git commit -q -m "more")
+check_range "a new branch: only its commits on no remote ref" "$dir" HEAD 0 ""
+if ! grep -q '2 new commit(s)' "$out"; then # the two unpushed commits, not the base the remote has
+    echo "FAIL: a new branch's range is not just its own commit" >&2
+    fail=1
+fi
+dir=$(clone)
+check_range "an empty range" "$dir" origin/main..HEAD 0 ""
+if ! grep -q 'nothing to push' "$out"; then
+    echo "FAIL: an empty range did not say nothing to push" >&2
+    fail=1
+fi
+
+# the real run takes no list: --control-names without --control is refused
+code=0
+"$gate" --range origin/main..HEAD --repo "$dir" --control-names "$work/names" >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || ! grep -q 'only honoured with --control' "$out"; then
+    echo "FAIL: the real range run accepted a names list" >&2
+    fail=1
+fi
+code=0
+"$gate" --pre-push --repo "$dir" --control --control-names "$work/names" </dev/null >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ]; then
+    echo "FAIL: --pre-push accepted control lists" >&2
+    fail=1
+fi
+
+# the hook, in the real mode, under a throwaway HOME with synthetic lists (16 names, as the real list needs)
+home="$work/home"
+mkdir -p "$home/.config/unimatrix"
+{
+    echo "$name"
+    for i in $(seq 1 15); do printf 'synthname%02d\n' "$i"; done
+} >"$home/.config/unimatrix/customer-names"
+cp "$work/hosts" "$home/.config/unimatrix/private-hosts"
+git clone -q --bare "$base" "$work/remote.git"
+git clone -q "$work/remote.git" "$work/pusher"
+pusher="$work/pusher"
+check_install() { # <label> <want exit>
+    local code=0
+    "$installer" --repo "$pusher" >"$out" 2>&1 || code=$?
+    if [ "$code" != "$2" ]; then
+        echo "FAIL: $1: installer exit $code, want $2" >&2
+        fail=1
+    fi
+}
+check_install "install" 0
+check_install "install again (idempotent)" 0
+push() { # <label> <want: 0 pushed, 1 refused> <git push args...>
+    local label=$1 want=$2 code=0
+    shift 2
+    HOME="$home" git -C "$pusher" push -q origin "$@" >"$out" 2>&1 || code=$?
+    if { [ "$want" = 0 ] && [ "$code" != 0 ]; } || { [ "$want" = 1 ] && [ "$code" = 0 ]; }; then
+        echo "FAIL: hook: $label: push exit $code" >&2
+        fail=1
+    fi
+    no_echo "hook: $label"
+}
+git -C "$pusher" checkout -q -b bad
+(cd "$pusher" && p_name && git add -A && git commit -q -m "a change")
+push "a new branch with a bad commit is refused" 1 bad
+if git -C "$work/remote.git" rev-parse --verify --quiet refs/heads/bad >/dev/null; then
+    echo "FAIL: hook: the refused branch reached the remote" >&2
+    fail=1
+fi
+git -C "$pusher" checkout -q main
+git -C "$pusher" checkout -q -b good
+(cd "$pusher" && echo fine >>README.md && git add -A && git commit -q -m "a clean change")
+push "a clean new branch goes through" 0 good
+(cd "$pusher" && echo more >>README.md && git add -A && git commit -q -m "another clean change")
+push "a clean fast-forward goes through" 0 good
+push "a delete goes through" 0 :good
+if git -C "$work/remote.git" rev-parse --verify --quiet refs/heads/good >/dev/null; then
+    echo "FAIL: hook: the delete did not reach the remote" >&2
+    fail=1
+fi
+
+# a hook the installer did not write is never replaced
+git clone -q "$work/remote.git" "$work/other"
+printf '#!/bin/sh\necho mine\n' >"$work/other/.git/hooks/pre-push"
+before=$(cat "$work/other/.git/hooks/pre-push")
+code=0
+"$installer" --repo "$work/other" >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || [ "$(cat "$work/other/.git/hooks/pre-push")" != "$before" ] || ! grep -q 'mv ' "$out"; then
+    echo "FAIL: the installer replaced a foreign hook or gave no command" >&2
+    fail=1
+fi
+
+if [ "$fail" = 0 ]; then
+    echo "seed-gate-range-test: every range and hook control fires, and clean pushes go through"
+fi
+exit "$fail"

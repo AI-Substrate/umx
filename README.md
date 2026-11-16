@@ -61,6 +61,7 @@ and the files stay the truth.
 - [The UI](#the-ui)
 - [FAQ](#faq)
 - [Where the deeper docs live](#where-the-deeper-docs-live)
+- [Pushing to this repository](#pushing-to-this-repository)
 
 ## Install
 
@@ -430,6 +431,16 @@ settings live in `~/.umx/config.toml`; secrets never go in config files.
   [embeddings](docs/guide/embeddings.md) and [troubleshooting](docs/guide/troubleshooting.md).
 - **Design**: the product requirements in `docs/project/prds/`, the architecture in `docs/project/blueprints/`
   and benchmark runs in `docs/project/benchmarks/`.
+
+## Pushing to this repository
+
+Maintainers who push run `scripts/install-pre-push-hook` once in their clone. The hook runs
+`scripts/seed-gate --pre-push` on the commits each push adds: names, private hosts, home paths, emails, secrets,
+binaries and file sizes in the files they change, and the names, email addresses and messages of the commits
+themselves. It refuses the push when a check fails, with a hint for the fix. It reads two lists kept outside the
+repository (`~/.config/unimatrix/customer-names` and `~/.config/unimatrix/private-hosts`) and fails closed without
+them. `scripts/seed-gate --range origin/main..HEAD` runs the same checks without pushing. Any change under
+`.github/workflows` fails it until security has reviewed that exact commit.
 
 ## License
 

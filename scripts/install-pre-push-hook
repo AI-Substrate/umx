@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Installs a git pre-push hook that runs scripts/seed-gate --pre-push on what each push adds, and refuses the push when
+# a check fails. Every umx clone that pushes needs it: there is no CI, so this is the only check that knows the
+# customer names list (~/.config/unimatrix/customer-names) and the private hosts (~/.config/unimatrix/private-hosts).
+#
+#   scripts/install-pre-push-hook [--repo DIR]    DIR defaults to this checkout
+#
+# Running it again rewrites its own hook (the hook names this checkout's scripts/seed-gate). It never replaces a
+# pre-push hook it did not write: it stops and prints the command that moves that hook aside.
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/.." && pwd)
+target=$repo
+if [ "${1:-}" = --repo ] && [ -n "${2:-}" ]; then
+    target=$(cd "$2" && pwd)
+elif [ "$#" != 0 ]; then
+    echo "usage: scripts/install-pre-push-hook [--repo DIR]" >&2
+    exit 64
+fi
+
+hooks=$(git -C "$target" rev-parse --path-format=absolute --git-path hooks) || {
+    echo "install-pre-push-hook: $target is not a git repository" >&2
+    exit 1
+}
+hook="$hooks/pre-push"
+marker="# umx seed-gate pre-push hook"
+if [ -e "$hook" ] || [ -L "$hook" ]; then
+    if ! grep -qF "$marker" "$hook" 2>/dev/null; then
+        echo "install-pre-push-hook: $hook exists and is not this hook; nothing was changed." >&2
+        echo "  Move it aside, then install again:  mv '$hook' '$hook.local' && scripts/install-pre-push-hook" >&2
+        echo "  (call the old hook from your own wrapper if you still need it)" >&2
+        exit 1
+    fi
+fi
+mkdir -p "$hooks"
+tmp=$(mktemp "$hooks/.pre-push.XXXXXX")
+cat >"$tmp" <<HOOK
+#!/usr/bin/env bash
+$marker (scripts/install-pre-push-hook writes it; run that again to update it)
+# git passes the remote name and URL as arguments and one line per pushed ref on stdin.
+exec "$here/seed-gate" --pre-push --repo "\$(git rev-parse --show-toplevel)"
+HOOK
+chmod 0755 "$tmp"
+mv "$tmp" "$hook"
+echo "install-pre-push-hook: $hook runs $here/seed-gate --pre-push on every push"

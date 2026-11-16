@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
-# D72i L4: the seed gate. Checks the exact tree that would be pushed to the public repository.
+# The seed gate. Checks what would be pushed to the public repository: a whole seed tree (D72i L4), or what a push adds.
 #
 #   scripts/seed-gate <STAGE> [--receipt FILE]
 #   scripts/seed-gate <STAGE> --control --control-names FILE [--control-hosts FILE] [--receipt FILE]
+#   scripts/seed-gate --range <base>..<head> [--repo DIR] [--receipt FILE]
+#   scripts/seed-gate --range <head> [--repo DIR] [--receipt FILE]      (the commits of <head> on no remote ref)
+#   scripts/seed-gate --pre-push [--repo DIR]                            (git's pre-push lines on stdin; see below)
+#
+# Range mode reads git objects, never the working folder: every new commit's author name, committer name, message and
+# identity (author and committer each a noreply address), and every blob a new commit adds or changes, with its path
+# name. A file nobody touched is not read, so an old file is judged when it next changes. It runs the content checks
+# of the seed mode (names, private infrastructure, home paths, personal data, umx's secret scan with the baseline,
+# binaries, rasters and opaque files, size) plus a tripwire: any change under .github/workflows fails until security
+# has given a verdict on the exact head. A range with no new commits passes ("nothing to push"). --pre-push is what
+# the hook from scripts/install-pre-push-hook runs: one range per pushed ref (a new branch: its commits on no remote
+# ref; a deleted ref: nothing).
 #
 # STAGE is a seed folder (scripts/seed-export makes one): staged but not yet committed, or already committed with
 # one parentless commit. It is read through git (the staged index or HEAD's tree), never the working folder, and it

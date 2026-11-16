@@ -37,11 +37,16 @@ private-refs:
     scripts/private-refs-test
     scripts/private-refs
 
-# D72i: the seed export and the seed gate prove themselves on fixtures and planted controls (needs ddocs and a built
-# umx-core example, not the names list). Not part of `check`: run it before every seed.
+# The seed export, the seed gate and its range and pre-push modes prove themselves on fixtures and planted controls
+# (needs ddocs and a built umx-core example, not the names list). Not part of `check`: run it when any of them changes.
 seed-tests:
     scripts/seed-export-test
     scripts/seed-gate-test
+    scripts/seed-gate-range-test
+
+# Installs the pre-push hook that runs `scripts/seed-gate --pre-push` on what each push adds.
+pre-push-hook:
+    scripts/install-pre-push-hook
 
 fmt:
     cargo fmt --all --check

@@ -37,6 +37,27 @@ git init -q --initial-branch=main "$src"
     chmod +x skills/run.sh
     printf '# readme\n' >README.md
     cp "$repo/docs/project/prds/001-concept-graph.dd.json" docs/project/prds/
+    # The public PRD carries no delivered_by (the seed cleared them), so the fixture plants some at two depths.
+    python3 -I - docs/project/prds/001-concept-graph.dd.json <<'PLANT'
+import json, sys
+path = sys.argv[1]
+doc = json.load(open(path))
+planted = 0
+def walk(value):
+    global planted
+    if isinstance(value, dict):
+        if planted < 3 and isinstance(value.get("id"), str) and value["id"].startswith("req-"):
+            value["delivered_by"] = "#1"
+            planted += 1
+        for item in value.values():
+            walk(item)
+    elif isinstance(value, list):
+        for item in value:
+            walk(item)
+walk(doc)
+assert planted, "no requirement to plant delivered_by on"
+open(path, "w").write(json.dumps(doc, ensure_ascii=False, indent="\t") + "\n")
+PLANT
     cp -R "$repo/.dd" .dd
     git add -A
     git -c user.name=t -c user.email=t@users.noreply.github.com commit -q -m fixture
