@@ -177,12 +177,13 @@
         {
           "id": "search-08",
           "title": "Each hit carries its place in the graph",
-          "statement": "Each hit holds up to 3 of its links, the stored ones a person or agent wrote, as relation, direction and the other node's id and title, with a count of the rest. `part_of` and other containment links come first. Derived `similar_to` links and provenance are never listed. Only links inside the graphs being searched are shown.",
+          "statement": "Each hit holds up to 3 of its links, the stored ones a person or agent wrote, as relation, direction and the other node's id and title, with a count of the rest. `part_of` links come first (its parent, then its parts). Derived `similar_to` links and provenance are never listed. Only links inside the hit's own graph are shown and counted; a link to a node in another graph is never listed or counted.",
           "actor": "a-agent",
           "priority": "must",
           "state": "shipped",
-          "done_when": "A hit with 7 stored links shows 3 with `more: 4`, its `part_of` parent first; a hit with none shows an empty list; no `similar_to` row appears.",
-          "source": "Project lead ruling 2026-11-16 (on by default)"
+          "done_when": "A hit with 7 stored links shows 3 with `links_more: 4`, its `part_of` parent first; a hit with none shows an empty list; no `similar_to` row appears.",
+          "source": "Project lead ruling 2026-11-16 (on by default)",
+          "note": "Not yet shown: links to a node in another graph, and hierarchy relations other than `part_of` ahead of the rest. A hit whose only links cross graphs reads as having none."
         },
         {
           "id": "search-09",

@@ -7463,3 +7463,22 @@ fn a_search_hits_links_leave_provenance_out() {
     let shown = w.svc.graph_list_in(&provenance_ctx());
     assert!(shown[0].edges > 1);
 }
+
+/// PRD 002 search-08: a link from a node to itself is shown once and counted once.
+#[test]
+fn a_search_hits_link_to_itself_is_one_link() {
+    let (mut w, a, b, _) = provenance_read_world();
+    w.svc
+        .edge_add(&ctx(), &a.to_text(), "depends_on", &a.to_text(), &[])
+        .unwrap();
+    let links = w.svc.hit_links("demo", a).unwrap();
+    assert_eq!(
+        links
+            .shown
+            .iter()
+            .map(|l| (l.relation.as_str(), l.way.as_str(), l.id))
+            .collect::<Vec<_>>(),
+        [("depends_on", "out", a), ("supports", "out", b)]
+    );
+    assert_eq!(links.more, 0);
+}

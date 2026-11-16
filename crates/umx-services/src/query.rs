@@ -843,7 +843,9 @@ pub(crate) fn hit_links(store: &GraphStore, alias: &str, id: Id) -> Option<HitLi
         hops(g, at, Direction::Both, None, &symmetric, false)
             .into_iter()
             .filter(|h| {
-                !h.edge.derived
+                // A link from the node to itself is one link: `hops` lists it out and in, so keep the out one.
+                !(h.edge.way == Way::In && h.other == at)
+                    && !h.edge.derived
                     && !umx_core::ontology::is_derived_relation(&h.edge.relation)
                     && !umx_core::ontology::PROVENANCE_RELATIONS.contains(&h.edge.relation.as_str())
             })
