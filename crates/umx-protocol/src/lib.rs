@@ -161,12 +161,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 84: search rows carry `links` (up to 3 stored links in the hit's own graph: relation, direction, the other node's
 /// id and title) and `links_more` (PRD 002 search-08), flagged `field:links` when a title is; `data.rows[].links[].title`
 /// joins `untrusted`.
+/// 85: node add (the Op and a batch line) takes `on_key` (`resolve`, ws003 s08): an add whose entity key a node of its
+/// type already holds in the written graph resolves to that node and only appends or fills. A batch row's `existed`
+/// says so; a node add reply with `on_key` carries `resolved` and `changed`. New codes `on_key_ambiguous` and
+/// `on_key_field_held` (a hint).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 84;
+pub const PROTOCOL: u32 = 85;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -175,7 +179,7 @@ pub const PROTOCOL: u32 = 84;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (84, 0x5836_8401_8996_8cbe);
+const WIRE_FINGERPRINT: (u32, u64) = (85, 0xe06b_6aac_89dd_9179);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -389,6 +393,15 @@ pub enum SetValue {
     Json(Value),
 }
 
+/// `on_key` on a node add (ws003 s08): `resolve` looks the add's entity keys up among the nodes of its type in the
+/// written graph; a node holding them is enriched (append or fill, never overwrite) instead of a new one added. An
+/// enum, so a later mode needs no new field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnKey {
+    Resolve,
+}
+
 /// One field to set: `{"field": "f", "as": "raw" | "str" | "json", "value": v}`. Read strictly (an unknown key is
 /// refused) and, since PROTOCOL 18, `as` may be left out, as a batch file line does: a string value is then `raw`
 /// (read as `--set` reads it) and any other JSON value is `json`.
@@ -500,6 +513,10 @@ const EVIDENCE_ENTRY_EXPECTED: &str = "a pointer or an evidence object";
 pub const EVIDENCE_KIND_TWICE: &str =
     "give a kind on each evidence entry or evidence_kind but not both";
 
+/// A node add line giving both an explicit `id` and `on_key` (ws003 s08): ids are for umx-to-umx ports, which carry
+/// their own identity. umx-services says the same words.
+pub const ON_KEY_WITH_ID: &str = "give id or on_key, not both";
+
 /// One op of a `umx batch` file (req-88): `"op"` plus the single verb's own fields under the same names. A field
 /// that names a node has a `_ref` twin naming a node an earlier line added (`ref`); a line gives exactly one of each
 /// pair. Read strictly: an unknown op or field is refused. The same shape is the file line and the wire.
@@ -536,6 +553,9 @@ pub enum BatchOp {
         /// This node's raised_in anchor (ws008 TM4), instead of the batch's `--raised-in`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         raised_in: Option<String>,
+        /// What the line does when a node of its type already holds one of its entity keys (ws003 s08).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_key: Option<OnKey>,
     },
     #[serde(rename = "edge add")]
     EdgeAdd {
@@ -1058,10 +1078,12 @@ impl BatchOp {
                 Some("a node note line holds more than 32 evidence pointers")
             }
             BatchOp::NodeAdd {
+                id,
                 parent,
                 parent_ref,
                 evidence,
                 evidence_kind,
+                on_key,
                 ..
             } => check(
                 parent,
@@ -1072,7 +1094,8 @@ impl BatchOp {
             .or_else(|| {
                 (evidence_kind.is_some() && evidence.iter().any(|e| e.0.kind.is_some()))
                     .then_some(EVIDENCE_KIND_TWICE)
-            }),
+            })
+            .or_else(|| (id.is_some() && on_key.is_some()).then_some(ON_KEY_WITH_ID)),
             BatchOp::EdgeAdd {
                 from,
                 from_ref,
@@ -1226,6 +1249,9 @@ pub enum Op {
         /// `--raised-in <anchor>` (ws008 TM4): a raised_in edge from the new node to the anchor, in the same write.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         raised_in: Option<String>,
+        /// `--on-key resolve` (ws003 s08): an add whose entity key a node of its type holds resolves to that node.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_key: Option<OnKey>,
     },
     NodeGet {
         node: String,
@@ -2842,6 +2868,14 @@ catalogue! {
     DuplicateKey => "duplicate_key", Warning, 0,
         "two nodes of the same type in one graph hold the same entity_key (ws008 E1); both are kept and the lower id is the one a key lookup finds",
         "Node <node> shares an entity key with node <in use> (both type <type>) in <graph>; <in use> is the one a key lookup finds and both are kept.",
+        "<fix>";
+    OnKeyAmbiguous => "on_key_ambiguous", Error, 1,
+        "a node add with on_key resolve gave entity keys that name more than one node of its type in the written graph (a key two nodes hold, or keys held by two nodes), so it resolved to none (ws003 s08); nothing is written",
+        "The entity keys of this <type> add name more than one node in <graph>, such as umx:<graph>/<node> and umx:<graph>/<other>, so it resolved to none. Nothing was written. Give each thing its own key.",
+        "<fix>";
+    OnKeyFieldHeld => "on_key_field_held", Hint, 0,
+        "a node add with on_key resolve found its node, which already holds some of the given parts with other values (title, status, note, parent or a field); they were kept, never overwritten (ws003 s08)",
+        "Node umx:<graph>/<node> already holds <fields> with other values; they were kept.",
         "<fix>";
     AlreadyDeclared => "already_declared", Error, 1,
         "a plain ontology add relation names a relation that is symmetric, or a re-declare gives a description other than the stored one (its next sets it with graph set); an identical re-declare is ok with unchanged: true",
@@ -4896,6 +4930,7 @@ mod tests {
             Op::GraphForget { alias: "g".into() },
             Op::NodeAdd {
                 raised_in: s("01JC8XA4H7"),
+                on_key: Some(OnKey::Resolve),
                 kind: "k".into(),
                 title: "t".into(),
                 status: s("open"),
@@ -5125,6 +5160,7 @@ mod tests {
                         line: 1,
                         op: BatchOp::NodeAdd {
                             raised_in: s("01JC8XB2K9"),
+                            on_key: Some(OnKey::Resolve),
                             id: s("01JC8XA4H7B3KT9M2NZ5QW6RDE"),
                             created: s("2026-01-01T00:00:00Z"),
                             ref_name: s("q1"),
@@ -6052,5 +6088,29 @@ mod tests {
         ] {
             assert_eq!(reason(line), want, "{line}");
         }
+    }
+
+    /// ws003 s08: a node add line takes `on_key` with the one mode `resolve`, never with an explicit id.
+    #[test]
+    fn a_node_add_line_takes_on_key_resolve_and_no_other_mode() {
+        let line = |t: &str| BatchOp::from_line(t);
+        let ok =
+            line(r#"{"op":"node add","type":"person","title":"Jo","on_key":"resolve"}"#).unwrap();
+        assert!(matches!(
+            ok,
+            BatchOp::NodeAdd {
+                on_key: Some(OnKey::Resolve),
+                ..
+            }
+        ));
+        assert!(
+            line(r#"{"op":"node add","type":"person","title":"Jo","on_key":"create"}"#).is_err()
+        );
+        assert_eq!(
+            line(r#"{"op":"node add","id":"01JC8XA4H7B3KT9M2NZ5QW6RDE","type":"person","title":"Jo","on_key":"resolve"}"#)
+                .unwrap_err()
+                .0,
+            ON_KEY_WITH_ID
+        );
     }
 }

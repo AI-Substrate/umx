@@ -205,6 +205,14 @@ imported and defined, or given two ids, is `batch_ref_conflict`. A deleted, miss
 line as `batch_ref_unknown`, followed by a `batch_ref_source` line naming the receipt. An old receipt without `graph_id` skips
 the graph check; do not rely on it. Refs stay local: write a cross-graph end as `umx:<alias>/<id>`.
 
+**usage 202**: to add a thing you may have added before (the same person in the next window), give it an
+`entity_key` and `"on_key":"resolve"` (or `umx node add ... --on-key resolve`). A node of the same type in the
+written graph holding the key is found instead of a new one added: the row says `existed`, its `ref` binds to that
+node, and `changed` lists what the line appended or filled (evidence, absent fields and keys, an empty note, a
+first parent, a new raised_in anchor). A held title, status, note, parent or field is never overwritten; the hint
+`on_key_field_held` names it without its value. A key two nodes hold, or keys held by two nodes, is
+`on_key_ambiguous` (nothing written). Never across types (`entity_type_mismatch`) or graphs. Not with an `id`.
+
 A node add with `parent_ref` already adds the `part_of` edge; adding it again warns `edge_exists`.
 `near_duplicate` sees only applied nodes, so batches dry-run side by side miss each other's titles.
 

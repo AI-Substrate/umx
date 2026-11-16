@@ -92,6 +92,10 @@ graph, a team in another), the lookup warns `entity_type_mismatch`: those nodes 
 Look an entity up this way before you add it to another graph, and copy its key onto the new node. That is what
 keeps keys the same across graphs without a central list.
 
+Within one graph, let the add do the lookup: `umx node add ... --set entity_key=<key> --on-key resolve` (or a batch
+line's `"on_key":"resolve"`) resolves to the node of its type already holding the key and only appends or fills it,
+instead of adding a second node. It never looks in another graph or type. See `umx docs get batch` (Found by key).
+
 ## umx entity link <a> <b>
 
     umx entity link umx:crm/01JC8XA4H7 umx:meetings/01JD2B9Q0M          # stored in crm, a's graph

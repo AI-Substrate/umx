@@ -75,6 +75,7 @@ fn add(d: &Daemon, alias: &str, title: &str, note: Option<String>) {
     ok(ask(
         d,
         Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),

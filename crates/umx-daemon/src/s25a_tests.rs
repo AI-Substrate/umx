@@ -83,6 +83,7 @@ fn node(i: usize) -> BatchLine {
     BatchLine {
         line: i as u32 + 1,
         op: BatchOp::NodeAdd {
+            on_key: None,
             raised_in: None,
             id: None,
             created: None,

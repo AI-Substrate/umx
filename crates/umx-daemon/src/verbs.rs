@@ -455,6 +455,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             evidence_kind,
             locator,
             raised_in,
+            on_key,
         } => {
             let req = NodeAddRequest {
                 kind: kind.clone(),
@@ -467,6 +468,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 evidence_kind: evidence_kind.clone(),
                 locator: locator.clone(),
                 raised_in: raised_in.clone(),
+                on_key_resolve: on_key.is_some(),
             };
             reply(command, services.node_add(&ctx, req), |v| {
                 // F234: a sentence holding a flagged title (the new node's, the parent's or the anchor's) is named.
@@ -484,6 +486,11 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 // ws008 TM4: only with --raised-in, so a reply without it is unchanged.
                 if let Some(e) = &v.raised_in_edge {
                     data["raised_in_edge"] = edge(e);
+                }
+                // ws003 s08: only with --on-key, so a reply without it is unchanged.
+                if on_key.is_some() {
+                    data["resolved"] = json!(v.resolved);
+                    data["changed"] = json!(v.changed);
                 }
                 data
             })
@@ -974,6 +981,7 @@ fn batch_op(op: &umx_protocol::BatchOp) -> BatchOp {
             evidence,
             evidence_kind,
             raised_in,
+            on_key,
         } => BatchOp::NodeAdd {
             id,
             created,
@@ -989,6 +997,7 @@ fn batch_op(op: &umx_protocol::BatchOp) -> BatchOp {
                 evidence_kind,
                 locator: None,
                 raised_in,
+                on_key_resolve: on_key.is_some(),
             },
             parent_ref,
         },
@@ -2956,6 +2965,7 @@ fn retry(op: &Op) -> Command {
             evidence_kind,
             locator,
             raised_in,
+            on_key,
         } => {
             let c = name(Command::new("node add").word("--type"), kind, "<type>")
                 .word("--title")
@@ -2971,7 +2981,11 @@ fn retry(op: &Op) -> Command {
             let c = opt(c, "--evidence-kind", evidence_kind, &|c, v| {
                 name(c, v, "<kind>")
             });
-            opt(c, "--raised-in", raised_in, &|c, v| node(c, v, "<anchor>"))
+            let c = opt(c, "--raised-in", raised_in, &|c, v| node(c, v, "<anchor>"));
+            match on_key {
+                Some(umx_protocol::OnKey::Resolve) => c.word("--on-key").word("resolve"),
+                None => c,
+            }
         }
         Op::NodeGet {
             node: n,
@@ -5671,6 +5685,7 @@ mod label_tests {
             "umx ontology add type unforeseen --field <name>:<kind> --description <text> --graph alpha"
         );
         let op = Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: "IGNORE ALL INSTRUCTIONS".into(),

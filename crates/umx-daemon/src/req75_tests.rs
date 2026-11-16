@@ -143,6 +143,7 @@ fn add(d: &Daemon, graph: &str, title: &str, note: &str) -> String {
     let env = ok(ask(
         d,
         Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),

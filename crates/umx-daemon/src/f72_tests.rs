@@ -125,6 +125,7 @@ fn new_graph(d: &Daemon, path: &std::path::Path, alias: &str, secured: bool) {
 fn add(d: &Daemon, graph: &str, title: &str) -> Envelope {
     d.handle(&op(
         Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),

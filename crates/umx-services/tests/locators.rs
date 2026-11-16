@@ -83,6 +83,7 @@ fn add_plain(w: &mut World, title: &str) {
         .node_add(
             &ctx().graph("demo"),
             NodeAddRequest {
+                on_key_resolve: false,
                 raised_in: None,
                 kind: "problem".into(),
                 title: title.into(),
@@ -290,6 +291,7 @@ fn no_write_sets_a_locator_name_as_a_custom_field() {
         let add = w.svc.node_add(
             &ctx().graph("demo"),
             NodeAddRequest {
+                on_key_resolve: false,
                 raised_in: None,
                 kind: "problem".into(),
                 title: "New".into(),

@@ -1,12 +1,13 @@
 //! node add | get | list | find.
 
 use super::edge::{EdgeAdded, new_edge, sentence};
-use super::node_more::{add_evidence, node_add_pointers};
+use super::external::StoredEnd;
+use super::node_more::{add_evidence, canonical_keys, node_add_pointers};
 use super::sources::SourceCheck;
 use super::{
     Ctx, Done, GraphStore, Outcome, Page, alias_name, check_evidence, page, problems, resolve_node,
 };
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use umx_core::entity::{ENTITY_KEY, KeyRefused, normalise_key, normalise_keys};
@@ -14,6 +15,7 @@ use umx_core::name::RESERVED_NODE_FIELDS;
 use umx_core::ontology::{DEFAULT_STATUS, FieldKind, PART_OF, nearest};
 use umx_core::ports::GraphDir;
 use umx_core::problem::Candidate;
+use umx_core::standard::RAISED_IN;
 use umx_core::value::{SetValue, kind_of, typed_value, where_value};
 use umx_core::{Command, Id, Node, Ontology, Problem, ValidName, Value};
 use umx_graph::{Graph, NodeFilter, NodeRef, Where, parse_where};
@@ -44,6 +46,9 @@ pub struct NodeAddRequest {
     /// `--raised-in <anchor>` (ws008 TM4): a raised_in edge from the new node to this node, in the same write. In a
     /// batch line it overrides the batch's own `--raised-in`.
     pub raised_in: Option<String>,
+    /// `--on-key resolve` (ws003 s08): when a node of this type in the written graph holds one of the add's entity
+    /// keys, the add resolves to that node and only appends or fills ([`key_holder`], [`enrich`]).
+    pub on_key_resolve: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +58,10 @@ pub struct NodeAdded {
     pub parent_edge: Option<EdgeAdded>,
     /// The raised_in edge `--raised-in` added (ws008 TM4).
     pub raised_in_edge: Option<EdgeAdded>,
+    /// ws003 s08: the add resolved to a node holding its entity key (`--on-key resolve`) instead of adding one.
+    pub resolved: bool,
+    /// What a resolved add changed on its node, in order: note, filled fields (entity_key among them), evidence.
+    pub changed: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -540,10 +549,252 @@ pub(crate) fn part_of_warning(o: &Ontology, graph: &ValidName) -> Option<Problem
     })
 }
 
+/// `--on-key resolve` with `--locator`: a resource node is found by its locator already (workshop 010 section 3).
+const ON_KEY_LOCATOR: &str =
+    "--on-key and --locator: a resource node is already found by its locator; give one of them";
+
+/// `--on-key resolve` with no entity key to look up (ws003 s08).
+const ON_KEY_NO_KEY: &str =
+    "--on-key resolve needs an entity key: give --set entity_key=<scheme>:<value>";
+
+/// ws003 s08: the node an on_key add resolves to, looked up by each of its keys (`fields`' entity_key, in stored form)
+/// under its own type in `g`, the written graph as a batch has left it so far. A lone holder `in_scope` refuses (a
+/// provenance node, which no write names) is skipped. A key two nodes hold, or keys held by two nodes, is `Err` with
+/// two of them: never the lowest id, never a guess. Other graphs and other types are never read.
+pub(crate) fn key_holder(
+    g: &Graph,
+    kind: &str,
+    fields: &BTreeMap<String, Value>,
+    in_scope: impl Fn(Id) -> bool,
+) -> Result<Option<Id>, (Id, Id)> {
+    let Some(value) = fields.get(ENTITY_KEY) else {
+        return Ok(None);
+    };
+    let mut found: Option<Id> = None;
+    for key in umx_core::entity::stored_keys(value) {
+        let (first, more) = g.entity_holders(kind, &key);
+        let Some(first) = first.map(|n| n.id()) else {
+            continue;
+        };
+        if more {
+            // Only on this refusal: the other holder, for the message (the lower id is the one in use).
+            let other = g
+                .duplicate_entity_keys_of(first)
+                .into_iter()
+                .find(|d| d.in_use == first && d.key == key)
+                .map_or(first, |d| d.node);
+            return Err((first, other));
+        }
+        if !in_scope(first) {
+            continue;
+        }
+        match found {
+            Some(id) if id != first => return Err((id, first)),
+            _ => found = Some(first),
+        }
+    }
+    Ok(found)
+}
+
+/// ws003 s08: `entity_type_mismatch` for each node of another type in `g` holding one of `node`'s keys, once per node.
+/// An on_key add never resolves across types, so it added `node` beside that node; the fix retypes the new one.
+pub(crate) fn other_type_holders(
+    graph: &ValidName,
+    g: &Graph,
+    node: &Node,
+    in_scope: impl Fn(Id) -> bool,
+) -> Vec<Problem> {
+    let Some(value) = node.fields.get(ENTITY_KEY) else {
+        return Vec::new();
+    };
+    let mut seen: Vec<Id> = Vec::new();
+    let mut out = Vec::new();
+    for key in umx_core::entity::stored_keys(value) {
+        for (kind, holder) in g.entity_key_types(&key) {
+            let id = holder.id();
+            if kind == node.kind || id == node.id || !in_scope(id) || seen.contains(&id) {
+                continue;
+            }
+            seen.push(id);
+            out.push(problems::entity_type_mismatch(
+                (graph, id, kind),
+                (graph, node.id, &node.kind),
+                "hold the same entity key",
+            ));
+        }
+    }
+    out
+}
+
+/// ws003 s08: what node `before`, found by an on_key add's key, takes from the add's draft: append or fill, never
+/// overwrite. Returns the node as it would be stored, what changed (note, filled fields in name order with entity_key
+/// among them, evidence) and what it kept because it holds another value (title, a given status, note, fields). The
+/// title, type and status never change; evidence is deduped as `node note` dedups it; keys it lacks are appended.
+pub(crate) fn enrich(
+    before: &Node,
+    draft: NodeDraft,
+    status_given: bool,
+) -> Result<(Node, Vec<String>, Vec<problems::Held>), Problem> {
+    use problems::Held;
+    let mut n = before.clone();
+    let (mut changed, mut held): (Vec<String>, Vec<Held>) = (Vec::new(), Vec::new());
+    if draft.title != n.title {
+        held.push(Held::Title);
+    }
+    if status_given && draft.status != n.status {
+        held.push(Held::Status);
+    }
+    if !draft.note.is_empty() {
+        if n.note.is_empty() {
+            n.note = draft.note;
+            changed.push("note".into());
+        } else if n.note != draft.note {
+            held.push(Held::Note);
+        }
+    }
+    for (name, value) in draft.fields {
+        if name == ENTITY_KEY {
+            if append_keys(&mut n, &value)? {
+                changed.push(name);
+            }
+            continue;
+        }
+        match n.fields.get(&name) {
+            None => {
+                n.fields.insert(name.clone(), value);
+                changed.push(name);
+            }
+            Some(v) if *v == value => {}
+            Some(_) => held.extend(ValidName::new(&name).map(Held::Field)),
+        }
+    }
+    if add_evidence(&mut n.evidence, draft.evidence) > 0 {
+        changed.push("evidence".into());
+    }
+    Ok((n, changed, held))
+}
+
+/// Appends the keys of `given` (stored form) that node `n` lacks; whether any was. More than [`MAX_KEYS`] usable keys
+/// is refused as a `--set` of them would be.
+///
+/// [`MAX_KEYS`]: umx_core::entity::MAX_KEYS
+fn append_keys(n: &mut Node, given: &Value) -> Result<bool, Problem> {
+    let Some(held) = n.fields.get(ENTITY_KEY) else {
+        n.fields.insert(ENTITY_KEY.into(), given.clone());
+        return Ok(true);
+    };
+    let mut value = umx_core::entity::canonical(held);
+    let Value::Array(items) = &mut value else {
+        return Ok(false);
+    };
+    let mut added = false;
+    for key in umx_core::entity::stored_keys(given) {
+        if !items.iter().any(|i| i.as_str() == Some(key.as_str())) {
+            items.push(Value::String(key));
+            added = true;
+        }
+    }
+    let usable = items
+        .iter()
+        .filter(|i| i.as_str().is_some_and(|s| normalise_key(s).is_ok()))
+        .count();
+    if usable > umx_core::entity::MAX_KEYS {
+        return Err(problems::entity_key_invalid(
+            "a node holds at most 32 keys",
+            None,
+        ));
+    }
+    if added {
+        n.fields.insert(ENTITY_KEY.into(), value);
+    }
+    Ok(added)
+}
+
+/// The stored far ends of the `kind` edges out of node `id`, found through `g`'s adjacency (its degree, not every edge)
+/// and each checked against `live`, the record as the write holds it now (a batch's adjacency is not rebuilt until it
+/// commits). ws003 s08 compares a resolved add's parent and raised_in anchor with these, by stored ends.
+pub(crate) fn ends_out(
+    g: &Graph,
+    id: Id,
+    kind: &str,
+    live: impl Fn(Id) -> Option<umx_core::Edge>,
+) -> BTreeSet<StoredEnd> {
+    let Some(ix) = g.node_ix(id) else {
+        return BTreeSet::new();
+    };
+    g.edges_out(ix)
+        .map(|step| step.edge)
+        .chain(g.edges_out_external(ix).map(|(edge, ..)| edge))
+        .filter_map(|edge| live(g.edge_at(edge).id()))
+        .filter(|e| e.kind == kind && e.from == id && e.from_graph.is_none())
+        .map(|e| StoredEnd {
+            graph: e.to_graph,
+            node: e.to,
+        })
+        .collect()
+}
+
+/// A node add's part_of and raised_in edges, built and put in `batch` in the one write: the new node's, or (ws003
+/// s08) a resolved node's when it lacked them.
+/// `suspect` says whether a node title is one the secret check flags (F234), for the parent sentence.
+#[allow(clippy::too_many_arguments)]
+fn node_edges(
+    batch: &mut umx_graph::Batch<'_>,
+    session: Id,
+    next: &mut dyn FnMut(&Graph) -> Id,
+    (now, by): (&str, &str),
+    alias: &str,
+    node: Id,
+    parent: Option<Id>,
+    anchor: Option<&super::raised_in::Anchor>,
+    suspect: &dyn Fn(Id, &str) -> bool,
+) -> (Option<EdgeAdded>, Option<EdgeAdded>) {
+    let parent_edge = parent.map(|p| {
+        let mut edge = new_edge(
+            next(batch.graph()),
+            node,
+            PART_OF,
+            p,
+            now,
+            by,
+            BTreeMap::new(),
+        );
+        edge.record_author(session);
+        batch.insert_edge(edge.clone());
+        let g = batch.graph();
+        let flagged = |id: Id| g.node(id).is_some_and(|n| suspect(id, n.title()));
+        EdgeAdded {
+            sentence: sentence(g, edge.from, &edge.kind, edge.to),
+            sentence_flagged: flagged(edge.from) || flagged(edge.to),
+            alias: alias.to_string(),
+            edge,
+            existed: false,
+        }
+    });
+    let raised_in_edge = anchor.map(|a| {
+        let mut edge = super::raised_in::edge(next(batch.graph()), node, a, now, by);
+        edge.record_author(session);
+        batch.insert_edge(edge.clone());
+        EdgeAdded {
+            sentence: String::new(),
+            sentence_flagged: false,
+            alias: alias.to_string(),
+            edge,
+            existed: false,
+        }
+    });
+    (parent_edge, raised_in_edge)
+}
+
 impl GraphStore {
     pub fn node_add(&mut self, ctx: &Ctx, req: NodeAddRequest) -> Outcome<NodeAdded> {
         let alias = self.select_write(ctx, &[req.parent.as_deref()])?;
         let graph = alias_name(&alias);
+        let on_key = req.on_key_resolve;
+        if on_key && req.locator.is_some() {
+            return Err(problems::usage_invalid(ON_KEY_LOCATOR, "node"));
+        }
+        let status_given = req.status.is_some();
         let l = self.get(&alias);
         let evidence = self.evidence_graphs(&alias);
         let mut warnings = Vec::new();
@@ -576,6 +827,29 @@ impl GraphStore {
             &|a| evidence.get(a).copied(),
             &mut warnings,
         )?;
+        if on_key {
+            if !draft.fields.contains_key(ENTITY_KEY) {
+                return Err(problems::usage_invalid(ON_KEY_NO_KEY, "node"));
+            }
+            let scope = super::ReadScope::new(&l.graph);
+            match key_holder(&l.graph, &draft.kind, &draft.fields, |id| {
+                scope.contains(id)
+            }) {
+                Err((a, b)) => return Err(problems::on_key_ambiguous(&graph, &draft.kind, a, b)),
+                Ok(Some(id)) => {
+                    return self.resolve_add(
+                        ctx,
+                        &alias,
+                        id,
+                        draft,
+                        status_given,
+                        anchor,
+                        warnings,
+                    );
+                }
+                Ok(None) => {}
+            }
+        }
         if let Some(locator) = &draft.locator {
             // One resource node per locator (workshop 010 section 3): adding it again returns that node.
             use super::resources::{holder, named, spellings};
@@ -592,6 +866,8 @@ impl GraphStore {
                         node,
                         parent_edge: None,
                         raised_in_edge: None,
+                        resolved: false,
+                        changed: Vec::new(),
                     },
                     notes: warnings,
                 });
@@ -617,73 +893,167 @@ impl GraphStore {
             batch
                 .insert_node(node.clone())
                 .map_err(|e| problems::image_full(&e))?;
-            let parent_edge = parent.map(|p| {
-                let mut edge = new_edge(
-                    next(batch.graph()),
-                    node.id,
-                    PART_OF,
-                    p,
-                    now,
-                    &ctx.by,
-                    BTreeMap::new(),
-                );
-                edge.record_author(session);
-                batch.insert_edge(edge.clone());
-                let g = batch.graph();
-                let flagged = |id: Id| {
-                    g.node(id).is_some_and(|n| {
-                        super::secrets::title_suspect(|| &allows, meta.id, id, n.title())
-                    })
-                };
-                EdgeAdded {
-                    sentence: sentence(g, edge.from, &edge.kind, edge.to),
-                    sentence_flagged: flagged(edge.from) || flagged(edge.to),
-                    alias: alias.clone(),
-                    edge,
-                    existed: false,
-                }
-            });
-            let raised_in_edge = anchor.as_ref().map(|a| {
-                let mut edge =
-                    super::raised_in::edge(next(batch.graph()), node.id, a, now, &ctx.by);
-                edge.record_author(session);
-                batch.insert_edge(edge.clone());
-                EdgeAdded {
-                    sentence: String::new(),
-                    sentence_flagged: false,
-                    alias: alias.clone(),
-                    edge,
-                    existed: false,
-                }
-            });
+            let (parent_edge, raised_in_edge) = node_edges(
+                batch,
+                session,
+                next,
+                (now, &ctx.by),
+                &alias,
+                node.id,
+                parent,
+                anchor.as_ref(),
+                &|id, title| super::secrets::title_suspect(|| &allows, meta.id, id, title),
+            );
             Ok(NodeAdded {
                 alias: alias.clone(),
                 node,
                 parent_edge,
                 raised_in_edge,
+                resolved: false,
+                changed: Vec::new(),
             })
         })?;
         warnings.extend(done.notes);
         let mut value = done.value;
+        self.raised_in_written(ctx, &alias, &mut value);
+        if let Some(near) = near {
+            warnings.push(near.warning(&graph, value.node.id));
+        }
+        let g = &self.get(&alias).graph;
+        warnings.extend(key_warnings(&graph, g, &value.node));
+        if on_key {
+            let scope = super::ReadScope::new(g);
+            warnings.extend(other_type_holders(&graph, g, &value.node, |id| {
+                scope.contains(id)
+            }));
+        }
+        warnings.extend(title_key_warnings(None, &value.node));
+        let parent = has_part_of(g, value.node.id);
+        warnings.extend(segment_hint(&graph, &value.node, parent));
+        Ok(Done {
+            value,
+            notes: warnings,
+        })
+    }
+
+    /// After a node add's write (a new node's or a resolved one's, ws003 s08): its raised_in edge joins the incoming
+    /// index, and its sentence is read as edge add reads it.
+    fn raised_in_written(&mut self, ctx: &Ctx, alias: &str, value: &mut NodeAdded) {
         if let Some(added) = &mut value.raised_in_edge {
-            // After the commit only: the incoming index follows, and the sentence is read as edge add reads it.
-            let l = &self.graphs[&alias];
+            let l = &self.graphs[alias];
             self.incoming.add_edge(
                 l.instance,
                 l.graph.edge(added.edge.id).expect("the raised_in edge"),
             );
-            let row = self.edge_read_row(&ctx.clone().graph(&alias), &[], &alias, added.edge.id);
+            let row = self.edge_read_row(&ctx.clone().graph(alias), &[], alias, added.edge.id);
             added.sentence_flagged = row.as_ref().is_some_and(|row| {
                 self.edge_titles_flagged(core::slice::from_ref(row))[0].contains(&true)
             });
             added.sentence = row.map(|row| row.sentence).unwrap_or_default();
         }
-        if let Some(near) = near {
-            warnings.push(near.warning(&graph, value.node.id));
+    }
+
+    /// `node add --on-key resolve` found node `id` by its key (ws003 s08): append or fill it ([`enrich`]) and add the
+    /// parent and raised_in edges it lacks, compared by stored ends, in one write; or write nothing when nothing would
+    /// change. The parts it kept are named by the `on_key_field_held` hint, never their values.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_add(
+        &mut self,
+        ctx: &Ctx,
+        alias: &str,
+        id: Id,
+        draft: NodeDraft,
+        status_given: bool,
+        anchor: Option<super::raised_in::Anchor>,
+        mut warnings: Vec<Problem>,
+    ) -> Outcome<NodeAdded> {
+        let graph = alias_name(alias);
+        let l = self.get(alias);
+        let before = l.graph.node(id).expect("a key holder").to_node();
+        let parent = draft.parent;
+        let (mut n, changed, mut held) = enrich(&before, draft, status_given)?;
+        let live = |e: Id| l.graph.edge(e).map(|e| e.to_edge());
+        let parent = parent.filter(|p| {
+            let ends = ends_out(&l.graph, id, PART_OF, live);
+            if !ends.is_empty() && !ends.contains(&StoredEnd::local(*p)) {
+                held.push(problems::Held::Parent);
+            }
+            ends.is_empty()
+        });
+        let anchor = anchor.filter(|a| !ends_out(&l.graph, id, RAISED_IN, live).contains(&a.end));
+        if parent.is_some() {
+            warnings.extend(part_of_warning(&l.meta.ontology, &graph));
         }
-        warnings.extend(key_warnings(&graph, &self.get(&alias).graph, &value.node));
-        warnings.extend(title_key_warnings(None, &value.node));
-        let parent = has_part_of(&self.get(&alias).graph, value.node.id);
+        let node_changed = !changed.is_empty();
+        let mut value = if node_changed || parent.is_some() || anchor.is_some() {
+            canonical_keys(&mut n);
+            let evidence_start = before.evidence.len();
+            let allows = self.secret_allows();
+            let done = self.attributed_write(ctx, alias, |batch, session, next, now, meta| {
+                if node_changed {
+                    warnings.extend(
+                        super::secrets::node_write_secrets(
+                            Some(&before),
+                            &n,
+                            &meta.ontology,
+                            meta.id,
+                            &allows,
+                        )
+                        .into_iter()
+                        .map(|hit| hit.warning(&graph, id, "Node")),
+                    );
+                    n.updated = now.to_string();
+                    n.record_edit(session);
+                    super::provenance::stamp_evidence(&mut n.evidence[evidence_start..], session);
+                    batch
+                        .insert_node(n.clone())
+                        .map_err(|e| problems::image_full(&e))?;
+                }
+                let (parent_edge, raised_in_edge) = node_edges(
+                    batch,
+                    session,
+                    next,
+                    (now, &ctx.by),
+                    alias,
+                    id,
+                    parent,
+                    anchor.as_ref(),
+                    &|id, title| super::secrets::title_suspect(|| &allows, meta.id, id, title),
+                );
+                Ok(NodeAdded {
+                    alias: alias.to_string(),
+                    node: if node_changed { n } else { before.clone() },
+                    parent_edge,
+                    raised_in_edge,
+                    resolved: true,
+                    changed,
+                })
+            })?;
+            warnings.extend(done.notes);
+            done.value
+        } else {
+            NodeAdded {
+                alias: alias.to_string(),
+                node: before.clone(),
+                parent_edge: None,
+                raised_in_edge: None,
+                resolved: true,
+                changed,
+            }
+        };
+        self.raised_in_written(ctx, alias, &mut value);
+        if node_changed {
+            // As every node write says (req-67, ws008 E1).
+            if let Some(r) = self.graphs[alias].repeat(umx_core::codec::GraphFile::Nodes, id) {
+                warnings.push(problems::duplicate_id(&graph, &r));
+            }
+            warnings.extend(key_warnings(&graph, &self.get(alias).graph, &value.node));
+            warnings.extend(title_key_warnings(Some(&before), &value.node));
+        }
+        if !held.is_empty() {
+            warnings.push(problems::on_key_field_held(&graph, id, &held));
+        }
+        let parent = has_part_of(&self.get(alias).graph, id);
         warnings.extend(segment_hint(&graph, &value.node, parent));
         Ok(Done {
             value,

@@ -3253,6 +3253,7 @@ mod tests {
         );
         d.writer_ok.store(false, Ordering::SeqCst);
         let add = op(umx_protocol::Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: "x".into(),
@@ -3481,6 +3482,7 @@ mod tests {
         }
         let add = |alias: &str| {
             let mut add = op(umx_protocol::Op::NodeAdd {
+                on_key: None,
                 raised_in: None,
                 kind: "problem".into(),
                 title: format!("a node in {alias}"),
@@ -3549,6 +3551,7 @@ mod tests {
         })));
         let add = |title: &str| {
             op(umx_protocol::Op::NodeAdd {
+                on_key: None,
                 raised_in: None,
                 kind: "problem".into(),
                 title: title.into(),

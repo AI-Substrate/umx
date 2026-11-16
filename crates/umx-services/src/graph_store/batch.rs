@@ -14,7 +14,9 @@ use super::edge::{
 };
 use super::evidence_edit::{Removal, check_reason, pointer_to_match, remove_pointer};
 use super::external::{StoredEnd, find_edge_where, ordered_ends, set_ends, whole_node_edge};
-use super::node::{draft_node, near_duplicates, part_of_warning};
+use super::node::{
+    NodeDraft, draft_node, enrich, key_holder, near_duplicates, other_type_holders, part_of_warning,
+};
 use super::node_more::{
     NodeNoteRequest, NodeStatusRequest, add_evidence, edit_node, evidence_pointers, note_node,
     status_node,
@@ -35,6 +37,7 @@ use umx_core::batch::{
     MAX_BATCH_WARNINGS, MAX_ECHO_SENTENCE_CHARS, MAX_ECHO_SENTENCES, MAX_IMPORTED_REFS, check_ref,
 };
 use umx_core::codec::{GraphFile, Repeat};
+use umx_core::entity::ENTITY_KEY;
 use umx_core::ontology::PART_OF;
 use umx_core::ports::{GraphDir, IdGenerator};
 use umx_core::secret_allows::SecretAllows;
@@ -426,7 +429,6 @@ struct Run<'a, 'g> {
     /// were a node of the graph.
     minted: BTreeMap<Id, u32>,
     reserved: BTreeSet<Id>,
-    preplanned: bool,
     parent_edges: BTreeMap<Id, Id>,
     /// TM4: the batch's `--raised-in` anchor, and each preplanned node's raised_in edge id.
     anchor: Option<super::raised_in::Anchor>,
@@ -446,6 +448,12 @@ struct Run<'a, 'g> {
 }
 
 type LineResult = Result<(BatchRow, Vec<Problem>), Problem>;
+
+/// A node add line giving both an explicit id and on_key (ws003 s08): umx-protocol's words, checked again here.
+const ON_KEY_WITH_ID: &str = "give id or on_key, not both";
+
+/// An on_key node add line with no entity key to look up (ws003 s08).
+const ON_KEY_NO_KEY: &str = "on_key needs an entity_key in sets";
 
 /// `umx batch --file <file> --dry-run`.
 fn dry_run_command() -> Slot {
@@ -826,6 +834,8 @@ impl Run<'_, '_> {
                 "give a kind on each evidence entry or evidence_kind but not both",
             ));
         }
+        let on_key = req.on_key_resolve;
+        let status_given = req.status.is_some();
         let mut warnings = Vec::new();
         let real_parent = req.parent.clone();
         // TM4: the line's own raised_in, resolved as an edge add's `to` is; else the batch's anchor.
@@ -865,6 +875,25 @@ impl Run<'_, '_> {
             },
             &mut warnings,
         )?;
+        if on_key {
+            if !draft.fields.contains_key(ENTITY_KEY) {
+                return Err(problems::batch_line_invalid(line, ON_KEY_NO_KEY));
+            }
+            // ws003 s08: the graph as the earlier lines left it, so a later line finds an earlier line's add.
+            let g = self.b.graph();
+            let scope = super::ReadScope::new(g);
+            match key_holder(g, &draft.kind, &draft.fields, |id| {
+                scope.contains(id) && !self.b.is_placeholder(id)
+            }) {
+                Err((a, b)) => {
+                    return Err(problems::on_key_ambiguous(&self.graph, &draft.kind, a, b));
+                }
+                Ok(Some(id)) => {
+                    return self.resolve_line(line, id, draft, status_given, anchor, warnings);
+                }
+                Ok(None) => {}
+            }
+        }
         let near = if self.near_checks {
             near_duplicates(self.b.graph(), &draft.title, &draft.kind)
         } else {
@@ -893,41 +922,11 @@ impl Run<'_, '_> {
                 None => near.warning(&self.graph, id),
             });
         }
-        let edge = parent.map(|p| {
-            let edge_id = if self.preplanned {
-                self.parent_edges
-                    .remove(&id)
-                    .expect("a planned parent edge")
-            } else {
-                self.next_id(line)
-            };
-            let mut edge = new_edge(
-                edge_id,
-                id,
-                PART_OF,
-                p,
-                &self.now,
-                &self.ctx.by,
-                BTreeMap::new(),
-            );
-            edge.record_author(session);
-            edge
-        });
+        let edge = parent.map(|p| self.part_of_edge(line, id, p, session));
         if edge.is_some() {
             warnings.extend(part_of_warning(self.o, &self.graph));
         }
-        let raised = anchor.map(|a| {
-            let edge_id = if self.preplanned {
-                self.raised_edges
-                    .remove(&id)
-                    .expect("a planned raised_in edge")
-            } else {
-                self.next_id(line)
-            };
-            let mut edge = super::raised_in::edge(edge_id, id, &a, &self.now, &self.ctx.by);
-            edge.record_author(session);
-            (edge, a)
-        });
+        let raised = anchor.map(|a| (self.raised_in_edge(line, id, &a, session), a));
         if is_explicit {
             self.b
                 .fill(id, node)
@@ -937,7 +936,66 @@ impl Run<'_, '_> {
                 .insert_node(node)
                 .map_err(|e| problems::image_full(&e))?;
         }
+        if on_key {
+            let g = self.b.graph();
+            let scope = super::ReadScope::new(g);
+            let added = g.node(id).expect("the node just added").to_node();
+            warnings.extend(other_type_holders(&self.graph, g, &added, |n| {
+                scope.contains(n)
+            }));
+        }
         let mut r = row(line, "node add");
+        self.place_edges(&mut r, edge, raised);
+        self.nodes = true;
+        self.touch(id, line);
+        r.id = Some(id);
+        Ok((r, warnings))
+    }
+
+    /// A node add's part_of edge from `node` to `parent`: its preplanned id, else one drawn now (an on_key line is
+    /// never preplanned, ws003 s08).
+    fn part_of_edge(&mut self, line: u32, node: Id, parent: Id, session: Id) -> Edge {
+        let edge_id = match self.parent_edges.remove(&node) {
+            Some(id) => id,
+            None => self.next_id(line),
+        };
+        let mut edge = new_edge(
+            edge_id,
+            node,
+            PART_OF,
+            parent,
+            &self.now,
+            &self.ctx.by,
+            BTreeMap::new(),
+        );
+        edge.record_author(session);
+        edge
+    }
+
+    /// A node add's raised_in edge from `node` to anchor `a` (TM4): its preplanned id, else one drawn now.
+    fn raised_in_edge(
+        &mut self,
+        line: u32,
+        node: Id,
+        a: &super::raised_in::Anchor,
+        session: Id,
+    ) -> Edge {
+        let edge_id = match self.raised_edges.remove(&node) {
+            Some(id) => id,
+            None => self.next_id(line),
+        };
+        let mut edge = super::raised_in::edge(edge_id, node, a, &self.now, &self.ctx.by);
+        edge.record_author(session);
+        edge
+    }
+
+    /// Puts a node add's new edges in the batch and names them on its row.
+    fn place_edges(
+        &mut self,
+        r: &mut BatchRow,
+        edge: Option<Edge>,
+        raised: Option<(Edge, super::raised_in::Anchor)>,
+    ) {
         if let Some((e, a)) = raised {
             r.raised_in_edge = Some(e.id);
             r.raised_in = Some(a.address);
@@ -961,9 +1019,74 @@ impl Run<'_, '_> {
             self.b.insert_edge(e);
             self.edges = true;
         }
-        self.nodes = true;
-        self.touch(id, line);
+    }
+
+    /// The stored far ends of the live `kind` edges out of node `id` as the batch holds them so far: the graph's own
+    /// (through its adjacency, each checked against the batch) and the ones earlier lines added or edited.
+    fn ends_out(&self, id: Id, kind: &str) -> BTreeSet<StoredEnd> {
+        let mut ends = super::node::ends_out(self.b.graph(), id, kind, |e| self.b.edge_record(e));
+        let low = StoredEnd {
+            graph: None,
+            node: Id(0),
+        };
+        let high = StoredEnd {
+            graph: Some(Id(u128::MAX)),
+            node: Id(u128::MAX),
+        };
+        let from = StoredEnd::local(id);
+        ends.extend(
+            self.added_edges
+                .range((from, kind.to_string(), low)..=(from, kind.to_string(), high))
+                .filter(|(_, e)| self.b.edge_record(**e).is_some())
+                .map(|((_, _, to), _)| *to),
+        );
+        ends
+    }
+
+    /// ws003 s08: an on_key node add whose keys node `id` holds. The node takes what it lacks ([`enrich`]: evidence,
+    /// absent fields and keys, an empty note) and the part_of and raised_in edges it lacks, compared by stored ends; a
+    /// held value is never overwritten and the `on_key_field_held` hint names it. The row says `existed`; its ref
+    /// binds to `id`. Nothing is written when nothing would change.
+    fn resolve_line(
+        &mut self,
+        line: u32,
+        id: Id,
+        draft: NodeDraft,
+        status_given: bool,
+        anchor: Option<super::raised_in::Anchor>,
+        mut warnings: Vec<Problem>,
+    ) -> LineResult {
+        let before = self.b.graph().node(id).expect("a key holder").to_node();
+        let parent = draft.parent;
+        let (mut n, changed, mut held) = enrich(&before, draft, status_given)?;
+        let parent = parent.filter(|p| {
+            let ends = self.ends_out(id, PART_OF);
+            if !ends.is_empty() && !ends.contains(&StoredEnd::local(*p)) {
+                held.push(problems::Held::Parent);
+            }
+            ends.is_empty()
+        });
+        let anchor = anchor.filter(|a| !self.ends_out(id, RAISED_IN).contains(&a.end));
+        if !changed.is_empty() {
+            n.updated = self.now.clone();
+            self.replace_node(line, n, true, before.evidence.len(), &mut warnings)?;
+        }
+        let mut r = row(line, "node add");
+        if parent.is_some() || anchor.is_some() {
+            let session = self.session(line, &mut warnings)?;
+            let edge = parent.map(|p| self.part_of_edge(line, id, p, session));
+            if edge.is_some() {
+                warnings.extend(part_of_warning(self.o, &self.graph));
+            }
+            let raised = anchor.map(|a| (self.raised_in_edge(line, id, &a, session), a));
+            self.place_edges(&mut r, edge, raised);
+        }
+        if !held.is_empty() {
+            warnings.push(problems::on_key_field_held(&self.graph, id, &held));
+        }
+        r.existed = true;
         r.id = Some(id);
+        r.changed = changed;
         Ok((r, warnings))
     }
 
@@ -1592,8 +1715,9 @@ impl Run<'_, '_> {
                 .iter()
                 .any(|v| c.as_str().starts_with(v))
         };
-        // plan 205: edge_exists_differs keeps its in-place `edge edit` of the stored edge (a drawn id still hides).
-        if p.code == "edge_exists_differs" {
+        // plan 205: edge_exists_differs keeps its in-place `edge edit` of the stored edge, and on_key_ambiguous (ws003
+        // s08) its key removal on a node of the graph (a drawn id still hides).
+        if p.code == "edge_exists_differs" || p.code == "on_key_ambiguous" {
             return p;
         }
         for (_, slot) in &mut p.slots {
@@ -1644,6 +1768,17 @@ impl GraphStore {
         let graph = &loaded.graph;
         let (mut ids, mut errors, mut failed) = (BTreeSet::new(), Vec::new(), 0);
         for BatchLine { line, op } in lines {
+            if let BatchOp::NodeAdd {
+                id: Some(_), req, ..
+            } = op
+                && req.on_key_resolve
+            {
+                failed += 1;
+                if errors.len() < MAX_BATCH_ERRORS {
+                    errors.push(problems::batch_line_invalid(*line, ON_KEY_WITH_ID));
+                }
+                continue;
+            }
             let (id, created) = match op {
                 BatchOp::NodeAdd { id, created, .. } => (id, created.as_deref()),
                 BatchOp::EdgeAdd { id, .. } => (id, None),
@@ -1993,7 +2128,6 @@ impl GraphStore {
                 graph_json: false,
                 minted: BTreeMap::new(),
                 reserved,
-                preplanned,
                 parent_edges: BTreeMap::new(),
                 vocabulary_said: anchor.is_some(),
                 anchor,
@@ -2011,6 +2145,9 @@ impl GraphStore {
             if preplanned {
                 for BatchLine { line, op } in &mut req.lines {
                     match op {
+                        // ws003 s08: an on_key line may resolve, so it holds no placeholder; if it creates, its
+                        // node and edges draw their ids at its line (a middle insert).
+                        BatchOp::NodeAdd { req, .. } if req.on_key_resolve => {}
                         BatchOp::NodeAdd {
                             id,
                             req,

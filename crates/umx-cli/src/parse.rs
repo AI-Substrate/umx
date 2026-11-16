@@ -3,7 +3,7 @@
 
 use std::path::{Component, Path, PathBuf};
 use umx_protocol::{
-    Direction, EvidenceAction, KeyAction, Op, PairRows, SetArg, SetValue, SettingArg, UiCmd,
+    Direction, EvidenceAction, KeyAction, OnKey, Op, PairRows, SetArg, SetValue, SettingArg, UiCmd,
     command_label, parse_json,
 };
 
@@ -219,6 +219,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--evidence-kind",
             "--locator",
             "--raised-in",
+            "--on-key",
         ],
     ),
     ("node get", &["--columns", "--provenance"]),
@@ -1211,6 +1212,16 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 Some(_) => a.one("--title").unwrap_or_default(),
                 None => a.need("--title", "--title <title> is required")?,
             };
+            let on_key = match a.one("--on-key").as_deref() {
+                None => None,
+                Some("resolve") => Some(OnKey::Resolve),
+                Some(_) => {
+                    return Err(Usage {
+                        command: "node add",
+                        what: "--on-key takes resolve",
+                    });
+                }
+            };
             Op::NodeAdd {
                 kind,
                 title,
@@ -1222,6 +1233,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 evidence_kind: a.one("--evidence-kind"),
                 locator,
                 raised_in: a.one("--raised-in"),
+                on_key,
             }
             .with(a)
         }

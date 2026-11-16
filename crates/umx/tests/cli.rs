@@ -1290,6 +1290,7 @@ fn raw(socket: &Path, request: &Request) -> (Envelope, u8) {
 fn provenance_write(seat: &str, session: &str, title: &str) -> Request {
     let mut request = Request::op(
         umx_protocol::Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),
@@ -2604,6 +2605,30 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 "--set",
                 &key("email:A@x.com"),
             ])
+        }
+        Code::OnKeyAmbiguous | Code::OnKeyFieldHeld => {
+            home.graph();
+            let add = |home: &Home, title: &str, on_key: bool| {
+                let mut words = vec![
+                    "node",
+                    "add",
+                    "--type",
+                    "person",
+                    "--title",
+                    title,
+                    "--set",
+                    "entity_key=email:jo@example.com",
+                ];
+                if on_key {
+                    words.extend(["--on-key", "resolve"]);
+                }
+                home.umx(&words)
+            };
+            add(&home, "Jo Smith", false);
+            if code == Code::OnKeyAmbiguous {
+                add(&home, "Jo S", false);
+            }
+            add(&home, "Joanna Smith", true)
         }
         Code::AlreadyDeclared => {
             home.graph();
@@ -6332,6 +6357,7 @@ fn a_request_from_another_protocol_writes_nothing_and_stop_still_works() {
     home.graph();
     let mut add = Request::op(
         umx_protocol::Op::NodeAdd {
+            on_key: None,
             raised_in: None,
             kind: "problem".into(),
             title: "from an older cli".into(),
@@ -12526,6 +12552,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
                 umx_protocol::BatchLine {
                     line: 4,
                     op: umx_protocol::BatchOp::NodeAdd {
+                        on_key: None,
                         raised_in: None,
                         id: None,
                         created: None,
@@ -12545,6 +12572,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
                 umx_protocol::BatchLine {
                     line: 9,
                     op: umx_protocol::BatchOp::NodeAdd {
+                        on_key: None,
                         raised_in: None,
                         id: None,
                         created: None,
@@ -12633,6 +12661,7 @@ fn the_daemon_refuses_a_raw_batch_over_the_caps_and_writes_nothing() {
     let note = |line: u32, n: usize| umx_protocol::BatchLine {
         line,
         op: umx_protocol::BatchOp::NodeAdd {
+            on_key: None,
             raised_in: None,
             id: None,
             created: None,
@@ -25386,4 +25415,64 @@ fn a_hub_hit_lists_three_links_and_counts_the_rest() {
             .iter()
             .all(|l| l["direction"] == "in")
     );
+}
+
+/// ws003 s08 (usage 202): `--on-key resolve` and a batch line's `on_key` resolve to the node of the type already
+/// holding the key, through the CLI and the daemon, and say so; a reply without the flag is unchanged; any other
+/// mode is a usage error.
+#[test]
+fn on_key_resolve_finds_the_node_holding_the_key() {
+    let mut home = Home::new("s08-on-key");
+    home.graph();
+    let add = |home: &Home, extra: &[&str]| {
+        let mut words = vec![
+            "node",
+            "add",
+            "--type",
+            "person",
+            "--title",
+            "Jo Smith",
+            "--set",
+            "entity_key=email:jo@example.com",
+        ];
+        words.extend(extra);
+        home.ok(&words)
+    };
+    let first = add(&home, &["--on-key", "resolve"]);
+    assert_eq!(first.data["resolved"], json!(false), "{}", first.to_json());
+    let id = first.data["node"]["id"].as_str().unwrap().to_owned();
+    let again = add(&home, &["--on-key", "resolve", "--set", "team=blue"]);
+    assert_eq!(
+        (
+            &again.data["resolved"],
+            &again.data["node"]["id"],
+            &again.data["changed"]
+        ),
+        (&json!(true), &json!(id), &json!(["team"])),
+        "{}",
+        again.to_json()
+    );
+    let lines = [
+        json!({"op":"node add","ref":"jo","type":"person","title":"Jo Smith","on_key":"resolve",
+            "sets":[{"field":"entity_key","value":"email:jo@example.com"}]}),
+        json!({"op":"node add","ref":"sam","type":"person","title":"Sam","on_key":"resolve",
+            "sets":[{"field":"entity_key","value":"upn:sam@corp"}]}),
+        json!({"op":"node add","ref":"sam_again","type":"person","title":"Sam","on_key":"resolve",
+            "sets":[{"field":"entity_key","value":"upn:sam@corp"}]}),
+    ];
+    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    let ops = home.ops_file(&text);
+    let done = home.ok(&["batch", "--file", ops.as_str()]);
+    let rows = done.data["rows"].as_array().unwrap();
+    let existed: Vec<&Value> = rows.iter().map(|r| &r["existed"]).collect();
+    assert_eq!(existed, [&json!(true), &json!(false), &json!(true)]);
+    assert_eq!(rows[0]["id"], json!(id));
+    assert_eq!(rows[2]["id"], rows[1]["id"]);
+    assert_eq!(done.data["refs"]["jo"], json!(id));
+    let plain = add(&home, &[]);
+    assert!(plain.data.get("resolved").is_none(), "{}", plain.to_json());
+    let (env, exit) = home.umx(&[
+        "node", "add", "--type", "person", "--title", "x", "--on-key", "create",
+    ]);
+    assert_eq!((exit, env.errors[0].code()), (2, "usage_invalid"));
 }

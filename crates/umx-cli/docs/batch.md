@@ -191,6 +191,25 @@ then used as usual, in every `_ref` field.
 - Any author's receipt works; ids are ids. At most 10,000 refs are imported across all receipts
   (`batch_too_large`).
 
+## Found by key (`on_key`)
+
+A `node add` line with `"on_key":"resolve"` and an `entity_key` in its `sets` looks each key up among the nodes of
+its type in the batch's graph, as the earlier lines left it. If no node holds the keys, the line adds the node as
+usual. If one node holds them, the line resolves to that node: its row has `existed: true` and that node's `id`, and
+its `ref` binds to that node. A later line with the key resolves to the node an earlier line adds.
+
+    {"op":"node add","ref":"jo","type":"person","title":"Jo Smith","on_key":"resolve","sets":[{"field":"entity_key","value":"email:jo@example.com"}],"evidence":["calls/8.vtt#seq=4-9"]}
+
+- A resolve appends or fills, never overwrites. New evidence is appended. A field the node lacks, an empty note
+  and keys it lacks are filled. A parent adds `part_of` only when the node has none, and a raised_in anchor adds
+  its edge unless the node has that edge. `changed` lists what the line added. Nothing new: nothing is written.
+- The title, type and status never change; a note, field or parent held with another value is kept, and the hint
+  `on_key_field_held` names it (never the value), with the command to change the first.
+- Per type, in this graph only: the key on another type adds a node and warns `entity_type_mismatch`. A key two
+  nodes of the type hold, or keys held by two nodes, refuses the line with `on_key_ambiguous`, naming both nodes.
+- Not with `id` (`batch_line_invalid`), and not without an `entity_key` (`batch_line_invalid`). `created` applies
+  only to an added node. Kept lines and provenance nodes never match.
+
 ## Raised in one anchor
 
 `--raised-in <anchor>` gives every node the batch adds a `raised_in` edge to the anchor, in the same write:

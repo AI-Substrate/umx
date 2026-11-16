@@ -134,6 +134,7 @@ fn rev(d: &Daemon, alias: &str) -> u64 {
 
 fn node_add(title: &str) -> Op {
     Op::NodeAdd {
+        on_key: None,
         raised_in: None,
         kind: "problem".into(),
         title: title.into(),

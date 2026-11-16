@@ -43,6 +43,12 @@ Id prefixes and suggestions use the same visibility, so an opt-in can make a pre
   in another (`umx:<graph>/<id>`), resolved exactly as `umx edge add` resolves an end, so it is refused or warned
   about as edge add would be, and a refusal writes nothing. An anchor of a type `raised_in` does not expect warns
   `relation_endpoint_unexpected` and is stored. See `umx docs get time`.
+- `--on-key resolve` with `--set entity_key=<scheme>:<value>`: when a node of this type in the graph already holds
+  one of the keys, the add resolves to that node instead of adding one, and only appends or fills (new evidence,
+  absent fields and keys, an empty note, a first parent, a new raised_in anchor). The reply then carries
+  `resolved: true` and `changed`. A held title, status, note, parent or field is kept and named by the
+  `on_key_field_held` hint; a key two nodes hold is `on_key_ambiguous`. Not with `--locator`. See
+  `umx docs get batch` (Found by key).
 - Adding or changing more than a handful of nodes? Use `umx batch` (`umx docs get batch`): one call, one write,
   all or nothing.
 

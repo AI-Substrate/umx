@@ -44,6 +44,7 @@ pub const HINTS: &[&str] = &[
     "along_by_rule",
     "batch_use_ref_field",
     "alias_redirected",
+    "on_key_field_held",
 ];
 
 /// The most hints a reply shows: umx-protocol's MAX_HINTS and its `hints_truncated` (the daemon's test keeps the two
@@ -173,6 +174,8 @@ pub const CODES: &[&str] = &[
     "reserved_name",
     "entity_key_invalid",
     "duplicate_key",
+    "on_key_ambiguous",
+    "on_key_field_held",
     "entity_key_not_canonical",
     "entity_key_unusable",
     "entity_link_invalid",
@@ -1020,6 +1023,84 @@ pub fn duplicate_key(graph: &ValidName, kind: &str, d: &umx_graph::DuplicateEnti
             Slot::Command(Command::new("node get").address(graph, d.node)),
         )
         .subject(d.node.to_text())
+}
+
+/// ws003 s08: a node add with on_key resolve whose entity keys name two nodes of its type in `graph`, `node` and
+/// `other` (a key both hold, or keys held one by each); nothing is written. Names nodes by address, never a key value.
+pub fn on_key_ambiguous(graph: &ValidName, kind: &str, node: Id, other: Id) -> Problem {
+    Problem::new("on_key_ambiguous")
+        .with("type", Slot::name_or(kind, "(that type)"))
+        .with("graph", name(graph))
+        .with("node", Slot::Id(node))
+        .with("other", Slot::Id(other))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("entity key")
+                    .address(graph, other)
+                    .word("remove")
+                    .word("<key>"),
+            ),
+        )
+        .subject(other.to_text())
+}
+
+/// What an on_key resolve kept on its node rather than overwrite (ws003 s08), for [`on_key_field_held`]'s fix.
+pub enum Held {
+    Title,
+    Status,
+    Note,
+    Parent,
+    Field(ValidName),
+}
+
+impl Held {
+    fn name(&self) -> ValidName {
+        let word = match self {
+            Held::Title => "title",
+            Held::Status => "status",
+            Held::Note => "note",
+            Held::Parent => "parent",
+            Held::Field(field) => return field.clone(),
+        };
+        ValidName::alias(word).expect("snake_case")
+    }
+}
+
+/// ws003 s08: node `node`, found by an on_key resolve, already holds `held` with other values; they were kept. Names
+/// the parts, never their values. The fix changes the first by hand.
+pub fn on_key_field_held(graph: &ValidName, node: Id, held: &[Held]) -> Problem {
+    let fix = match held.first() {
+        Some(Held::Title) => Command::new("node edit")
+            .address(graph, node)
+            .word("--title")
+            .word("<title>"),
+        Some(Held::Status) => Command::new("node status")
+            .address(graph, node)
+            .word("<status>")
+            .word("--reason")
+            .word("<why>"),
+        Some(Held::Note) => Command::new("node note")
+            .address(graph, node)
+            .word("--append")
+            .word("<text>"),
+        Some(Held::Parent) => Command::new("edge list")
+            .word("--from")
+            .address(graph, node)
+            .word("--type")
+            .word("part_of"),
+        Some(Held::Field(field)) => Command::new("node edit")
+            .address(graph, node)
+            .word("--set")
+            .name_with(field, '=', "<value>"),
+        None => Command::new("node get").address(graph, node),
+    };
+    Problem::new("on_key_field_held")
+        .with("graph", name(graph))
+        .with("node", Slot::Id(node))
+        .with("fields", Slot::Names(held.iter().map(Held::name).collect()))
+        .with("fix", Slot::Command(fix))
+        .subject(node.to_text())
 }
 
 /// A loaded node's entity key not in stored form (ws008 E1); never shows the key.
