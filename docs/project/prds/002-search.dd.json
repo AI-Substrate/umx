@@ -172,8 +172,7 @@
           "priority": "must",
           "state": "shipped",
           "done_when": "A hit found through its note carries `text` with `field: note` and at most 200 characters around the matched words; a hit with no note carries its best field or nothing; the reply's `untrusted` list names the path.",
-          "source": "Project lead ruling 2026-11-16 (on by default)",
-          "note": "Shipped today: hits carry title only."
+          "source": "Project lead ruling 2026-11-16 (on by default)"
         },
         {
           "id": "search-08",
