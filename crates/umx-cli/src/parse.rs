@@ -31,7 +31,7 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 24] = [
+const SWITCHES: [&str; 26] = [
     "--same-graph",
     "--raise",
     "--add",
@@ -56,6 +56,8 @@ const SWITCHES: [&str; 24] = [
     "--graphfile",
     "--redact",
     "--lint",
+    "--related",
+    "--no-related",
 ];
 
 /// Every command's own flags: the one list. The parser accepts a flag only when its command's row names it (the
@@ -129,6 +131,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--echo-sentences",
             "--reason",
             "--raised-in",
+            "--related",
+            "--no-related",
         ],
     ),
     ("scope save", &["--replace"]),
@@ -220,6 +224,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--locator",
             "--raised-in",
             "--on-key",
+            "--related",
+            "--no-related",
         ],
     ),
     ("node get", &["--columns", "--provenance"]),
@@ -397,6 +403,15 @@ pub fn flags(command: &str) -> &'static [&'static str] {
         .map_or(&[], |(_, f)| f)
 }
 
+/// The switches of other commands that are also graph settings, so `graph set` reads them with a value (req-123:
+/// `--related` is a switch on node add and batch, `graph set --related on|off` a setting). The settings table is
+/// umx-core's, which the CLI does not read; docs' every_example_parses fails while one is missing here.
+const GRAPH_SETTING_SWITCHES: [&str; 1] = ["--related"];
+
+fn graph_setting(flag: &str) -> bool {
+    GRAPH_SETTING_SWITCHES.contains(&flag)
+}
+
 impl Args {
     fn new(command: &'static str, words: &[&str]) -> Result<Args, Usage> {
         Args::allowing(command, words, flags(command))
@@ -423,7 +438,8 @@ impl Args {
             if !allowed.contains(&flag) && !COMMON.contains(&flag) {
                 return Err(fail("unknown flag for this command"));
             }
-            if SWITCHES.contains(&flag) {
+            // A graph setting always takes a value, even one named like another command's switch (--related).
+            if SWITCHES.contains(&flag) && !(command == "graph set" && graph_setting(flag)) {
                 if flag == "--echo-sentences" && inline.is_some() {
                     return Err(fail("--echo-sentences takes no value"));
                 }
@@ -542,6 +558,17 @@ impl Args {
 
     fn has(&self, switch: &str) -> bool {
         self.switches.iter().any(|s| s == switch)
+    }
+
+    /// `--related` (Some(true)) or `--no-related` (Some(false)), req-123; neither leaves it to the settings.
+    fn related(&self) -> Result<Option<bool>, Usage> {
+        match (self.has("--related"), self.has("--no-related")) {
+            (true, true) => Err(Usage {
+                command: self.command,
+                what: "give --related or --no-related, not both",
+            }),
+            (on, off) => Ok((on || off).then_some(on)),
+        }
     }
 
     fn positionals(&self, n: usize, what: &'static str) -> Result<Vec<String>, Usage> {
@@ -783,6 +810,7 @@ pub fn batch(words: &[&str]) -> Result<(String, Vec<String>, Parsed), Usage> {
         refs: Default::default(),
         refs_graph: None,
         raised_in: a.one("--raised-in"),
+        related: a.related()?,
     };
     Ok((file, receipts, op.with(a)))
 }
@@ -1234,6 +1262,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 locator,
                 raised_in: a.one("--raised-in"),
                 on_key,
+                related: a.related()?,
             }
             .with(a)
         }
@@ -1368,7 +1397,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 .iter()
                 .filter(|w| w.starts_with("--"))
                 .map(|w| w.split_once('=').map_or(*w, |(f, _)| f))
-                .filter(|f| !SWITCHES.contains(f))
+                .filter(|f| !SWITCHES.contains(f) || graph_setting(f))
                 .collect();
             let a = Args::allowing(command, rest, &named)?;
             let alias = a.positionals(1, "name the graph's alias")?.remove(0);
@@ -1916,6 +1945,69 @@ impl With for Op {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reviewer N1 (ws004 s28): every `related_skipped` fix umx-services builds parses as printed. The list is the
+    /// golden file umx-services' `every_reason_s_fix_is_a_whole_command_as_the_golden_file_lists_it` pins.
+    #[test]
+    fn every_related_skipped_fix_parses() {
+        let golden = include_str!("../../umx-services/tests/fixtures/related/fixes.txt");
+        for line in golden.lines().filter(|l| !l.is_empty()) {
+            let words: Vec<&str> = line
+                .strip_prefix("umx ")
+                .expect("a umx command")
+                .split(' ')
+                .collect();
+            let ok = match words.as_slice() {
+                ["batch", rest @ ..] => batch(rest).is_ok(),
+                ["docs", "get", topic] => crate::docs::get(topic).errors.is_empty(),
+                _ => parse(&words, Path::new("/work")).is_ok(),
+            };
+            assert!(ok, "does not parse: {line}");
+        }
+    }
+
+    /// req-123: --related and --no-related set node add's and batch's flag, never both; graph set reads --related
+    /// as a setting with a value.
+    #[test]
+    fn related_is_a_switch_on_writes_and_a_setting_on_graph_set() {
+        let add = |extra: &[&'static str]| {
+            let mut words = vec!["node", "add", "--type", "problem", "--title", "t"];
+            words.extend_from_slice(extra);
+            parse(&words, Path::new("/work")).map(|p| p.op)
+        };
+        let flag = |op: Result<Op, Usage>| match op.ok() {
+            Some(Op::NodeAdd { related, .. }) => related,
+            _ => panic!("node add parses"),
+        };
+        assert_eq!(flag(add(&[])), None);
+        assert_eq!(flag(add(&["--related"])), Some(true));
+        assert_eq!(flag(add(&["--no-related"])), Some(false));
+        let Err(both) = add(&["--related", "--no-related"]) else {
+            panic!("refused")
+        };
+        assert_eq!(both.what, "give --related or --no-related, not both");
+        let Op::Batch { related, .. } = batch(&["--file", "-", "--no-related"]).ok().unwrap().2.op
+        else {
+            panic!("batch parses")
+        };
+        assert_eq!(related, Some(false));
+        let set = parse(
+            &["graph", "set", "g", "--related", "off"],
+            Path::new("/work"),
+        )
+        .ok()
+        .expect("graph set parses");
+        let Op::GraphSet { settings, .. } = set.op else {
+            panic!("graph set")
+        };
+        assert_eq!(
+            settings
+                .iter()
+                .map(|s| (s.name.as_str(), s.value.as_str()))
+                .collect::<Vec<_>>(),
+            [("related", "off")]
+        );
+    }
 
     #[test]
     fn ui_open_takes_its_graph_list_as_the_command_and_not_as_the_request_graph() {

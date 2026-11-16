@@ -1291,6 +1291,7 @@ fn provenance_write(seat: &str, session: &str, title: &str) -> Request {
     let mut request = Request::op(
         umx_protocol::Op::NodeAdd {
             on_key: None,
+            related: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),
@@ -2827,6 +2828,18 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 "x",
                 "--set",
                 "colour=red",
+            ])
+        }
+        Code::RelatedSkipped => {
+            home.graph();
+            home.umx(&[
+                "node",
+                "add",
+                "--type",
+                "problem",
+                "--title",
+                "x",
+                "--no-related",
             ])
         }
         Code::NearDuplicate => {
@@ -5961,7 +5974,7 @@ fn nexts_keep_the_graph_when_several_are_loaded() {
         "--title",
         "Approval delay",
     ]);
-    let (got, exit) = home.run_next(dup.hints[0].next());
+    let (got, exit) = home.run_next(issue(&dup, Code::NearDuplicate).next());
     assert_eq!(
         (exit, got.data["node"]["graph"].as_str()),
         (0, Some("beta")),
@@ -6373,6 +6386,7 @@ fn a_request_from_another_protocol_writes_nothing_and_stop_still_works() {
     let mut add = Request::op(
         umx_protocol::Op::NodeAdd {
             on_key: None,
+            related: None,
             raised_in: None,
             kind: "problem".into(),
             title: "from an older cli".into(),
@@ -6639,7 +6653,12 @@ fn a_hint_is_advice_that_never_moves_status_or_the_exit_code() {
     let child = home.ok(&[
         "node", "add", "--type", "segment", "--title", "Agenda", "--parent", &meeting,
     ]);
-    assert!(child.hints.is_empty(), "{}", child.to_json());
+    // This home has no embedder, so node add says the related check was skipped (req-123); nothing else.
+    assert!(
+        child.hints.iter().all(|h| h.code() == "related_skipped"),
+        "{}",
+        child.to_json()
+    );
     let lone = home.add("segment", "Closing");
     let again = home.ok(&["node", "edit", &lone, "--title", "Closing words"]);
     assert_eq!(again.status, Status::Ok);
@@ -7255,7 +7274,7 @@ fn graph_set_checks_every_setting_before_changing_anything() {
     let found = issue(&env, Code::SettingUnknown);
     assert_eq!(
         found.message(),
-        "colour is not a graph setting; the settings are title or policy or visibility or embedder or purpose or conventions or description."
+        "colour is not a graph setting; the settings are title or policy or visibility or embedder or related or purpose or conventions or description."
     );
     assert_eq!(found.next(), "umx graph set demo --title <text>");
     unchanged("an unknown setting with a known one");
@@ -12276,6 +12295,7 @@ fn s10_raw_batch_clients_cannot_bypass_the_pointer_cap() {
     let node = home.add("problem", "Existing");
     let mut request = Request::op(
         umx_protocol::Op::Batch {
+            related: None,
             raised_in: None,
             echo_sentences: false,
             lines: vec![umx_protocol::BatchLine {
@@ -12544,6 +12564,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
         .collect();
     let request = Request::op(
         umx_protocol::Op::Batch {
+            related: None,
             raised_in: None,
             echo_sentences: false,
             lines: many,
@@ -12561,6 +12582,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
     // Both of a pair, and a bad ref, which the CLI would have stopped, are refused at their lines.
     let request = Request::op(
         umx_protocol::Op::Batch {
+            related: None,
             raised_in: None,
             echo_sentences: false,
             lines: vec![
@@ -12696,6 +12718,7 @@ fn the_daemon_refuses_a_raw_batch_over_the_caps_and_writes_nothing() {
     let send = |lines: Vec<umx_protocol::BatchLine>| {
         let request = Request::op(
             umx_protocol::Op::Batch {
+                related: None,
                 raised_in: None,
                 echo_sentences: false,
                 lines,

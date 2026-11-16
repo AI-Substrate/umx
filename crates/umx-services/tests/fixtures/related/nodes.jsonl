@@ -1,0 +1,21 @@
+{"name":"pay-late","role":"existing","title":"Supplier invoices are paid late","note":"Finance settles vendor bills about three weeks after the due date, so suppliers keep chasing us for money."}
+{"name":"onboard-slow","role":"existing","title":"Onboarding takes too long for new hires","note":"A new employee waits up to ten days for a laptop, accounts and building access before real work starts."}
+{"name":"churn-price","role":"existing","title":"Customer churn rose after the price change","note":"Cancellations went up in the two months after the subscription price increase."}
+{"name":"ci-disk","role":"existing","title":"Release builds break on the shared CI runners","note":"Nightly pipelines fail because the build agents run out of disk space."}
+{"name":"stock-errors","role":"existing","title":"Warehouse picking errors","note":"Pickers send the wrong item in about one order in fifty."}
+{"name":"picnic","role":"existing","title":"Choosing a venue for the summer team picnic","note":"Two parks near the office are free on the last Friday of July; one has a covered area if it rains."}
+{"name":"receivables","role":"existing","title":"Customers pay our invoices late","note":"Clients settle what they owe us about a month after we bill them, which squeezes cash."}
+{"name":"desk-moves","role":"existing","title":"Office floor plan for the third floor","note":"Design and research move to the east side so the meeting rooms stay together."}
+{"name":"api-latency","role":"existing","title":"Search API latency regressed","note":"The ninety-ninth percentile went from 200 ms to 900 ms after the index upgrade."}
+{"name":"brand-colours","role":"existing","title":"Refresh the brand colour palette","note":"Marketing wants warmer greens and a darker navy for the website and slides."}
+{"name":"tax-filing","role":"existing","title":"Quarterly sales tax filing","note":"The return for the last quarter is due on the twentieth and needs the regional breakdown."}
+{"name":"mentoring","role":"existing","title":"Start a mentoring scheme for junior engineers","note":"Pair each graduate with a senior engineer for weekly one-to-one sessions."}
+{"name":"backup-restore","role":"existing","title":"Test restoring the database backups","note":"Nobody has restored a nightly backup since the migration, so we do not know they work."}
+{"name":"fleet-fuel","role":"existing","title":"Delivery van fuel costs","note":"Diesel spend for the delivery fleet is up a fifth on last year."}
+{"name":"survey-results","role":"existing","title":"Employee engagement survey results","note":"Scores fell for workload and recognition; communication improved."}
+{"name":"pair1","role":"new","pair":"1","expect":"pay-late","title":"Vendors wait weeks to get paid","note":"Accounts payable clears what we owe our providers long after the agreed date, and they ring to ask where the payment is."}
+{"name":"pair2","role":"new","pair":"2","expect":"onboard-slow","title":"New starters sit idle in their first fortnight","note":"Recruits go without equipment, logins or a door badge for most of their opening week and a half."}
+{"name":"pair3","role":"new","pair":"3","expect":"churn-price","title":"Plan the next pricing tiers","note":"Product wants a cheaper starter plan and an annual discount next year."}
+{"name":"pair4","role":"new","pair":"4","expect":"ci-disk","title":"Automated compile jobs die overnight","note":"Continuous integration machines fill their storage and the scheduled builds stop partway."}
+{"name":"pair5","role":"new","pair":"5","expect":"stock-errors","title":"Inventory counts drift from the system","note":"The quarterly stocktake finds shelves holding a different number of units than the records say."}
+{"name":"control","role":"new","pair":"control","expect_not":"picnic","title":"Rotate the database encryption keys every quarter","note":"Security policy asks for new keys each quarter and the old ones retired after a week."}

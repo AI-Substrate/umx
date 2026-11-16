@@ -165,6 +165,21 @@ pub const SETTINGS: &[KeySpec] = &[
             "none or the name of an embedders instance",
         )
     },
+    // req-123 (D80): the machine's default for the related check on node add and batch. A graph's `related` setting
+    // and the call's --related or --no-related win over it.
+    KeySpec {
+        default: Some("on"),
+        example: "off",
+        ..row(
+            "related",
+            ValueKind::Choice {
+                now: &["on", "off"],
+                later: &[],
+            },
+            "Whether node add and batch embed each new node to report related existing nodes: on or off. A graph's own related setting, then the call's --related or --no-related, win over it.",
+            "on or off",
+        )
+    },
     // `umx ui` (ws009 s2): what it runs. Machine only, never the repo layer: a repo must not choose a program.
     KeySpec {
         env: Some("UMX_UI_DIR"),

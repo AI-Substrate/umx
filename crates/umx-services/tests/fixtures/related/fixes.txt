@@ -1,0 +1,11 @@
+umx batch --file <file> --graph demo --related
+umx config set embedders.<instance>.search_floor <cosine>
+umx config set embedders.<instance>.similar_floor <cosine>
+umx config set embedders.azure.similar_floor <cosine>
+umx config set embedders.gemma.search_floor <cosine>
+umx config set related on
+umx docs get embeddings
+umx embeddings status
+umx graph set demo --related on
+umx node add --type <type> --title <title> --graph demo --related
+umx search <title> --graph demo

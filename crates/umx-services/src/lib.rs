@@ -18,6 +18,7 @@ mod hybrid;
 mod pairs;
 pub mod problems;
 mod query;
+pub mod related;
 mod service_agent;
 mod traversal;
 pub mod ui;
@@ -501,6 +502,13 @@ impl Services {
     pub fn set_pace(&mut self, pace: alloc::collections::BTreeMap<String, u64>) {
         let embedding = core::mem::replace(&mut self.embedding, EmbeddingService::new(None));
         self.embedding = embedding.with_pace(pace);
+    }
+
+    /// Each instance's related-check cap by name (req-123), fixed at start: [`related::RELATED_CAP_CPU`] for a local
+    /// model on the CPU, else [`related::RELATED_CAP`].
+    pub fn set_related_caps(&mut self, caps: alloc::collections::BTreeMap<String, usize>) {
+        let embedding = core::mem::replace(&mut self.embedding, EmbeddingService::new(None));
+        self.embedding = embedding.with_related_caps(caps);
     }
 
     pub fn graph(&self) -> &GraphStore {

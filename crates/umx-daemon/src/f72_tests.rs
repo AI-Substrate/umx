@@ -126,6 +126,7 @@ fn add(d: &Daemon, graph: &str, title: &str) -> Envelope {
     d.handle(&op(
         Op::NodeAdd {
             on_key: None,
+            related: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),

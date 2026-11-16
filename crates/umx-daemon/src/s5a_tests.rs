@@ -135,6 +135,7 @@ fn rev(d: &Daemon, alias: &str) -> u64 {
 fn node_add(title: &str) -> Op {
     Op::NodeAdd {
         on_key: None,
+        related: None,
         raised_in: None,
         kind: "problem".into(),
         title: title.into(),
@@ -150,6 +151,7 @@ fn node_add(title: &str) -> Op {
 
 fn batch(lines: &[String], dry_run: bool) -> Op {
     Op::Batch {
+        related: None,
         raised_in: None,
         lines: lines
             .iter()

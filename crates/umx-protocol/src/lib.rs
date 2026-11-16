@@ -168,12 +168,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 86: PRD 002 search-13: the hint `search_results_cut`; `similarity_unavailable`, `similarity_no_embedder`,
 /// `similarity_incomplete` and `secured_graphs_skipped` are hints, no longer warnings (status ok; the D69 rule:
 /// advice, nothing the caller asked for left undone), in every verb that raises them.
+/// 87: `related` on `Op::NodeAdd` and `Op::Batch` (`--related`/`--no-related`, req-123, D80); node add data's
+/// `related` and each batch node add row's `related` (up to 3 existing nodes close in meaning: id, address, title,
+/// score), node add and batch data's `related_floor` (value, source, use), and the hint `related_skipped`.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 86;
+pub const PROTOCOL: u32 = 87;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -182,7 +185,7 @@ pub const PROTOCOL: u32 = 86;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (86, 0x46ee_2118_1066_8ac6);
+const WIRE_FINGERPRINT: (u32, u64) = (87, 0x2af6_a8b0_c294_9177);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1255,6 +1258,10 @@ pub enum Op {
         /// `--on-key resolve` (ws003 s08): an add whose entity key a node of its type holds resolves to that node.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         on_key: Option<OnKey>,
+        /// `--related` (true) or `--no-related` (false): this call's related check (req-123), over the graph's and
+        /// the machine's `related` setting; None leaves it to them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        related: Option<bool>,
     },
     NodeGet {
         node: String,
@@ -1560,6 +1567,9 @@ pub enum Op {
         /// names its own `raised_in`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         raised_in: Option<String>,
+        /// `--related` or `--no-related` (req-123), as on node add.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        related: Option<bool>,
     },
     /// `umx embeddings allow --node <id> --field <f>` (req-49): lets one field's current text, which the secret scan
     /// holds, go to a hosted embedder on this machine. Only that exact text; any change holds it again.
@@ -3050,6 +3060,10 @@ catalogue! {
         "the field is not declared on the edge's relation (F92)",
         "Field <field> is not declared on relation <relation>.",
         "umx ontology add field --relation <relation> <field>:<inferred kind> --graph <graph>";
+    RelatedSkipped => "related_skipped", Hint, 0,
+        "node add or batch wrote nodes but did not look for related nodes (existing nodes close in meaning, req-123) for some or all of them: turned off, no admitted embedder, no calibrated floor, no vectors yet, the text held as a possible secret, the time bound, the per-call cap, or the embedder failed; the write still happened",
+        "Related nodes were not checked for <count> new node(s): <reason>.",
+        "<fix>";
     NearDuplicate => "near_duplicate", Hint, 0,
         "a node of the same type with a close title exists, or one of another type worded almost the same (ws004 s30); the add still happened",
         "A <candidate type> node with a similar title exists.",
@@ -4995,6 +5009,7 @@ mod tests {
             },
             Op::GraphForget { alias: "g".into() },
             Op::NodeAdd {
+                related: Some(false),
                 raised_in: s("01JC8XA4H7"),
                 on_key: Some(OnKey::Resolve),
                 kind: "k".into(),
@@ -5219,6 +5234,7 @@ mod tests {
                 }),
             },
             Op::Batch {
+                related: Some(false),
                 raised_in: s("umx:g/01JC8XA4H7"),
                 echo_sentences: true,
                 lines: vec![

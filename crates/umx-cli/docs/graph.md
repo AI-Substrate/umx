@@ -224,6 +224,7 @@ anything changes. The flag is the setting's name exactly, in snake_case.
     umx graph set launch --title "Launch planning"
     umx graph set launch --visibility named
     umx graph set launch --embedder trusted
+    umx graph set launch --related off
 
 | setting | what it is |
 |---|---|
@@ -234,6 +235,7 @@ anything changes. The flag is the setting's name exactly, in snake_case.
 | `purpose` | what the graph is for, shown first by `umx graph guide`; an empty value clears it |
 | `conventions` | how the graph is used (naming, notes, when to add an edge), shown by `umx graph guide` |
 | `description` | one line on what a type, status, relation or field means: `<kind>:<name>=<text>` |
+| `related` | `on` or `off`: whether node add and batch look for related nodes for each node they add (`umx docs get node`), over this machine's `related` setting (on unless set off); never set, the machine's decides. A call's `--related` or `--no-related` wins |
 
     umx graph set launch --purpose "Decide how to launch in spring"
     umx graph set launch --description "type:risk=Something that may go wrong"

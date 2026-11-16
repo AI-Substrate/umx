@@ -1143,6 +1143,7 @@ fn a_graph_that_records_another_model_is_never_embedded_by_this_one() {
         text_form: 1,
         policy: Default::default(),
         similarity: None,
+        related: None,
         extra: Default::default(),
     };
     svc.graph_new(&ctx(), "/work/g", "demo", None, false, Some(other))
@@ -1173,6 +1174,7 @@ fn the_blocks_hold_the_recorded_space_whatever_embedder_is_configured() {
         text_form: 1,
         policy: Default::default(),
         similarity: None,
+        related: None,
         extra: Default::default(),
     };
     let mut svc = services(&files, &a);
@@ -1270,6 +1272,7 @@ fn a_graph_json_recording_an_over_wide_key_is_refused_at_load() {
         text_form: 1,
         policy: Default::default(),
         similarity: None,
+        related: None,
         extra: Default::default(),
     };
     let mut svc = services(&files, &embedder);

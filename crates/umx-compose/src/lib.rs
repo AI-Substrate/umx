@@ -926,6 +926,25 @@ impl Embedders {
         floors
     }
 
+    /// Each built instance's related-check cap (req-123, embeddings-expert ws004 s28): what it embeds in about 2 s,
+    /// so [`umx_services::related::RELATED_CAP_CPU`] for a local model on the CPU and
+    /// [`umx_services::related::RELATED_CAP`] for Metal, CUDA or a hosted instance.
+    pub fn related_caps(&self) -> std::collections::BTreeMap<String, usize> {
+        self.instances
+            .iter()
+            .filter(|i| i.built.is_ok())
+            .map(|i| {
+                let cpu = i.local_backend().is_some_and(|(b, _)| b == "cpu");
+                let cap = if cpu {
+                    umx_services::related::RELATED_CAP_CPU
+                } else {
+                    umx_services::related::RELATED_CAP
+                };
+                (i.name.clone(), cap)
+            })
+            .collect()
+    }
+
     /// Each built instance's background pace in tokens a minute (ws004 s25); an unpaced one is left out.
     pub fn pace(&self) -> std::collections::BTreeMap<String, u64> {
         self.instances

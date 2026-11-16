@@ -37,6 +37,8 @@ mod s25a_tests;
 #[cfg(test)]
 mod s27_tests;
 #[cfg(test)]
+mod s28_tests;
+#[cfg(test)]
 mod s31_tests;
 #[cfg(test)]
 mod s5a_tests;
@@ -1386,6 +1388,7 @@ impl Daemon {
                 .map(|(name, _)| name);
             composed.set_instances(built(&embedders), default.as_deref());
             composed.set_pace(embedders.pace());
+            composed.set_related_caps(embedders.related_caps());
             // D62 (security): every hosted instance is trusted with named graphs' text, so each is named with its host
             // at start.
             let resolved = settings.resolve(None);
@@ -1975,6 +1978,33 @@ impl Daemon {
             (Some(Op::UiCommand { .. } | Op::UiSelect { .. } | Op::UiSelection), _, _) => {
                 self.ui_op(request)
             }
+            // req-123 (D80): written through the writer as any write, then the related check, planned and finished
+            // under the shared lock with its one embed through the query lane between, holding no lock: it never
+            // holds the writer and never fails the write.
+            (Some(Op::NodeAdd { related, .. }), _, _) => {
+                let env = self.through_writer(
+                    command,
+                    |tx| Job::Write(Box::new(request.clone()), tx),
+                    false,
+                );
+                self.related_after(env, "node add", *related)
+            }
+            (
+                Some(Op::Batch {
+                    related,
+                    dry_run: false,
+                    ..
+                }),
+                _,
+                _,
+            ) => {
+                let env = self.through_writer(
+                    command,
+                    |tx| Job::Write(Box::new(request.clone()), tx),
+                    false,
+                );
+                self.related_after(env, "batch", *related)
+            }
             (Some(op), _, _) if op.writes() => self.through_writer(
                 op.command(),
                 |tx| Job::Write(Box::new(request.clone()), tx),
@@ -2008,6 +2038,51 @@ impl Daemon {
             }
             _ => Envelope::fail(command, usage(command, "unknown command")),
         }
+    }
+
+    /// The related check after node add or an applied batch wrote (req-123): the call's flag, else the graph's
+    /// `related` setting, else the machine's (read now, so `config set related` applies at once).
+    fn related_after(&self, env: Envelope, verb: &'static str, flag: Option<bool>) -> Envelope {
+        let Some((alias, added)) = verbs::added_nodes(verb, &env) else {
+            return env;
+        };
+        if added.is_empty() {
+            return env;
+        }
+        let machine = self
+            .config
+            .resolve(None)
+            .get("related")
+            .and_then(|s| s.value.as_ref())
+            .and_then(umx_core::config::ConfigValue::as_text)
+            != Some("off");
+        let allows = folder_allows(&self.config);
+        let req = umx_services::related::RelatedRequest {
+            alias: &alias,
+            added: &added,
+            flag,
+            machine,
+            verb,
+        };
+        let planned = match self.services.read() {
+            Ok(services) => services.related_plan(&req, &*allows),
+            Err(_) => return env,
+        };
+        let related = match planned {
+            Err(done) => done,
+            Ok(plan) => {
+                let vectors = self.queries.embed_related(
+                    plan.embedder(),
+                    plan.texts().to_vec(),
+                    umx_services::related::related_kind(),
+                );
+                match self.services.read() {
+                    Ok(services) => services.related_finish(plan, vectors, &*allows),
+                    Err(_) => return env,
+                }
+            }
+        };
+        verbs::with_related(env, verb, &related)
     }
 
     /// `umx similarity rebuild`: snapshot under the shared lock, compute with no lock, apply under the writer; a graph
@@ -3254,6 +3329,7 @@ mod tests {
         d.writer_ok.store(false, Ordering::SeqCst);
         let add = op(umx_protocol::Op::NodeAdd {
             on_key: None,
+            related: None,
             raised_in: None,
             kind: "problem".into(),
             title: "x".into(),
@@ -3483,6 +3559,7 @@ mod tests {
         let add = |alias: &str| {
             let mut add = op(umx_protocol::Op::NodeAdd {
                 on_key: None,
+                related: None,
                 raised_in: None,
                 kind: "problem".into(),
                 title: format!("a node in {alias}"),
@@ -3552,6 +3629,7 @@ mod tests {
         let add = |title: &str| {
             op(umx_protocol::Op::NodeAdd {
                 on_key: None,
+                related: None,
                 raised_in: None,
                 kind: "problem".into(),
                 title: title.into(),

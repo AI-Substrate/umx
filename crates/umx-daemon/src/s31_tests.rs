@@ -86,6 +86,7 @@ fn node_add(graph: &str, title: &str) -> Request {
     Request::op(
         Op::NodeAdd {
             on_key: None,
+            related: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),
@@ -650,6 +651,7 @@ fn bench_daemon(graphs: usize, nodes: usize) -> (Daemon, std::path::PathBuf, Vec
                 .collect();
             ok(d.handle(&Request::op(
                 Op::Batch {
+                    related: None,
                     raised_in: None,
                     reason: None,
                     lines,

@@ -1365,7 +1365,7 @@
 					"statement": "When a batch or node add writes a node and an admitted embedder with a calibrated floor exists, umx embeds the new node's whole-node text at query time and reports up to 3 existing nodes above that model's search floor as related, with scores, separate from the word-based near_duplicate warning. Related is never called duplicate. With no admitted embedder or no calibrated floor, only near_duplicate runs and the reply says the related check was skipped.",
 					"actor": "a-agent",
 					"priority": "could",
-					"state": "planned",
+					"state": "shipped",
 					"source": "Field report (pairs on a test graph, 2026-11-11); embeddings-expert ruling; ws004 s28",
 					"done_when": "On a synthetic fixture shaped like the five reported pairs, pairs 1, 2 and 4 are reported as related and a random control pair is not; with no embedder the reply notes the skip."
 				},
@@ -1971,6 +1971,11 @@
 					"date": "2026-11-13",
 					"by": "project manager",
 					"change": "req-153 shipped: workstream 009 S11 (entities across graphs); E3 additions follow."
+				},
+				{
+					"date": "2026-11-17",
+					"by": "project manager",
+					"change": "req-123 shipped: workstream 004 s28 (D80): related nodes on node add and batch, with --related/--no-related, a graph and a machine related setting, and the related_skipped hint."
 				}
 			]
 		}

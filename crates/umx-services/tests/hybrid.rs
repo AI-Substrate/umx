@@ -177,6 +177,7 @@ fn section(key: Option<ModelKey>, policy: Policy) -> GraphEmbedding {
         text_form: 1,
         policy,
         similarity: None,
+        related: None,
         extra: Default::default(),
     }
 }

@@ -243,6 +243,9 @@ pub struct EmbeddingService {
     /// Each instance's background pace in tokens a minute (`tokens_per_minute`, ws004 s25); one not named is
     /// unpaced.
     pace: BTreeMap<String, u64>,
+    /// How many new nodes one related check (req-123) embeds with each instance, by name: about 2 s of its work
+    /// (embeddings-expert, ws004 s28). One not named gets [`crate::related::RELATED_CAP`].
+    related_caps: BTreeMap<String, usize>,
 }
 
 impl EmbeddingService {
@@ -261,6 +264,7 @@ impl EmbeddingService {
             instances,
             default,
             pace: BTreeMap::new(),
+            related_caps: BTreeMap::new(),
         }
     }
 
@@ -273,6 +277,7 @@ impl EmbeddingService {
             instances,
             default,
             pace: BTreeMap::new(),
+            related_caps: BTreeMap::new(),
         }
     }
 
@@ -286,6 +291,20 @@ impl EmbeddingService {
     pub fn with_pace(mut self, pace: BTreeMap<String, u64>) -> EmbeddingService {
         self.pace = pace;
         self
+    }
+
+    /// Each instance's related-check cap, by name (req-123).
+    pub fn with_related_caps(mut self, caps: BTreeMap<String, usize>) -> EmbeddingService {
+        self.related_caps = caps;
+        self
+    }
+
+    /// How many new nodes one related check embeds with instance `name`.
+    pub fn related_cap(&self, name: &str) -> usize {
+        self.related_caps
+            .get(name)
+            .copied()
+            .unwrap_or(crate::related::RELATED_CAP)
     }
 
     /// How fast background embedding may send to instance `name`, in tokens a minute; None: unpaced.

@@ -179,6 +179,7 @@ fn ok(env: Envelope) -> Envelope {
 fn add(d: &Daemon, title: &str, note: &str) -> Envelope {
     ok(d.handle(&op(Op::NodeAdd {
         on_key: None,
+        related: None,
         raised_in: None,
         kind: "problem".into(),
         title: title.into(),
@@ -458,6 +459,7 @@ fn a_query_in_flight_on_one_instance_never_holds_another_instances_batches() {
     let add_to = |alias: &str, title: &str| {
         let mut req = op(Op::NodeAdd {
             on_key: None,
+            related: None,
             raised_in: None,
             kind: "problem".into(),
             title: title.into(),
@@ -604,6 +606,7 @@ fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
     for i in 0..9 {
         ok(d.handle(&Request::op(
             Op::NodeAdd {
+                related: None,
                 raised_in: None,
                 kind: "problem".into(),
                 title: "Approval delays".into(),

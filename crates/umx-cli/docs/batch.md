@@ -221,11 +221,23 @@ expect warns `relation_endpoint_unexpected`, once, and the edges are stored.
 
     umx batch --file window-07.jsonl --graph launch --raised-in umx:launch/01JC8XA4H7
 
+## Related nodes
+
+After an applied batch writes, each node it adds gets the same related check as `umx node add` (`umx docs get
+node`): its text is embedded and its row's `related` lists up to 3 existing nodes close in meaning, with scores.
+Other nodes the same batch adds are never listed as each other's related nodes. All nodes go in one embed request,
+in line order, as many as the embedder embeds in about 2 s (16, or 4 for the local model on the CPU); the rest, and any node the check could not run for, are counted in a
+`related_skipped` hint that says why and how to turn it on. A dry run never runs it. `--no-related` turns it off for
+the call and `--related` turns it on over the graph's and the machine's `related` setting.
+
+    umx batch --file window-07.jsonl --graph launch --no-related
+
 ## The result
 
 `data` lists one row per op line: `line`, `op`, `ref`, `id`, `address`, `parent_edge` (a node add's part_of edge),
 `raised_in_edge` and `raised_in` (a node add's raised_in edge and the anchor it goes to; a dry run names the
-anchor, and the edge id stays null),
+anchor, and the edge id stays null), `related` (a node add's related nodes, null when not checked; `data.related_floor`
+is the floor they were cut at),
 `changed` (an edit, note append or status move's changed fields, including an edge edit's `type`, `direction` and fields;
 `evidence`, and `evidence_removed` for a remove, when an evidence line changed the node) and `existed` (an edge
 add whose edge already existed, so nothing was

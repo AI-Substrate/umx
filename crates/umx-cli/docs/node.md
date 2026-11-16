@@ -36,6 +36,24 @@ Id prefixes and suggestions use the same visibility, so an opt-in can make a pre
   each other (joined, split, plural and misspelled words count), and never differ in a number: "Data Science team"
   is no near duplicate of "Geoscience Data team", nor "Phase 1 plan" of "Phase 2 plan", nor "Unit A" of "Unit B"
   (a word under four letters must match exactly, or be the same letters joined or split).
+- Related nodes (req-123): when an embedder may embed the graph and its model has a floor, node add embeds the new
+  node's text once, after the write, and `data.related` lists up to 3 existing nodes of the same graph whose vectors
+  score at or above that floor: `id`, `address`, `title` and `score` (cosine), best first. A model with a query
+  prompt (`+p1`, the local model) is cut at its search floor, which `embedders.<name>.search_floor` overrides; one
+  without (the Azure models) at its similar_to floor, which `embedders.<name>.similar_floor` overrides (`umx docs get
+  config`). With neither a calibrated floor nor that key set, the check is skipped. `data.related_floor` gives the
+  `value`, its `source` (`calibrated` or `config`) and the `use` (`search` or `similar_to`). They are close in
+  meaning, which is not the same thing as a duplicate: read them and link the new node to the ones it is about. This
+  is separate from `near_duplicate`, which compares title words. Nodes whose vectors are not made yet are not
+  compared. `data.related` is `null` when the check did not run; then a `related_skipped` hint says why (turned off,
+  no embedder, no floor, no vectors yet, a text that looks like a secret with a hosted embedder, the cap, the time
+  bound, or the embedder failed) and its `next` is the command that turns it on or shows what is missing.
+- The node is written first, and the check never undoes or fails the write. The reply then waits for the check, at
+  most 5 s; past that it comes back without `related`, with a `related_skipped` hint. A search waiting on the same
+  embedder always goes first.
+- `--related` / `--no-related` turn the check on or off for this call. Without either, the graph's `related`
+  setting decides (`umx graph set <alias> --related off`), else this machine's (`umx config set related off`);
+  it is on by default. Turn it off when adds must be fast: embedding with a local model takes a moment.
 - `--locator <path|url|root:...>` makes the node a resource: a file, folder or URL, added once per graph
   (`resource_exists` returns the one already there). `--title` is then optional. See `umx docs get resource`.
 - `--raised-in <anchor>` adds a `raised_in` edge from the new node to the anchor (the segment, meeting or event it

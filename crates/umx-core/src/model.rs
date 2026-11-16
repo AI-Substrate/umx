@@ -157,6 +157,9 @@ pub struct GraphEmbedding {
     /// default used, but kept here as written so a later write never changes it. Written only when someone sets
     /// it.
     pub similarity: Option<Value>,
+    /// `umx graph set --related on|off` (req-123, D80): this graph's related check on node add and batch, over the
+    /// machine's `related` setting; absent (never set) leaves it to the machine. Written only when someone sets it.
+    pub related: Option<bool>,
     /// Keys this build does not know, kept through load and save.
     pub extra: BTreeMap<String, Value>,
 }
@@ -180,6 +183,8 @@ struct RawEmbedding {
         deserialize_with = "present_value"
     )]
     similarity: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    related: Option<bool>,
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
@@ -193,6 +198,7 @@ impl TryFrom<RawEmbedding> for GraphEmbedding {
             text_form: raw.text_form,
             policy: Policy::read(raw.policy, raw.visibility, raw.embedder)?,
             similarity: raw.similarity,
+            related: raw.related,
             extra: raw.extra,
         })
     }
@@ -208,6 +214,7 @@ impl From<GraphEmbedding> for RawEmbedding {
             visibility,
             embedder,
             similarity: e.similarity,
+            related: e.related,
             extra: e.extra,
         }
     }
@@ -238,6 +245,7 @@ impl GraphEmbedding {
             text_form: crate::vectors::WHOLE_NODE_VERSION,
             policy,
             similarity: None,
+            related: None,
             extra: BTreeMap::new(),
         }
     }

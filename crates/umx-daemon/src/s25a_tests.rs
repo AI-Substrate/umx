@@ -105,6 +105,7 @@ fn node(i: usize) -> BatchLine {
 
 fn batch(from: usize, n: usize) -> Request {
     op(Op::Batch {
+        related: None,
         raised_in: None,
         echo_sentences: false,
         lines: (from..from + n).map(node).collect(),

@@ -34,6 +34,7 @@ roots: anything else in it is ignored with `config_repo_ignored`.
 | `roots` | Folders graph files may live in, colon-separated on the command line. | daemon restart |
 | `daemon.idle_unload` | A loaded graph unused this long unloads itself; `0` means never. Default `30m`. | daemon restart |
 | `embedder.active` | The embedder instance graphs use, or `none` (the default). A repo may narrow it per graph (no restart). | daemon restart |
+| `related` | `on` (the default) or `off`: whether `umx node add` and `umx batch` look for related nodes (existing nodes close in meaning) for each node they add. A graph's own `related` setting (`umx graph set`) and the call's `--related` or `--no-related` win over it. Machine only. | now |
 | `ui.dir` | The built graph view `umx ui` serves, an absolute path. Default: apps/ui beside the umx source. `UMX_UI_DIR` overrides it. Machine only. | now |
 | `ui.node` | The node `umx ui` runs, an absolute path. Default: the first `node` on `PATH`. Machine only. | now |
 | `embedders.<name>.kind` | `azure_openai` or `local`. | daemon restart |

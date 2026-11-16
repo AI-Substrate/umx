@@ -66,6 +66,15 @@ pub const SETTINGS: &[Setting] = &[
         apply: set_embedder,
     },
     Setting {
+        name: "related",
+        flag: "--related",
+        placeholder: "<on|off>",
+        example: "off",
+        summary: "whether node add and batch embed each new node to report up to 3 related existing nodes: on or off, over the machine's related setting; the --related and --no-related flags win for one call",
+        suggest: false,
+        apply: set_related,
+    },
+    Setting {
         name: "purpose",
         flag: "--purpose",
         placeholder: "<text>",
@@ -177,6 +186,25 @@ fn write_policy(meta: &mut GraphMeta, change: impl FnOnce(Policy) -> Policy) {
         None if policy == Policy::OPEN => {}
         None => meta.embedding = Some(GraphEmbedding::new(None, policy)),
     }
+}
+
+/// Records `related: true` or `false` in graph.json's embedding section (req-123, D80): the graph's word, over the
+/// machine's `related` setting; a call's flag wins over both. A graph with no section gets one to hold it.
+fn set_related(
+    meta: &mut GraphMeta,
+    _graph: &ValidName,
+    value: &str,
+) -> Result<Vec<Problem>, Problem> {
+    let on = match value.trim() {
+        "on" => true,
+        "off" => false,
+        _ => return Err(invalid("related is on or off")),
+    };
+    let policy = meta.file_policy();
+    meta.embedding
+        .get_or_insert_with(|| GraphEmbedding::new(None, policy))
+        .related = Some(on);
+    Ok(Vec::new())
 }
 
 /// A description as stored: trimmed, one line, at most [`MAX_DESCRIPTION_CHARS`] characters. Empty means none.

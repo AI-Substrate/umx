@@ -82,6 +82,7 @@ fn graph(w: &mut World, alias: &str, policy: Policy) {
         text_form: 1,
         policy,
         similarity: None,
+        related: None,
         extra: Default::default(),
     };
     w.svc

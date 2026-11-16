@@ -110,6 +110,10 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
    **usage 156**: near_duplicate names the candidate's type; another type hints only at near-identical wording, a
    shared scaffold with a different word or number never does; in a batch, `near_duplicate_line` names the
    earlier line that adds the near node: keep one of the two lines if they are the same thing.
+   **usage 204**: node add and an applied batch also list up to 3 `related` nodes (close in meaning, never called
+   duplicates) with scores; link to them or merge. `related_skipped` says why the check did not run and how to turn
+   it on. Use `--no-related` (or `umx graph set <alias> --related off`, `umx config set related off`) when adds must
+   be fast.
 2. **usage 005**: a node is something someone could agree with, argue against or be blocked by (an option,
    decision, criterion, open question, tension, constraint, owned deliverable). Not a passing remark, a
    restatement or a topic nobody took a position on.

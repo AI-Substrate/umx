@@ -144,6 +144,7 @@ fn run(ceiling: usize) {
     let started = Instant::now();
     for from in (0..nodes).step_by(250) {
         let mut req = op(Op::Batch {
+            related: None,
             raised_in: None,
             echo_sentences: false,
             lines: (from..from + 250)

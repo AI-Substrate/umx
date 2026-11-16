@@ -31,6 +31,7 @@ pub const HINTS: &[&str] = &[
     "reason_missing",
     "near_duplicate",
     "near_duplicate_line",
+    "related_skipped",
     "find_no_match",
     "resource_elsewhere",
     "entity_key_is_title",
@@ -224,6 +225,7 @@ pub const CODES: &[&str] = &[
     "off_vocabulary_edge_field",
     "near_duplicate",
     "near_duplicate_line",
+    "related_skipped",
     "find_no_match",
     "edge_exists",
     "evidence_appended",
@@ -2428,6 +2430,15 @@ pub fn near_duplicate_line(
         )
         .subject(subject.to_text())
         .candidates(candidates)
+}
+
+/// The related check (req-123) did not run for `count` new nodes of `graph`, for `reason` (its words); `fix` is
+/// the command that turns it on or shows what is missing.
+pub fn related_skipped(count: usize, reason: &'static str, fix: Command) -> Problem {
+    Problem::new("related_skipped")
+        .with("count", Slot::Count(count as u64))
+        .with("reason", Slot::Word(reason))
+        .with("fix", Slot::Command(fix))
 }
 
 /// node find returned no rows: find reads titles only (ws004 s24 field report), so say where else to look.

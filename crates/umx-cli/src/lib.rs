@@ -475,6 +475,7 @@ fn batch(rest: &[&str], ctx: &Context) -> Envelope {
         reason,
         echo_sentences,
         raised_in,
+        related,
         ..
     } = p.op
     else {
@@ -490,6 +491,7 @@ fn batch(rest: &[&str], ctx: &Context) -> Envelope {
                 refs,
                 refs_graph: graph,
                 raised_in,
+                related,
             },
             ..p
         },

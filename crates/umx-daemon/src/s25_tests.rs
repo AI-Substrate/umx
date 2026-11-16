@@ -221,6 +221,7 @@ fn daemon_paced(
 
 fn add(d: &Daemon, alias: &str, from: usize, n: usize) {
     let mut req = op(Op::Batch {
+        related: None,
         raised_in: None,
         echo_sentences: false,
         lines: (from..from + n)

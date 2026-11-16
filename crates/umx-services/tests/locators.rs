@@ -662,6 +662,7 @@ fn graph_with(w: &mut World, alias: &str, policy: umx_core::Policy) {
         text_form: 1,
         policy,
         similarity: None,
+        related: None,
         extra: Default::default(),
     };
     w.svc
