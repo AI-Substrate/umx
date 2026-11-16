@@ -53,7 +53,12 @@ check_range() {
     local label=$1 dir=$2 range=$3 want=$4 check=$5 code=0
     shift 5
     rm -f "$receipt"
-    env "$@" "$gate" --range "$range" --repo "$dir" --control --control-names "$work/names" \
+    local extra=()
+    if [ "${1:-}" = --remote ]; then
+        extra=(--remote "$2")
+        shift 2
+    fi
+    env "$@" "$gate" --range "$range" "${extra[@]+"${extra[@]}"}" --repo "$dir" --control --control-names "$work/names" \
         --control-hosts "$work/hosts" --receipt "$receipt" >"$out" 2>&1 || code=$?
     if [ "$code" != "$want" ]; then
         echo "FAIL: $label: exit $code, want $want" >&2
@@ -209,6 +214,61 @@ if [ "$code" = 0 ] || ! grep -q "no remote named" "$out"; then
     fail=1
 fi
 
+# the remote is asked, not the clone's tracking refs: a clone re-pointed to a clean remote keeps tracking refs to
+# private commits, and a branch made from them must still be checked
+private="$work/private"
+git clone -q "$base" "$private"
+(cd "$private" && printf 'built in /Users/%s/x\n' "$acct" >src/private.md && git add -A &&
+    GIT_AUTHOR_EMAIL="$(printf '%s@%s' someone realmail.com)" git commit -q -m "private")
+git clone -q --bare "$base" "$work/clean.git"
+repointed="$work/repointed"
+git clone -q "$private" "$repointed"
+git -C "$repointed" remote set-url origin "$work/clean.git"
+git -C "$repointed" checkout -q -b from-tracking origin/main
+check_range "a re-pointed clone: a branch from a stale tracking ref" "$repointed" HEAD 1 home-paths
+check_range "a re-pointed clone: a branch from a stale tracking ref (identity)" "$repointed" HEAD 1 commit-identity
+# a remote that cannot be asked fails closed, with the command to run
+dir=$(clone)
+git -C "$dir" remote set-url origin "$work/no-such-remote.git"
+code=0
+"$gate" --range HEAD --repo "$dir" --control --control-names "$work/names" --control-hosts "$work/hosts" \
+    >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || ! grep -q 'FAIL    remote-tips' "$out" || ! grep -q 'git ls-remote' "$out"; then
+    echo "FAIL: an unreachable remote did not fail closed with the ls-remote hint" >&2
+    fail=1
+fi
+no_echo "an unreachable remote"
+code=0
+printf 'refs/heads/x %s refs/heads/x %s\n' "$(git -C "$dir" rev-parse HEAD)" 0000000000000000000000000000000000000000 |
+    "$gate" --pre-push --remote origin --url "$work/no-such-remote.git" --repo "$dir" >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || ! grep -q 'FAIL    remote-tips' "$out"; then
+    echo "FAIL: --pre-push did not fail closed on an unreachable remote" >&2
+    fail=1
+fi
+# an empty remote leaves nothing out: the whole history is read, including the base's old dirty file
+git init -q --bare "$work/empty.git"
+dir=$(clone)
+git -C "$dir" remote add empty "$work/empty.git"
+check_range "an empty remote: the whole history" "$dir" HEAD 1 customer-names --remote empty
+if ! grep -q '1 new commit(s)' "$out"; then
+    echo "FAIL: an empty remote did not check the whole history" >&2
+    fail=1
+fi
+# a tip the remote reports that this clone lacks is skipped, and the tips it has still count
+git clone -q --bare "$base" "$work/ahead.git"
+ahead_work="$work/ahead-work"
+git clone -q "$work/ahead.git" "$ahead_work"
+(cd "$ahead_work" && git checkout -q -b extra && echo more >>README.md && git add -A && git commit -q -m extra &&
+    git push -q origin extra)
+dir=$(clone)
+git -C "$dir" remote add ahead "$work/ahead.git"
+(cd "$dir" && echo fine >>notes/clean.txt && git add -A && git commit -q -m "a clean change")
+check_range "a remote tip this clone lacks is skipped" "$dir" HEAD 0 "" --remote ahead
+if ! grep -q '1 new commit(s)' "$out"; then
+    echo "FAIL: the known remote tip was not left out" >&2
+    fail=1
+fi
+
 # the real run takes no list: --control-names without --control is refused
 code=0
 "$gate" --range origin/main..HEAD --repo "$dir" --control-names "$work/names" >"$out" 2>&1 || code=$?
@@ -223,7 +283,7 @@ if [ "$code" = 0 ]; then
     fail=1
 fi
 code=0
-echo "refs/heads/main abc refs/heads/main" | "$gate" --pre-push --remote origin --repo "$dir" >"$out" 2>&1 || code=$?
+echo "refs/heads/main abc refs/heads/main" | "$gate" --pre-push --remote origin --url "$base" --repo "$dir" >"$out" 2>&1 || code=$?
 if [ "$code" = 0 ] || ! grep -q 'FAIL    pre-push-input' "$out"; then
     echo "FAIL: --pre-push accepted a line that is not four fields" >&2
     fail=1
@@ -288,6 +348,21 @@ if git -C "$work/remote.git" rev-parse --verify --quiet refs/heads/from-second >
     echo "FAIL: hook: the second remote's commit reached the remote" >&2
     fail=1
 fi
+
+# the hook in a re-pointed clone: the remote's own answer decides, so the stale tracking ref does not hide the commit
+git clone -q --bare "$base" "$work/clean2.git"
+git clone -q "$private" "$work/repointed-pusher"
+check_install_into() { "$installer" --repo "$1" >/dev/null 2>&1 || { echo "FAIL: hook: install into $1" >&2; fail=1; }; }
+check_install_into "$work/repointed-pusher"
+git -C "$work/repointed-pusher" remote set-url origin "$work/clean2.git"
+git -C "$work/repointed-pusher" checkout -q -b from-tracking origin/main
+code=0
+HOME="$home" git -C "$work/repointed-pusher" push -q origin from-tracking >"$out" 2>&1 || code=$?
+if [ "$code" = 0 ] || git -C "$work/clean2.git" rev-parse --verify --quiet refs/heads/from-tracking >/dev/null; then
+    echo "FAIL: hook: a re-pointed clone pushed a private commit" >&2
+    fail=1
+fi
+no_echo "hook: a re-pointed clone"
 
 # a moved clone: the hook names a gate that is gone, so it refuses with the command to run
 mkdir -p "$work/tool/scripts"

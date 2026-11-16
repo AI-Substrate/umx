@@ -6,7 +6,7 @@
 #   scripts/seed-gate --range <base>..<head> [--repo DIR] [--receipt FILE]
 #   scripts/seed-gate --range <head> [--remote NAME] [--repo DIR] [--receipt FILE]   (<head>'s commits NAME lacks;
 #                                                                                      NAME defaults to origin)
-#   scripts/seed-gate --pre-push --remote NAME [--repo DIR]           (git's pre-push lines on stdin; see below)
+#   scripts/seed-gate --pre-push --remote NAME --url URL [--repo DIR]   (git's pre-push lines on stdin; see below)
 #
 # Range mode reads git objects, never the working folder: every new commit's author name, committer name, message and
 # identity (author and committer each a noreply address), and every blob a new commit adds or changes, with its path
@@ -17,7 +17,8 @@
 # the names exceptions, scripts/home-paths, the hook installer, the scan example, the lock check), because the range
 # reads those from the pushed head and a push must not approve itself. A range with no new commits passes ("nothing to
 # push"). --pre-push is what the hook from scripts/install-pre-push-hook runs: one range per pushed ref (a new branch:
-# its commits the remote being pushed to lacks, by that remote's tracking refs only; a deleted ref: nothing; a line
+# its commits the remote being pushed to lacks, by asking that remote (`git ls-remote`; this clone's tracking refs
+# are not trusted, and when the remote cannot be asked the check fails); a deleted ref: nothing; a line
 # that is not four fields: fail).
 #
 # STAGE is a seed folder (scripts/seed-export makes one): staged but not yet committed, or already committed with

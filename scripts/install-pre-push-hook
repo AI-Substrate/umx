@@ -45,7 +45,7 @@ if [ ! -x "\$gate" ]; then
     echo "  Run scripts/install-pre-push-hook again in this clone, then push again." >&2
     exit 1
 fi
-exec "\$gate" --pre-push --remote "\$1" --repo "\$(git rev-parse --show-toplevel)"
+exec "\$gate" --pre-push --remote "\$1" --url "\$2" --repo "\$(git rev-parse --show-toplevel)"
 HOOK
 chmod 0755 "$tmp"
 mv "$tmp" "$hook"

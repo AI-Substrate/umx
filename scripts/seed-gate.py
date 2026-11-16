@@ -41,14 +41,14 @@ def usage():
     sys.exit("usage: scripts/seed-gate <STAGE> [--receipt FILE] [--control --control-names FILE [--control-hosts FILE]]\n"
              "       scripts/seed-gate --range <base>..<head> [--repo DIR] [--receipt FILE] [--control ...]\n"
              "       scripts/seed-gate --range <head> [--remote NAME] [--repo DIR] [--receipt FILE] [--control ...]\n"
-             "       scripts/seed-gate --pre-push [--remote NAME] [--repo DIR]   (reads git's pre-push lines on stdin)")
+             "       scripts/seed-gate --pre-push --remote NAME --url URL [--repo DIR]   (git's pre-push lines on stdin)")
 
 
 def parse():
     if not ARGS:
         usage()
     opts = {"stage": None, "receipt": None, "control": False, "names": None, "hosts": None, "list_secrets": False,
-            "range": None, "repo": None, "pre_push": False, "remote": None}
+            "range": None, "repo": None, "pre_push": False, "remote": None, "url": None}
     rest = list(ARGS)
     if not rest[0].startswith("--"):
         opts["stage"] = rest.pop(0)
@@ -58,6 +58,8 @@ def parse():
             opts["range"] = rest.pop(0)
         elif flag == "--remote" and rest:
             opts["remote"] = rest.pop(0)
+        elif flag == "--url" and rest:
+            opts["url"] = rest.pop(0)
         elif flag == "--repo" and rest:
             opts["repo"] = rest.pop(0)
         elif flag == "--pre-push":
@@ -707,17 +709,51 @@ class Gate:
                      f"scripts/{name} failed on the seed (exit {run.returncode}); run it by hand on STAGE for the locations")
 
 
-def remote_exclusion(repo, remote):
-    """rev-list arguments that leave out what one named remote already has, by its remote-tracking refs.
+LS_REMOTE_TIMEOUT = 60  # seconds; a remote that does not answer in time fails the check closed
 
-    Only the remote being pushed to counts: a commit another remote holds is still new to this one (a branch made from
-    a second remote's commits must be checked). A remote this clone does not know by name (a push to a bare URL) has
-    no tracking refs, so nothing is left out and the whole history of the head is checked.
+
+def shown_url(url):
+    """The URL for the terminal, with any user or token before an @ left out."""
+    return re.sub(r"//[^/@]*@", "//", url)
+
+
+def remote_exclusion(repo, remote, url=None):
+    """rev-list arguments that leave out what the remote being pushed to really has, or None when it cannot be asked.
+
+    The remote is asked (`git ls-remote <url>`), not this clone's remote-tracking refs: a clone whose remote was
+    re-pointed (`git remote set-url`) keeps tracking refs to commits the new remote never saw. Only tips that also
+    exist here are left out (with their history); a tip this clone lacks is skipped. A remote that reports nothing
+    (empty) leaves nothing out. A remote this clone does not know by name (a push to a bare URL) leaves nothing out
+    either, so the whole history of the head is checked. `url` is git's second hook argument; without it the
+    remote's push URL is read from the config.
     """
-    names = git(repo, "remote").stdout.decode().split()
-    if remote not in names:
-        return [], f"(not a named remote here, so the whole history)"
-    return ["--not", f"--remotes={remote}"], f"--not --remotes={remote}"
+    if remote not in git(repo, "remote").stdout.decode().split():
+        return [], "(not a named remote here, so the whole history)"
+    if not url:
+        url = git(repo, "remote", "get-url", "--push", remote).stdout.decode().strip()
+    env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
+    try:
+        out = subprocess.run(["git", "-C", repo, "ls-remote", "--", url], capture_output=True, env=env,
+                             timeout=LS_REMOTE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None
+    if out.returncode != 0:
+        return None
+    tips = sorted({line.split()[0] for line in out.stdout.decode("utf-8", "replace").splitlines() if line.strip()})
+    if not tips:
+        return [], f"(the remote at {shown_url(url)} is empty, so the whole history)"
+    check = git(repo, "cat-file", "--batch-check", input="".join(f"{s}^{{commit}}\n" for s in tips).encode()).stdout
+    here = [s for s, line in zip(tips, check.decode().splitlines()) if not line.endswith("missing")]
+    if not here:
+        return [], f"(none of the {len(tips)} tip(s) at {shown_url(url)} are here, so the whole history)"
+    return ["--not", *here], f"--not the {len(here)} tip(s) {shown_url(url)} reports"
+
+
+def ls_remote_hint(remote, url):
+    target = shown_url(url) if url else remote
+    return (f"`git ls-remote {target}` failed or timed out, so nothing was checked (the gate asks the remote what "
+            f"it has). Run `git ls-remote {target}` to see why, or check an explicit range: "
+            "`scripts/seed-gate --range <base>..<head>`")
 
 
 def range_revs(repo, spec, remote=None):
@@ -733,7 +769,11 @@ def range_revs(repo, spec, remote=None):
     if remote not in git(repo, "remote").stdout.decode().split():
         sys.exit(f"seed-gate: no remote named '{remote}' here; name the remote you push to with --remote "
                  "(`git remote -v` lists them), or give the range as <base>..<head>")
-    exclusion, text = remote_exclusion(repo, remote)
+    found = remote_exclusion(repo, remote)
+    if found is None:
+        print("seed-gate: FAIL    remote-tips count=1")
+        sys.exit("seed-gate: hint (remote-tips): " + ls_remote_hint(remote, None))
+    exclusion, text = found
     return [spec, *exclusion], f"{spec} {text}"
 
 
@@ -741,7 +781,7 @@ def check_range(opts, repo, revs, label):
     """Runs the range checks; prints the summary; returns (passed, receipt)."""
     for rev in revs:
         if rev.startswith("--"):
-            continue  # --not, --remotes=<name>
+            continue  # --not
         if git(repo, "rev-parse", "--verify", "--quiet", rev.lstrip("^") + "^{commit}", check=False).returncode != 0:
             sys.exit(f"seed-gate: {rev.lstrip('^')} is not a commit here; fetch it first (`git fetch`), then run again")
     tree = RangeTree(repo, revs, label)
@@ -749,7 +789,7 @@ def check_range(opts, repo, revs, label):
     prefix = "seed-gate:"
     receipt = {"mode": "CONTROL" if opts["control"] else "RANGE", "range": label, "head": tree.head,
                "base": revs[1].lstrip("^") if len(revs) > 1 and revs[1].startswith("^") else
-                       (revs[2].replace("--remotes=", "not on remote ") if len(revs) > 2 else "none (whole history)"),
+                       (f"not reachable from {len(revs) - 2} remote tip(s)" if len(revs) > 2 else "none (whole history)"),
                "commits": tree.commits, "changed_blobs": 0, "range_pass": False}
     if tree.commits == 0:
         print(f"{prefix} range {label}: no new commits, nothing to push")
@@ -797,9 +837,9 @@ def pre_push(opts, repo):
     `--remote` is git's first hook argument: the name (or URL) of the remote being pushed to. A new branch is checked
     for its commits that remote lacks; a line that is not four fields fails closed.
     """
-    if not opts["remote"]:
-        sys.exit("seed-gate: --pre-push needs --remote <name or URL> (the hook passes git's $1); run "
-                 "scripts/install-pre-push-hook again to update the hook")
+    if not opts["remote"] or not opts["url"]:
+        sys.exit("seed-gate: --pre-push needs --remote <name or URL> and --url <URL> (the hook passes git's $1 and "
+                 "$2); run scripts/install-pre-push-hook again to update the hook")
     ok = True
     for line in sys.stdin.read().splitlines():
         if not line.strip():
@@ -819,7 +859,13 @@ def pre_push(opts, repo):
         if known:
             revs, label = [local, "^" + remote], f"{remote}..{local}"
         else:
-            exclusion, text = remote_exclusion(repo, opts["remote"])
+            found = remote_exclusion(repo, opts["remote"], opts["url"])
+            if found is None:
+                print("seed-gate: FAIL    remote-tips count=1")
+                print("seed-gate: hint (remote-tips): " + ls_remote_hint(opts["remote"], opts["url"]))
+                ok = False
+                continue
+            exclusion, text = found
             revs, label = [local, *exclusion], f"{local} {text}"
         passed, _receipt = check_range(opts, repo, revs, label)
         ok = ok and passed

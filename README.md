@@ -444,7 +444,9 @@ them. `scripts/seed-gate --range origin/main..HEAD` runs the same checks without
 push goes out only after security has reviewed that exact commit, from whoever owns pushes. The hook
 runs the gate and secret scanner of the clone that installed it, and reads the lists from the pushing user's home
 folder; if that clone moves, run the installer again. A new branch is checked for every commit the remote you push
-to does not have, even when another remote has it. `git push --no-verify` skips the hook.
+to does not report having: the gate asks that remote (`git ls-remote`) rather than trusting the clone's
+remote-tracking refs, and refuses the push when the remote cannot be asked. `git push --no-verify` skips the hook.
+Only the maintainer who owns pushes (the prime) pushes to this repository, and only from a fresh clone of it.
 
 ## License
 
