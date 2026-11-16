@@ -97,7 +97,7 @@
         {
           "id": "search-01",
           "title": "One list from three ways of finding",
-          "statement": "`umx search <words>` finds nodes three ways and returns one ranked list. Exact: the whole query equals a title, id, type, status, or the value of a field that is not prose. Words: the query's words appear in the title, the note or a string field, ranked so a rare word counts for more than a common one and a title match for more than a note match. Meaning: the node's vectors are close to the query's, so a paraphrase with none of the node's words can find it. Exact hits come first; words and meaning are fused by rank. Every hit says which ways found it, the field that matched in each, and its rank and score in each.",
+          "statement": "`umx search <words>` finds nodes three ways and returns one ranked list. Exact: the whole query, case ignored, equals a title, id, type, status, created, updated or created_by, or the value of a short field (a number, a date, a yes/no, or a string the type does not declare as text). Words: the query's words appear in the title, the note or a string field, ranked so a rare word counts for more than a common one and a title match for more than a note match. Meaning: the node's vectors are close to the query's, so a paraphrase with none of the node's words can find it. Exact hits come first; words and meaning are fused by rank. Every hit says which ways found it, the field that matched in each, and its rank and score in each.",
           "actor": "a-agent",
           "priority": "must",
           "state": "shipped",
@@ -274,12 +274,12 @@
         {
           "id": "search-17",
           "title": "Which graphs are searched",
-          "statement": "With no graph named, search covers every loaded open graph, one copy of each. Secured graphs are left out and only counted. A named graph is searched whatever its policy, and the reply says that its text is now in the output. A query is never sent to a hosted embedder on behalf of a graph that does not allow it; that graph is searched by words only and named.",
+          "statement": "With no graph named, search covers every loaded open graph, one copy of each. Secured graphs are left out and only counted. A graph named with `--graph` is searched whatever its policy. `--all --include-named` also searches every loaded named graph for that call only, and its reply (`secured_graphs_read`) names them and says that their text is now in the output. A query is never sent to a hosted embedder on behalf of a graph that does not allow it; that graph is searched by words only and named.",
           "actor": "a-agent",
           "priority": "must",
           "state": "shipped",
-          "done_when": "An unnamed search skips a secured graph and reports `secured_graphs_skipped: 1`; naming it searches it; with only a hosted embedder its hits have no vector leg and the reply says why.",
-          "source": "PRD 001 req-46, req-50, req-91",
+          "done_when": "An unnamed search skips a secured graph and reports `secured_graphs_skipped: 1`; naming it with `--graph` searches it; `--all --include-named` searches it and names it in `secured_graphs_read`; with only a hosted embedder its hits have no vector leg and the reply says why.",
+          "source": "PRD 001 req-46, req-91",
           "note": "The text in each hit (search-07) and the links (search-08) follow the same rule: a secured graph's text appears only when that graph was named."
         },
         {
