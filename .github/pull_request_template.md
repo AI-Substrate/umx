@@ -7,6 +7,7 @@ Hints: <the hint codes this PR adds or changes, or why none (D69: a read that hi
      (`just check` fails while a parsed flag is missing from the topic its `umx <cmd> --help` prints), a usage
      note in the docs/project/usage/README.md format, a link from agents-start-here for a new topic, and the
      note cited as `usage NNN` in its skill route. -->
+<!-- Every commit subject is a Conventional Commit (`feat:`, `fix:`, `feat!:` when breaking, `docs:`, `chore:`...): release-please reads them (docs/versioning.md). -->
 
 ## What and why
 

@@ -87,7 +87,8 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
-    let commit = git(&["rev-parse", "--short=12", "HEAD"]).unwrap_or_else(|| "unknown".to_owned());
+    // The full 40-character commit: a release binary names its tag's commit exactly (docs/versioning.md).
+    let commit = git(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_owned());
     println!("cargo:rustc-env=UMX_COMMIT={commit}");
     // The full commit, for doctor's pinned skill install line (F94): only when skills/umx is exactly as committed,
     // so the pinned commit holds the skill this build fingerprints. A dirty skill or no git gives "unknown".

@@ -430,6 +430,8 @@ settings live in `~/.umx/config.toml`; secrets never go in config files.
 - **Guides** for people: [organising graphs](docs/guide/organising-graphs.md),
   [loading, unloading and performance](docs/guide/loading-and-performance.md),
   [embeddings](docs/guide/embeddings.md) and [troubleshooting](docs/guide/troubleshooting.md).
+- **Versioning and releases**: what counts as a breaking change and how a release is cut,
+  [docs/versioning.md](docs/versioning.md).
 - **Design**: the product requirements in `docs/project/prds/`, the architecture in `docs/project/blueprints/`
   and benchmark runs in `docs/project/benchmarks/`.
 

@@ -75,6 +75,9 @@ lists every graph folder against the repository's `Graphfile`, and `umx graph lo
   `umx docs get organise` and `umx docs get linking`. How to write well: `umx docs get building`.
 - When a person has the graph view open (`umx ui`), `umx ui focus <node>` and `umx ui highlight <node>...`
   point at nodes in it and `umx ui selection` lists what they selected; see `umx docs get ui`.
+- `umx version` reports the release version and the full commit. umx is 0.x: a minor bump (0.1 to 0.2) may break
+  commands, flags, JSON fields or graph files; a patch never does. What counts as breaking:
+  https://github.com/AI-Substrate/umx/blob/main/docs/versioning.md.
 
 ## The /umx skill
 

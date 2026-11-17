@@ -374,7 +374,7 @@ umx keeps concept graphs as plain files and serves them through one local daemon
     umx --help                # the nouns and the commands that work offline
     umx node --help           # any noun's docs topic; also after a verb: umx node add --help
     umx daemon start          # in another window; see `umx docs get daemon`
-    umx version               # CLI and daemon builds (umx --version and umx -V are the same)
+    umx version               # CLI and daemon builds: version and full commit (also --version, -V)
     umx docs list             # every topic
     umx docs get install      # build from source, run the daemon, where files live, the /umx skill
     umx docs get git          # graphs in git: unload before git changes the files, merging branches
