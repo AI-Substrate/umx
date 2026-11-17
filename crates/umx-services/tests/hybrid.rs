@@ -1438,3 +1438,195 @@ fn each_hit_carries_a_cut_of_the_field_that_found_it() {
     };
     assert_eq!(order(&both), order(&again));
 }
+
+/// Two open-graph nodes on different concepts, the dog first so it holds the lower handle.
+fn dog_and_cat(locality: Locality) -> (World, Id, Id) {
+    let mut w = world_with(Concepts::new(locality));
+    graph(&mut w, "demo", Some(section(None, Policy::OPEN)));
+    let dog = add(&mut w, "demo", "Dog walking", "");
+    let cat = add(&mut w, "demo", "Cat food shortage", "");
+    run(&mut w);
+    (w, dog, cat)
+}
+
+fn phrasings(w: &World, text: &str, also: &[&str]) -> umx_services::Done<HybridResult> {
+    let also: Vec<String> = also.iter().map(|a| a.to_string()).collect();
+    w.svc
+        .search_phrasings(&ctx(), text, &also, None, 10, None)
+        .unwrap()
+}
+
+/// PRD 002 search-09 done_when: three phrasings give one list in which the node two of them find ranks above the node
+/// one finds at the same rank (a max over phrasings would tie them, and the dog's lower handle would lead); each hit
+/// lists its phrasings by position; the three go to the embedder in one call.
+#[test]
+fn three_phrasings_fuse_into_one_list_that_rewards_agreement_in_one_embed_call() {
+    let (w, dog, cat) = dog_and_cat(Locality::Local);
+    let before = w.embedder.calls();
+    let r = phrasings(&w, "feline", &["kitten", "canine"]).value;
+    assert_eq!(w.embedder.calls() - before, 1, "one embed call");
+    let got: Vec<(Id, Vec<usize>, Option<usize>)> = r
+        .hits
+        .iter()
+        .map(|h| {
+            (
+                h.node.id,
+                h.phrasings.clone(),
+                h.vector.as_ref().map(|v| v.rank),
+            )
+        })
+        .collect();
+    assert_eq!(got, [(cat, vec![1, 2], Some(1)), (dog, vec![3], Some(1))]);
+    assert_eq!(
+        r.hits[0].fused.to_bits(),
+        (1.0 / 61.0 + 1.0 / 61.0f64).to_bits()
+    );
+    assert_eq!(r.hits[1].fused.to_bits(), (1.0 / 61.0f64).to_bits());
+    assert_eq!((r.found, r.phrasings), (2, 3));
+}
+
+/// search-09: exact is a tier, not a term: a node one phrasing names exactly leads a node three phrasings find.
+#[test]
+fn a_node_exact_for_any_phrasing_is_exact_and_first() {
+    let (w, dog, cat) = dog_and_cat(Locality::Local);
+    let r = phrasings(&w, "feline", &["kitten", "cats", "dog walking"]).value;
+    let (first, second) = (&r.hits[0], &r.hits[1]);
+    assert_eq!(
+        (
+            first.node.id,
+            first.exact.as_deref(),
+            first.phrasings.clone()
+        ),
+        (dog, Some("title"), vec![4])
+    );
+    assert_eq!((second.node.id, second.exact.as_deref()), (cat, None));
+    assert_eq!(second.phrasings, [1, 2, 3]);
+    assert!(
+        second.fused > first.fused,
+        "{} > {}",
+        second.fused,
+        first.fused
+    );
+}
+
+/// search-09, security: every phrasing is scanned; one that looks like a secret, even the last of 5, keeps all of
+/// them off a hosted instance (one call, all or none), and a local instance is still asked once, for all of them.
+#[test]
+fn one_phrasing_that_looks_like_a_secret_keeps_every_phrasing_off_a_hosted_instance() {
+    // Built at run time so no key-shaped literal sits in the source.
+    let mut key = String::from("AKIA");
+    while key.len() < 20 {
+        key.push_str("Q7Z3X9K2");
+    }
+    key.truncate(20);
+    let holding_key = format!("kitten {key}");
+    for (locality, calls) in [(Locality::Hosted, 0), (Locality::Local, 1)] {
+        let (w, _, cat) = dog_and_cat(locality);
+        let before = w.embedder.calls();
+        let done = phrasings(
+            &w,
+            "feline",
+            &["kitten", "cats", "canine", holding_key.as_str()],
+        );
+        assert_eq!(w.embedder.calls() - before, calls, "{locality:?}");
+        let notes = format!("{:?}", done.notes);
+        assert!(!notes.contains(&key[4..12]), "{notes}");
+        match locality {
+            Locality::Hosted => {
+                assert!(
+                    done.notes.iter().any(|p| p.code == "similarity_unavailable"
+                        && format!("{p:?}").contains("secret")),
+                    "{notes}"
+                );
+                assert!(done.value.hits.iter().all(|h| h.vector.is_none()));
+            }
+            _ => {
+                assert_eq!(done.value.hits[0].node.id, cat);
+                assert_eq!(done.value.hits[0].phrasings, [1, 2, 3, 5]);
+            }
+        }
+    }
+}
+
+/// search-09: an instance that gives a vector count other than one per phrasing gives this search no vector leg at
+/// all, never a partial one, and says so (`similarity_unavailable`); the right count keeps it.
+#[test]
+fn a_wrong_vector_count_gives_no_vector_leg_never_a_partial_one() {
+    for (label, count) in [("too few", 2), ("too many", 4), ("one per phrasing", 3)] {
+        let (w, _, _) = dog_and_cat(Locality::Local);
+        let plan = w
+            .svc
+            .search_plan(&ctx(), "feline", None, 10)
+            .unwrap()
+            .also(&["kitten".into(), "canine".into()]);
+        let mut queries = plan.embed();
+        let name = queries.keys().next().unwrap().clone();
+        let mut vectors: Vec<Vec<f32>> = ["feline", "kitten", "canine"]
+            .iter()
+            .map(|t| vector_of(t))
+            .collect();
+        vectors.resize(count, vector_of("cat"));
+        queries.insert(name, Ok(vectors));
+        let done = w.svc.search_finish(plan, queries).unwrap();
+        let vector_hits = done
+            .value
+            .hits
+            .iter()
+            .filter(|h| h.vector.is_some())
+            .count();
+        let unavailable = done
+            .notes
+            .iter()
+            .any(|p| p.code == "similarity_unavailable");
+        assert_eq!(
+            (vector_hits > 0, unavailable),
+            (count == 3, count != 3),
+            "{label}: {vector_hits} vector hits, {:?}",
+            done.notes
+        );
+    }
+}
+
+/// search-09: a hit shows the leg details of its best phrasing, the one that gave it the largest term, and of the
+/// earlier phrasing when two give the same term.
+#[test]
+fn a_hit_shows_its_best_phrasings_details_and_the_earlier_on_a_tie() {
+    let mut w = world_with(Concepts::new(Locality::Local));
+    graph(&mut w, "demo", Some(section(None, Policy::OPEN)));
+    let food = add(&mut w, "demo", "Cat food shortage", "");
+    let story = add(&mut w, "demo", "Cat story", "");
+    run(&mut w);
+    // "cat food" ranks the food node first, "cat" the story node: each hit shows the phrasing that ranked it 1.
+    let r = phrasings(&w, "cat food", &["cat"]).value;
+    let shown: Vec<(Id, Option<usize>, Vec<usize>)> = r
+        .hits
+        .iter()
+        .map(|h| {
+            (
+                h.node.id,
+                h.vector.as_ref().map(|v| v.rank),
+                h.phrasings.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [(food, Some(1), vec![1, 2]), (story, Some(1), vec![1, 2])]
+    );
+    assert!(
+        r.hits
+            .iter()
+            .all(|h| h.vector.as_ref().unwrap().cosine > 0.99)
+    );
+
+    // One node both phrasings rank 1: equal terms, so the shown cosine is the first phrasing's (cat: 0.707), not
+    // the second's (cat cat dog: 0.949).
+    let mut w = world_with(Concepts::new(Locality::Local));
+    graph(&mut w, "demo", Some(section(None, Policy::OPEN)));
+    add(&mut w, "demo", "Cat dog", "");
+    run(&mut w);
+    let r = phrasings(&w, "cat", &["cat cat dog"]).value;
+    let v = r.hits[0].vector.as_ref().unwrap();
+    assert_eq!((v.rank, r.hits[0].phrasings.clone()), (1, vec![1, 2]));
+    assert!((v.cosine - 0.707).abs() < 0.01, "{}", v.cosine);
+}

@@ -112,7 +112,7 @@ Every topic, also printed by `umx <noun> --help`:
     umx docs get neighbours  # scoped incoming and outgoing neighbours
     umx docs get walk        # scoped breadth-first walks
     umx docs get path        # scoped shortest paths
-    umx docs get search      # words and meaning, fused, best first
+    umx docs get search      # words and meaning, fused, best first; several phrasings with --also
     umx docs get query       # read-only Cypher for joins, counts and conditions
     umx docs get batch       # many adds and edits as one all-or-nothing change
     umx docs get scope       # lists of graphs and saved scopes

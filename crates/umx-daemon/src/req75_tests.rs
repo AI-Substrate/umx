@@ -228,6 +228,7 @@ fn search(d: &Daemon, text: &str, graphs: &str) -> Envelope {
             within: None,
             limit: None,
             along: None,
+            also: Vec::new(),
         },
         Some(graphs),
     ))

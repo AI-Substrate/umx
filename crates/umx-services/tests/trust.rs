@@ -843,8 +843,8 @@ fn all_graph_legs_read_the_vector_of_their_own_instance() {
         .iter()
         .map(|v| f32::from(*v))
         .collect();
-    queries.insert("twin".into(), Ok(vec![0.0; 8]));
-    queries.insert("rogue".into(), Ok(exact));
+    queries.insert("twin".into(), Ok(vec![vec![0.0; 8]]));
+    queries.insert("rogue".into(), Ok(vec![exact]));
     let found = w.svc.search_finish(plan, queries).unwrap();
     assert!(
         found

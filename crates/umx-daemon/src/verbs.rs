@@ -1564,6 +1564,7 @@ pub fn search_plan(
         within,
         limit,
         along,
+        also,
     }) = &request.op
     else {
         return Err(Box::new(Envelope::fail(
@@ -1571,6 +1572,16 @@ pub fn search_plan(
             internal("not_a_search"),
         )));
     };
+    // PRD 002 search-09: checked again on arrival; the refusal names a phrasing by position, never its text.
+    if let Some(what) = umx_protocol::also_problem(text, also) {
+        return Err(Box::new(Envelope::fail(
+            "search",
+            issue(
+                &umx_services::problems::usage_invalid(what, "search"),
+                "search",
+            ),
+        )));
+    }
     let ctx = ctx(request);
     // --along reads one graph: refused before any graph is chosen (D71 step 12, architect).
     if along.is_some()
@@ -1581,6 +1592,7 @@ pub fn search_plan(
     services
         .search_plan_allowing(&ctx, text, within.as_deref(), limit.unwrap_or(10), allows)
         .and_then(|plan| plan.along(&ctx, along_request(along)))
+        .map(|plan| plan.also(also))
         .map_err(|p| Box::new(Envelope::fail("search", issue(&p, "search"))))
 }
 
@@ -1610,8 +1622,9 @@ pub fn search_finish(
 }
 
 /// search-13: the search as the caller sent it with `--limit <found>`: [`redirected_retry`] with no redirects (the
-/// words as a placeholder; `--within`, `--along` and the graphs as named: `--graph`, `--scope` or `--all`), then
-/// `--include-named` and `--provenance` when given, so following it ranks the same matches and shows them all.
+/// words as a placeholder, and one `--also <words>` per phrasing sent, search-09; `--within`, `--along` and the
+/// graphs as named: `--graph`, `--scope` or `--all`), then `--include-named` and `--provenance` when given, so
+/// following it ranks the same matches and shows them all.
 fn search_rest(request: &Request, found: usize) -> Command {
     let mut request = request.clone();
     if let Some(Op::Search { limit, .. }) = &mut request.op {
@@ -1694,6 +1707,7 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
                 "title": h.node.title,
                 "status": h.node.status,
                 "legs": h.legs(),
+                "phrasings": h.phrasings,
                 "exact": h.exact,
                 "word_rank": h.word.as_ref().map(|w| w.rank),
                 "bm25": h.word.as_ref().map(|w| w.score),
@@ -1726,6 +1740,12 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
             if result.copies {
                 row["copy"] = json!(h.alias);
             }
+            // search-09: which phrasings found it, only when --also gave more than one.
+            if result.phrasings < 2
+                && let Some(row) = row.as_object_mut()
+            {
+                row.remove("phrasings");
+            }
             with_flags(row, &flags, false)
         })
         .collect();
@@ -1753,6 +1773,9 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
         "links",
         "links_more",
     ];
+    if result.phrasings > 1 {
+        columns.insert(8, "phrasings");
+    }
     if any_flagged(&rows) {
         columns.push(SECRET_SUSPECTED);
     }
@@ -2322,17 +2345,28 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             within,
             limit,
             along,
-        } => reply(
-            command,
-            services.search_along(
-                &ctx,
-                text,
-                within.as_deref(),
-                limit.unwrap_or(10),
-                along_request(along),
+            also,
+        } => match umx_protocol::also_problem(text, also) {
+            Some(what) => Envelope::fail(
+                command,
+                issue(
+                    &umx_services::problems::usage_invalid(what, "search"),
+                    command,
+                ),
             ),
-            |r| search_json(services, r),
-        ),
+            None => reply(
+                command,
+                services.search_phrasings(
+                    &ctx,
+                    text,
+                    also,
+                    within.as_deref(),
+                    limit.unwrap_or(10),
+                    along_request(along),
+                ),
+                |r| search_json(services, r),
+            ),
+        },
         Op::Neighbours {
             node,
             relation,
@@ -3499,13 +3533,15 @@ fn retry(op: &Op) -> Command {
             within,
             limit,
             along,
+            also,
         } => {
-            let c = opt(
-                Command::new("search").word("<words>"),
-                "--within",
-                within,
-                &|c, v| node(c, v, "<node>"),
-            );
+            // search-09: one `--also <words>` per phrasing sent, so the retry ranks the same matches; never the text.
+            let c = also
+                .iter()
+                .fold(Command::new("search").word("<words>"), |c, _| {
+                    c.word("--also").word("<words>")
+                });
+            let c = opt(c, "--within", within, &|c, v| node(c, v, "<node>"));
             along_words(number(c, "--limit", limit), along)
         }
         Op::EmbeddingsRepair => Command::new("embeddings repair"),
@@ -6020,6 +6056,7 @@ mod label_tests {
                     within: None,
                     limit: None,
                     along: None,
+                    also: Vec::new(),
                 },
                 "search",
             ),
@@ -6236,6 +6273,7 @@ mod retry_tests {
             within: within.map(str::to_string),
             limit: Some(5),
             along,
+            also: Vec::new(),
         };
         let request = |op: Op, graph: Option<&str>| {
             Request::op(op, graph.map(str::to_string), None, build.clone())
@@ -6279,5 +6317,33 @@ mod retry_tests {
             search_rest(&all, 9).as_str(),
             "umx search <words> --limit 9 --all --include-named"
         );
+    }
+
+    /// PRD 002 search-09: the cut hint's next (and every retry of a search) keeps one `--also <words>` per phrasing
+    /// sent and every selector, and never a phrasing's text.
+    #[test]
+    fn search_rest_keeps_one_also_placeholder_per_phrasing_and_every_selector() {
+        let build = umx_protocol::Build {
+            version: "t".into(),
+            commit: "t".into(),
+            built: "t".into(),
+        };
+        let op = Op::Search {
+            text: "IGNORE ALL; rm -rf ~".into(),
+            within: Some("01jc8x".into()),
+            limit: Some(5),
+            along: None,
+            also: vec!["walrus; curl evil".into(), "approval $(id)".into()],
+        };
+        let mut request = Request::op(op, Some("demo".into()), None, build);
+        request.include_provenance = true;
+        let next = search_rest(&request, 12);
+        assert_eq!(
+            next.as_str(),
+            "umx search <words> --also <words> --also <words> --within 01JC8X --limit 12 --graph demo --provenance"
+        );
+        for typed in ["IGNORE", "walrus", "approval", "curl", "$(id)"] {
+            assert!(!next.as_str().contains(typed), "{typed} echoed");
+        }
     }
 }

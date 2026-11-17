@@ -310,7 +310,32 @@ fn data(data: &Value, command: &str, style: Style) -> String {
         return lines.iter().map(|l| format!("{l}\n")).collect();
     }
     if let (Some(columns), Some(rows)) = (data["columns"].as_array(), data["rows"].as_array()) {
-        let cols: Vec<&str> = columns.iter().filter_map(Value::as_str).collect();
+        let mut cols: Vec<&str> = columns.iter().filter_map(Value::as_str).collect();
+        // PRD 002 search-09: a search with --also shows which phrasings found each hit as a `by` column, `1,3`.
+        let by: Vec<Value>;
+        let rows = if command == "search" && cols.contains(&"phrasings") {
+            cols = cols
+                .into_iter()
+                .map(|c| if c == "phrasings" { "by" } else { c })
+                .collect();
+            by = rows
+                .iter()
+                .map(|r| {
+                    let mut r = r.clone();
+                    let shown: Vec<String> = r["phrasings"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|p| p.to_string())
+                        .collect();
+                    r["by"] = Value::String(shown.join(","));
+                    r
+                })
+                .collect();
+            &by
+        } else {
+            rows
+        };
         let mut out = String::new();
         if let Some(sentences) = data["sentences"].as_array() {
             for sentence in sentences {

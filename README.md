@@ -217,12 +217,14 @@ Pick the read that matches the question.
 
 Without an embedder, search still works: it returns word and exact matches and says so with the hint
 `similarity_unavailable`.
-Each hit says how it was found (`legs`: `exact`, `word`, `vector` or `both`) and its scores. See
-`umx docs get search`.
+Each hit says how it was found (`legs`: `exact`, `word`, `vector` or `both`) and its scores. `--also` adds up to 4
+more phrasings of the same question to one search, fused into one list, each hit naming the phrasings that found it
+by position. See `umx docs get search`.
 
     umx search approval backlog
     umx search approval backlog --graph launch --limit 5
     umx search "vendor iso27001" --graph launch,ops
+    umx search approval backlog --also "sign-off waits" --graph launch
 
 ### Query
 

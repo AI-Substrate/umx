@@ -182,7 +182,7 @@ const TOPICS: &[Topic] = &[
     Topic {
         name: "search",
         title: "Search",
-        summary: "umx search: exact, word and vector matches; --all, per-call --include-named, and explicit --graph lists.",
+        summary: "umx search: exact, word and vector matches; several phrasings with --also; --all, per-call --include-named, and explicit --graph lists.",
         markdown: || include_str!("../docs/search.md").to_owned(),
     },
     Topic {

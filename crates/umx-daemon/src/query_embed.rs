@@ -159,21 +159,27 @@ impl QueryLanes {
         f(lane)
     }
 
-    /// The query's vector from `embedder`, waiting at most the bound from now (any wait behind another search's
-    /// embed included). On time-out the search goes on with words only; `warming` says the instance has never
-    /// answered, so a local model may still be loading.
+    /// The query's vectors from `embedder`, one per phrasing (PRD 002 search-09: every phrasing in one call),
+    /// waiting at most the bound from now for the whole call (any wait behind another search's embed included). On
+    /// time-out the search goes on with words only; `warming` says the instance has never answered, so a local model
+    /// may still be loading.
+    pub(crate) fn embed_all(
+        &self,
+        embedder: &Arc<dyn Embedder>,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>, QueryFailed> {
+        self.ask(embedder, texts.to_vec(), TextKind::Query, Turn::Search)
+    }
+
+    /// [`Self::embed_all`] of one text.
+    #[cfg(test)]
     pub(crate) fn embed(
         &self,
         embedder: &Arc<dyn Embedder>,
         text: &str,
     ) -> Result<Vec<f32>, QueryFailed> {
-        self.ask(
-            embedder,
-            vec![text.to_string()],
-            TextKind::Query,
-            Turn::Search,
-        )
-        .map(|mut v| v.pop().unwrap_or_default())
+        self.embed_all(embedder, &[text.to_string()])
+            .map(|mut v| v.pop().unwrap_or_default())
     }
 
     /// A write's related check (req-123): several texts of one `kind` in one request, under the same bound, taken
@@ -433,6 +439,26 @@ mod tests {
         );
         drop(go);
         wait_until("the lane drained", || !lanes.busy(&e));
+    }
+
+    /// PRD 002 search-09: a search's phrasings go to the instance in one call, one vector each, and the bound covers
+    /// the whole call: with the call held, the search times out as one query does, warming until the instance has
+    /// answered. Let go, the instance has made one call for all five.
+    #[test]
+    fn every_phrasing_goes_in_one_call_under_one_bound() {
+        let lanes = QueryLanes::with_bound(Duration::from_secs(1));
+        let (inner, starts, go) = gate();
+        let e: Arc<dyn Embedder> = inner.clone();
+        let five: Vec<String> = (1..=5).map(|i| format!("phrasing {i}")).collect();
+        assert_eq!(
+            lanes.embed_all(&e, &five),
+            Err(QueryFailed::TimedOut { warming: true })
+        );
+        assert_eq!(started(&starts), "phrasing 1");
+        drop(go);
+        wait_until("the held call finished", || !lanes.busy(&e));
+        assert_eq!(lanes.embed_all(&e, &five).map(|v| v.len()), Ok(5));
+        assert_eq!(inner.calls.load(Ordering::SeqCst), 2, "one call per search");
     }
 
     /// A search's budget counts its wait behind another search's embed, and a search that gave up is never run. The

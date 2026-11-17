@@ -6,12 +6,17 @@
 //!
 //! Deterministic (architect): the constants are named, sums run in a fixed order (word leg then vector leg), and ties
 //! go to the graph alias and then the lower handle, as `umx search` has ordered since s10.
+//!
+//! PRD 002 search-09: a search may carry up to 5 phrasings of one question (`--also`). Each runs its own exact, word
+//! and vector legs over the same graphs, scope and floor; the phrasings are embedded in one call per instance, and
+//! [`fuse_phrasings`] sums each node's credit over them, so agreement between phrasings ranks a node higher.
 
 use crate::graph_store::GRAPH_WIDE;
 use crate::{Ctx, Done, Outcome, Services, problems};
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use umx_core::ports::{EmbedError, Embedder, GraphDir, Locality, ModelKey, TextKind};
 use umx_core::secrets;
@@ -72,8 +77,11 @@ pub struct HybridHit {
     pub exact: Option<String>,
     pub word: Option<WordMatch>,
     pub vector: Option<VectorMatch>,
-    /// The reciprocal rank sum over the legs that found it.
+    /// The reciprocal rank sum over the legs that found it, summed over the phrasings.
     pub fused: f64,
+    /// PRD 002 search-09: the 1-based positions of the phrasings that found it (1 is the main text, 2 to 5 each
+    /// `--also` in order). `word` and `vector` are those of its best phrasing, the largest term in its sum.
+    pub phrasings: Vec<usize>,
 }
 
 impl HybridHit {
@@ -132,6 +140,8 @@ pub struct HybridResult {
     pub copies: bool,
     /// The spine range the legs were narrowed to (`--along`, D71 step 12), with what it left out of the graph.
     pub along: Option<crate::AlongInfo>,
+    /// How many phrasings were searched: 1, or more with `--also` (PRD 002 search-09).
+    pub phrasings: usize,
 }
 
 /// Why a vector space got no query vector.
@@ -142,27 +152,32 @@ pub enum QueryFailed {
     /// The embed took longer than its bound (req-53, 5 s in the daemon). `warming`: the instance has not answered
     /// a query yet, so a local model may still be loading.
     TimedOut { warming: bool },
-    /// The query looks like it holds a secret and the instance is not local, so it was not asked (req-49).
+    /// The query (any of its phrasings) looks like it holds a secret and the instance is not local, so it was not
+    /// asked (req-49; PRD 002 search-09: all or none).
     Secret,
     /// A graph whose leg uses the instance no longer admits it (its embedder setting changed since the
     /// plan, or its folder's config), so it was not asked (D53).
     NotAdmitted,
 }
 
-/// The query vectors of one search, one per embedder instance (by name) a vector leg uses. Two instances of one
-/// model are kept apart, so each graph's leg reads only the vector of the instance its own setting admits (D53).
-pub type QueryVectors = BTreeMap<String, Result<Vec<f32>, QueryFailed>>;
+/// The query vectors of one search, by embedder instance (by name) a vector leg uses: one vector per phrasing, in
+/// order. Two instances of one model are kept apart, so each graph's leg reads only the vectors of the instance its
+/// own setting admits (D53).
+pub type QueryVectors = BTreeMap<String, Result<Vec<Vec<f32>>, QueryFailed>>;
 
 /// Whether graph `alias`'s leg may still use instance `name`, asked right before the instance is sent the query.
 pub type Admitted<'a> = &'a dyn Fn(&str, &str) -> bool;
 
-/// How one query embed is run: the daemon bounds it in time (req-53); [`SearchPlan::embed`] calls it directly.
-pub type QueryRunner<'a> = &'a dyn Fn(&Arc<dyn Embedder>, &str) -> Result<Vec<f32>, QueryFailed>;
+/// How one query embed is run, every phrasing in one call: the daemon bounds it in time (req-53);
+/// [`SearchPlan::embed`] calls it directly.
+pub type QueryRunner<'a> =
+    &'a dyn Fn(&Arc<dyn Embedder>, &[String]) -> Result<Vec<Vec<f32>>, QueryFailed>;
 
 /// A search decided under the shared lock: the graphs, which of them get a vector leg (and in which space), and the
 /// warnings so far. Holds no borrow of the services.
 pub struct SearchPlan {
-    text: String,
+    /// The phrasings: the main text, then each `--also` (PRD 002 search-09).
+    texts: Vec<String>,
     include_provenance: bool,
     within: Option<String>,
     limit: usize,
@@ -202,10 +217,11 @@ impl SearchPlan {
     /// [`Self::embed`] through `run`, which may bound each call. Right before an instance is asked, `admitted` must
     /// hold for every graph whose leg uses it, else it is not asked ([`QueryFailed::NotAdmitted`]). A query that looks
     /// like it holds a secret is never sent to an instance that is not local (req-49, security s08): that instance
-    /// fails with [`QueryFailed::Secret`].
+    /// fails with [`QueryFailed::Secret`]. Every phrasing goes in the one call, and is scanned: if any looks like a
+    /// secret, no instance that is not local is asked at all (PRD 002 search-09).
     pub fn embed_with(&self, admitted: Admitted<'_>, run: QueryRunner<'_>) -> QueryVectors {
         let mut out = QueryVectors::new();
-        let secret = secrets::scan(&self.text).is_some();
+        let secret = self.texts.iter().any(|t| secrets::scan(t).is_some());
         for (name, embedder) in &self.embedders {
             let mut legs = self.routes.iter().filter(|(_, n)| *n == name).peekable();
             if legs.peek().is_none() {
@@ -216,7 +232,7 @@ impl SearchPlan {
             } else if secret && embedder.locality() != Locality::Local {
                 Err(QueryFailed::Secret)
             } else {
-                run(embedder, &self.text)
+                run(embedder, &self.texts)
             };
             out.insert(name.clone(), vector);
         }
@@ -242,13 +258,21 @@ impl SearchPlan {
         self.along = along;
         Ok(self)
     }
+
+    /// PRD 002 search-09: more phrasings of the question (`--also`), each searched alike over the same graphs,
+    /// scope and floor, and fused into one list. The caller has checked them (at most 4, none empty or repeated:
+    /// `umx_protocol::also_problem`).
+    pub fn also(mut self, also: &[String]) -> SearchPlan {
+        self.texts.extend(also.iter().cloned());
+        self
+    }
 }
 
-/// One query embed, unbounded.
-fn ask(embedder: &Arc<dyn Embedder>, text: &str) -> Result<Vec<f32>, QueryFailed> {
+/// One query embed of every phrasing, unbounded.
+fn ask(embedder: &Arc<dyn Embedder>, texts: &[String]) -> Result<Vec<Vec<f32>>, QueryFailed> {
     embedder
-        .embed(&[text.to_string()], TextKind::Query)
-        .map(|mut e| e.vectors.pop().unwrap_or_default())
+        .embed(texts, TextKind::Query)
+        .map(|e| e.vectors)
         .map_err(QueryFailed::Embed)
 }
 
@@ -345,52 +369,108 @@ pub struct Fused {
     pub word: Option<WordMatch>,
     pub vector: Option<VectorMatch>,
     pub fused: f64,
+    /// The 1-based positions of the phrasings that found it (PRD 002 search-09).
+    pub phrasings: Vec<usize>,
 }
+
+/// One phrasing's legs as [`fuse`] takes them: its exact hits, its word leg and its vector leg, each best first.
+pub type Legs<'a> = (&'a [(String, Id, String)], &'a WordRanked, &'a Ranked);
 
 /// Reciprocal rank fusion (008 section 11, rules 1, 2 and 4; embeddings-expert's coverage, s11), pure: `exact` hits
 /// lead in (alias, handle) order; the rest by `coverage / (RRF_K + word rank) + 1 / (RRF_K + vector rank)` (word
 /// then vector), then the better single-leg rank, then alias, then handle. Every key in any input is in the output
-/// once.
+/// once. One phrasing: [`fuse_phrasings`] with one entry.
 pub fn fuse(
     exact: &[(String, Id, String)],
     word: &WordRanked,
     vector: &Ranked,
 ) -> Vec<((String, Id), Fused)> {
-    let mut by: BTreeMap<(String, Id), Fused> = BTreeMap::new();
-    for (alias, h, field) in exact {
-        by.entry((alias.clone(), *h)).or_default().exact = Some(field.clone());
+    fuse_phrasings(&[(exact, word, vector)])
+}
+
+/// [`fuse`] over several phrasings of one question (PRD 002 search-09; architect, embeddings-expert): a node exact
+/// for any phrasing is exact (a tier, not a term, so phrasings cannot outweigh exact hits), reporting the field of
+/// the first phrasing that matched it exactly. Each phrasing's term is its `coverage / (RRF_K + word rank) +
+/// 1 / (RRF_K + vector rank)`, and a node's fused score sums the terms in phrasing order, so a node two phrasings
+/// find at rank r scores 2 / (RRF_K + r) against 1 / (RRF_K + r) for one. No 1/P scale: one factor for every node
+/// cannot change the order. The word and vector a node shows are those of its best phrasing (its largest term, the
+/// earlier on a tie); ties in the sum go to the best single-leg rank over every phrasing, then alias, then handle.
+/// With one phrasing this is [`fuse`]'s ranking, bit for bit.
+pub fn fuse_phrasings(phrasings: &[Legs<'_>]) -> Vec<((String, Id), Fused)> {
+    struct Found {
+        exact: Option<String>,
+        /// Per phrasing: found exactly, its word match, its vector match.
+        each: Vec<(bool, Option<WordMatch>, Option<VectorMatch>)>,
     }
-    for (i, (alias, h, score, field, coverage, terms)) in word.iter().enumerate() {
-        by.entry((alias.clone(), *h)).or_default().word = Some(WordMatch {
-            rank: i + 1,
-            score: *score,
-            field: field.clone(),
-            coverage: *coverage,
-            terms: terms.clone(),
-        });
+    let mut by: BTreeMap<(String, Id), Found> = BTreeMap::new();
+    let new = || Found {
+        exact: None,
+        each: vec![(false, None, None); phrasings.len()],
+    };
+    for (p, (exact, word, vector)) in phrasings.iter().enumerate() {
+        for (alias, h, field) in exact.iter() {
+            let f = by.entry((alias.clone(), *h)).or_insert_with(new);
+            f.exact.get_or_insert_with(|| field.clone());
+            f.each[p].0 = true;
+        }
+        for (i, (alias, h, score, field, coverage, terms)) in word.iter().enumerate() {
+            by.entry((alias.clone(), *h)).or_insert_with(new).each[p].1 = Some(WordMatch {
+                rank: i + 1,
+                score: *score,
+                field: field.clone(),
+                coverage: *coverage,
+                terms: terms.clone(),
+            });
+        }
+        for (i, (alias, h, score, field)) in vector.iter().enumerate() {
+            by.entry((alias.clone(), *h)).or_insert_with(new).each[p].2 = Some(VectorMatch {
+                rank: i + 1,
+                cosine: *score as f32,
+                field: field.clone(),
+            });
+        }
     }
-    for (i, (alias, h, score, field)) in vector.iter().enumerate() {
-        by.entry((alias.clone(), *h)).or_default().vector = Some(VectorMatch {
-            rank: i + 1,
-            cosine: *score as f32,
-            field: field.clone(),
-        });
-    }
-    let mut out: Vec<((String, Id), Fused)> = by
+    let leg = |r: usize| 1.0 / (RRF_K + r as f64);
+    let mut out: Vec<((String, Id), Fused, usize)> = by
         .into_iter()
-        .map(|(k, mut f)| {
-            let leg = |r: usize| 1.0 / (RRF_K + r as f64);
-            f.fused = f.word.as_ref().map_or(0.0, |w| w.coverage * leg(w.rank))
-                + f.vector.as_ref().map_or(0.0, |v| leg(v.rank));
-            (k, f)
+        .map(|(k, found)| {
+            let (mut sum, mut best, mut rank) = (None::<f64>, None::<(f64, usize)>, usize::MAX);
+            for (p, (_, word, vector)) in found.each.iter().enumerate() {
+                if word.is_none() && vector.is_none() {
+                    continue;
+                }
+                let term = word.as_ref().map_or(0.0, |w| w.coverage * leg(w.rank))
+                    + vector.as_ref().map_or(0.0, |v| leg(v.rank));
+                sum = Some(sum.map_or(term, |s| s + term));
+                if best.is_none_or(|(t, _)| term > t) {
+                    best = Some((term, p));
+                }
+                let w = word.as_ref().map_or(usize::MAX, |w| w.rank);
+                let v = vector.as_ref().map_or(usize::MAX, |v| v.rank);
+                rank = rank.min(w).min(v);
+            }
+            let phrasings = found
+                .each
+                .iter()
+                .enumerate()
+                .filter(|(_, (exact, word, vector))| *exact || word.is_some() || vector.is_some())
+                .map(|(p, _)| p + 1)
+                .collect();
+            let (word, vector) = match best {
+                Some((_, p)) => (found.each[p].1.clone(), found.each[p].2.clone()),
+                None => (None, None),
+            };
+            let fused = Fused {
+                exact: found.exact,
+                word,
+                vector,
+                fused: sum.unwrap_or(0.0),
+                phrasings,
+            };
+            (k, fused, rank)
         })
         .collect();
-    let best = |f: &Fused| {
-        let w = f.word.as_ref().map_or(usize::MAX, |w| w.rank);
-        let v = f.vector.as_ref().map_or(usize::MAX, |v| v.rank);
-        w.min(v)
-    };
-    out.sort_by(|(ka, a), (kb, b)| {
+    out.sort_by(|(ka, a, ra), (kb, b, rb)| {
         b.exact
             .is_some()
             .cmp(&a.exact.is_some())
@@ -398,12 +478,12 @@ pub fn fuse(
                 if a.exact.is_some() && b.exact.is_some() {
                     core::cmp::Ordering::Equal
                 } else {
-                    b.fused.total_cmp(&a.fused).then(best(a).cmp(&best(b)))
+                    b.fused.total_cmp(&a.fused).then(ra.cmp(rb))
                 }
             })
             .then_with(|| ka.cmp(kb))
     });
-    out
+    out.into_iter().map(|(k, f, _)| (k, f)).collect()
 }
 
 /// The text a custom field's value matches exactly: a string, number or bool as written. Lists and objects never.
@@ -564,7 +644,7 @@ impl Services {
             }
         }
         Ok(SearchPlan {
-            text: text.to_string(),
+            texts: vec![text.to_string()],
             include_provenance: ctx.include_provenance,
             within: within.map(str::to_string),
             limit,
@@ -600,7 +680,7 @@ impl Services {
     ) -> Outcome<HybridResult> {
         let store = &self.graph;
         let SearchPlan {
-            text,
+            texts,
             include_provenance,
             within,
             limit,
@@ -680,8 +760,10 @@ impl Services {
         };
         // Keys again, and the query vectors.
         let mut failed: BTreeSet<&'static str> = BTreeSet::new();
-        // By instance: a leg reads only the vector of the instance it was planned with (D53).
-        let mut query: BTreeMap<String, Vec<i8>> = BTreeMap::new();
+        // By instance: a leg reads only the vectors of the instance it was planned with (D53), one per phrasing. An
+        // instance that gave too few, or one with no direction, gives this search no vector leg at all (search-09:
+        // all or none, as the secret rule).
+        let mut query: BTreeMap<String, Vec<Vec<i8>>> = BTreeMap::new();
         legs.retain(|alias, key| {
             if self.embedding.block_key(store, alias).as_ref() != Some(key) {
                 warnings.push(problems::similarity_unavailable(
@@ -701,13 +783,17 @@ impl Services {
                 return false;
             }
             match queries.get(name) {
-                Some(Ok(v)) => {
-                    let q = quantise(v);
-                    if inverse_length(&q) == 0.0 || q.len() != key.dims() {
+                Some(Ok(vs)) => {
+                    let qs: Vec<Vec<i8>> = vs.iter().map(|v| quantise(v)).collect();
+                    if qs.len() != texts.len()
+                        || qs
+                            .iter()
+                            .any(|q| inverse_length(q) == 0.0 || q.len() != key.dims())
+                    {
                         failed.insert("the query vector has no direction");
                         return false;
                     }
-                    query.insert(name.clone(), q);
+                    query.insert(name.clone(), qs);
                     true
                 }
                 Some(Err(why)) => {
@@ -735,64 +821,80 @@ impl Services {
         for cause in failed {
             warnings.push(problems::similarity_unavailable(None, cause));
         }
-        // Word leg: figures summed over every graph searched (s10); each hit's credit scaled by its coverage.
-        let mut word = WordRanked::new();
-        let mut word_leg = None;
-        if let Some(q) = WordQuery::new(&text) {
-            let mut stats = WordStats::default();
-            for a in &aliases {
-                stats.add(&store.loaded(a).expect("checked").graph.word_stats(&q));
-            }
-            for (w, n) in stats.capped(&q) {
-                warnings.push(problems::word_prefix_capped(w, n, umx_graph::PREFIX_CAP));
-            }
-            let most = word_max_df_share * stats.nodes as f64;
-            // A word's df here is its exact and stem matches' summed (s21): a common class is not informative.
-            let informative: Vec<bool> = (0..q.terms().len())
-                .map(|i| stats.informative_df(i) as f64 <= most)
-                .collect();
-            // Coverage weighs a word hit only in a graph that also has a vector leg: a graph searched by words alone
-            // keeps every word hit at full credit (req-53), whatever the other graphs have.
-            let wanted = informative.iter().filter(|&&i| i).count();
-            for a in &aliases {
-                let gated =
-                    legs.contains_key(a) && routes.get(a).is_some_and(|n| query.contains_key(n));
-                if gated && wanted == 0 {
-                    word_leg = Some("no informative terms");
-                    continue;
+        // Word leg, once per phrasing (search-09): figures summed over every graph searched (s10); each hit's credit
+        // scaled by its coverage of that phrasing's informative terms.
+        let mut words: Vec<WordRanked> = Vec::new();
+        // Phrasings whose word leg gave fusion nothing, every word common; `word_leg` says so when all did.
+        let mut uninformative = 0;
+        // A capped prefix is named once, however many phrasings hold it.
+        let mut capped: BTreeSet<String> = BTreeSet::new();
+        for text in &texts {
+            let mut word = WordRanked::new();
+            let mut no_terms = false;
+            if let Some(q) = WordQuery::new(text) {
+                let mut stats = WordStats::default();
+                for a in &aliases {
+                    stats.add(&store.loaded(a).expect("checked").graph.word_stats(&q));
                 }
-                let g = &store.loaded(a).expect("checked").graph;
-                let Some(scope) = scope_of(&root, a, g, include_provenance) else {
-                    continue;
-                };
-                let scope = narrow(scope, kept.as_ref(), a, g);
-                let hits =
-                    g.word_search_marked(&q, &stats, scope.as_ref(), LEG_DEPTH, &informative);
-                for hit in hits {
-                    let coverage = if gated { hit.held / wanted as f64 } else { 1.0 };
-                    let terms = hit
-                        .terms
-                        .into_iter()
-                        .map(|t| MatchedTerm {
-                            query: t.query,
-                            term: t.term,
-                            form: t.form.as_str(),
-                        })
-                        .collect();
-                    word.push((
-                        a.clone(),
-                        hit.node.id(),
-                        hit.score,
-                        hit.field.to_string(),
-                        coverage,
-                        terms,
-                    ));
+                let mut named = Vec::new();
+                for (w, n) in stats.capped(&q) {
+                    if !capped.contains(w) {
+                        warnings.push(problems::word_prefix_capped(w, n, umx_graph::PREFIX_CAP));
+                        named.push(w.to_string());
+                    }
+                }
+                capped.extend(named);
+                let most = word_max_df_share * stats.nodes as f64;
+                // A word's df here is its exact and stem matches' summed (s21): a common class is not informative.
+                let informative: Vec<bool> = (0..q.terms().len())
+                    .map(|i| stats.informative_df(i) as f64 <= most)
+                    .collect();
+                // Coverage weighs a word hit only in a graph that also has a vector leg: a graph searched by words
+                // alone keeps every word hit at full credit (req-53), whatever the other graphs have.
+                let wanted = informative.iter().filter(|&&i| i).count();
+                for a in &aliases {
+                    let gated = legs.contains_key(a)
+                        && routes.get(a).is_some_and(|n| query.contains_key(n));
+                    if gated && wanted == 0 {
+                        no_terms = true;
+                        continue;
+                    }
+                    let g = &store.loaded(a).expect("checked").graph;
+                    let Some(scope) = scope_of(&root, a, g, include_provenance) else {
+                        continue;
+                    };
+                    let scope = narrow(scope, kept.as_ref(), a, g);
+                    let hits =
+                        g.word_search_marked(&q, &stats, scope.as_ref(), LEG_DEPTH, &informative);
+                    for hit in hits {
+                        let coverage = if gated { hit.held / wanted as f64 } else { 1.0 };
+                        let terms = hit
+                            .terms
+                            .into_iter()
+                            .map(|t| MatchedTerm {
+                                query: t.query,
+                                term: t.term,
+                                form: t.form.as_str(),
+                            })
+                            .collect();
+                        word.push((
+                            a.clone(),
+                            hit.node.id(),
+                            hit.score,
+                            hit.field.to_string(),
+                            coverage,
+                            terms,
+                        ));
+                    }
                 }
             }
+            uninformative += usize::from(no_terms);
+            words.push(rank_words(word));
         }
-        let word = rank_words(word);
-        // Vector leg: graphs compared only within one space (req-37).
-        let mut vector = Ranked::new();
+        let word_leg = (uninformative == texts.len()).then_some("no informative terms");
+        // Vector leg, once per phrasing: graphs compared only within one space (req-37), each phrasing at the same
+        // floor.
+        let mut vectors: Vec<Ranked> = vec![Ranked::new(); texts.len()];
         let mut floors = Vec::new();
         let (mut pending, mut held) = (0usize, 0usize);
         let spaces: BTreeSet<&ModelKey> = legs.values().collect();
@@ -801,9 +903,9 @@ impl Services {
             let floor = cut.value;
             floors.push((key.clone(), cut));
             let space = key.to_string();
-            let mut in_space = Ranked::new();
+            let mut in_space: Vec<Ranked> = vec![Ranked::new(); texts.len()];
             for (alias, _) in legs.iter().filter(|(_, k)| *k == key) {
-                let q = &query[&routes[alias]];
+                let qs = &query[&routes[alias]];
                 let g = &store.loaded(alias).expect("checked").graph;
                 let Some(scope) = scope_of(&root, alias, g, include_provenance) else {
                     continue;
@@ -819,23 +921,33 @@ impl Services {
                 );
                 pending += p;
                 held += h;
-                for (h, cosine, field) in vector_candidates(g, &space, q, scope.as_ref(), floor) {
-                    in_space.push((alias.clone(), h, f64::from(cosine), field));
+                for (q, ranked) in qs.iter().zip(in_space.iter_mut()) {
+                    for (h, cosine, field) in vector_candidates(g, &space, q, scope.as_ref(), floor)
+                    {
+                        ranked.push((alias.clone(), h, f64::from(cosine), field));
+                    }
                 }
             }
-            vector.extend(rank(in_space));
+            for (vector, ranked) in vectors.iter_mut().zip(in_space) {
+                vector.extend(rank(ranked));
+            }
         }
         if pending > 0 {
             warnings.push(problems::similarity_incomplete(pending, held));
         }
-        // Exact leg. Lower-casing can change a text's byte length only outside ASCII, so an ASCII text of another
-        // length is skipped without allocating; an id is compared only when the query is as long as one.
-        let needle = text.trim().to_lowercase();
-        let could = |t: &str| t.len() == needle.len() || !t.is_ascii() || !needle.is_ascii();
-        let same = |t: &str| could(t) && t.to_lowercase() == needle;
-        let id_like = needle.len() == umx_core::id::ID_LEN;
-        let time_like = needle.len() >= 10 && needle.as_bytes()[4] == b'-';
-        let mut exact = Vec::new();
+        // Exact leg, for each phrasing in one pass over the nodes. Lower-casing can change a text's byte length only
+        // outside ASCII, so an ASCII text of another length is skipped without allocating; an id is compared only when
+        // the phrasing is as long as one.
+        let needles: Vec<(String, bool, bool)> = texts
+            .iter()
+            .map(|t| {
+                let needle = t.trim().to_lowercase();
+                let id_like = needle.len() == umx_core::id::ID_LEN;
+                let time_like = needle.len() >= 10 && needle.as_bytes()[4] == b'-';
+                (needle, id_like, time_like)
+            })
+            .collect();
+        let mut exact: Vec<Vec<(String, Id, String)>> = vec![Vec::new(); texts.len()];
         for a in &aliases {
             let l = store.loaded(a).expect("checked");
             let Some(scope) = scope_of(&root, a, &l.graph, include_provenance) else {
@@ -847,40 +959,51 @@ impl Services {
                 if scope.as_ref().is_some_and(|s| !s.contains_ix(n.ix())) {
                     continue;
                 }
-                // Title, id, then the built-in short columns (type, status, created, updated, created_by), then
-                // custom fields in name order: the first that equals the query is the one reported.
-                // Times are rendered only for a query that could be one (they allocate).
-                let builtin = || {
-                    [("type", n.kind()), ("status", n.status())]
-                        .into_iter()
-                        .find(|(_, v)| same(v))
-                        .map(|(f, _)| f)
-                        .or_else(|| (time_like && same(&n.created())).then_some("created"))
-                        .or_else(|| (time_like && same(&n.updated())).then_some("updated"))
-                        .or_else(|| same(n.created_by()).then_some("created_by"))
-                };
-                let field = if same(n.title()) {
-                    Some("title".to_string())
-                } else if id_like && n.id().to_text().to_lowercase() == needle {
-                    Some("id".to_string())
-                } else if let Some(f) = builtin() {
-                    Some(f.to_string())
-                } else {
-                    n.custom_field_names()
-                        .filter(|f| !text_fields.is_text(n.kind(), f))
-                        .find(|f| {
-                            n.custom_field(f)
-                                .and_then(|v| rendered(&v))
-                                .is_some_and(|r| same(&r))
-                        })
-                        .map(str::to_string)
-                };
-                if let Some(field) = field {
-                    exact.push((a.clone(), n.id(), field));
+                for ((needle, id_like, time_like), found) in needles.iter().zip(exact.iter_mut()) {
+                    let could =
+                        |t: &str| t.len() == needle.len() || !t.is_ascii() || !needle.is_ascii();
+                    let same = |t: &str| could(t) && t.to_lowercase() == *needle;
+                    // Title, id, then the built-in short columns (type, status, created, updated, created_by), then
+                    // custom fields in name order: the first that equals the phrasing is the one reported.
+                    // Times are rendered only for a phrasing that could be one (they allocate).
+                    let builtin = || {
+                        [("type", n.kind()), ("status", n.status())]
+                            .into_iter()
+                            .find(|(_, v)| same(v))
+                            .map(|(f, _)| f)
+                            .or_else(|| (*time_like && same(&n.created())).then_some("created"))
+                            .or_else(|| (*time_like && same(&n.updated())).then_some("updated"))
+                            .or_else(|| same(n.created_by()).then_some("created_by"))
+                    };
+                    let field = if same(n.title()) {
+                        Some("title".to_string())
+                    } else if *id_like && n.id().to_text().to_lowercase() == *needle {
+                        Some("id".to_string())
+                    } else if let Some(f) = builtin() {
+                        Some(f.to_string())
+                    } else {
+                        n.custom_field_names()
+                            .filter(|f| !text_fields.is_text(n.kind(), f))
+                            .find(|f| {
+                                n.custom_field(f)
+                                    .and_then(|v| rendered(&v))
+                                    .is_some_and(|r| same(&r))
+                            })
+                            .map(str::to_string)
+                    };
+                    if let Some(field) = field {
+                        found.push((a.clone(), n.id(), field));
+                    }
                 }
             }
         }
-        let fused = fuse(&exact, &word, &vector);
+        let each: Vec<Legs<'_>> = exact
+            .iter()
+            .zip(&words)
+            .zip(&vectors)
+            .map(|((e, w), v)| (e.as_slice(), w, v))
+            .collect();
+        let fused = fuse_phrasings(&each);
         let found = fused.len();
         let mut hits = Vec::new();
         for ((alias, id), f) in fused.into_iter().take(limit) {
@@ -894,6 +1017,7 @@ impl Services {
                 word: f.word,
                 vector: f.vector,
                 fused: f.fused,
+                phrasings: f.phrasings,
             });
         }
         let along = kept.take().map(|(alias, mut k)| {
@@ -908,6 +1032,7 @@ impl Services {
                 word_leg,
                 copies,
                 along,
+                phrasings: texts.len(),
             },
             notes: warnings,
         })
@@ -933,12 +1058,27 @@ impl Services {
         limit: usize,
         along: Option<crate::AlongRequest>,
     ) -> Outcome<HybridResult> {
+        self.search_phrasings(ctx, text, &[], within, limit, along)
+    }
+
+    /// [`Self::search_along`] with more phrasings of the question (`--also`, PRD 002 search-09), each searched alike
+    /// and fused into one list; every phrasing goes to each instance in one call.
+    pub fn search_phrasings(
+        &self,
+        ctx: &Ctx,
+        text: &str,
+        also: &[String],
+        within: Option<&str>,
+        limit: usize,
+        along: Option<crate::AlongRequest>,
+    ) -> Outcome<HybridResult> {
         if along.is_some() {
             crate::graph_store::along_one_graph(ctx)?;
         }
         let plan = self
             .search_plan(ctx, text, within, limit)?
-            .along(ctx, along)?;
+            .along(ctx, along)?
+            .also(also);
         let queries = plan.embed_with(
             &|alias, name| self.embedding.admits_now(&self.graph, alias, name),
             &ask,
@@ -1110,5 +1250,122 @@ mod tests {
         let noise = out.iter().find(|(k, _)| k.1 == Id(1)).unwrap();
         assert!((noise.1.fused - (1.0 / 6.0 / 61.0 + 1.0 / 90.0)).abs() < 1e-15);
         assert!(noise.1.fused < 1.0 / 61.0);
+    }
+
+    /// The fusion as it was before search-09, verbatim: the reference [`fuse_phrasings`] must equal bit for bit with
+    /// one phrasing (embeddings-expert: with no --also the list is byte-identical).
+    fn old_fuse(
+        exact: &[(String, Id, String)],
+        word: &WordRanked,
+        vector: &Ranked,
+    ) -> Vec<((String, Id), Fused)> {
+        let mut by: BTreeMap<(String, Id), Fused> = BTreeMap::new();
+        for (alias, h, field) in exact {
+            by.entry((alias.clone(), *h)).or_default().exact = Some(field.clone());
+        }
+        for (i, (alias, h, score, field, coverage, terms)) in word.iter().enumerate() {
+            by.entry((alias.clone(), *h)).or_default().word = Some(WordMatch {
+                rank: i + 1,
+                score: *score,
+                field: field.clone(),
+                coverage: *coverage,
+                terms: terms.clone(),
+            });
+        }
+        for (i, (alias, h, score, field)) in vector.iter().enumerate() {
+            by.entry((alias.clone(), *h)).or_default().vector = Some(VectorMatch {
+                rank: i + 1,
+                cosine: *score as f32,
+                field: field.clone(),
+            });
+        }
+        let mut out: Vec<((String, Id), Fused)> = by
+            .into_iter()
+            .map(|(k, mut f)| {
+                let leg = |r: usize| 1.0 / (RRF_K + r as f64);
+                f.fused = f.word.as_ref().map_or(0.0, |w| w.coverage * leg(w.rank))
+                    + f.vector.as_ref().map_or(0.0, |v| leg(v.rank));
+                (k, f)
+            })
+            .collect();
+        let best = |f: &Fused| {
+            let w = f.word.as_ref().map_or(usize::MAX, |w| w.rank);
+            let v = f.vector.as_ref().map_or(usize::MAX, |v| v.rank);
+            w.min(v)
+        };
+        out.sort_by(|(ka, a), (kb, b)| {
+            b.exact
+                .is_some()
+                .cmp(&a.exact.is_some())
+                .then_with(|| {
+                    if a.exact.is_some() && b.exact.is_some() {
+                        core::cmp::Ordering::Equal
+                    } else {
+                        b.fused.total_cmp(&a.fused).then(best(a).cmp(&best(b)))
+                    }
+                })
+                .then_with(|| ka.cmp(kb))
+        });
+        out
+    }
+
+    /// search-09 (embeddings-expert Q2a): with one phrasing the new fusion is the old one, bit for bit, on 2,000
+    /// generated leg sets (ties, overlaps, exact hits, fractional and zero coverage); an extra phrasing that finds
+    /// nothing changes nothing but the positions.
+    #[test]
+    fn one_phrasing_fuses_exactly_as_before() {
+        let mut seed: u64 = 0x5eed_0909;
+        let mut next = |n: u64| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 33) % n
+        };
+        let coverages = [1.0, 0.5, 1.0 / 3.0, 1.0 / 6.0, 0.0];
+        for _ in 0..2000 {
+            let mut pick = |most: u64| {
+                let mut keys: Vec<(String, u128)> = Vec::new();
+                for _ in 0..next(most) {
+                    let k = (
+                        ["a", "b", "c"][next(3) as usize].to_string(),
+                        u128::from(next(30)),
+                    );
+                    if !keys.contains(&k) {
+                        keys.push(k);
+                    }
+                }
+                keys
+            };
+            let exact: Vec<(String, Id, String)> = pick(3)
+                .into_iter()
+                .map(|(a, n)| (a, Id(n), "title".to_string()))
+                .collect();
+            let words: Vec<(String, u128)> = pick(25);
+            let vectors: Vec<(String, u128)> = pick(25);
+            let word: WordRanked = words
+                .iter()
+                .map(|(a, n)| word(a, *n, 9.0, coverages[(*n % 5) as usize]))
+                .collect();
+            let vector: Ranked = vectors.iter().map(|(a, n)| hit(a, *n, 0.8)).collect();
+            let old = old_fuse(&exact, &word, &vector);
+            let new = fuse(&exact, &word, &vector);
+            let empty = (Vec::new(), WordRanked::new(), Ranked::new());
+            let padded = fuse_phrasings(&[
+                (&exact, &word, &vector),
+                (empty.0.as_slice(), &empty.1, &empty.2),
+            ]);
+            for got in [&new, &padded] {
+                assert_eq!(got.len(), old.len());
+                for ((ko, o), (kn, n)) in old.iter().zip(got.iter()) {
+                    assert_eq!(ko, kn);
+                    assert_eq!(o.fused.to_bits(), n.fused.to_bits(), "{ko:?}");
+                    assert_eq!(
+                        (&o.exact, &o.word, &o.vector),
+                        (&n.exact, &n.word, &n.vector)
+                    );
+                    assert_eq!(n.phrasings, [1]);
+                }
+            }
+        }
     }
 }

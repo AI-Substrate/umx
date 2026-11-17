@@ -71,6 +71,10 @@ every named graph it lists; do not combine it or `--scope` with `--all`.
    **usage 206**: meaning searches only the title, the note and string fields stated content; a data string field
    (any string field with no stated role) is found by words and `--where` only (a data number or date also by exact
    match), so for a label or an id, search its words.
+   **usage 209**: when one wording may miss, give the others to the same search, `umx search "<words>" --also
+   "<words>"` (up to 4 `--also`): one list, one embedder call, nodes the phrasings agree on first; each hit's
+   `phrasings` names by position (1 the main text) which found it. One question per search; no secrets in any
+   phrasing (one keeps them all off a hosted embedder).
    **usage 160**: `similarity_no_embedder` means no instance here may serve that graph (a `local` graph, only
    hosted instances): it was searched by words only, so empty means no word matched. Tell the user: a local instance
    gives it meaning search; allowing hosted ones is the graph owner's decision, never a search's.

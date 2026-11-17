@@ -1922,8 +1922,8 @@ impl Daemon {
                                     && s.loaded(alias).is_some_and(|l| allows(&l.dir, name))
                             })
                         };
-                        let queries =
-                            plan.embed_with(&admitted, &|e, text| self.queries.embed(e, text));
+                        let queries = plan
+                            .embed_with(&admitted, &|e, texts| self.queries.embed_all(e, texts));
                         match self.services.read() {
                             Ok(services) => verbs::search_finish(&services, request, plan, queries),
                             Err(_) => Envelope::fail(command, internal("writer_stopped")),

@@ -11895,6 +11895,7 @@ fn raw_all_graph_selectors_are_checked_before_any_operation_runs() {
             within: None,
             limit: None,
             along: None,
+            also: Vec::new(),
         },
         umx_protocol::Op::Query {
             text: "RETURN 1 AS one".into(),
@@ -26244,6 +26245,85 @@ fn a_search_cut_by_its_limit_says_so_with_the_command_that_shows_the_rest() {
             .collect::<Vec<_>>()
     };
     assert_eq!(ids(&cut), ids(&all)[..5]);
+}
+
+/// PRD 002 search-09 end to end: `--also` parses, each hit names the phrasings that found it (`by` in human output),
+/// the cut hint's next keeps one `--also <words>` per phrasing and runs once its words are filled in, and a bad
+/// phrasing is refused naming its position, never its text.
+#[test]
+fn a_search_with_also_names_phrasings_by_position_and_its_cut_next_runs() {
+    let mut home = Home::new("search-also");
+    home.graph();
+    for title in [
+        "Walrus report 0",
+        "Walrus report 1",
+        "Walrus report 2",
+        "Approval queue",
+    ] {
+        home.ok(&["node", "add", "--type", "problem", "--title", title]);
+    }
+    let cut = home.ok(&["search", "walrus", "--also", "approval", "--limit", "2"]);
+    let next = hint_of(&cut, Code::SearchResultsCut).next().to_string();
+    assert_eq!(next, "umx search <words> --also <words> --limit 4");
+    let mut words = ["walrus", "approval"].into_iter();
+    let args: Vec<&str> = next
+        .split(' ')
+        .skip(1)
+        .map(|w| {
+            if w == "<words>" {
+                words.next().unwrap()
+            } else {
+                w
+            }
+        })
+        .collect();
+    let all = home.ok(&args);
+    let by: Vec<(String, Value)> = all.data["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["title"].as_str().unwrap().to_string(),
+                r["phrasings"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(by.len(), 4, "{}", all.to_json());
+    for (title, phrasings) in &by {
+        let want = if title.starts_with("Walrus") {
+            json!([1])
+        } else {
+            json!([2])
+        };
+        assert_eq!(phrasings, &want, "{title}");
+    }
+    let human = home.human(&["search", "walrus", "--also", "approval"]);
+    let header = human
+        .lines()
+        .find(|l| l.contains("legs"))
+        .unwrap_or_default();
+    let header: Vec<&str> = header.split_whitespace().collect();
+    assert!(header.windows(2).any(|w| w == ["legs", "by"]), "{human}");
+    assert!(!human.contains("phrasings"), "{human}");
+    for (also, position) in [
+        (vec!["k1", "k2", "k3", "k4", "kumquat"], "phrasing 6 "),
+        (vec![" WALRUS "], "phrasing 2 "),
+        (vec!["kumquat", ""], "phrasing 3 "),
+    ] {
+        let mut args = vec!["search", "walrus"];
+        for a in &also {
+            args.extend(["--also", a]);
+        }
+        let (env, exit) = home.umx(&args);
+        assert_eq!((exit, env.errors[0].code()), (2, "usage_invalid"));
+        assert!(
+            env.errors[0].message().contains(position),
+            "{}",
+            env.to_json()
+        );
+        assert!(!env.to_json().contains("kumquat") && !env.to_json().contains("WALRUS"));
+    }
 }
 
 #[test]

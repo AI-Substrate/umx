@@ -190,7 +190,7 @@
           "statement": "A caller may give up to 5 phrasings of one question (`umx search \"<a>\" --also \"<b>\" --also \"<c>\"`) and gets one fused list. Each hit says which phrasings found it. The phrasings are embedded in one embedder call.",
           "actor": "a-agent",
           "priority": "should",
-          "state": "planned",
+          "state": "shipped",
           "done_when": "Three phrasings return one list in which a node found by two of them ranks above a node found at the same rank by one; each hit lists its phrasings; the embedder is called once.",
           "source": "Project lead ruling 2026-11-16 (fewer calls for agents)"
         },

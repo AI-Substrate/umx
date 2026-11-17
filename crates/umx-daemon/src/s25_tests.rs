@@ -393,6 +393,7 @@ fn a_query_gets_its_slot_during_a_full_background_load() {
         within: None,
         limit: None,
         along: None,
+        also: Vec::new(),
     });
     search.graph = Some("ga".into());
     let started = Instant::now();
@@ -835,6 +836,7 @@ fn ws004_batching_bench() {
                 within: None,
                 limit: None,
                 along: None,
+                also: Vec::new(),
             });
             search.graph = Some(aliases[0].clone());
             let t = Instant::now();

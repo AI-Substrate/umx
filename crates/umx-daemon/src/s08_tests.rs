@@ -395,6 +395,7 @@ fn a_query_embed_past_five_seconds_falls_back_to_words_at_the_bound() {
         within: None,
         limit: None,
         along: None,
+        also: Vec::new(),
     }));
     let took = started.elapsed();
     assert!(env.errors.is_empty(), "{}", env.to_json());
@@ -464,6 +465,7 @@ fn a_query_during_ingest_finishes_inside_the_bound() {
                 within: None,
                 limit: None,
                 along: None,
+                also: Vec::new(),
             }))
         });
         eventually("the query behind the held batch", || {
@@ -561,6 +563,7 @@ fn a_query_in_flight_on_one_instance_never_holds_another_instances_batches() {
             within: None,
             limit: None,
             along: None,
+            also: Vec::new(),
         });
         search.graph = Some("ga".into());
         let d = &d;
@@ -619,6 +622,7 @@ fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
             within: None,
             limit: None,
             along: None,
+            also: Vec::new(),
         }))
     };
     let env = search();
@@ -708,6 +712,7 @@ fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
         within: None,
         limit: Some(1),
         along: None,
+        also: Vec::new(),
     }));
     let codes: Vec<&str> = env.hints.iter().map(|h| h.code()).collect();
     assert_eq!(env.status, umx_protocol::Status::Ok, "{}", env.to_json());
@@ -730,4 +735,140 @@ fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
     );
     assert!(!env.to_json().contains("vault"), "{}", env.to_json());
     let _ = fs::remove_dir_all(&root);
+}
+
+fn search_also(text: &str, also: &[&str], limit: Option<usize>) -> Request {
+    op(Op::Search {
+        text: text.into(),
+        within: None,
+        limit,
+        along: None,
+        also: also.iter().map(|a| a.to_string()).collect(),
+    })
+}
+
+/// A daemon with graph `demo` and three nodes whose vectors are written.
+fn three_nodes(name: &str, locality: Locality) -> (std::path::PathBuf, Arc<Spy>, Daemon) {
+    let root = root(name);
+    let spy = Spy::new(locality, Duration::ZERO, Duration::ZERO);
+    let d = daemon(&root, &spy);
+    ok(d.handle(&op(Op::GraphNew {
+        path: root.join("g").display().to_string(),
+        alias: "demo".into(),
+        title: None,
+        empty: false,
+        embedding_model: None,
+        secured: false,
+        no_graphfile: false,
+        graphfile: false,
+        no_std: false,
+    })));
+    for title in ["Approval delay", "Vendor audit", "Budget review"] {
+        add(&d, title, "");
+    }
+    eventually("every vector", || pending(&d, "demo") == 0);
+    (root, spy, d)
+}
+
+/// PRD 002 search-09 through the daemon: three phrasings go to the instance in one query call; each hit names the
+/// phrasings that found it by position; the cut hint's next keeps one `--also <words>` per phrasing; and no phrasing's
+/// text is in the reply. A refusal (a sixth phrasing, a repeat, one with no words) names the position only.
+#[test]
+fn phrasings_are_named_by_position_and_never_echoed() {
+    let (root, spy, d) = three_nodes("also", Locality::Local);
+    let typed = [
+        "zebra crossing quietly",
+        "walrus tusk ledger",
+        "orbit plum nebula",
+    ];
+    let env = ok(d.handle(&search_also(typed[0], &typed[1..], Some(1))));
+    assert_eq!(spy.queries.load(Ordering::SeqCst), 1, "one query call");
+    assert!(
+        typed.iter().all(|t| spy.saw(t)),
+        "every phrasing was embedded"
+    );
+    assert_eq!(
+        env.data["rows"][0]["phrasings"],
+        serde_json::json!([1, 2, 3])
+    );
+    assert!(
+        env.data["columns"]
+            .as_array()
+            .unwrap()
+            .contains(&"phrasings".into())
+    );
+    let cut = env
+        .hints
+        .iter()
+        .find(|h| h.code() == "search_results_cut")
+        .unwrap_or_else(|| panic!("{}", env.to_json()));
+    assert_eq!(
+        cut.next(),
+        "umx search <words> --also <words> --also <words> --limit 3"
+    );
+    let reply = env.to_json();
+    for word in typed.iter().flat_map(|t| t.split(' ')) {
+        assert!(!reply.contains(word), "{word} echoed: {reply}");
+    }
+    // Without --also the reply has no `phrasings`, as before.
+    let plain = ok(d.handle(&search_also(typed[0], &[], None)));
+    assert!(plain.data["rows"][0].get("phrasings").is_none());
+    assert!(
+        !plain.data["columns"]
+            .as_array()
+            .unwrap()
+            .contains(&"phrasings".into())
+    );
+
+    let six = ["walrus", "tusk", "ledger", "orbit", "plum"];
+    for (also, position) in [
+        (&six[..], "phrasing 6 "),
+        (&[" ZEBRA Crossing quietly "][..], "phrasing 2 "),
+        (&["walrus", "kumquat", "Walrus"][..], "phrasing 4 "),
+        (&["walrus", "--"][..], "phrasing 3 "),
+    ] {
+        let env = d.handle(&search_also(typed[0], also, None));
+        let error = env
+            .errors
+            .first()
+            .unwrap_or_else(|| panic!("{}", env.to_json()));
+        assert_eq!(error.code(), "usage_invalid");
+        assert!(error.message().contains(position), "{}", error.message());
+        let reply = env.to_json();
+        for word in ["zebra", "walrus", "kumquat", "ZEBRA"] {
+            assert!(!reply.contains(word), "{word} echoed: {reply}");
+        }
+    }
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// search-09, security, on the daemon's real query lane: one phrasing that looks like a secret, even the last of 5,
+/// keeps every phrasing off a hosted instance, so it is never called; a local instance is called once, with all of
+/// them.
+#[test]
+fn a_secret_in_any_phrasing_keeps_all_of_them_off_a_hosted_instance() {
+    let key = fake_key("Q7Z3X9K2");
+    let holding_key = format!("audit {key}");
+    for (locality, calls) in [(Locality::Hosted, 0), (Locality::Local, 1)] {
+        let (root, spy, d) = three_nodes(&format!("also-secret-{calls}"), locality);
+        let also = [
+            "budget plan",
+            "approval queue",
+            "audit trail",
+            holding_key.as_str(),
+        ];
+        let env = ok(d.handle(&search_also("vendor review", &also, None)));
+        assert_eq!(spy.queries.load(Ordering::SeqCst), calls, "{locality:?}");
+        assert_eq!(spy.saw("vendor review"), calls == 1, "all or none");
+        assert!(!env.to_json().contains(&key[4..12]));
+        if calls == 0 {
+            assert!(
+                env.hints.iter().any(|h| h.code() == "similarity_unavailable"
+                    && h.message().contains("secret")),
+                "{}",
+                env.to_json()
+            );
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
 }

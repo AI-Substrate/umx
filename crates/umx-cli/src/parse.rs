@@ -114,6 +114,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
     (
         "search",
         &[
+            "--also",
             "--within",
             "--limit",
             "--along",
@@ -1048,11 +1049,21 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 what: "give the words to look for",
             });
         }
+        let text = a.positional.join(" ");
+        // PRD 002 search-09: up to 4 more phrasings, refused by position, never by their text.
+        let also = a.all("--also");
+        if let Some(what) = umx_protocol::also_problem(&text, &also) {
+            return Err(Usage {
+                command: "search",
+                what,
+            });
+        }
         return Ok(Op::Search {
-            text: a.positional.join(" "),
+            text,
             within: a.one("--within"),
             limit: a.number("--limit")?,
             along: a.along()?,
+            also,
         }
         .with(a));
     }

@@ -31,6 +31,7 @@ word matches keep full credit.
     umx search approval delay --graph demo --limit 5
     umx search "vendor iso27001" --graph demo,ops
     umx search approval delay --graph demo --within <node>
+    umx search approval delay --also "sign-off waits" --graph demo
 
 Each hit gives `graph`, `policy` (its graph's, `open` or `secured`), `id`, `type`, `title`, `status`, and how it
 was found: `legs` (`word`, `vector`, `both`, or `exact` when only the exact match found it), `exact` (the field
@@ -59,7 +60,34 @@ query word is common, so the word leg gave fusion nothing. `word_terms` lists ea
 `{"query", "term", "form"}`: the word in the node it met and how, `exact`, `stem` or `prefix` (human output shows
 `vendor ~ vendors (stem)`). Results:
 exact hits in graph then id order, then by `fused`, then the better single rank, then graph and id, so the same
-graphs and query give the same list every time. `--limit` defaults to 10.
+graphs and query give the same list every time. `--limit` defaults to 10. With `--also`, each hit also carries
+`phrasings` (below).
+
+## Several phrasings in one call
+
+`--also <words>` adds another phrasing of the same question, up to 4 times (5 phrasings in all). Use it when one
+wording may miss: the plain words, the domain term, a paraphrase. One call does what several searches would, and
+returns one list:
+
+    umx search approval delay --also "sign-off waits" --also "invoices stuck in review" --graph demo
+
+- Each phrasing is searched alike: exact, words and meaning, over the same graphs (`--graph`, `--scope` or `--all`),
+  the same `--within` and `--along`, and the same floor. Each leg still gives at most its best 100 per phrasing.
+- A node's `fused` sums its credit over every phrasing that found it, so a node two phrasings find at rank 3 ranks
+  above a node one phrasing finds at rank 3. A node exact for any phrasing is exact and comes first.
+- Each hit carries `phrasings`, the positions of the phrasings that found it: 1 is the main text, 2 to 5 each
+  `--also` in order, as `[1, 3]`. Its `legs`, ranks, scores, fields and text are those of its best phrasing, the one
+  that gave it the most credit (the earlier one on a tie): a node found by words in one phrasing and by meaning in
+  another shows only the winner's leg in `legs`, while `phrasings` says both found it. `--human` shows them as a `by`
+  column (`1,3`). Without `--also` there is no `phrasings`, and the list is exactly what it was.
+- All the phrasings go to each embedder in one call, under the one 5 s bound (see "When meaning is not used").
+- Every phrasing is checked for secrets. If any looks like one, no hosted embedder is asked for any of them: those
+  graphs are searched by words only, with `similarity_unavailable`. A local embedder still gets them all.
+- A reply never repeats a phrasing: hints, nexts and errors name phrasings by position. `search_results_cut`'s next
+  keeps one `--also <words>` per phrasing. As for the main text, single words can show: `word_terms` lists the query
+  words a hit matched, and `word_prefix_capped` names a word that starts too many (once, whichever phrasing holds it).
+- Refused with `usage_invalid`, naming the phrasing's position, never its text: a sixth phrasing, an `--also` with no
+  letter or digit, and a phrasing equal to an earlier one (case and outer spaces ignored).
 
 ## Floors
 
@@ -102,11 +130,12 @@ Search never fails for want of vectors: it returns word and exact matches and sa
   named, with its setting. An empty result then means no word matched, not that nothing is similar. No fix is
   printed: tell the user, who may add a local instance (`umx docs get embeddings`). Allowing hosted ones is the
   graph owner's decision (`umx docs get graph`, Embedding policy), never a search's.
-- `similarity_unavailable`: no embedder is configured, it failed or is offline, the query has no direction for the
-  model, a graph has no vectors yet, a graph records no model and no default embedder is set, its folder's config
-  names another embedder (or none), a graph's model changed during the search, the query embed took over 5 s (a
-  local model that is still loading says so; search again), or the query looks like it holds a secret and the
-  embedder is hosted. A search never waits more than 5 s for its query vector.
+- `similarity_unavailable`: no embedder is configured, it failed or is offline, the query (or one of its phrasings)
+  has no direction for the model, a graph has no vectors yet, a graph records no model and no default embedder is
+  set, its folder's config names another embedder (or none), a graph's model changed during the search, the query
+  embed took over 5 s (a local model that is still loading says so; search again), or the query (any `--also`
+  phrasing included) looks like it holds a secret and the embedder is hosted. A search never waits more than 5 s for its query vectors, all
+  its phrasings together.
 - `embedder_mismatch`: a graph's vectors are in another model's space than the configured embedder makes. It is
   searched by words only and named, with both models; vectors are only compared within one model.
 - `embedder_not_local_for_secured`: a secured graph records a model that only a hosted instance makes, while a
@@ -118,7 +147,8 @@ Search never fails for want of vectors: it returns word and exact matches and sa
 
 A search reply carries hints for what it left out, each with a command to run: `search_results_cut` (`--limit`
 cut the list: "5 of the 12 matches found are shown"; its next repeats the search as sent, with its `--graph`,
-`--scope` or `--all`, `--within` and `--along`, and a limit that shows them all, `<words>` standing for your query),
+`--scope` or `--all`, `--within` and `--along`, and a limit that shows them all, `<words>` standing for your query
+and one `--also <words>` for each phrasing you gave),
 `similarity_unavailable`, `similarity_no_embedder` and `similarity_incomplete` (above), and `secured_graphs_skipped`
 (below). The count in `search_results_cut` is of the matches found: every exact match is counted, but the word and
 meaning legs each give at most their best 100, so more nodes may hold the words. A reply lists at most 8 hints, then

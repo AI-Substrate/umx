@@ -80,9 +80,9 @@ pub use graph_store::{SimilarityJob, SimilarityResult};
 pub use graph_store::{bench_encode_full_edges, upsert_provenance_session};
 pub use graphfile::{GraphfileLoad, GraphfileLoadedEntry, GraphfileNotLoaded};
 pub use hybrid::{
-    Admitted, Fused, HybridHit, HybridResult, LEG_DEPTH, MatchedTerm, QueryFailed, QueryRunner,
-    QueryVectors, RRF_K, Ranked, SearchPlan, VectorMatch, WHOLE_NODE, WORD_MAX_DF_SHARE, WordMatch,
-    WordRanked, fuse, vector_candidates,
+    Admitted, Fused, HybridHit, HybridResult, LEG_DEPTH, Legs, MatchedTerm, QueryFailed,
+    QueryRunner, QueryVectors, RRF_K, Ranked, SearchPlan, VectorMatch, WHOLE_NODE,
+    WORD_MAX_DF_SHARE, WordMatch, WordRanked, fuse, fuse_phrasings, vector_candidates,
 };
 pub use pairs::{
     ModelSource, PAIRS_BACKSTOP_MS, PAIRS_DEFAULT_LIMIT, PAIRS_MAX_LIMIT, Pair, PairNode, PairRow,

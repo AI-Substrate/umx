@@ -765,9 +765,9 @@ fn embed_queries(task: &Task, b: &Built) -> Result<Vec<QueryRow>, String> {
             .search_plan(&ctx(&task.name), q, None, SEARCH_LIMIT)
             .map_err(|p| format!("search plan: {p:?}"))?;
         let vectors = plan.embed();
-        // One embedder instance serves the scratch graph, so the query has at most one vector (keyed by instance).
+        // One embedder instance serves the scratch graph and the query is one phrasing, so it has at most one vector.
         let row = match vectors.values().next() {
-            Some(Ok(v)) => Some(Row::of(v)),
+            Some(Ok(v)) => v.first().map(|v| Row::of(v)),
             Some(Err(e)) => return Err(format!("query {id}: {e:?}")),
             None => None,
         };

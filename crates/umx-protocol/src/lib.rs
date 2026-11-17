@@ -190,12 +190,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `graph set` lowering a policy lowers the record too. The error `policy_confirm_needs_human` is retired; new
 /// warnings `policy_lowered` and `policy_not_lowered`; `policy_downgrade_unconfirmed`'s next is `graph
 /// confirm-policy`; `similarity_no_embedder` loses its `<fix>` command.
+/// 93: PRD 002 search-09: `Op::Search` takes `also` (`--also`, up to 4 more phrasings, embedded in one call per
+/// instance and fused into one list); with it, each search row carries `phrasings`, the 1-based positions of the
+/// phrasings that found it (1 is the main text).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 92;
+pub const PROTOCOL: u32 = 93;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -204,7 +207,7 @@ pub const PROTOCOL: u32 = 92;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (92, 0xfcea_0552_0341_29dc);
+const WIRE_FINGERPRINT: (u32, u64) = (93, 0x5573_3fbf_5f7d_d569);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -240,6 +243,46 @@ pub const MAX_BATCH_LINE: usize = 1 << 20;
 /// `umx batch --idempotency-key`'s rule (ws003 s09), as the CLI states it; umx-core's `receipts::KEY_RULE` and
 /// `check_key` are the services' own, and umx-daemon's test keeps the two the same.
 pub const IDEMPOTENCY_KEY_RULE: &str = "an idempotency key is 1 to 128 of A-Z a-z 0-9 . _ : -";
+
+/// `umx search --also` (PRD 002 search-09): at most this many more phrasings, so 5 in all with the main text.
+pub const MAX_ALSO: usize = 4;
+
+/// Why a search's phrasings are refused, naming a phrasing by its position only (1 is the main text, 2 to 5 each
+/// `--also` in order), never by its text: an `--also` with no letter or digit, one equal to an earlier phrasing once
+/// trimmed and lower-cased, or more than [`MAX_ALSO`]. None when they are fine. The CLI checks before sending and the
+/// daemon again on arrival.
+pub fn also_problem(text: &str, also: &[String]) -> Option<&'static str> {
+    const NO_WORDS: [&str; MAX_ALSO] = [
+        "phrasing 2 (the first --also) has no words to look for",
+        "phrasing 3 (the second --also) has no words to look for",
+        "phrasing 4 (the third --also) has no words to look for",
+        "phrasing 5 (the fourth --also) has no words to look for",
+    ];
+    const REPEATED: [&str; MAX_ALSO] = [
+        "phrasing 2 (the first --also) repeats an earlier phrasing (case and outer spaces ignored)",
+        "phrasing 3 (the second --also) repeats an earlier phrasing (case and outer spaces ignored)",
+        "phrasing 4 (the third --also) repeats an earlier phrasing (case and outer spaces ignored)",
+        "phrasing 5 (the fourth --also) repeats an earlier phrasing (case and outer spaces ignored)",
+    ];
+    if also.len() > MAX_ALSO {
+        return Some(
+            "phrasing 6 is one too many: give --also at most 4 times (5 phrasings in all)",
+        );
+    }
+    let key = |t: &str| t.trim().to_lowercase();
+    let mut seen = vec![key(text)];
+    for (i, a) in also.iter().enumerate() {
+        if !a.chars().any(char::is_alphanumeric) {
+            return Some(NO_WORDS[i]);
+        }
+        let k = key(a);
+        if seen.contains(&k) {
+            return Some(REPEATED[i]);
+        }
+        seen.push(k);
+    }
+    None
+}
 
 /// True when `key` is 1 to 128 of `A-Z a-z 0-9 . _ : -`.
 pub fn idempotency_key_ok(key: &str) -> bool {
@@ -1610,6 +1653,10 @@ pub enum Op {
         limit: Option<usize>,
         #[serde(default)]
         along: Option<Along>,
+        /// `--also <words>` (PRD 002 search-09, PROTOCOL 93): up to [`MAX_ALSO`] more phrasings of the question,
+        /// searched alike and fused into one list; each hit names the phrasings that found it by position.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        also: Vec<String>,
     },
     /// `umx embeddings probe [--embedder <name>] [--graph <alias>]`: ready() (no text sent), then one embed of
     /// umx's own fixed sentence. Runs on the request's thread, never the writer (architect F1).
@@ -5391,6 +5438,7 @@ mod tests {
                     after: None,
                     before: s("2026-12"),
                 }),
+                also: vec!["sign-off waits".into()],
             },
             Op::EmbeddingsProbe { embedder: s("e") },
             Op::SimilarityRebuild,
@@ -5866,6 +5914,7 @@ mod tests {
                 within: None,
                 limit: None,
                 along: None,
+                also: Vec::new(),
             },
             None,
             None,
