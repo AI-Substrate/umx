@@ -100,7 +100,7 @@ Every topic, also printed by `umx <noun> --help`:
 
     umx docs list            # every topic
     umx docs get start       # the command shape and the commands that work offline
-    umx docs get install     # build from source, run the daemon, where files live, the /umx skill
+    umx docs get install     # install a release or build from source, the daemon, where files live, the skill
     umx docs get git         # graphs in git: diffs, unload before git, merging branches, umx check
     umx docs get graph       # graphs: new, load, list, set, unload, check; choosing a graph with --graph
     umx docs get graphfile   # a repository's list of its graphs: graph scan, load --graphfile

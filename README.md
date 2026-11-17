@@ -1,30 +1,20 @@
 # umx: concept graphs as plain files
 
-## For agents
-
-> umx is built from source. See [Install](#install) for what you need first.
-
-Paste this to your agent:
+Agents: install umx only when the person you work for asked for it (if you are not sure, ask them first): read
+https://github.com/AI-Substrate/umx/blob/main/docs/install.md and follow it. People: paste this to your agent.
 
 ```text
-Set up umx (Unimatrix concept graphs) on this machine from source, then learn it.
-
-It needs rustup, just, a C and C++ compiler, cmake, Node.js (20.9 or later, with npx and pnpm) and 20 GB of
-free disk, and the first build is slow and needs network. Ask me before installing any of those. If `umx version`
-already works here, ask me before `just dev`: it overwrites the installed umx and restarts the running daemon,
-which other agents may be using.
-
-    git clone https://github.com/AI-Substrate/umx.git
-    cd umx
-    just dev                     # builds umx into ~/.cargo/bin/umx, starts the daemon in the background
-    umx daemon status --human    # look for "running: true"
-    umx doctor --human           # fix anything it reports, with the command it names
-    just skill-link              # installs the /umx skill for every agent harness, linked to this clone
-    export UMX_OUTPUT=json
-    umx agents-start-here        # read it, and follow it, before you use umx
+Install umx (Unimatrix concept graphs) on this machine and learn it: read
+https://github.com/AI-Substrate/umx/blob/main/docs/install.md and follow it. If umx is already installed here, ask
+me before installing again. When you are done, tell me which umx version is installed, whether the umx daemon and
+the /umx skill are set up, and every command you ran or skipped, and why.
 ```
 
-Run `just dev` again after each `git pull` in that clone. More: [Install](#install).
+One line installs it on macOS (Apple silicon) and Linux (x86_64 or arm64), and on Windows inside WSL 2:
+
+    curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
+
+More, including building from source: [Install](#install).
 
 ## About umx
 
@@ -49,7 +39,6 @@ and the files stay the truth.
 
 ## Contents
 
-- [For agents](#for-agents)
 - [Install](#install)
 - [Five-minute quick start](#five-minute-quick-start)
 - [Searching and reading](#searching-and-reading)
@@ -65,9 +54,18 @@ and the files stay the truth.
 
 ## Install
 
-umx runs on macOS and Linux. You build it from this repository.
+One line installs the latest release into `~/.local/bin`, starts the daemon, and prints what to run next (the /umx
+skill and the daemon service):
 
-You need:
+    curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
+
+Releases are for macOS on Apple silicon and Linux on x86_64 or arm64 with glibc 2.35 or newer; on Windows, run it
+inside WSL 2. Pinned versions, checking a download, upgrading and uninstalling: [docs/install.md](docs/install.md).
+A release has no graph view: [The UI](#the-ui).
+
+### Build from source
+
+Build umx from this repository on a machine no release fits, or to work on umx. You need:
 
 - Rust through [rustup](https://rustup.rs). The repository pins its toolchain in `rust-toolchain.toml`, and
   rustup fetches it on the first build.
@@ -118,7 +116,7 @@ without a checkout can install it with the [skills](https://www.npmjs.com/packag
     npx skills@1.7.6 add AI-Substrate/umx --skill umx -g --agent '*' -y
 
 That line is for a person who has read it (`-y` skips the installer's questions). `umx doctor` prints the same
-install pinned to the commit your umx was built from; agents use that line, without `-y`.
+install pinned to the commit your umx was built from, with `-y`; agents run that line as printed.
 
 ### Where graphs may live
 
@@ -390,7 +388,9 @@ config, the embedder, the loaded graphs and the service, and gives a command to 
     umx ui --graph launch       # open one graph first; a secured graph opens only this way
 
 Build it once from a checkout (and after each pull) with
-`pnpm --dir apps/ui install --frozen-lockfile && pnpm --dir apps/ui build`; it needs Node.js 20.9 or later. While a
+`pnpm --dir apps/ui install --frozen-lockfile && pnpm --dir apps/ui build`; it needs Node.js 20.9 or later. A
+release has no view: build it from a checkout of the commit `umx version` reports
+([docs/install.md](docs/install.md#the-graph-view)). While a
 person has it open, agents can point at nodes in it (`umx ui focus <node>`, `umx ui highlight <node>...`) and read
 what the person selected (`umx ui selection`). See `umx docs get ui`.
 

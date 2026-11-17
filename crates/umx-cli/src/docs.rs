@@ -32,7 +32,7 @@ const TOPICS: &[Topic] = &[
     Topic {
         name: "install",
         title: "Install, run, and where files live",
-        summary: "Building umx from source with just dev, running the daemon and checking it is up, what lives in UMX_HOME and in a graph folder, installing the /umx skill.",
+        summary: "Installing a release with install.sh or building from source with just dev, running the daemon and checking it is up, what lives in UMX_HOME and in a graph folder, installing the /umx skill.",
         markdown: || include_str!("../docs/install.md").to_owned(),
     },
     Topic {

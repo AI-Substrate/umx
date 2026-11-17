@@ -1,10 +1,25 @@
 # Install, run, and where files live
 
+## Install a release
+
+One line installs the latest release on macOS (Apple silicon) and Linux (x86_64 or arm64, glibc 2.35 or newer); on
+Windows, run it inside WSL 2:
+
+    curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
+    curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh -s -- --version 0.1.0
+
+It checks the download against the release's `SHA256SUMS`, puts `umx` in `~/.local/bin` (never with sudo), and
+restarts a running daemon on the new build, or starts it. Then it runs `umx doctor` and prints what to run next:
+`umx daemon install` (the service) and the pinned /umx skill line (The /umx skill, below). Run them, then
+`umx agents-start-here`. To upgrade, run the line again. It refuses other systems with nothing changed: build from
+source. Checking provenance (`gh attestation verify`), upgrading when the daemon runs another umx, and
+uninstalling: https://github.com/AI-Substrate/umx/blob/main/docs/install.md.
+
 ## Install from source
 
-Release builds and an installer are planned. Until they ship, umx is built from a clone of its repository. You
-need rustup (it fetches the pinned toolchain), `just`, a C and C++ compiler and `cmake` (for the bundled local
-embedder), and 20 GB of free disk: the build refuses below that (`UMX_CARGO_MIN_FREE_GB` sets the floor).
+On a machine no release fits, or to work on umx, build it from a clone of its repository. You need rustup (it
+fetches the pinned toolchain), `just`, a C and C++ compiler and `cmake` (for the bundled local embedder), and 20 GB
+of free disk: the build refuses below that (`UMX_CARGO_MIN_FREE_GB` sets the floor).
 
     git clone https://github.com/AI-Substrate/umx.git
     cd umx
@@ -40,10 +55,11 @@ install it without the person's yes. More: `umx docs get daemon` and `umx docs g
 - `run/umx.sock`: the daemon's socket. The daemon opens no network port.
 - `state/graph-policies.json`: this machine's record of each graph's policy (`umx docs get graph`).
 - `vectors/`: vectors of every graph that is not fully open, kept out of the graph folder.
-- `daemon.log`: the daemon's output when the service or `just dev` started it.
+- `daemon.log`: the daemon's output when the service, `just dev` or install.sh started it.
 
-Elsewhere: the binary in `~/.cargo/bin/umx`; local embedding models in `$XDG_CACHE_HOME/umx/models` when
-`XDG_CACHE_HOME` is an absolute path, else `~/.cache/umx/models`; the service file in
+Elsewhere: the binary in `~/.local/bin/umx` (a release) or `~/.cargo/bin/umx` (`just dev`; keep one, or the first
+on `PATH` runs); local embedding models in `$XDG_CACHE_HOME/umx/models` when `XDG_CACHE_HOME` is an absolute path,
+else `~/.cache/umx/models`; the service file in
 `~/Library/LaunchAgents/dev.umx.daemon.plist` (macOS) or `umx.service` in `$XDG_CONFIG_HOME/systemd/user` when
 `XDG_CONFIG_HOME` is an absolute path, else `~/.config/systemd/user` (Linux); the /umx skill in
 `~/.agents/skills/umx`; a repository's own settings in `<repo>/.umx/config.toml`.

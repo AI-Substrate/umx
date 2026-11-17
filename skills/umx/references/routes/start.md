@@ -2,8 +2,12 @@
 
 Job: umx is not running, or you are new to it.
 
-1. Check the binary: `umx version` (**usage 101**: `umx --version` and `umx -V` are the same command). Not found: from a checkout of the umx repo, `just dev` builds it,
-   installs it into `~/.cargo/bin` and restarts the daemon. Still failing: `/umx doctor`.
+1. Check the binary: `umx version` (**usage 101**: `umx --version` and `umx -V` are the same command). Not found:
+   **usage 210**: read `https://github.com/AI-Substrate/umx/blob/main/docs/install.md` and follow it: one line
+   (`curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh`) installs the release
+   into `~/.local/bin` and starts the daemon; run each line it prints under `Run these next` (usage 207). Ask before
+   running it when umx is already installed (it restarts the daemon). In a checkout of the umx repo, `just dev`
+   builds it instead, installs it into `~/.cargo/bin` and restarts the daemon. Still failing: `/umx doctor`.
 2. Set JSON output for agent work (`/umx output`, usage 001).
 3. **usage 002**: start the daemon yourself; nothing auto-starts. Check with `umx daemon status`; if
    `running` is false, run `umx daemon start` in another window (or a background job you keep) and leave
