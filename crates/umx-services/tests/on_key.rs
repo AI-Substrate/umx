@@ -680,6 +680,80 @@ fn kept_lines_and_provenance_nodes_never_resolve() {
     assert_eq!(done.rows[2].id, Some(sam.id));
 }
 
+/// Review B1, security N2: every holder of a key goes through the write scope before the key is judged. A
+/// provenance node holding the key beside one content node of its type leaves that node to resolve to; beside two,
+/// the refusal names the two content nodes, never the provenance one. Both entry paths.
+#[test]
+fn a_provenance_holder_is_skipped_before_a_key_is_judged() {
+    let mut w = world();
+    w.svc
+        .node_add(&ctx(), add("topic", "Warm up", "", false))
+        .unwrap();
+    let (prov, kind) = {
+        let g = w.svc.loaded_graph("demo").unwrap();
+        let n = g.nodes().find(|n| g.is_provenance(n.ix())).unwrap();
+        (n.to_node(), n.kind().to_string())
+    };
+    let c1 = w
+        .svc
+        .node_add(&ctx(), add(&kind, "Marker one", "name:marker", false))
+        .unwrap()
+        .value
+        .node
+        .id;
+    assert!(prov.id < c1, "the provenance node is the lowest holder");
+    let mut keyed = prov.clone();
+    keyed
+        .fields
+        .insert("entity_key".into(), serde_json::json!(["name:marker"]));
+    let nodes = w.fake.read(&dir(), GraphFile::Nodes).unwrap().unwrap();
+    let old = String::from_utf8(umx_core::codec::encode_nodes([&prov])).unwrap();
+    let new = String::from_utf8(umx_core::codec::encode_nodes([&keyed])).unwrap();
+    let text = String::from_utf8(nodes).unwrap();
+    assert!(text.contains(&old));
+    w.fake
+        .write(
+            &dir(),
+            GraphFile::Nodes,
+            text.replace(&old, &new).as_bytes(),
+        )
+        .unwrap();
+    let mut w = world_on(w.fake, false);
+    let resolve = || add(&kind, "Marker one", "name:marker", true);
+    let done = batch(&mut w, vec![line(1, None, resolve())], false).unwrap();
+    assert!(done.rows[0].existed);
+    assert_eq!(done.rows[0].id, Some(c1));
+    let single = w.svc.node_add(&ctx(), resolve()).unwrap();
+    assert!(single.value.resolved);
+    assert_eq!(single.value.node.id, c1);
+
+    let c2 = w
+        .svc
+        .node_add(&ctx(), add(&kind, "Marker two", "name:marker", false))
+        .unwrap()
+        .value
+        .node
+        .id;
+    let named = |p: &Problem| {
+        p.slots
+            .iter()
+            .filter_map(|(_, s)| match s {
+                Slot::Id(id) => Some(*id),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let errors = batch(&mut w, vec![line(1, None, resolve())], false).unwrap_err();
+    assert_eq!(codes(&errors), ["batch_failed", "on_key_ambiguous"]);
+    assert_eq!(named(&errors[1]), [c1, c2]);
+    let single = w.svc.node_add(&ctx(), resolve()).unwrap_err();
+    assert_eq!(single.code, "on_key_ambiguous");
+    assert_eq!(named(&single), [c1, c2]);
+    for p in [&errors[1], &single] {
+        assert!(!format!("{p:?}").contains(&prov.id.to_text()), "{p:?}");
+    }
+}
+
 /// An explicit id with on_key, and on_key with no key, refuse at their line; the single verb refuses on_key with no
 /// key and with a locator.
 #[test]

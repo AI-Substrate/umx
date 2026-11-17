@@ -558,9 +558,10 @@ const ON_KEY_NO_KEY: &str =
     "--on-key resolve needs an entity key: give --set entity_key=<scheme>:<value>";
 
 /// ws003 s08: the node an on_key add resolves to, looked up by each of its keys (`fields`' entity_key, in stored form)
-/// under its own type in `g`, the written graph as a batch has left it so far. A lone holder `in_scope` refuses (a
-/// provenance node, which no write names) is skipped. A key two nodes hold, or keys held by two nodes, is `Err` with
-/// two of them: never the lowest id, never a guess. Other graphs and other types are never read.
+/// under its own type in `g`, the written graph as a batch has left it so far. Every holder of a key is put through
+/// `in_scope` first (a provenance node, which no write names, is skipped as if it held nothing), and only then is the
+/// key judged: two holders left, or keys held by two nodes, is `Err` with two of them, both in scope: never the lowest
+/// id, never a guess. Other graphs and other types are never read.
 pub(crate) fn key_holder(
     g: &Graph,
     kind: &str,
@@ -576,21 +577,25 @@ pub(crate) fn key_holder(
         let Some(first) = first.map(|n| n.id()) else {
             continue;
         };
+        let mut holders = alloc::vec![first];
         if more {
-            // Only on this refusal: the other holder, for the message (the lower id is the one in use).
-            let other = g
-                .duplicate_entity_keys_of(first)
-                .into_iter()
-                .find(|d| d.in_use == first && d.key == key)
-                .map_or(first, |d| d.node);
-            return Err((first, other));
+            // Only for a key with two or more holders: the others, each a duplicate of the lowest (the one in use).
+            holders.extend(
+                g.duplicate_entity_keys_of(first)
+                    .into_iter()
+                    .filter(|d| d.in_use == first && d.key == key)
+                    .map(|d| d.node),
+            );
         }
-        if !in_scope(first) {
-            continue;
-        }
+        holders.retain(|id| in_scope(*id));
+        let holder = match holders.as_slice() {
+            [] => continue,
+            [one] => *one,
+            [a, b, ..] => return Err((*a, *b)),
+        };
         match found {
-            Some(id) if id != first => return Err((id, first)),
-            _ => found = Some(first),
+            Some(id) if id != holder => return Err((id, holder)),
+            _ => found = Some(holder),
         }
     }
     Ok(found)
