@@ -66,6 +66,14 @@ impl Drain {
         self.stats.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    /// For tests: the worker holds nothing (nothing queued or deferred, no call in flight, at its last look) and no
+    /// Apply waits for the writer. [`Self::quiet`] without the queue, which a Daemon does not keep.
+    #[cfg(test)]
+    pub(crate) fn settled(&self) -> bool {
+        !self.busy.load(Ordering::SeqCst)
+            && self.ahead.lock().unwrap_or_else(|e| e.into_inner()).0 == 0
+    }
+
     fn note(&self, name: &str, f: impl FnOnce(&mut LaneStats)) {
         f(self
             .stats

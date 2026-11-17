@@ -44,7 +44,9 @@ fn fake_key(seed: &str) -> String {
 
 /// An embedder that records every text, with one session (a lock held while it works, as llama.cpp's is) and
 /// optional delays: `per_text` for each document text, `query` for each query call. A query call can also be held
-/// until the test releases it ([`Spy::hold_queries`]), so a query is in flight for as long as a test needs.
+/// until the test releases it ([`Spy::hold_queries`]), so a query is in flight for as long as a test needs; and
+/// document batches can be let through a few at a time ([`Spy::limit_documents`]), the next one waiting with the
+/// session held.
 struct Spy {
     key: &'static str,
     locality: Locality,
@@ -55,6 +57,14 @@ struct Spy {
     queries: AtomicUsize,
     holding: Mutex<bool>,
     released: Condvar,
+    /// Query calls made, counted before the session is taken.
+    asked: AtomicUsize,
+    /// Document batches that took the session.
+    batches: AtomicUsize,
+    /// Document batches still allowed through; None is no limit.
+    batch_permits: Mutex<Option<usize>>,
+    /// [`Spy::batches`] when the first query call took the session.
+    batches_before_query: Mutex<Option<usize>>,
 }
 
 impl Spy {
@@ -78,7 +88,22 @@ impl Spy {
             queries: AtomicUsize::new(0),
             holding: Mutex::new(false),
             released: Condvar::new(),
+            asked: AtomicUsize::new(0),
+            batches: AtomicUsize::new(0),
+            batch_permits: Mutex::new(None),
+            batches_before_query: Mutex::new(None),
         })
+    }
+
+    /// From now on only `n` more document batches go through; the next waits, its session held, until
+    /// [`Spy::release_documents`].
+    fn limit_documents(&self, n: usize) {
+        *self.batch_permits.lock().unwrap() = Some(n);
+    }
+
+    fn release_documents(&self) {
+        *self.batch_permits.lock().unwrap() = None;
+        self.released.notify_all();
     }
 
     /// From now on a query call waits, its session held, until [`Spy::release_queries`].
@@ -98,11 +123,18 @@ impl Spy {
 
 impl Embedder for Spy {
     fn embed(&self, texts: &[String], kind: TextKind) -> Result<Embedded, EmbedError> {
+        if matches!(kind, TextKind::Query) {
+            self.asked.fetch_add(1, Ordering::SeqCst);
+        }
         let _session = self.session.lock().unwrap();
         self.seen.lock().unwrap().extend(texts.iter().cloned());
         match kind {
             TextKind::Query => {
                 self.queries.fetch_add(1, Ordering::SeqCst);
+                self.batches_before_query
+                    .lock()
+                    .unwrap()
+                    .get_or_insert(self.batches.load(Ordering::SeqCst));
                 std::thread::sleep(self.query);
                 // A backstop, so a test that fails while holding never strands the call. Longer than any wait: one
                 // that ended with SETTLE would free the query just as a broken guard's wait timed out, and the test
@@ -114,7 +146,20 @@ impl Embedder for Spy {
                     .wait_timeout_while(holding, SETTLE * 2, |held| *held)
                     .unwrap();
             }
-            TextKind::Document => std::thread::sleep(self.per_text * texts.len() as u32),
+            TextKind::Document => {
+                self.batches.fetch_add(1, Ordering::SeqCst);
+                // The same backstop as a held query's.
+                let permits = self.batch_permits.lock().unwrap();
+                let (mut permits, _) = self
+                    .released
+                    .wait_timeout_while(permits, SETTLE * 2, |p| *p == Some(0))
+                    .unwrap();
+                if let Some(n) = permits.as_mut() {
+                    *n = n.saturating_sub(1);
+                }
+                drop(permits);
+                std::thread::sleep(self.per_text * texts.len() as u32);
+            }
         }
         Ok(Embedded {
             vectors: texts.iter().map(|_| vec![0.6, 0.8, 0.0, 0.0]).collect(),
@@ -363,11 +408,14 @@ fn a_query_embed_past_five_seconds_falls_back_to_words_at_the_bound() {
 
 /// embeddings-expert, s08: a query that arrives while the worker is ingesting does not wait behind the backlog. The
 /// worker sends no new batch to the instance while the query waits, so it waits behind one batch at most.
+/// Not timed (ws012 s3b: a 3 s window and "the ingest still running" both failed under load): one batch is written
+/// (a search embeds a query only once there are vectors, F112), the next is held in flight with the session, the
+/// query arrives behind it, and only then is the ingest let go. The query must run right after that one batch.
 #[test]
 fn a_query_during_ingest_finishes_inside_the_bound() {
     let root = root("ingest");
-    // A batch of 16 texts takes 0.8 s; the whole ingest about 15 s.
-    let spy = Spy::new(Locality::Local, Duration::from_millis(50), Duration::ZERO);
+    let spy = Spy::new(Locality::Local, Duration::ZERO, Duration::ZERO);
+    spy.limit_documents(1);
     let d = daemon(&root, &spy);
     let g = root.join("g");
     ok(d.handle(&op(Op::GraphNew {
@@ -389,17 +437,30 @@ fn a_query_during_ingest_finishes_inside_the_bound() {
         );
     }
     eventually("the first vectors", || shards(&g) > 0);
-    let started = Instant::now();
-    let env = ok(d.handle(&op(Op::Search {
-        text: "approval delay".into(),
-        within: None,
-        limit: None,
-        along: None,
-    })));
-    let took = started.elapsed();
-    assert!(
-        took < Duration::from_secs(3),
-        "waited behind one batch at most: {took:?}"
+    eventually("the second batch held in flight", || {
+        spy.batches.load(Ordering::SeqCst) == 2
+    });
+    let env = std::thread::scope(|s| {
+        let d = &d;
+        let search = s.spawn(move || {
+            d.handle(&op(Op::Search {
+                text: "approval delay".into(),
+                within: None,
+                limit: None,
+                along: None,
+            }))
+        });
+        eventually("the query behind the held batch", || {
+            spy.asked.load(Ordering::SeqCst) == 1
+        });
+        spy.release_documents();
+        search.join().unwrap()
+    });
+    let env = ok(env);
+    assert_eq!(
+        *spy.batches_before_query.lock().unwrap(),
+        Some(2),
+        "the query ran right after the batch in flight, before any other"
     );
     assert!(
         !env.hints
@@ -408,10 +469,6 @@ fn a_query_during_ingest_finishes_inside_the_bound() {
             .any(|w| w.code() == "similarity_unavailable"),
         "{}",
         env.to_json()
-    );
-    assert!(
-        spy.seen.lock().unwrap().len() < 280,
-        "the ingest was still running when the query went"
     );
     let _ = fs::remove_dir_all(&root);
 }

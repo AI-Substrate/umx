@@ -7,7 +7,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use umx_protocol::{Build, Code, Envelope, Fill, Issue, Kind, Request, Status, Value, json, slots};
@@ -105,48 +106,38 @@ impl Home {
         }
     }
 
-    /// Runs umx and returns its envelope and exit code. Fails after 60 s (300 s for the fixture driver), so a
-    /// command that should have
-    /// been refused (a `daemon start` that starts) fails the test instead of hanging it. 60 s, not 20: under the full
-    /// suite's load a sound command (`graph new --secured`, which writes this machine's policy record) once took
-    /// longer than 20 s (the project manager's D50 gate); the bound only catches hangs.
+    /// Runs umx and returns its envelope and exit code. Fails after [`Home::limit`], so a command that should have
+    /// been refused (a `daemon start` that starts) fails the test instead of hanging it.
     fn umx(&self, args: &[&str]) -> (Envelope, u8) {
         self.umx_with(args, &[])
+    }
+
+    /// How long one umx command, or a daemon's ready line, may take: 60 s, 300 s for the fixture driver. 60 s, not
+    /// 20: under the full suite's load a sound command (`graph new --secured`, which writes this machine's policy
+    /// record) once took longer than 20 s (the project manager's D50 gate); the bound only catches hangs.
+    fn limit(&self) -> Duration {
+        if self.binary == env!("CARGO_BIN_EXE_umx") {
+            Duration::from_secs(60)
+        } else {
+            LIMIT
+        }
     }
 
     /// [`Home::umx`] with extra env.
     fn umx_with(&self, args: &[&str], env: &[(&str, &str)]) -> (Envelope, u8) {
         let mut cmd = self.command(args);
         cmd.envs(env.iter().copied());
-        let mut child = cmd.stdout(Stdio::piped()).spawn().unwrap();
-        // Read stdout while umx runs: a reply bigger than the pipe's buffer (64 KiB on macOS) would otherwise block
-        // umx on its write while this waits for it to exit (the 400-instance status reply, ws004 s25).
-        let mut pipe = child.stdout.take().unwrap();
-        let reader = std::thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let _ = pipe.read_to_end(&mut bytes);
-            bytes
+        let mut captured = cmd.spawn_captured().unwrap();
+        captured.what = format!("umx {args:?}");
+        let out = captured.finish(self.limit());
+        let env = Envelope::from_json(&out.stdout).unwrap_or_else(|e| {
+            panic!(
+                "umx {args:?}: {e}: {}",
+                String::from_utf8_lossy(&out.stdout)
+            )
         });
-        let timeout = if self.binary == env!("CARGO_BIN_EXE_umx") {
-            60
-        } else {
-            300
-        };
-        let deadline = Instant::now() + Duration::from_secs(timeout);
-        while child.try_wait().unwrap().is_none() {
-            if Instant::now() > deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                panic!("umx {args:?} did not finish");
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        let status = child.wait().unwrap();
-        let stdout = reader.join().unwrap();
-        let env = Envelope::from_json(&stdout)
-            .unwrap_or_else(|e| panic!("umx {args:?}: {e}: {}", String::from_utf8_lossy(&stdout)));
         assert_eq!(env.check(), Ok(()), "umx {args:?}");
-        (env, status.code().unwrap() as u8)
+        (env, out.status.code().unwrap() as u8)
     }
 
     /// Starts the daemon and returns its ready envelope.
@@ -159,10 +150,7 @@ impl Home {
         let mut args = vec!["daemon", "start"];
         args.extend_from_slice(flags);
         let mut child = self.command(&args).stdout(Stdio::piped()).spawn().unwrap();
-        let mut line = String::new();
-        BufReader::new(child.stdout.take().unwrap())
-            .read_line(&mut line)
-            .unwrap();
+        let line = ready_line(&mut child, &format!("umx {args:?}"), self.limit());
         self.daemon = Some(child);
         let env = Envelope::from_json(line.as_bytes())
             .unwrap_or_else(|e| panic!("ready line {line:?}: {e}"));
@@ -194,6 +182,176 @@ impl Drop for Home {
             let _ = child.wait();
         }
         let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+/// The longest any spawned command, or a wait for a daemon to exit, may take before the test kills it and fails
+/// naming it: the fixture driver's bound (see [`Home::limit`]). Only a hang reaches it.
+const LIMIT: Duration = Duration::from_secs(300);
+
+/// A child's stdout or stderr as a file of its own, read once the child has exited (ws012 s3b B1). Writes to a file are
+/// done when the child's write returns, so after it exits the file holds all it wrote, and no end of file has to
+/// come. A pipe's does not when another process holds its write end: on macOS a pipe is made close-on-exec only after
+/// it is made (std's `pipe()` then `fcntl`; Linux has `pipe2`), so a process this binary spawns from another thread
+/// in between inherits it and passes it on. That fits the hang on the macOS runner: a daemon the service stub starts
+/// during `daemon restart` can hold a concurrent `node add`'s stdout, and a read to its end waits for that daemon.
+/// A file handed on the same way is harmless: no reader waits on it, and no daemon writes to a descriptor it never
+/// opened. Files also need no reader thread, so a reply bigger than a pipe's buffer never blocks umx (ws004 s25).
+struct Capture(PathBuf);
+
+impl Capture {
+    fn new() -> (Capture, Stdio) {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let path = std::env::temp_dir().join(format!("umx-t-out-{}-{n}", std::process::id()));
+        let file = fs::File::create(&path).unwrap();
+        (Capture(path), Stdio::from(file))
+    }
+
+    fn read(self) -> Vec<u8> {
+        fs::read(&self.0).unwrap()
+    }
+}
+
+impl Drop for Capture {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+/// A spawned child whose stdout (and stderr, when asked) go to [`Capture`] files.
+struct Captured {
+    child: Child,
+    stdout: Capture,
+    stderr: Option<Capture>,
+    what: String,
+}
+
+impl Captured {
+    /// Waits for the child for at most `limit` (past it, kills it and fails naming the command), then reads all it
+    /// wrote.
+    fn finish(mut self, limit: Duration) -> Output {
+        drop(self.child.stdin.take());
+        let status = wait_within(&mut self.child, &self.what, limit);
+        Output {
+            status,
+            stdout: self.stdout.read(),
+            stderr: self.stderr.map(Capture::read).unwrap_or_default(),
+        }
+    }
+}
+
+fn wait_within(child: &mut Child, what: &str, limit: Duration) -> ExitStatus {
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("{what} did not finish within {} s", limit.as_secs());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The first stdout line of a starting daemon, within `limit`; past it, kills the daemon and fails naming `what`. A
+/// pipe, read only to its first line: the daemon writes it and runs on, so no end of file is waited for.
+fn ready_line(child: &mut Child, what: &str, limit: Duration) -> String {
+    let stdout = child.stdout.take().unwrap();
+    lines_until(stdout, "\n", child, what, limit)
+}
+
+/// What `pipe` gives up to and including the first line holding `needle`, within `limit`; past it (or at an end
+/// before it), kills `child` and fails naming `what`.
+fn lines_until(
+    pipe: impl Read + Send + 'static,
+    needle: &'static str,
+    child: &mut Child,
+    what: &str,
+    limit: Duration,
+) -> String {
+    let (sent, got) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(pipe);
+        let mut seen = String::new();
+        while !seen.contains(needle) {
+            match reader.read_line(&mut seen) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+        let _ = sent.send(seen);
+    });
+    match got.recv_timeout(limit) {
+        Ok(seen) if seen.contains(needle) => seen,
+        other => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "{what} printed no {needle:?} within {} s: {:?}",
+                limit.as_secs(),
+                other.ok()
+            )
+        }
+    }
+}
+
+/// Every child this file runs goes through these, so a hang fails at [`LIMIT`] naming the command.
+trait Bounded {
+    /// `Command::output`, bounded: stdin null, stdout and stderr captured in files.
+    fn bounded_output(&mut self) -> std::io::Result<Output>;
+    /// `Command::status`, bounded.
+    fn bounded_status(&mut self) -> std::io::Result<ExitStatus>;
+    /// Spawns with stdout in a file (stdin and stderr as already set), for a test that writes to stdin first or
+    /// runs several at once; [`Captured::finish`] waits for it and reads it.
+    fn spawn_captured(&mut self) -> std::io::Result<Captured>;
+}
+
+fn command_name(cmd: &Command) -> String {
+    format!(
+        "{} {:?}",
+        cmd.get_program().to_string_lossy(),
+        cmd.get_args().collect::<Vec<_>>()
+    )
+}
+
+impl Bounded for Command {
+    fn bounded_output(&mut self) -> std::io::Result<Output> {
+        let (stderr, to) = Capture::new();
+        self.stdin(Stdio::null()).stderr(to);
+        let mut captured = self.spawn_captured()?;
+        captured.stderr = Some(stderr);
+        Ok(captured.finish(LIMIT))
+    }
+
+    fn bounded_status(&mut self) -> std::io::Result<ExitStatus> {
+        let what = command_name(self);
+        let mut child = self.stdin(Stdio::null()).spawn()?;
+        Ok(wait_within(&mut child, &what, LIMIT))
+    }
+
+    fn spawn_captured(&mut self) -> std::io::Result<Captured> {
+        let (stdout, to) = Capture::new();
+        let child = self.stdout(to).spawn()?;
+        Ok(Captured {
+            child,
+            stdout,
+            stderr: None,
+            what: command_name(self),
+        })
+    }
+}
+
+trait BoundedChild {
+    fn bounded_wait(&mut self) -> std::io::Result<ExitStatus>;
+}
+
+impl BoundedChild for Child {
+    fn bounded_wait(&mut self) -> std::io::Result<ExitStatus> {
+        let what = format!("process {}", self.id());
+        Ok(wait_within(self, &what, LIMIT))
     }
 }
 
@@ -888,7 +1046,14 @@ fn lifecycle_with_an_owner_only_socket() {
 
     let (stop, exit) = home.umx(&["daemon", "stop"]);
     assert_eq!((exit, &stop.data["stopped"]), (0, &true.into()));
-    assert!(home.daemon.take().unwrap().wait().unwrap().success());
+    assert!(
+        home.daemon
+            .take()
+            .unwrap()
+            .bounded_wait()
+            .unwrap()
+            .success()
+    );
     assert!(!home.socket().exists());
 
     let (status, exit) = home.umx(&["daemon", "status"]);
@@ -954,7 +1119,7 @@ fn assert_output_modes(home: &Home, args: &[&str]) {
         if let Some(v) = output {
             cmd.env("UMX_OUTPUT", v);
         }
-        let out = cmd.output().unwrap();
+        let out = cmd.bounded_output().unwrap();
         let what = format!("{args:?} {flags:?} UMX_OUTPUT={output:?}");
         assert_eq!(out.status.code(), Some(0), "{what}");
         match envelope_of(&out) {
@@ -1002,18 +1167,22 @@ fn daemon_start_human_prints_the_banner_and_ready_line_on_stderr() {
     // 007 section 3 and req-64: JSON (the default) is one envelope on stdout (Home::start); --human is the
     // banner then the ready line on stderr, stdout empty.
     let mut home = Home::new("ready");
+    let (stdout, to) = Capture::new();
     let mut child = home
         .command(&["daemon", "start", "--human"])
-        .stdout(Stdio::piped())
+        .stdout(to)
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let mut stderr = BufReader::new(child.stderr.take().unwrap());
-    let mut seen = String::new();
-    while !seen.contains("umx daemon ready: pid ") {
-        assert_ne!(stderr.read_line(&mut seen).unwrap(), 0, "{seen}");
-    }
-    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let limit = home.limit();
+    let seen = lines_until(
+        stderr,
+        "umx daemon ready: pid ",
+        &mut child,
+        "umx daemon start --human",
+        limit,
+    );
     home.daemon = Some(child);
     assert!(seen.contains(BANNER_ROW), "{seen}");
     assert!(
@@ -1022,9 +1191,8 @@ fn daemon_start_human_prints_the_banner_and_ready_line_on_stderr() {
     );
     let (_, exit) = home.umx(&["daemon", "stop"]);
     assert_eq!(exit, 0);
-    home.daemon.take().unwrap().wait().unwrap();
-    let mut rest = String::new();
-    BufReader::new(stdout).read_to_string(&mut rest).unwrap();
+    home.daemon.take().unwrap().bounded_wait().unwrap();
+    let rest = String::from_utf8(stdout.read()).unwrap();
     assert_eq!(rest, "", "stdout stays empty in human mode");
 }
 
@@ -1035,7 +1203,7 @@ const BANNER_ROW: &str = "██    ██  ███▄  ▄███  ▀█�
 fn output_with(home: &Home, args: &[&str], env: &[(&str, &str)]) -> (String, String) {
     let mut cmd = home.command(args);
     cmd.envs(env.iter().copied());
-    let out = cmd.output().unwrap();
+    let out = cmd.bounded_output().unwrap();
     assert!(out.status.code().is_some(), "{args:?}");
     (
         String::from_utf8(out.stdout).unwrap(),
@@ -1061,7 +1229,7 @@ fn on_a_pty(home: &Home, args: &[&str], env: &[(&str, &str)]) -> String {
         .env("TERM", "xterm-256color")
         .envs(env.iter().copied())
         .stdin(Stdio::null())
-        .output()
+        .bounded_output()
         .unwrap();
     String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n")
 }
@@ -1264,7 +1432,7 @@ fn an_idle_daemon_uses_no_cpu() {
     let cpu = || {
         let out = Command::new("ps")
             .args(["-o", "time=", "-p", &pid])
-            .output()
+            .bounded_output()
             .unwrap();
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
     };
@@ -1466,7 +1634,11 @@ impl Home {
     /// `umx batch <args>` run for real, its stdout (the receipt exactly as printed) saved as `<name>.json` for a
     /// later `--refs-from`. Returns the file and the parsed receipt.
     fn receipt(&self, name: &str, args: &[&str]) -> (String, Envelope) {
-        let out = self.command(args).stdout(Stdio::piped()).output().unwrap();
+        let out = self
+            .command(args)
+            .stdout(Stdio::piped())
+            .bounded_output()
+            .unwrap();
         let env = Envelope::from_json(&out.stdout).unwrap();
         assert_eq!(
             out.status.code(),
@@ -1552,7 +1724,7 @@ impl Home {
     fn restart(&mut self) -> Envelope {
         self.ok(&["daemon", "stop"]);
         if let Some(mut child) = self.daemon.take() {
-            child.wait().unwrap();
+            child.bounded_wait().unwrap();
         }
         self.start()
     }
@@ -1964,7 +2136,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
             let path = home.graph();
             home.ok(&["daemon", "stop"]);
             if let Some(mut child) = home.daemon.take() {
-                child.wait().unwrap();
+                child.bounded_wait().unwrap();
             }
             fs::remove_dir_all(&path).unwrap();
             home.start();
@@ -3869,7 +4041,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
             let out = home
                 .command(&["batch", "--file", &file])
                 .stdout(Stdio::piped())
-                .output()
+                .bounded_output()
                 .unwrap();
             let env = Envelope::from_json(&out.stdout).unwrap();
             let exit = out.status.code().unwrap() as u8;
@@ -4801,7 +4973,7 @@ fn a_slow_identity_helper_falls_back_and_prints_no_cleanup_line() {
             "--title",
             "Slow identity",
         ])
-        .output()
+        .bounded_output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
@@ -4866,7 +5038,7 @@ fn rejected_automatic_login_never_reaches_graph_files_or_the_reply() {
         .env("USER", &token)
         .env_remove("LOGNAME")
         .env_remove("UMX_AUTHOR")
-        .output()
+        .bounded_output()
         .unwrap();
     assert!(output.status.success());
     let reply = Envelope::from_json(&output.stdout).unwrap();
@@ -4958,7 +5130,7 @@ fn dev_restart(home: &Home) -> std::process::Output {
         .arg(home.path.join("bin"))
         .arg("dev")
         .env("UMX_HOME", &home.path)
-        .output()
+        .bounded_output()
         .unwrap()
 }
 
@@ -4998,7 +5170,7 @@ fn dev_restart_reinstalls_the_service_so_the_new_build_runs() {
         .args(["daemon", "install"])
         .env("UMX_HOME", &home.path)
         .env("UMX_ROOTS", &home.path)
-        .output()
+        .bounded_output()
         .unwrap();
     assert!(
         env.status.success(),
@@ -5135,7 +5307,7 @@ impl Home {
             .env_remove("NO_COLOR")
             .env_remove("CLICOLOR_FORCE")
             .env_remove("TERM");
-        let out = cmd.output().unwrap();
+        let out = cmd.bounded_output().unwrap();
         assert!(
             out.status.success(),
             "umx {args:?}: {}",
@@ -5306,7 +5478,7 @@ fn the_s05a_verbs_end_to_end() {
     let (before, _) = home.umx(&["node", "list"]);
     home.umx(&["daemon", "stop"]);
     if let Some(mut d) = home.daemon.take() {
-        let _ = d.wait();
+        let _ = d.bounded_wait();
     }
     home.start();
     home.umx(&["graph", "load", &path]);
@@ -5724,7 +5896,7 @@ impl Home {
         for (k, v) in env {
             cmd.env(k, v);
         }
-        let out = cmd.output().unwrap();
+        let out = cmd.bounded_output().unwrap();
         let envelope = Envelope::from_json(&out.stdout).unwrap();
         assert_eq!(envelope.check(), Ok(()), "umx {args:?}");
         (envelope, out.status.code().unwrap() as u8)
@@ -6533,7 +6705,14 @@ fn a_request_from_another_protocol_writes_nothing_and_stop_still_works() {
             env.to_json()
         );
     }
-    assert!(home.daemon.take().unwrap().wait().unwrap().success());
+    assert!(
+        home.daemon
+            .take()
+            .unwrap()
+            .bounded_wait()
+            .unwrap()
+            .success()
+    );
 }
 
 /// ws006 S1b (req-126): `umx node evidence` end to end. Both argument orders, list positions and canonical text,
@@ -6737,7 +6916,7 @@ fn a_hint_is_advice_that_never_moves_status_or_the_exit_code() {
             "--human",
         ])
         .env("NO_COLOR", "1")
-        .output()
+        .bounded_output()
         .unwrap();
     assert!(out.status.success());
     let stderr = String::from_utf8(out.stderr).unwrap();
@@ -6781,10 +6960,8 @@ fn logged_graph(home: &mut Home) -> String {
         .stderr(log)
         .spawn()
         .unwrap();
-    let mut line = String::new();
-    BufReader::new(child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
+    let limit = home.limit();
+    ready_line(&mut child, "umx daemon start", limit);
     home.daemon = Some(child);
     let path = home.path.join("g").display().to_string();
     home.ok(&["graph", "new", &path, "--alias", "demo"]);
@@ -7275,7 +7452,7 @@ fn run_as_printed(home: &Home, line: &str) -> (Envelope, u8) {
         .env("UMX_ROOTS", &home.path)
         .env_remove("UMX_OUTPUT")
         .env_remove("UMX_GRAPH")
-        .output()
+        .bounded_output()
         .unwrap();
     let env = Envelope::from_json(&out.stdout)
         .unwrap_or_else(|e| panic!("{line}: {e}: {}", String::from_utf8_lossy(&out.stdout)));
@@ -7294,7 +7471,7 @@ fn graph_new_prints_how_to_change_the_graph_and_each_command_runs_as_printed() {
     let path = home.path.join("x").display().to_string();
     let out = home
         .command(&["graph", "new", &path, "--alias", "x", "--human"])
-        .output()
+        .bounded_output()
         .unwrap();
     assert_eq!(out.status.code(), Some(0));
     let stdout = String::from_utf8(out.stdout).unwrap();
@@ -8434,7 +8611,10 @@ fn doctor_says_ok_when_everything_is_healthy() {
         checked.iter().any(|p| p.ends_with("run/umx.sock")),
         "{checked:?}"
     );
-    let human = home.command(&["doctor", "--human"]).output().unwrap();
+    let human = home
+        .command(&["doctor", "--human"])
+        .bounded_output()
+        .unwrap();
     assert!(String::from_utf8_lossy(&human.stdout).contains("verdict: ok"));
 }
 
@@ -8546,7 +8726,10 @@ fn doctor_in_a_binary_install_prints_the_service_and_pinned_skill_commands() {
         "{source} for build {commit}"
     );
 
-    let human = home.command(&["doctor", "--human"]).output().unwrap();
+    let human = home
+        .command(&["doctor", "--human"])
+        .bounded_output()
+        .unwrap();
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&human.stdout),
@@ -8578,7 +8761,7 @@ fn doctor_follows_no_link_inside_the_skill_and_stays_bounded() {
         ("doc-skill-fifo", |skill, _| {
             let made = Command::new("mkfifo")
                 .arg(skill.join("references/pipe"))
-                .status()
+                .bounded_status()
                 .unwrap();
             assert!(made.success());
         }),
@@ -8626,7 +8809,7 @@ fn doctor_fix_removes_a_stale_socket_and_tightens_modes_and_nothing_else() {
 
     let (before, exit) = home.umx(&["doctor"]);
     assert_eq!((exit, before.data["verdict"].as_str()), (6, Some("broken")));
-    let out = home.command(&["doctor", "--fix"]).output().unwrap();
+    let out = home.command(&["doctor", "--fix"]).bounded_output().unwrap();
     let env = Envelope::from_json(&out.stdout).unwrap();
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("remove the stale socket"), "{said}");
@@ -8687,7 +8870,7 @@ fn every_doctor_next_runs_as_printed() {
             .env("UMX_HOME", &home.path)
             .env("UMX_ROOTS", &home.path)
             .env("UMX_OUTPUT", "json")
-            .output()
+            .bounded_output()
             .unwrap();
         assert_ne!(out.status.code(), Some(2), "{code:?}: {next}");
     }
@@ -8756,7 +8939,7 @@ fn doctor_fix_restarts_a_stale_service_daemon_through_the_service_manager() {
         status,
         Some(Envelope::ok("graph list", json!({ "rows": [] }))),
     );
-    let out = home.command(&["doctor", "--fix"]).output().unwrap();
+    let out = home.command(&["doctor", "--fix"]).bounded_output().unwrap();
     let env = Envelope::from_json(&out.stdout).unwrap();
     assert!(String::from_utf8_lossy(&out.stderr).contains("restart the umx service"));
     assert_eq!(
@@ -9496,11 +9679,16 @@ fn a_downgrade_without_a_person_at_a_terminal_is_refused() {
     let mut child = home
         .command(&["graph", "confirm-policy", "demo"])
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+        .spawn_captured()
         .unwrap();
-    child.stdin.take().unwrap().write_all(b"demo\ny\n").unwrap();
-    let out = child.wait_with_output().unwrap();
+    child
+        .child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"demo\ny\n")
+        .unwrap();
+    let out = child.finish(LIMIT);
     let env = Envelope::from_json(&out.stdout).unwrap();
     assert!(
         has(&env, Code::PolicyConfirmNeedsHuman),
@@ -9552,26 +9740,16 @@ fn confirm_on_a_pty(home: &Home, typed: &str) -> Envelope {
         .env("UMX_ROOTS", &home.path)
         .env("TERM", "dumb")
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+        .spawn_captured()
         .unwrap();
     // Held open until umx exits, so script never sees the end of its input first.
-    let mut stdin = child.stdin.take().unwrap();
+    let mut stdin = child.child.stdin.take().unwrap();
     std::thread::sleep(Duration::from_millis(500));
     stdin.write_all(format!("{typed}\n").as_bytes()).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while child.try_wait().unwrap().is_none() {
-        assert!(Instant::now() < deadline, "confirm on a pty did not finish");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    child.what = "confirm on a pty".into();
+    let out = child.finish(Duration::from_secs(20));
     drop(stdin);
-    let mut out = String::new();
-    child
-        .stdout
-        .take()
-        .unwrap()
-        .read_to_string(&mut out)
-        .unwrap();
+    let out = String::from_utf8_lossy(&out.stdout).into_owned();
     let text = out.replace("\r\n", "\n");
     assert!(text.contains("type the graph's alias (demo)"), "{text}");
     Envelope::from_json(json_part(&text).as_bytes()).unwrap_or_else(|e| panic!("{e}: {text}"))
@@ -9748,7 +9926,7 @@ fn doctor_never_shows_an_api_key() {
     let human = home
         .command(&["doctor", "--human"])
         .env("UMX_TEST_KEY", secret)
-        .output()
+        .bounded_output()
         .unwrap();
     let all = format!(
         "{}{}",
@@ -9816,7 +9994,7 @@ fn doctor_fix_checks_again_with_the_config_it_repaired() {
     home.graph();
     let file = home.write_config("# mine\n");
     fs::set_permissions(&file, fs::Permissions::from_mode(0o666)).unwrap();
-    let out = home.command(&["doctor", "--fix"]).output().unwrap();
+    let out = home.command(&["doctor", "--fix"]).bounded_output().unwrap();
     let env = Envelope::from_json(&out.stdout).unwrap();
     assert_eq!(out.status.code(), Some(0), "{}", env.to_json());
     assert_eq!(env.data["verdict"], "ok", "{}", env.to_json());
@@ -10139,7 +10317,7 @@ fn version_flags_are_umx_version() {
             let run = |first: &str| {
                 let out = home
                     .command(&[&[first][..], output].concat())
-                    .output()
+                    .bounded_output()
                     .unwrap();
                 let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
                 (out.status.code(), text(&out.stdout), text(&out.stderr))
@@ -11205,7 +11383,7 @@ fn unix_sockets(pid: u64) -> usize {
     } else {
         let out = Command::new("lsof")
             .args(["-a", "-p", &pid.to_string(), "-U", "-F", "f"])
-            .output()
+            .bounded_output()
             .unwrap();
         String::from_utf8_lossy(&out.stdout)
             .lines()
@@ -11376,6 +11554,98 @@ fn restart_while_writing(home: &Home) -> Envelope {
     env
 }
 
+/// A stand-in umx in `home` that leaves a process holding its stdout (as a daemon that inherited the pipe did on the
+/// macOS runner, ws012 s3b), then writes a 256 KiB reply, more than a pipe holds, and exits. Returns the holder's
+/// pid file.
+fn held_writer_stand_in(home: &mut Home) -> PathBuf {
+    fs::create_dir_all(&home.path).unwrap();
+    let stand_in = home.path.join("umx-stand-in");
+    let pid_file = home.path.join("holder.pid");
+    let reply = home.path.join("reply.json");
+    let big = "x".repeat(256 * 1024);
+    fs::write(
+        &reply,
+        Envelope::ok("node add", json!({ "big": big })).to_json(),
+    )
+    .unwrap();
+    fs::write(
+        &stand_in,
+        format!(
+            "#!/bin/sh\n/bin/sleep 120 &\necho $! > '{}'\n/bin/cat '{}'\n",
+            pid_file.display(),
+            reply.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&stand_in, fs::Permissions::from_mode(0o755)).unwrap();
+    home.binary = Box::leak(stand_in.display().to_string().into_boxed_str());
+    pid_file
+}
+
+/// ws012 s3b B1: the harness has ALL of a command's output once it exits, whoever still holds its writer and however
+/// late it reads. Staged, not timed: a holder keeps the writer open for 120 s, and nothing reads until the command
+/// has exited (a [`Captured`] reads only then). A reply bigger than a pipe proves no reader was needed meanwhile.
+#[test]
+fn output_is_whole_once_umx_exits_with_its_writer_held_and_no_reader_until_then() {
+    let mut home = Home::new("writer-held");
+    let pid_file = held_writer_stand_in(&mut home);
+    let (env, exit) = home.umx(&["node", "add"]);
+    let holder = fs::read_to_string(&pid_file).unwrap();
+    let _ = Command::new("/bin/kill")
+        .arg(holder.trim())
+        .bounded_status();
+    assert_eq!((exit, env.command.as_str()), (0, "node add"));
+    assert_eq!(env.data["big"].as_str().map(str::len), Some(256 * 1024));
+}
+
+/// ws012 s3b B1, the control: the same stand-in and the same late reader on a pipe, the medium 790c090 read through.
+/// A pipe's output is whole only if a reader keeps up while the command runs: read late, the command cannot even
+/// finish writing, so the bound fails it. That dependence on when the reader runs is what the files remove.
+#[test]
+#[should_panic(expected = "did not finish within 2 s")]
+fn a_pipe_read_only_after_exit_never_has_the_whole_reply() {
+    let mut home = Home::new("writer-held-pipe");
+    let pid_file = held_writer_stand_in(&mut home);
+    let mut child = Command::new(home.binary)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wait_within(&mut child, "umx-stand-in on a pipe", Duration::from_secs(2))
+    }));
+    if let Ok(holder) = fs::read_to_string(&pid_file) {
+        let _ = Command::new("/bin/kill")
+            .arg(holder.trim())
+            .bounded_status();
+    }
+    if let Err(panic) = ended {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+/// ws012 s3b: a planted hang fails at the bound, naming the command, instead of hanging the suite.
+#[test]
+#[should_panic(expected = "/bin/sleep [\"60\"] did not finish within 1 s")]
+fn a_command_that_never_finishes_fails_at_the_bound() {
+    Command::new("/bin/sleep")
+        .arg("60")
+        .spawn_captured()
+        .unwrap()
+        .finish(Duration::from_secs(1));
+}
+
+/// ws012 s3b: a daemon that never prints its ready line fails at the bound, naming it.
+#[test]
+#[should_panic(expected = "stand-in daemon printed no")]
+fn a_daemon_that_never_gets_ready_fails_at_the_bound() {
+    let mut child = Command::new("/bin/sleep")
+        .arg("60")
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    ready_line(&mut child, "stand-in daemon", Duration::from_secs(1));
+}
+
 /// Review B1: the service runs another UMX_HOME, so restarting this home's hand-started daemon happens in
 /// place and leaves that service alone.
 #[test]
@@ -11528,7 +11798,11 @@ fn models_fetch_takes_one_name() {
 /// umx for a reply bigger than a pipe's buffer: `Home::umx` waits before it reads stdout, which would block the
 /// child once the pipe fills.
 fn big(home: &Home, args: &[&str]) -> Envelope {
-    let out = home.command(args).stdout(Stdio::piped()).output().unwrap();
+    let out = home
+        .command(args)
+        .stdout(Stdio::piped())
+        .bounded_output()
+        .unwrap();
     let env = Envelope::from_json(&out.stdout).unwrap();
     assert_eq!(env.check(), Ok(()));
     assert_eq!(
@@ -12165,7 +12439,7 @@ fn batch_idempotency_key_replays_the_first_receipt_byte_for_byte() {
             &file,
             "--human",
         ])
-        .output()
+        .bounded_output()
         .unwrap();
     let text = String::from_utf8(human.stdout).unwrap();
     assert!(text.contains("replayed: recorded"), "{text}");
@@ -12187,11 +12461,11 @@ fn concurrent_batches_with_one_key_run_once() {
         .ops_file("{\"op\":\"node add\",\"ref\":\"q\",\"type\":\"question\",\"title\":\"Once\"}\n");
     let args = ["batch", "--idempotency-key", "together", "--file", &file];
     let children: Vec<_> = (0..2)
-        .map(|_| home.command(&args).stdout(Stdio::piped()).spawn().unwrap())
+        .map(|_| home.command(&args).spawn_captured().unwrap())
         .collect();
     let replies: Vec<Envelope> = children
         .into_iter()
-        .map(|c| Envelope::from_json(&c.wait_with_output().unwrap().stdout).unwrap())
+        .map(|c| Envelope::from_json(&c.finish(LIMIT).stdout).unwrap())
         .collect();
     let replayed: Vec<bool> = replies.iter().map(|r| r.data["replayed"] == true).collect();
     assert_eq!(replayed.iter().filter(|r| **r).count(), 1, "{replayed:?}");
@@ -12266,7 +12540,7 @@ fn batch_echo_caps_real_cli_records_and_cleans_human_sentences() {
             "--echo-sentences",
             "--human",
         ])
-        .output()
+        .bounded_output()
         .unwrap();
     assert!(
         human.status.success(),
@@ -12497,7 +12771,7 @@ fn s10_scan_surfaces_refuse_both_batch_modes_without_leaking_and_singles_warn() 
             if dry {
                 args.push("--dry-run");
             }
-            let out = home.command(&args).output().unwrap();
+            let out = home.command(&args).bounded_output().unwrap();
             let env = Envelope::from_json(&out.stdout).unwrap();
             assert_eq!(out.status.code(), Some(1), "{}", env.to_json());
             assert_eq!(env.errors[1].code(), "batch_line_invalid");
@@ -12787,16 +13061,16 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
     let mut child = home
         .command(&["batch", "--file", "-"])
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+        .spawn_captured()
         .unwrap();
     child
+        .child
         .stdin
         .take()
         .unwrap()
         .write_all(ops.as_bytes())
         .unwrap();
-    let out = child.wait_with_output().unwrap();
+    let out = child.finish(LIMIT);
     let env = Envelope::from_json(&out.stdout).unwrap();
     assert_eq!(env.check(), Ok(()));
     assert_eq!(
@@ -13752,7 +14026,7 @@ fn scopes_cover_req66_lists_query_search_and_restart() {
     // g2 is unloaded on purpose, so it stays away after the restart (F72 reloads only loaded graphs).
     home.umx(&["graph", "unload", "g2"]);
     home.umx(&["daemon", "stop"]);
-    home.daemon.take().unwrap().wait().unwrap();
+    home.daemon.take().unwrap().bounded_wait().unwrap();
     home.start();
     home.umx(&["graph", "load", &paths[0], "--as", "renamed"]);
     let (missing, exit) = home.umx(&["node", "list", "--scope", "both"]);
@@ -14476,7 +14750,7 @@ fn scope_followups_recovery_executes_for_plain_and_space_paths() {
             .env("UMX_HOME", &home.path)
             .env("UMX_ROOTS", &home.path)
             .env_remove("UMX_GRAPH")
-            .output()
+            .bounded_output()
             .unwrap();
         assert!(
             out.status.success(),
@@ -16053,7 +16327,7 @@ impl Home {
     fn stop(&mut self) {
         self.ok(&["daemon", "stop"]);
         if let Some(mut child) = self.daemon.take() {
-            child.wait().unwrap();
+            child.bounded_wait().unwrap();
         }
     }
 
@@ -18611,13 +18885,23 @@ impl Home {
             Command::new("/bin/kill")
                 .args(["-s", "0", pid.trim()])
                 .stderr(Stdio::null())
-                .status()
+                .bounded_status()
                 .is_ok_and(|s| s.success())
         })
     }
 
     fn ui_running(&self) -> bool {
         self.ok(&["ui", "status"]).data["running"] == true
+    }
+
+    /// Whether process `pid` still exists. A supervisor holds the view lock until it exits, after `ui status` already
+    /// says not running, so the next launcher waits for this (ws012 s3b: one refused as ui_already_running).
+    fn alive(pid: u64) -> bool {
+        Command::new("/bin/kill")
+            .args(["-s", "0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .bounded_status()
+            .is_ok_and(|s| s.success())
     }
 
     fn eventually(&self, what: &str, cond: impl Fn(&Home) -> bool) {
@@ -18731,15 +19015,18 @@ fn ui_detach_runs_the_view_in_the_background_until_stopped_or_the_daemon_restart
     });
     assert!(!home.ui_running());
     assert_eq!(home.ok(&["ui", "stop"]).data, json!({ "stopped": false }));
+    home.eventually("the stopped supervisor gone", |_| !Home::alive(pid));
 
     // A daemon restart ends it: a new daemon is a new start id.
     let (up, exit) = home.umx_with(&["ui", "--detach", "--no-open"], &env);
     assert_eq!(exit, 0, "{}", up.to_json());
+    let pid = up.data["pid"].as_u64().unwrap();
     home.ok(&["daemon", "restart"]);
     home.eventually(
         "the view ends with the daemon it was started against",
         |h| !h.server_alive() && !h.ui_running(),
     );
+    home.eventually("the ended supervisor gone", |_| !Home::alive(pid));
 
     // kill -9 on the supervisor: the server sees its stdin close and goes.
     let (up, exit) = home.umx_with(&["ui", "--detach", "--no-open"], &env);
@@ -18748,7 +19035,7 @@ fn ui_detach_runs_the_view_in_the_background_until_stopped_or_the_daemon_restart
     assert!(
         Command::new("/bin/kill")
             .args(["-s", "KILL", &pid])
-            .status()
+            .bounded_status()
             .unwrap()
             .success()
     );
@@ -18772,35 +19059,24 @@ fn ui_launchers_started_together_give_exactly_one_view() {
     let spawn = |args: &[&str]| {
         let mut cmd = home.command(args);
         cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
+        cmd.stderr(Stdio::null()).spawn_captured().unwrap()
     };
-    let mut detached: Vec<Child> = (0..3)
+    let detached: Vec<Captured> = (0..3)
         .map(|_| spawn(&["ui", "--detach", "--no-open", "--graph", "demo"]))
         .collect();
     // A person's refusal is printed on stderr, so the terminal one keeps it.
+    let (term_out, to_out) = Capture::new();
+    let (term_err, to_err) = Capture::new();
     let mut terminal = {
         let mut cmd = home.command(&["--human", "ui", "--no-open"]);
         cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
+        cmd.stdout(to_out).stderr(to_err).spawn().unwrap()
     };
     let mut ready = 0;
     let mut refused = 0;
-    for child in &mut detached {
-        let mut out = String::new();
-        child
-            .stdout
-            .take()
-            .unwrap()
-            .read_to_string(&mut out)
-            .unwrap();
-        child.wait().unwrap();
-        let env = Envelope::from_json(out.trim().as_bytes()).unwrap();
+    for child in detached {
+        let out = child.finish(LIMIT).stdout;
+        let env = Envelope::from_json(String::from_utf8_lossy(&out).trim().as_bytes()).unwrap();
         match env.errors.first().map(Issue::code) {
             None => ready += 1,
             Some("ui_already_running") => {
@@ -18810,23 +19086,30 @@ fn ui_launchers_started_together_give_exactly_one_view() {
             Some(other) => panic!("{other}: {}", env.to_json()),
         }
     }
-    // The terminal one either runs (its link printed) or was refused and has exited.
-    let mut line = String::new();
-    BufReader::new(terminal.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    if line.starts_with("umx ui: open http://127.0.0.1:") {
+    // The terminal one either runs (its link printed) or was refused and exits; whichever it is, within LIMIT.
+    let link = "umx ui: open http://127.0.0.1:";
+    let deadline = Instant::now() + LIMIT;
+    let runs = loop {
+        let exited = terminal.try_wait().unwrap().is_some();
+        let out = fs::read_to_string(&term_out.0).unwrap();
+        if out.starts_with(link) && out.contains('\n') {
+            break true;
+        }
+        if exited {
+            assert_eq!(out, "", "a refused terminal prints nothing on stdout");
+            break false;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "umx --human ui --no-open neither printed its link nor exited within {} s",
+            LIMIT.as_secs()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    if runs {
         ready += 1;
     } else {
-        assert_eq!(line, "", "a refused terminal prints nothing on stdout");
-        terminal.wait().unwrap();
-        let mut said = String::new();
-        terminal
-            .stderr
-            .take()
-            .unwrap()
-            .read_to_string(&mut said)
-            .unwrap();
+        let said = String::from_utf8_lossy(&term_err.read()).into_owned();
         assert!(said.contains("ui_already_running"), "{said}");
         refused += 1;
     }

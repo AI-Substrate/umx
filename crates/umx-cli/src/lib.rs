@@ -725,7 +725,10 @@ fn read_reply(stream: &mut impl TimedRead, limits: ReplyLimits) -> Result<Vec<u8
         };
         stream.arm(READ_SLICE.min(left));
         match stream.read(&mut buf) {
+            // A reset is an end too: Linux resets the stream of a peer that closed without reading all it was sent,
+            // as a busy daemon does (it answers without reading the request, F56). What it sent is still read first.
             Ok(0) => return Ok(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => return Ok(bytes),
             Ok(n) => {
                 progress = Instant::now();
                 first.get_or_insert(progress);
@@ -1113,6 +1116,20 @@ mod tests {
         assert_eq!(
             got.map(|e| e.errors[0].code().to_owned()),
             Ok("daemon_busy".to_owned())
+        );
+    }
+
+    /// ws012 s3b: a daemon that answers and closes without reading the request (busy, F56) is read to its end. Linux
+    /// then resets the stream after the reply instead of ending it, every time: no thread, no timing.
+    #[test]
+    fn a_reply_from_a_daemon_that_never_read_the_request_is_kept() {
+        let (mut client, mut daemon) = UnixStream::pair().unwrap();
+        client.write_all(b"request").unwrap();
+        daemon.write_all(b"{}").unwrap();
+        drop(daemon);
+        assert_eq!(
+            read_reply(&mut client, ReplyLimits::STATUS).as_deref(),
+            Ok(&b"{}"[..])
         );
     }
 

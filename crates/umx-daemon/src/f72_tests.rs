@@ -182,6 +182,17 @@ fn stop(d: Daemon) {
     ok(d.handle(&Request::new("daemon stop", Vec::new(), build())));
 }
 
+/// The nodes of `alias` whose vectors are still to be written, held ones aside (the daemon's own record; usize::MAX
+/// while it is not loaded), as in s08_tests.
+fn pending(d: &Daemon, alias: &str) -> usize {
+    d.services
+        .read()
+        .unwrap()
+        .loaded(alias)
+        .and_then(|l| l.pending_count())
+        .unwrap_or(usize::MAX)
+}
+
 /// Security F72 condition 6: a remembered secured graph reloaded at start queues its embeds through the normal
 /// worker, which never sends its text to a hosted embedder. An open graph reloaded beside it is embedded by the same
 /// spy, so the instrument can see a positive.
@@ -195,8 +206,9 @@ fn a_reloaded_secured_graph_never_reaches_a_hosted_embedder() {
     new_graph(&d, &open, "open", false);
     ok(add(&d, "vault", "Vault launch codes plan"));
     ok(add(&d, "open", "Open roadmap item"));
-    eventually("the open graph's node to be embedded", || {
-        hosted.saw("Open roadmap item")
+    // Written, not just embedded (ws012 s3b, as F112): seen by the embedder is not yet on disk.
+    eventually("the open graph's node to be embedded and written", || {
+        hosted.saw("Open roadmap item") && pending(&d, "open") == 0
     });
     stop(d);
     // The open graph's vectors go, so the restarted daemon must embed it again.
@@ -212,14 +224,16 @@ fn a_reloaded_secured_graph_never_reaches_a_hosted_embedder() {
         .map(|r| r["alias"].as_str().unwrap())
         .collect();
     assert_eq!(reloaded, ["vault", "open"], "{status}");
-    eventually("the reloaded open graph to be embedded", || {
-        hosted.saw("Open roadmap item")
+    // Open written and the worker settled: every reloaded job was planned and then sent or dropped, so a vault text
+    // that went would already be seen. No clock (ws012 s3b). Vault stays pending: no instance may take it.
+    eventually("the open graph written and the worker settled", || {
+        hosted.saw("Open roadmap item") && pending(&d, "open") == 0 && d.drain.settled()
     });
-    std::thread::sleep(Duration::from_millis(300));
     assert!(
         !hosted.saw("Vault"),
         "a secured graph's text never reaches a hosted embedder"
     );
+    assert!(pending(&d, "vault") > 0, "the vault node is still to embed");
     stop(d);
     let _ = fs::remove_dir_all(&root);
 }

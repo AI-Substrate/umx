@@ -462,7 +462,10 @@ pub(crate) fn read_until_end(stream: &mut impl TimedRead, deadline: Instant) -> 
             .filter(|d| !d.is_zero())?;
         stream.arm(READ_SLICE.min(left));
         match stream.read(&mut chunk) {
+            // A reset is an end too: Linux resets the stream of a peer that closed without reading all it was sent,
+            // as a busy daemon does (`refuse`). What it sent is still read first.
             Ok(0) => return Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => return Some(bytes),
             Ok(n) if (bytes.len() + n) as u64 <= MAX_REPLY => bytes.extend_from_slice(&chunk[..n]),
             Ok(_) => return None,
             // A slice ran out (or a signal came): look at the deadline and read again.
@@ -2627,6 +2630,20 @@ mod tests {
             self.armed = wait;
             self.longest = self.longest.max(wait);
         }
+    }
+
+    /// ws012 s3b: a peer that answers and closes without reading what it was sent (a busy daemon's `refuse`) is read
+    /// to its end. Linux then resets the stream after the reply instead of ending it, every time: no thread, no timing.
+    #[test]
+    fn a_reply_from_a_peer_that_never_read_the_request_is_kept() {
+        let (mut client, mut daemon) = UnixStream::pair().unwrap();
+        client.write_all(b"request").unwrap();
+        daemon.write_all(b"{}").unwrap();
+        drop(daemon);
+        assert_eq!(
+            read_until_end(&mut client, Instant::now() + Duration::from_secs(5)).as_deref(),
+            Some(&b"{}"[..])
+        );
     }
 
     /// Review R129-B1: a reply nobody reads gives up at its deadline, never blocking more than a slice at a time.

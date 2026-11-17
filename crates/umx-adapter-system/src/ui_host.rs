@@ -41,7 +41,17 @@ pub const STOP_GRACE: Duration = Duration::from_secs(3);
 pub const PAGE_LIFE: Duration = Duration::from_secs(30);
 
 /// How long the browser opener may take.
+#[cfg_attr(test, allow(dead_code))]
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The bound [`run_with_timeout`] holds an opener to: [`OPEN_TIMEOUT`], except in this crate's unit tests. Their
+/// openers are shell scripts, and on a loaded machine one took more than 10 s to `stat` and `cp` a page (ws012 s3b),
+/// as service.rs's stub tools did (F79). No unit test waits for the bound itself, so a longer one only lets a slow
+/// stub finish.
+#[cfg(not(test))]
+const OPEN_BOUND: Duration = OPEN_TIMEOUT;
+#[cfg(test)]
+const OPEN_BOUND: Duration = Duration::from_secs(120);
 
 const PAGE_PREFIX: &str = "ui-open-";
 
@@ -289,7 +299,7 @@ fn run_with_timeout(command: &mut Command, input: Option<&str>) -> Result<(), Ui
                         .map_or("a signal".to_string(), |c| c.to_string())
                 )));
             }
-            Ok(None) if started.elapsed() < OPEN_TIMEOUT => {
+            Ok(None) if started.elapsed() < OPEN_BOUND => {
                 std::thread::sleep(Duration::from_millis(20));
             }
             _ => {
