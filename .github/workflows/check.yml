@@ -1,22 +1,59 @@
 name: check
 
+# Every pull request to main, plus a manual run (D76). Required checks need a report on every PR, so there is no
+# workflow-level paths filter here (security s1 C10): ui-check is gated by a job-level if instead.
 on:
-  # PRs only, plus a manual run (decision D51, 2026-11-11). Disabled in Actions for now; the local gate (D50) is the merge rule.
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A new push to a PR cancels that PR's older run; a manual run gets a group of its own, so it is never cancelled or
+# held back by another (C4).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check:
-    # umx is built and used on macOS as well as Linux (E-3).
+    # One GitHub-hosted leg per platform, native architecture only (D76a Q4, C1), picked from round 1's timings. The
+    # job names carry the platform, not the image label, so a label bump cannot orphan a required check (C10).
+    name: check (${{ matrix.leg }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-24.04
+            leg: linux-x64
+            arch: x86_64
+            timeout: 40
+          - os: macos-15
+            leg: macos-arm64
+            arch: arm64
+            timeout: 120
     runs-on: ${{ matrix.os }}
+    # About twice each leg's measured cold run. macOS is provisional: round 1's macos-15 run was not done after 67
+    # minutes, so 120 stands until the next run measures it.
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
+      # Fails the leg when the label's machine is not the expected architecture: never emulated (C1). Every run step
+      # appends "<step> <epoch seconds>" to marks when it ends, and the summary step turns them into wall times.
+      - name: Architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          echo "start $(date +%s)" >> "$RUNNER_TEMP/marks"
+          trap 'echo "architecture $(date +%s)" >> "$RUNNER_TEMP/marks"' EXIT
+          actual="$(uname -m)"
+          echo "uname -m: $actual (expected $EXPECTED_ARCH)"
+          [ "$actual" = "$EXPECTED_ARCH" ]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -25,27 +62,139 @@ jobs:
       # use the same compiler.
       - name: Rust toolchain
         run: |
+          echo "checkout $(date +%s)" >> "$RUNNER_TEMP/marks"
+          trap 'echo "toolchain $(date +%s)" >> "$RUNNER_TEMP/marks"' EXIT
           rustup toolchain install
           rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
           rustc --version
+      # The stub walkthrough runs umx in a fresh network namespace (unshare --net --map-root-user). Images that
+      # restrict unprivileged user namespaces through AppArmor (Ubuntu 24.04) get the restriction lifted on this
+      # throwaway runner; images without it are left alone.
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        run: |
+          trap 'echo "userns $(date +%s)" >> "$RUNNER_TEMP/marks"' EXIT
+          knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$knob" ] && [ "$(cat "$knob")" != 0 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          else
+            echo "no AppArmor userns restriction on this image"
+          fi
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restored on every run, saved only from pull_request runs, whose cache scope cannot reach main (C5). Keyed by
+      # label, since two images of one OS differ in system libraries and SDKs.
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
-      # The stub walkthrough runs umx in a fresh network namespace (unshare --net --map-root-user);
-      # Ubuntu 24.04 blocks unprivileged user namespaces by default. Throwaway runner.
-      - name: Allow unprivileged user namespaces
-        if: runner.os == 'Linux'
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          key: cargo-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.os }}-
       - name: just check
-        run: just check
-      # req-52 at full size (4 writers x 250 nodes); ignored in the local default run.
+        run: |
+          echo "just-and-cache-restore $(date +%s)" >> "$RUNNER_TEMP/marks"
+          trap 'echo "just-check $(date +%s)" >> "$RUNNER_TEMP/marks"' EXIT
+          just check
+      # req-52 at full size (4 writers x 250 nodes); ignored in the local default run. Through cargo-slot, so it
+      # reuses just check's build settings and artifacts.
       - name: Full-size writers test
-        run: cargo test -p umx --locked --test writers -- --ignored
+        run: |
+          trap 'echo "writers-full-size $(date +%s)" >> "$RUNNER_TEMP/marks"' EXIT
+          scripts/cargo-slot test -p umx --locked --test writers -- --ignored
+      - name: Cache save
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      # Wall time per step, kept for sizing the timeouts and the release builds (D76a Q4).
+      - name: Step times
+        if: always()
+        env:
+          LABEL: ${{ matrix.os }}
+        run: |
+          echo "end $(date +%s)" >> "$RUNNER_TEMP/marks"
+          {
+            echo "### Step times on $LABEL ($(uname -m))"
+            echo
+            echo "| step | seconds |"
+            echo "|---|---|"
+            awk 'NR == 1 { first = $2 } NR > 1 && $1 != "end" { print "| " $1 " | " $2 - prev " |" } { prev = $2 }
+                 END { print "| total | " prev - first " |" }' "$RUNNER_TEMP/marks"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/marks"
+
+  # Decides whether ui-check runs: on a manual run always; on a PR when apps/**, the justfile (its recipe) or this
+  # workflow changed. A pull_request run checks out the PR merged onto main, so the PR's change is HEAD^1..HEAD, with
+  # no event text read. Anything it cannot read runs ui-check.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ui: ${{ steps.diff.outputs.ui }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: diff
+        name: Changed paths
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          ui=true
+          if [ "$EVENT" = pull_request ] && git rev-parse -q --verify HEAD^2 >/dev/null; then
+            changed="$(git diff --name-only HEAD^1 HEAD)"
+            # A file name must not be read as a workflow command.
+            token="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
+            echo "::stop-commands::$token"
+            printf '%s\n' "$changed"
+            echo "::$token::"
+            if ! printf '%s\n' "$changed" | grep -qE '^(apps/|justfile$|\.github/workflows/check\.yml$)'; then
+              ui=false
+            fi
+          fi
+          echo "ui=$ui"
+          echo "ui=$ui" >> "$GITHUB_OUTPUT"
+
+  # The graph view's gate (workstream 009) on one Linux leg. Runs unless changes said false, so a failed or empty
+  # changes job runs it rather than skipping it; a skipped job reports success (C10).
+  ui-check:
+    name: ui-check
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.ui != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      # Full history, so ui-check's lock age check finds the merge base with origin/main and checks only lock entries
+      # new since then, as it does locally.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: just
+      # pnpm is the exact version and sha512 that apps/ui/package.json's packageManager names, fetched and checked by
+      # the image's Node corepack from registry.npmjs.org; the shims go in a runner temp folder, not a system one.
+      - name: pnpm from packageManager
+        working-directory: apps/ui
+        run: |
+          node --version
+          corepack --version
+          mkdir -p "$RUNNER_TEMP/corepack-bin"
+          corepack enable --install-directory "$RUNNER_TEMP/corepack-bin" pnpm
+          echo "$RUNNER_TEMP/corepack-bin" >> "$GITHUB_PATH"
+          PATH="$RUNNER_TEMP/corepack-bin:$PATH" pnpm --version
+      - name: just ui-check
+        run: just ui-check
