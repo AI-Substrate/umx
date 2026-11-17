@@ -272,9 +272,10 @@ def line_of(body, start):
 # script, and in a file using matrix.os every os: key is read as a runner. A job may call a reusable workflow only from
 # this repository (./.github/workflows/<file>.yml), since a job calling another repository's workflow runs where that
 # workflow says; a uses: G9 cannot place inside a sequence item (a step) is read as a job's, and a file with a remote
-# uses: may hold no alias that could carry one up to a job. A quoted scalar must close on the line it opens on, since
-# its later lines are text G9 would read as structure (a `- ` line there makes a job's uses: look like a step's); only
-# the text of a plain `key: |` or `key: >` block scalar is exempt.
+# uses: may hold no alias that could carry one up to a job. Flow content must close on its line: outside the text of a
+# block scalar, a line must close every quoted scalar and flow collection (`[`, `{`) it opens and close none it did not,
+# since flow content carried onto later lines is text G9 would read as structure (a `- ` line there makes a job's uses:
+# look like a step's); only the text of a plain `key: |` or `key: >` block scalar may run over several lines.
 # The labels G9 accepts, exactly. Adding one is a gate change and needs a security verdict (D76a: no Windows runner;
 # no larger, -intel or core-count runners).
 HOSTED_RUNNERS = frozenset({
@@ -311,15 +312,25 @@ def hosted(value):
     return unquoted(value) in HOSTED_RUNNERS
 
 
-def open_quote(line):
-    """True when a quoted scalar starts on this line and does not close on it."""
-    pos = 0
-    while m := QUOTE_OPEN.search(line, pos):
-        closed = QUOTED[m.group(1)].match(line, m.start(1))
-        if not closed:
+def open_flow(line):
+    """True when this line leaves a quoted scalar or a flow collection (`[`, `{`) open, or closes one it did not open.
+    Every bracket and brace outside a quoted scalar and a comment counts, so `${{ x }}` balances on its line."""
+    pos, depth = 0, 0
+    while pos < len(line):
+        if m := QUOTE_OPEN.match(line, pos):
+            closed = QUOTED[m.group(1)].match(line, m.start(1))
+            if not closed:
+                return True
+            pos = closed.end()
+            continue
+        c = line[pos]
+        if c == "#" and (pos == 0 or line[pos - 1] in " \t"):
+            break
+        depth += (c in "[{") - (c in "]}")
+        if depth < 0:
             return True
-        pos = closed.end()
-    return False
+        pos += 1
+    return depth != 0
 
 
 def indent_of(line):
@@ -338,7 +349,7 @@ def runner_faults(body):
         return [1]
     lines = [line.removesuffix("\r") for line in text.split("\n")]
     code = [bool(line.strip()) and not line.lstrip().startswith("#") for line in lines]
-    # the content of a block scalar (`run: |`) is text, so its quotes start nothing; only the plain `key: |` form, with
+    # the content of a block scalar (`run: |`) is text, so its quotes and brackets open nothing; only the plain `key: |` form, with
     # no indentation digit, is read, and its content ends at the first line indented less than the first content line
     text_lines, content, header = set(), None, 0
     for i, line in enumerate(lines):
@@ -351,7 +362,7 @@ def runner_faults(body):
                 continue
         content = None
         m = code[i] and re.match(rf"^( *(?:-[ \t]+)*)[\w.-]+:[ \t]+[|>][+-]?{YAML_TAIL}", line)
-        if m and not open_quote(line):
+        if m and not open_flow(line):
             header, content = len(m.group(1)), -1
 
     def continues(i, col):
@@ -390,7 +401,7 @@ def runner_faults(body):
             bad.add(i)
         if not code[i]:
             continue
-        if ESCAPED_KEY.search(line) or EXPLICIT_KEY.match(line) or (i not in text_lines and open_quote(line)):
+        if ESCAPED_KEY.search(line) or EXPLICIT_KEY.match(line) or (i not in text_lines and open_flow(line)):
             bad.add(i)
         if "runs-on" in line.lower():  # any spelling of the key (quoted, spaced, in a flow mapping) must be the one-line form
             m = re.match(rf"^( *)runs-on:[ \t]+(.+?){YAML_TAIL}", line)
@@ -736,8 +747,9 @@ class Gate:
                  "explicit (?) keys, a flow-style job, a value that runs onto the next line, and expressions, anchors or "
                  "aliases inside a matrix. A job may call only a workflow in this repository, `uses: "
                  "./.github/workflows/<file>.yml`; a remote uses: must be a step's (`- uses: owner/action@sha`), and that "
-                 "file may hold no YAML alias (`*name`). A quoted scalar ('x' or \"x\") must close on the line it opens "
-                 "on; for text over several lines use a block scalar, `key: |`. G9 matches text, not YAML: a line "
+                 "file may hold no YAML alias (`*name`). Flow content must close on its line: each quoted scalar ('x', "
+                 "\"x\") and flow collection ([a, b], {k: v}) a line opens, and no bracket or brace it did not open; "
+                 "use a block scalar, `key: |`, for text over several lines. G9 matches text, not YAML: a line "
                  "mentioning runs-on that is not the one-line runner key is refused, and in a file using matrix.os every "
                  "os: key is read as a runner, so rename the step text or the key")
 

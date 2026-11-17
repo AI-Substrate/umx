@@ -32,9 +32,9 @@ packages:
 EOF
 # the repository's own workflows: G9 must keep passing them (the clean controls below prove it)
 cp "$repo"/.github/workflows/*.yml "$base/.github/workflows/"
-# a job calling a workflow in this repository passes G9 (a remote one is planted below), and so do quoted scalars
-# closed on their own line, even holding a `- `
-printf 'name: "call - local"\non: workflow_dispatch\njobs:\n  call:\n    name: '"'it''s - local'"'\n    uses: ./.github/workflows/check.yml\n' >"$base/.github/workflows/call-local.yml"
+# a job calling a workflow in this repository passes G9 (a remote one is planted below), and so does flow content
+# closed on its own line: quoted scalars, even holding a `- `, a bracket or a brace, and nested flow collections
+printf 'name: "call - local"\nrun-name: "a [b {c"\non: workflow_dispatch\njobs:\n  call:\n    name: '"'it''s - local'"'\n    uses: ./.github/workflows/check.yml\n    with: {x: a, y: [b, c]}\n' >"$base/.github/workflows/call-local.yml"
 printf 'fn main() {}\n' >"$base/src/main.rs"
 printf '# a clean seed\n' >"$base/README.md"
 git init -q --initial-branch=main "$base"
@@ -129,6 +129,10 @@ p_uses_alias() {
 p_open_quote() { printf 'jobs:\n  a:\n    name: "x\n  - y"\n    uses: org/repo/.github/workflows/x.yml@%s\n' "$(printf '0%.0s' $(seq 40))" >.github/workflows/x.yml; }
 p_open_single_quote() { printf "jobs:\n  a:\n    name: 'x''s\n- y'\n    uses: org/repo/.github/workflows/x.yml@v1\n" >.github/workflows/x.yml; }
 p_quote_after_block() { printf 'jobs:\n  a:\n    env:\n      A: |\n        "text\n    name: !!str "x\n  - y"\n    uses: org/repo/.github/workflows/x.yml@v1\n' >.github/workflows/x.yml; }
+# a flow collection left open does the same, and so would a closer whose opener G9 missed (security N1 at cfaf204)
+p_open_flow_map() { printf 'jobs:\n  a:\n    with: {x: a\n  - y}\n    uses: evil/r/.github/workflows/x.yml@main\n' >.github/workflows/x.yml; }
+p_open_flow_list() { printf 'jobs:\n  a:\n    needs: [b\n  - c]\n    uses: org/repo/.github/workflows/x.yml@v1\n' >.github/workflows/x.yml; }
+p_stray_closer() { printf 'name: x\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n        }\n' >.github/workflows/x.yml; }
 p_slug() { printf 'clone %s%s\n' AI-Substrate/ Unimatrix >src/clone.md; }
 p_ip() { printf 'host %s.%s is the proxy\n' 10.1 2.3 >src/ip.md; }
 p_host() { printf 'registry at %s\n' "$host" >src/reg.md; }
@@ -183,6 +187,9 @@ plant "an alias carrying a remote uses up to a job" workflow-runners p_uses_alia
 plant "an open quoted scalar hiding a job uses" workflow-runners p_open_quote
 plant "an open single-quoted scalar (with a quote escape) at column 0" workflow-runners p_open_single_quote
 plant "an open tagged quoted scalar after a block scalar ends" workflow-runners p_quote_after_block
+plant "an open flow mapping hiding a job uses" workflow-runners p_open_flow_map
+plant "an open flow list hiding a job uses" workflow-runners p_open_flow_list
+plant "a flow closer on a line that opened nothing" workflow-runners p_stray_closer
 plant "the old repository slug" private-infrastructure p_slug
 plant "a private IP" private-infrastructure p_ip
 plant "a private host" private-infrastructure p_host
