@@ -272,7 +272,9 @@ def line_of(body, start):
 # script, and in a file using matrix.os every os: key is read as a runner. A job may call a reusable workflow only from
 # this repository (./.github/workflows/<file>.yml), since a job calling another repository's workflow runs where that
 # workflow says; a uses: G9 cannot place inside a sequence item (a step) is read as a job's, and a file with a remote
-# uses: may hold no alias that could carry one up to a job.
+# uses: may hold no alias that could carry one up to a job. A quoted scalar must close on the line it opens on, since
+# its later lines are text G9 would read as structure (a `- ` line there makes a job's uses: look like a step's); only
+# the text of a plain `key: |` or `key: >` block scalar is exempt.
 # The labels G9 accepts, exactly. Adding one is a gate change and needs a security verdict (D76a: no Windows runner;
 # no larger, -intel or core-count runners).
 HOSTED_RUNNERS = frozenset({
@@ -294,6 +296,9 @@ EXPLICIT_KEY = re.compile(r"^[ \t]*(?:-[ \t]+)*\?(?:[ \t]|$)")
 USES_KEY = yaml_key("uses")
 LOCAL_WORKFLOW = re.compile(r"\./\.github/workflows/[\w.-]+\.ya?ml")
 ALIAS = re.compile(r"(?:^[ \t]*|[:?,\[{-][ \t]*)\*")  # a `*` where YAML could read an alias (or merge one in)
+# a quote where YAML could start a quoted scalar: at the line start or after an indicator, past any tag or anchor
+QUOTE_OPEN = re.compile(r"(?:^|(?<=[:?,\[{-]))[ \t]*(?:[!&][^ \t]*[ \t]+)*(['\"])")
+QUOTED = {'"': re.compile(r'"(?:[^"\\]|\\.)*"'), "'": re.compile(r"'(?:[^']|'')*'(?!')")}
 
 
 def unquoted(value):
@@ -304,6 +309,17 @@ def unquoted(value):
 
 def hosted(value):
     return unquoted(value) in HOSTED_RUNNERS
+
+
+def open_quote(line):
+    """True when a quoted scalar starts on this line and does not close on it."""
+    pos = 0
+    while m := QUOTE_OPEN.search(line, pos):
+        closed = QUOTED[m.group(1)].match(line, m.start(1))
+        if not closed:
+            return True
+        pos = closed.end()
+    return False
 
 
 def indent_of(line):
@@ -322,6 +338,21 @@ def runner_faults(body):
         return [1]
     lines = [line.removesuffix("\r") for line in text.split("\n")]
     code = [bool(line.strip()) and not line.lstrip().startswith("#") for line in lines]
+    # the content of a block scalar (`run: |`) is text, so its quotes start nothing; only the plain `key: |` form, with
+    # no indentation digit, is read, and its content ends at the first line indented less than the first content line
+    text_lines, content, header = set(), None, 0
+    for i, line in enumerate(lines):
+        spaces = len(line) - len(line.lstrip(" "))
+        if content is not None and (not line.strip() or content == -1 or spaces >= content):
+            if line.strip() and content == -1:
+                content = spaces if spaces > header else None
+            if content is not None:
+                text_lines.add(i)
+                continue
+        content = None
+        m = code[i] and re.match(rf"^( *(?:-[ \t]+)*)[\w.-]+:[ \t]+[|>][+-]?{YAML_TAIL}", line)
+        if m and not open_quote(line):
+            header, content = len(m.group(1)), -1
 
     def continues(i, col):
         """True when the next non-blank line is indented past `col`: a plain scalar going on, or a block value."""
@@ -359,7 +390,7 @@ def runner_faults(body):
             bad.add(i)
         if not code[i]:
             continue
-        if ESCAPED_KEY.search(line) or EXPLICIT_KEY.match(line):
+        if ESCAPED_KEY.search(line) or EXPLICIT_KEY.match(line) or (i not in text_lines and open_quote(line)):
             bad.add(i)
         if "runs-on" in line.lower():  # any spelling of the key (quoted, spaced, in a flow mapping) must be the one-line form
             m = re.match(rf"^( *)runs-on:[ \t]+(.+?){YAML_TAIL}", line)
@@ -705,9 +736,10 @@ class Gate:
                  "explicit (?) keys, a flow-style job, a value that runs onto the next line, and expressions, anchors or "
                  "aliases inside a matrix. A job may call only a workflow in this repository, `uses: "
                  "./.github/workflows/<file>.yml`; a remote uses: must be a step's (`- uses: owner/action@sha`), and that "
-                 "file may hold no YAML alias (`*name`). G9 matches text, not YAML: a line mentioning runs-on that is not "
-                 "the one-line runner key is refused, and in a file using matrix.os every os: key is read as a runner, so "
-                 "rename the step text or the key")
+                 "file may hold no YAML alias (`*name`). A quoted scalar ('x' or \"x\") must close on the line it opens "
+                 "on; for text over several lines use a block scalar, `key: |`. G9 matches text, not YAML: a line "
+                 "mentioning runs-on that is not the one-line runner key is refused, and in a file using matrix.os every "
+                 "os: key is read as a runner, so rename the step text or the key")
 
     # G6: the lock files
     def locks(self):

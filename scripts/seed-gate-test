@@ -32,8 +32,9 @@ packages:
 EOF
 # the repository's own workflows: G9 must keep passing them (the clean controls below prove it)
 cp "$repo"/.github/workflows/*.yml "$base/.github/workflows/"
-# a job calling a workflow in this repository passes G9 (a remote one is planted below)
-printf 'name: call\non: workflow_dispatch\njobs:\n  call:\n    uses: ./.github/workflows/check.yml\n' >"$base/.github/workflows/call-local.yml"
+# a job calling a workflow in this repository passes G9 (a remote one is planted below), and so do quoted scalars
+# closed on their own line, even holding a `- `
+printf 'name: "call - local"\non: workflow_dispatch\njobs:\n  call:\n    name: '"'it''s - local'"'\n    uses: ./.github/workflows/check.yml\n' >"$base/.github/workflows/call-local.yml"
 printf 'fn main() {}\n' >"$base/src/main.rs"
 printf '# a clean seed\n' >"$base/README.md"
 git init -q --initial-branch=main "$base"
@@ -124,6 +125,10 @@ p_uses_alias() {
     printf 'name: x\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - &call\n        uses: org/repo/.github/workflows/x.yml@v1\n' >.github/workflows/x.yml
     printf '  b: *call\n' >>.github/workflows/x.yml
 }
+# a quoted scalar left open can carry a `- ` line below the job's keys, so G9 reads its uses: as a step's (security N1)
+p_open_quote() { printf 'jobs:\n  a:\n    name: "x\n  - y"\n    uses: org/repo/.github/workflows/x.yml@%s\n' "$(printf '0%.0s' $(seq 40))" >.github/workflows/x.yml; }
+p_open_single_quote() { printf "jobs:\n  a:\n    name: 'x''s\n- y'\n    uses: org/repo/.github/workflows/x.yml@v1\n" >.github/workflows/x.yml; }
+p_quote_after_block() { printf 'jobs:\n  a:\n    env:\n      A: |\n        "text\n    name: !!str "x\n  - y"\n    uses: org/repo/.github/workflows/x.yml@v1\n' >.github/workflows/x.yml; }
 p_slug() { printf 'clone %s%s\n' AI-Substrate/ Unimatrix >src/clone.md; }
 p_ip() { printf 'host %s.%s is the proxy\n' 10.1 2.3 >src/ip.md; }
 p_host() { printf 'registry at %s\n' "$host" >src/reg.md; }
@@ -175,6 +180,9 @@ plant "a runs-on value continued on the next line" workflow-runners p_continued
 plant "a job calling another repository's workflow" workflow-runners p_remote_job
 plant "a job uses beside a compact steps list" workflow-runners p_uses_after_steps
 plant "an alias carrying a remote uses up to a job" workflow-runners p_uses_alias
+plant "an open quoted scalar hiding a job uses" workflow-runners p_open_quote
+plant "an open single-quoted scalar (with a quote escape) at column 0" workflow-runners p_open_single_quote
+plant "an open tagged quoted scalar after a block scalar ends" workflow-runners p_quote_after_block
 plant "the old repository slug" private-infrastructure p_slug
 plant "a private IP" private-infrastructure p_ip
 plant "a private host" private-infrastructure p_host
