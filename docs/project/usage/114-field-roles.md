@@ -12,7 +12,8 @@ supersedes: none
 When you declare a string field that holds a file name, an id, an agent id, a seat, a hash, a locator or
 provenance, declare it as data: `umx ontology add field <type> <name>:string --role data`. Data fields get no
 vector and are left out of the whole-node text, so they never skew similarity or go to an embedder. Prose that
-says what something means stays content (the default for string).
+says what something means is content only when declared `--role content`: a string field with no role is data
+(note 206).
 
 To change a declared field later, use `umx ontology set field <type> <field> --role data|content`. The reply's
 `pending` and the `role_changed` warning say how many nodes' vectors will be remade by the background worker.
@@ -37,14 +38,14 @@ that differs only in role is refused (`field_role_conflict`); use `ontology set 
 `authored_by_session`, `edited_by_session`, `entity_key`, and the legacy identity keys `person_key`, `org_key`,
 `team_key` that older graphs may still carry) or provenance nodes embed:
 umx never embeds them, whatever graph.json says. Don't use roles to hide text from word search: data fields of
-kind string are still found by words and exact match. A role needs graph.json format 4, so an older umx
+kind string are still found by words and `--where`. A role needs graph.json format 4, so an older umx
 refuses the graph; upgrade umx on every machine that loads it. Don't change roles on another seat's graph
 without telling its owner first.
 
 ## Example
 
     umx ontology add field finding source_file:string --role data
-    umx ontology add field finding detail:string
+    umx ontology add field finding detail:string --role content
     umx ontology set field finding source_file --role data
     umx ontology show
     umx embeddings reembed --dry-run

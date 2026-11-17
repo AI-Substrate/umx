@@ -58,7 +58,8 @@ fn world() -> World {
     let mut svc = services(&files, &embedder);
     svc.graph_new(&ctx(), "/work/g", "demo", None, false, None)
         .unwrap();
-    svc.ontology_add_field(&ctx(), "problem", "impact:string", None)
+    // Stated content: a string field with no role is data (PRD 002 search-04).
+    svc.ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
         .unwrap();
     svc.ontology_add_field(&ctx(), "problem", "due:date", None)
         .unwrap();
@@ -386,12 +387,31 @@ fn graph_json(w: &World) -> serde_json::Value {
 
 #[test]
 fn a_graph_made_before_field_roles_with_no_data_field_loads_with_zero_pending_and_zero_embeds() {
+    // Nodes holding only a title and a note: a string field with no role is data now (PRD 002 search-04), so a
+    // value in impact would make the node outdated.
     let mut w = world();
     let ids: Vec<Id> = (0..3)
-        .map(|i| add(&mut w, &format!("Node {i}"), "A note.", "Some impact"))
+        .map(|i| {
+            w.svc
+                .node_add(
+                    &ctx(),
+                    NodeAddRequest {
+                        kind: "problem".into(),
+                        title: format!("Node {i}"),
+                        note: Some("A note.".into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+                .value
+                .node
+                .id
+        })
         .collect();
     run(&mut w);
     as_form_one(&w, &ids);
+    // Before roles graph.json stated none.
+    unstate_roles(&w, &["impact"]);
     set_graph_json_text_form(&w, 1);
     let before = counts(&w);
     let shards: Vec<Vec<ShardLine>> = ids.iter().map(|id| lines(&w, *id)).collect();
@@ -429,17 +449,14 @@ fn a_graph_made_before_field_roles_with_no_data_field_loads_with_zero_pending_an
         )
         .unwrap();
     run(&mut w);
-    assert_eq!(
-        fields_of(&w, ids[0]),
-        ["@node.v2", "impact", "note", "title"]
-    );
+    assert_eq!(fields_of(&w, ids[0]), ["@node.v2", "note", "title"]);
 }
 
 /// A world whose `problem` type also has `file:string`, still content, and nodes with a file.
 fn world_with_file() -> (World, Vec<Id>) {
     let mut w = world();
     w.svc
-        .ontology_add_field(&ctx(), "problem", "file:string", None)
+        .ontology_add_field_as(&ctx(), "problem", "file:string", None, Some("content"))
         .unwrap();
     let ids: Vec<Id> = (0..3)
         .map(|i| {
@@ -587,6 +604,282 @@ fn a_pulled_data_role_on_current_form_vectors_is_outdated_and_never_remade_on_lo
     assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
 }
 
+// ---------------------------------------------------------------- PRD 002 search-04: only prose is embedded
+
+/// Sets `field` of `w`'s `problem` nodes `id` to `value`.
+fn set_str(w: &mut World, id: Id, field: &str, value: &str) {
+    w.svc
+        .node_edit(
+            &ctx(),
+            &id.to_text(),
+            NodeEditRequest {
+                sets: vec![(field.into(), SetValue::Str(value.into()))],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+}
+
+/// Takes the stated role off each of `fields` of `problem` in graph.json, as a graph made before search-04 holds a
+/// string field declared with no role (then content), its vectors made with it.
+fn unstate_roles(w: &World, fields: &[&str]) {
+    let mut v = graph_json(w);
+    let declared = v["ontology"]["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|t| t["name"] == "problem")
+        .unwrap()["fields"]
+        .as_array_mut()
+        .unwrap();
+    for f in declared.iter_mut() {
+        if fields.contains(&f["name"].as_str().unwrap()) {
+            f.as_object_mut().unwrap().remove("role");
+        }
+    }
+    w.files
+        .write_set(
+            &dir(),
+            &[Change {
+                file: FileRef::Graph(umx_core::codec::GraphFile::Graph),
+                bytes: Some(&serde_json::to_vec_pretty(&v).unwrap()),
+            }],
+        )
+        .unwrap();
+}
+
+fn whole_hash(w: &World, id: Id) -> TextHash {
+    lines(w, id)
+        .iter()
+        .filter_map(ShardLine::vector)
+        .find(|v| v.node == id && v.field == vectors::whole_node_field())
+        .unwrap()
+        .hash
+}
+
+#[test]
+fn a_string_field_with_no_role_gets_no_vector_and_stated_content_gets_both() {
+    let mut w = world();
+    w.svc
+        .ontology_add_field(&ctx(), "problem", "detail:string", None)
+        .unwrap();
+    let id = add(&mut w, "Slow builds", "Builds take an hour.", "Teams wait");
+    set_str(&mut w, id, "detail", "zzdetail");
+    for i in 0..4 {
+        add(&mut w, &format!("Other {i}"), "A note.", "Some impact");
+    }
+    run(&mut w);
+    assert_eq!(fields_of(&w, id), ["@node.v2", "impact", "note", "title"]);
+    assert_eq!(
+        whole_hash(&w, id),
+        TextHash::of("title: Slow builds | text: impact: Teams wait\nnote: Builds take an hour.")
+    );
+    // Still found by words and by --where.
+    let done = w.svc.search(&ctx(), "zzdetail", None, 10).unwrap();
+    let hit = done.value.hits.iter().find(|h| h.node.id == id).unwrap();
+    assert_eq!(hit.word.as_ref().map(|m| m.field.as_str()), Some("detail"));
+    let listed = w
+        .svc
+        .node_list(
+            &ctx(),
+            umx_services::NodeListRequest {
+                wheres: vec!["detail=zzdetail".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .value;
+    assert_eq!(listed.total, Some(1));
+    // The same field stated content gets its vector and a line in the whole-node text.
+    w.svc
+        .ontology_set_field(&ctx(), "problem", "detail", "content")
+        .unwrap();
+    run(&mut w);
+    assert_eq!(
+        fields_of(&w, id),
+        ["@node.v2", "detail", "impact", "note", "title"]
+    );
+    assert_eq!(
+        whole_hash(&w, id),
+        TextHash::of(
+            "title: Slow builds | text: detail: zzdetail\nimpact: Teams wait\nnote: Builds take an hour."
+        )
+    );
+}
+
+#[test]
+fn a_graph_made_before_the_data_default_loads_with_zero_embeds_and_reembed_drops_its_role_less_vectors()
+ {
+    let mut w = world();
+    w.svc
+        .ontology_add_field_as(&ctx(), "problem", "detail:string", None, Some("content"))
+        .unwrap();
+    let ids: Vec<Id> = (0..3)
+        .map(|i| {
+            let id = add(&mut w, &format!("Node {i}"), "A note.", "Some impact");
+            set_str(&mut w, id, "detail", &format!("Detail {i}"));
+            id
+        })
+        .collect();
+    let plain = add(&mut w, "No detail", "A note.", "Some impact");
+    run(&mut w);
+    unstate_roles(&w, &["detail"]);
+    let before = counts(&w);
+    let shards: Vec<Vec<ShardLine>> = ids.iter().map(|id| lines(&w, *id)).collect();
+    let graph_before = graph_json(&w);
+    let warnings = reload(&mut w);
+    assert_eq!(warnings, ["text_form_outdated"]);
+    assert!(
+        w.svc.take_embed_jobs().is_empty(),
+        "nothing queued by the load"
+    );
+    run(&mut w);
+    assert_eq!(counts(&w), before, "zero embed calls, no shard write");
+    let after: Vec<Vec<ShardLine>> = ids.iter().map(|id| lines(&w, *id)).collect();
+    assert_eq!(after, shards);
+    assert_eq!(graph_json(&w), graph_before, "its fields unchanged");
+    assert_eq!(
+        w.svc.graph_list()[0].vectors_pending,
+        Some(ids.len()),
+        "the nodes with a detail, not {}",
+        plain.to_text()
+    );
+    // Kept and still searched until reembed.
+    for id in &ids {
+        assert!(blocks(&w, *id).iter().any(|(f, _)| f == "detail"), "{id}");
+    }
+    // The dry run shows the cost: one whole-node text per node; the field lines go for nothing.
+    let dry = w.svc.embeddings_reembed(&ctx(), true, None).unwrap().value;
+    assert_eq!(
+        (
+            dry.nodes,
+            dry.texts,
+            dry.whole_node_texts_changed,
+            dry.field_vectors_dropped
+        ),
+        (ids.len(), ids.len(), ids.len(), ids.len())
+    );
+    assert_eq!(counts(&w), before, "a dry run calls nothing");
+    w.svc.embeddings_reembed(&ctx(), false, None).unwrap();
+    let (_, texts, _) = counts(&w);
+    run(&mut w);
+    assert_eq!(w.embedder.texts_embedded() - texts, ids.len());
+    for id in &ids {
+        assert_eq!(fields_of(&w, *id), ["@node.v2", "impact", "note", "title"]);
+        assert!(!blocks(&w, *id).iter().any(|(f, _)| f == "detail"), "{id}");
+    }
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
+}
+
+#[test]
+fn a_node_with_seven_string_fields_made_before_the_data_default_loads_with_zero_embeds() {
+    // Embeddings-expert, s6: 2 fields stated data and 5 with no role, past every set whole_texts_with_data tries.
+    let mut w = world();
+    let (data, role_less) = (["d1", "d2"], ["r1", "r2", "r3", "r4", "r5"]);
+    for f in data {
+        w.svc
+            .ontology_add_field_as(
+                &ctx(),
+                "problem",
+                &format!("{f}:string"),
+                None,
+                Some("data"),
+            )
+            .unwrap();
+    }
+    for f in role_less {
+        w.svc
+            .ontology_add_field_as(
+                &ctx(),
+                "problem",
+                &format!("{f}:string"),
+                None,
+                Some("content"),
+            )
+            .unwrap();
+    }
+    let id = add(&mut w, "Slow builds", "Builds take an hour.", "Teams wait");
+    for f in data.iter().chain(&role_less) {
+        set_str(&mut w, id, f, &format!("Value of {f}"));
+    }
+    run(&mut w);
+    unstate_roles(&w, &role_less);
+    let before = counts(&w);
+    assert_eq!(reload(&mut w), ["text_form_outdated"]);
+    run(&mut w);
+    assert_eq!(counts(&w), before, "zero embed calls");
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(1));
+    // Stating them content keeps every vector they have: nothing is embedded again, and a load finds them current.
+    for f in role_less {
+        w.svc
+            .ontology_set_field(&ctx(), "problem", f, "content")
+            .unwrap();
+    }
+    run(&mut w);
+    assert_eq!(counts(&w), before, "zero embed calls");
+    assert_eq!(reload(&mut w), Vec::<&str>::new());
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
+}
+
+#[test]
+fn declaring_a_string_field_with_no_role_hints_once_that_it_is_data() {
+    let mut w = world();
+    let codes = |n: &[umx_core::Problem]| n.iter().map(|p| p.code).collect::<Vec<_>>();
+    let added = w
+        .svc
+        .ontology_add_field(&ctx(), "problem", "detail:string", None)
+        .unwrap();
+    assert_eq!(codes(&added.notes), ["field_data_by_default"]);
+    assert_eq!(added.notes[0].slot("field").as_deref(), Some("detail"));
+    // Declared again (unchanged), stated, or of another kind: no hint.
+    for (spec, role) in [
+        ("detail:string", None),
+        ("summary:string", Some("content")),
+        ("file:string", Some("data")),
+        ("size:int", None),
+    ] {
+        let done = w
+            .svc
+            .ontology_add_field_as(&ctx(), "problem", spec, None, role)
+            .unwrap();
+        assert!(done.notes.is_empty(), "{spec}: {:?}", codes(&done.notes));
+    }
+    let typed = w
+        .svc
+        .ontology_add_type(
+            &ctx(),
+            "deal",
+            &["owner:string".into(), "size:int".into()],
+            None,
+        )
+        .unwrap();
+    assert_eq!(codes(&typed.notes), ["field_data_by_default"]);
+    let types = vec!["problem".to_string(), "deal".to_string()];
+    let many = w
+        .svc
+        .ontology_add_field_many_as(&ctx(), &types, false, "region:string", None, None)
+        .unwrap();
+    assert_eq!(
+        codes(&many.notes),
+        ["field_data_by_default", "field_data_by_default"]
+    );
+    // Values already set that read as prose: search-05's hint alone, naming the same command.
+    for i in 0..3 {
+        let id = add(&mut w, &format!("Story {i}"), "A note.", "Some impact");
+        set_str(
+            &mut w,
+            id,
+            "story",
+            &format!("the supplier asked for a longer review window before round {i}"),
+        );
+    }
+    let prose = w
+        .svc
+        .ontology_add_field(&ctx(), "problem", "story:string", None)
+        .unwrap();
+    assert_eq!(codes(&prose.notes), ["field_looks_like_prose"]);
+}
+
 #[test]
 fn setting_a_field_to_data_makes_exactly_its_nodes_pending_and_the_worker_remakes_their_whole_node_vectors()
  {
@@ -653,10 +946,16 @@ fn an_identical_field_add_compares_the_role_and_refuses_another_one() {
         .ontology_add_field_as(&ctx(), "problem", "file:string", None, Some("data"))
         .unwrap();
     assert!(again.value.unchanged);
+    // No role is data (PRD 002 search-04): the same declaration.
+    let plain = w
+        .svc
+        .ontology_add_field(&ctx(), "problem", "file:string", None)
+        .unwrap();
+    assert!(plain.value.unchanged);
     let before = graph_json(&w);
     let p = w
         .svc
-        .ontology_add_field(&ctx(), "problem", "file:string", None)
+        .ontology_add_field_as(&ctx(), "problem", "file:string", None, Some("content"))
         .unwrap_err();
     assert_eq!(
         (p.code, p.slot("role").as_deref()),
@@ -665,7 +964,7 @@ fn an_identical_field_add_compares_the_role_and_refuses_another_one() {
     assert_eq!(graph_json(&w), before, "nothing written");
     // Several types: per type, all or nothing.
     w.svc
-        .ontology_add_field(&ctx(), "issue", "file:string", None)
+        .ontology_add_field_as(&ctx(), "issue", "file:string", None, Some("content"))
         .unwrap();
     let before_many = graph_json(&w);
     let types = vec!["problem".to_string(), "issue".to_string()];
@@ -1180,7 +1479,7 @@ fn the_blocks_hold_the_recorded_space_whatever_embedder_is_configured() {
     let mut svc = services(&files, &a);
     svc.graph_new(&ctx(), "/work/g", "demo", None, false, Some(recorded))
         .unwrap();
-    svc.ontology_add_field(&ctx(), "problem", "impact:string", None)
+    svc.ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
         .unwrap();
     let mut w = World {
         files,
@@ -1841,6 +2140,7 @@ fn provenance_is_excluded_at_load_queue_plan_send_and_apply_with_a_content_contr
             .embedding()
             .needs(w.svc.graph(), "demo", &key())
             .unwrap()
+            .planned
             .iter()
             .all(|p| p.job.node != hidden)
     );
@@ -1940,7 +2240,7 @@ fn pulled(recorded: &str, locality: Locality) -> (World, Arc<FakeLocalState>) {
     );
     svc.graph_new(&ctx(), "/work/g", "demo", None, false, Some(section))
         .unwrap();
-    svc.ontology_add_field(&ctx(), "problem", "impact:string", None)
+    svc.ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
         .unwrap();
     (
         World {
@@ -2305,7 +2605,7 @@ fn recorded_world() -> (World, Arc<Recording>, Id) {
     let mut svc = Services::new(ports).with_embedder(recording.clone());
     svc.graph_new(&ctx(), "/work/g", "demo", None, false, None)
         .unwrap();
-    svc.ontology_add_field(&ctx(), "problem", "impact:string", None)
+    svc.ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
         .unwrap();
     svc.ontology_add_field_as(&ctx(), "problem", "file:string", None, Some("data"))
         .unwrap();
@@ -2559,7 +2859,7 @@ fn a_moved_graph_keeps_its_vectors_and_queues_nothing() {
 
 #[test]
 fn a_field_in_the_wrong_role_group_is_hinted_and_its_role_never_changes_by_itself() {
-    // PRD 002 search-05 on the fakes: `impact` (string, content by default) holds two short labels; `summary`,
+    // PRD 002 search-05 on the fakes: `impact` (string, stated content) holds two short labels; `summary`,
     // declared data, holds prose; `due` (a date) repeats one value and is never judged.
     let mut w = world();
     w.svc

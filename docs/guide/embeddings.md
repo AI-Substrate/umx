@@ -10,7 +10,8 @@ choosing and running an embedder.
 ## How it works
 
 When the daemon has an embedder, every node gets vectors: one for the whole node and one for each text field (the
-title, the note, and each field its type declares as a string). Numbers, dates, booleans and lists get none.
+title, the note, and each string field its type declares content with `--role content`). A string field with no
+stated role is data and gets none, nor do numbers, dates, booleans and lists.
 
 - **After the write.** A write returns as soon as the node is on disk. Its vectors are made afterwards in the
   background. `umx graph list` shows `vectors_pending` falling to 0 as they land.

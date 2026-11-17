@@ -282,14 +282,14 @@ const USER_FIELDS: &[StdField] = &[
     field(
         "job_title",
         FieldKind::String,
-        Role::Content,
+        Role::Data,
         Scope::Placed,
         &["person"],
     ),
     field(
         "org",
         FieldKind::String,
-        Role::Content,
+        Role::Data,
         Scope::Placed,
         &["person"],
     ),
@@ -594,6 +594,15 @@ mod tests {
                 assert_eq!(f.role, Role::Data, "{}", f.name);
             }
             assert!(f.min.is_none() || f.kind == FieldKind::Int, "{}", f.name);
+        }
+    }
+
+    /// PRD 002 search-04 (q-01): a person's job title and organisation are short labels, found by words and exact
+    /// match, never by meaning.
+    #[test]
+    fn the_person_fields_job_title_and_org_are_data() {
+        for name in ["job_title", "org"] {
+            assert_eq!(std_field(name).map(|f| f.role), Some(Role::Data), "{name}");
         }
     }
 

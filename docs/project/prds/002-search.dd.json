@@ -138,10 +138,9 @@
           "statement": "The title and the note of every node are embedded, each on its own and together as the whole-node text. A custom string field is data by default: it gets no vector and is left out of the whole-node text. It is embedded only when its type declares it content (`umx ontology add field <type> <name>:string --role content`, or `umx ontology set field`). Numbers, dates, booleans, lists and provenance are always data. Data fields are still found by exact match, by words and by `--where`. In a graph made before this rule, a field with no recorded role keeps the vectors it has until a person runs `umx embeddings reembed`, which shows the cost first; nothing is embedded again or dropped on load.",
           "actor": "a-agent",
           "priority": "must",
-          "state": "planned",
+          "state": "shipped",
           "done_when": "A string field added with no role gets no field vector and is absent from the whole-node text; the same field with `--role content` gets both; a graph made before the rule loads with zero embed calls and its fields unchanged; after `reembed`, fields with no recorded role hold no vectors.",
-          "source": "Project lead ruling 2026-11-16; changes the default in PRD 001 req-97 and req-34",
-          "note": "Shipped today: roles exist (PRD 001 req-97) but a string field is content by default. The std person fields job_title and org are data (q-01)."
+          "source": "Project lead ruling 2026-11-16; changes the default in PRD 001 req-97 and req-34"
         },
         {
           "id": "search-05",

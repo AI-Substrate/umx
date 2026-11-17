@@ -103,7 +103,7 @@ fn reading_the_shards_holds_at_most_a_tenth_over_the_blocks() {
     let mut svc = services(&files, &embedder);
     svc.graph_new(&ctx(), "/work/g", "demo", None, false, None)
         .unwrap();
-    svc.ontology_add_field(&ctx(), "problem", "impact:string", None)
+    svc.ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
         .unwrap();
     // Three texts and the whole node per node (k = 4), written straight into nodes.jsonl.
     let nodes: Vec<Node> = (1..=NODES)

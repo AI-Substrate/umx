@@ -15,7 +15,7 @@ Don't expect umx to change a role for you: it only points the field out, and the
 
 ## Example
 ```bash
-umx ontology add field deal tier:string        # content by default
+umx ontology add field deal tier:string --role content
 umx graph guide demo                            # hint field_looks_like_labels: tier holds 3 short labels
 umx ontology set field deal tier --role data --graph demo
 umx ontology add field deal summary:string --role data

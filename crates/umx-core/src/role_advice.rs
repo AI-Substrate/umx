@@ -125,15 +125,17 @@ mod tests {
     }
 
     #[test]
-    fn a_string_field_with_no_role_is_content_by_default_so_its_labels_are_pointed_out() {
-        let values: Vec<&str> = ["a", "b"].iter().cycle().take(8).copied().collect();
-        let f = field("tier", FieldKind::String, None);
+    fn a_string_field_with_no_role_is_data_by_default_so_its_prose_is_pointed_out() {
+        let values = prose(5);
+        let f = field("summary", FieldKind::String, None);
         assert_eq!(
-            role_advice(&f, values),
-            Some(RoleAdvice::BecomeData {
-                values: 8,
-                distinct: 2
-            })
+            role_advice(&f, values.iter().map(String::as_str)),
+            Some(RoleAdvice::BecomeContent { values: 5, long: 5 })
+        );
+        let labels: Vec<&str> = ["a", "b"].iter().cycle().take(8).copied().collect();
+        assert_eq!(
+            role_advice(&field("tier", FieldKind::String, None), labels),
+            None
         );
     }
 

@@ -54,6 +54,16 @@ pub struct Planned {
     pub texts: Vec<Wanted>,
 }
 
+/// What a reembed of one vector space costs ([`EmbeddingService::needs`]): the nodes with texts to embed, and of
+/// those (PRD 002 search-04) the whole-node texts that replace a vector made from other text, and the field vectors
+/// the rewrite drops because the node no longer embeds their field (a field now data among them), which cost no call.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Needs {
+    pub planned: Vec<Planned>,
+    pub whole_node_texts_changed: usize,
+    pub field_vectors_dropped: usize,
+}
+
 /// Fresh vectors for a node, by field, with the hash of the text each came from.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Vectors {
@@ -696,14 +706,9 @@ impl EmbeddingService {
 
     /// Every node of `alias` that needs a vector in `key`'s space, with the texts to embed: what a re-embed
     /// costs. Reads each shard of that space once.
-    pub fn needs(
-        &self,
-        store: &GraphStore,
-        alias: &str,
-        key: &ModelKey,
-    ) -> Result<Vec<Planned>, Problem> {
+    pub fn needs(&self, store: &GraphStore, alias: &str, key: &ModelKey) -> Result<Needs, Problem> {
         let Some(policy) = store.effective_policy(alias) else {
-            return Ok(Vec::new());
+            return Ok(Needs::default());
         };
         let mut found: BTreeMap<Id, Vec<VectorLine>> = BTreeMap::new();
         for shard in store.list_shards(alias, policy, key)? {
@@ -715,22 +720,33 @@ impl EmbeddingService {
                 }
             }
         }
-        Ok(store
-            .node_ids(alias)
-            .into_iter()
-            .filter_map(|id| {
-                let texts = store.node_texts(alias, id)?;
-                let mine: Vec<&VectorLine> = found
-                    .get(&id)
-                    .map(|v| v.iter().collect())
-                    .unwrap_or_default();
-                let job = EmbedJob {
-                    alias: alias.into(),
-                    node: id,
-                };
-                plan_node(&job, &texts, &mine).filter(|p| !p.texts.is_empty())
-            })
-            .collect())
+        let whole = vectors::whole_node_field();
+        let mut needs = Needs::default();
+        for id in store.node_ids(alias) {
+            let Some(texts) = store.node_texts(alias, id) else {
+                continue;
+            };
+            let mine: Vec<&VectorLine> = found
+                .get(&id)
+                .map(|v| v.iter().collect())
+                .unwrap_or_default();
+            let job = EmbedJob {
+                alias: alias.into(),
+                node: id,
+            };
+            let Some(p) = plan_node(&job, &texts, &mine).filter(|p| !p.texts.is_empty()) else {
+                continue;
+            };
+            if p.texts.iter().any(|w| w.field == whole) && mine.iter().any(|l| is_whole(&l.field)) {
+                needs.whole_node_texts_changed += 1;
+            }
+            needs.field_vectors_dropped += mine
+                .iter()
+                .filter(|l| !is_whole(&l.field) && !texts.iter().any(|(f, _)| *f == l.field))
+                .count();
+            needs.planned.push(p);
+        }
+        Ok(needs)
     }
 
     fn plan_in(

@@ -171,12 +171,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 87: `related` on `Op::NodeAdd` and `Op::Batch` (`--related`/`--no-related`, req-123, D80); node add data's
 /// `related` and each batch node add row's `related` (up to 3 existing nodes close in meaning: id, address, title,
 /// score), node add and batch data's `related_floor` (value, source, use), and the hint `related_skipped`.
+/// 88: PRD 002 search-04: a field with no stated role is data for every kind, so a string field is embedded only
+/// when stated content (`ontology show`'s `role` for such a field is now `data`); the hint `field_data_by_default`
+/// on `ontology add field` and `ontology add type`; `embeddings reembed`'s reply gains `whole_node_texts_changed`
+/// and `field_vectors_dropped`.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 87;
+pub const PROTOCOL: u32 = 88;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -185,7 +189,7 @@ pub const PROTOCOL: u32 = 87;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (87, 0x2af6_a8b0_c294_9177);
+const WIRE_FINGERPRINT: (u32, u64) = (88, 0x2b83_0656_8858_4504);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -2991,6 +2995,10 @@ catalogue! {
     FieldLooksLikeProse => "field_looks_like_prose", Hint, 0,
         "a data field holds prose, mostly long and mostly different values, which search by meaning never sees; umx never changes the role itself (search-05)",
         "Field <field> of type <type> in <graph> is data, but <long> of its <count> values read as prose. As content, search by meaning would find them (<count> embedder calls).",
+        "<fix>";
+    FieldDataByDefault => "field_data_by_default", Hint, 0,
+        "a string field was declared with no --role, so it is data: words, exact match and --where find it, search by meaning does not; umx never changes the role itself (PRD 002 search-04)",
+        "Field <field> of type <type> in <graph> is data: words and --where find it, search by meaning does not. If it holds prose (sentences that differ from node to node), make it content.",
         "<fix>";
     RoleNotEmbeddable => "role_not_embeddable", Error, 1,
         "a field whose kind is not string is given role content; only string fields are embedded",

@@ -12,7 +12,9 @@
   "What a word is".
 - **Meaning** (vectors): nodes whose embedding is close to the query's, so a paraphrase with none of the node's
   words can find it. Each node scores its best cosine over its whole-node and field vectors; rows below the
-  model's search floor take no part (see "Floors" below).
+  model's search floor take no part (see "Floors" below). Only prose is embedded: the title, the note and the
+  string fields a type states content. A string field with no stated role is data, found by words and `--where`
+  but never by meaning (`umx docs get ontology`).
 
 Provenance records are hidden by default. `--provenance` includes them through the exact-match leg
 only, never through BM25 or vectors. To find their titles approximately, use

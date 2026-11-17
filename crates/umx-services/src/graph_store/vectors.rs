@@ -481,7 +481,8 @@ impl ShardReading<'_> {
     }
 
     /// The hashes of the whole-node texts a node had before a field became data: its form v1 text
-    /// ([`vectors::whole_text_v1`]) and each text with some of its now-data fields put back
+    /// ([`vectors::whole_text_v1`]), its text under the role default before search-04
+    /// ([`vectors::whole_text_before_data_default`]) and each text with some of its now-data fields put back
     /// ([`vectors::whole_texts_with_data`]), to tell outdated vectors from edited ones.
     pub fn whole_former(&self, id: Id) -> Vec<TextHash> {
         let Some(node) = self.graph.node(id) else {
@@ -490,6 +491,10 @@ impl ShardReading<'_> {
         let node = node.to_node();
         let mut out: Vec<TextHash> = vectors::whole_text_v1(&node, self.ontology)
             .into_iter()
+            .chain(vectors::whole_text_before_data_default(
+                &node,
+                self.ontology,
+            ))
             .chain(vectors::whole_texts_with_data(&node, self.ontology))
             .map(|t| TextHash::of(&t))
             .collect();

@@ -46,13 +46,10 @@ impl FieldKind {
         Self::ALL.into_iter().find(|k| k.as_str() == s)
     }
 
-    /// The role a field of this kind has when none is stated (D56): `string` is content, every other kind data.
+    /// The role a field of this kind has when none is stated: data, for every kind (PRD 002 search-04; D56 made
+    /// `string` content). Only a string field stated content is embedded.
     pub fn default_role(self) -> Role {
-        if self.may_be_content() {
-            Role::Content
-        } else {
-            Role::Data
-        }
+        Role::Data
     }
 
     /// Whether a field of this kind can be embedded at all: only `string` (req-34, req-97).
@@ -105,7 +102,7 @@ pub struct FieldDecl {
     pub name: String,
     pub kind: FieldKind,
     /// The role stated with `--role` or `ontology set field` (D56); absent means the kind's default
-    /// ([`FieldKind::default_role`]). Not written when absent, so older graph.json files are unchanged.
+    /// ([`FieldKind::default_role`], data). Not written when absent, so older graph.json files are unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>,
     /// What the field means, one line (`umx graph guide`). Older builds keep it among their unknown keys.

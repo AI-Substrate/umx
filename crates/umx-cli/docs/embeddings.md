@@ -12,18 +12,20 @@ vector of a model sits in its own folder, keyed by the model and its width (for 
 share them.
 
 What gets a vector: the title, the note, and each content field: a field the node's type declares as a string
-(`umx ontology add field <type> <name>:string`) whose role is content, when not blank. Data fields (file names,
-ids, agent ids, seats, hashes, locators, provenance) are never embedded: declare them with `--role data` (see
-`umx docs get ontology`). Numbers, dates, booleans and lists are data and never embedded. Provenance fields and
+and states content (`umx ontology add field <type> <name>:string --role content`), when not blank. A field with no
+stated role is data (PRD 002 search-04), and data fields (labels, names, file names, ids, agent ids, seats,
+hashes, locators, provenance) are never embedded (see `umx docs get ontology`). Numbers, dates, booleans and lists
+are data and never embedded. Provenance fields and
 nodes are never embedded, whatever graph.json says. The whole-node vector (`@node.v2`) embeds
 `title: <title> | text: <the other content fields as name: value lines>`; a field vector embeds
-`title: none | text: <value>`. Word search and exact match find data fields of kind string as before.
+`title: none | text: <value>`. Word search and `--where` find data fields of kind string as before.
 
 Text form 2 (D56) left data fields out; form 1 had no roles. A graph made before keeps every vector whose text did
 not change: a `@node.v1` line whose text is the same is still the node's vector, and takes the `@node.v2` name the
 next time its shard is written, with no embed call. A node whose whole-node vector (of any version) was made from
-text that included a field now marked data, as after a pull that marks a field data, keeps that vector (it is still
-searched) and counts as pending: its load warns `text_form_outdated` with how many, and nothing remakes or clears it
+text that included a field now data, as after a pull that marks a field data, or in a graph made while a string
+field with no role was content, keeps that vector (it is still searched, and so are the field vectors of those
+fields) and counts as pending: its load warns `text_form_outdated` with how many, and nothing remakes or clears it
 until `umx embeddings reembed` (try `--dry-run` first for the cost). The graph records `text_form: 2` in graph.json
 at reembed, or at its next graph.json write once no node is outdated; never at load. Changing a field's role
 (`umx ontology set field`) remakes the nodes it changes through the background worker, with a `role_changed`
@@ -217,8 +219,10 @@ the cost first:
     umx embeddings reembed --graph demo --model text-embedding-3-small@256
 
 - `--dry-run` reports `nodes`, `texts` and `estimated_tokens` still to embed in the configured model, `from`
-  (the model graph.json records) and `to` (the embedder's), and `locality` (`local` or `hosted`). It calls no
-  embedder and changes nothing.
+  (the model graph.json records) and `to` (the embedder's), and `locality` (`local` or `hosted`). Of the texts,
+  `whole_node_texts_changed` are whole-node texts that replace a vector made from other text (as for a node that
+  held a field now data); `field_vectors_dropped` counts the field vectors the reembed removes because their node
+  no longer embeds the field (a field now data), which costs nothing. It calls no embedder and changes nothing.
 - Without it, graph.json records the embedder's model, and every node that needs it is queued for the background
   worker, which paces itself as for any edit. `queued` says how many. `vectors_pending` falls to 0 as they land.
 - Vectors of the old model stay in their own `embeddings/<model@dims>/` folder. They are never mixed in, and

@@ -2670,9 +2670,17 @@ fn trigger(code: Code) -> (Envelope, u8) {
             ])
         }
         Code::RoleChanged => {
-            // A string field with text in one node, made data: that node's vectors are pending until remade.
+            // A content string field with text in one node, made data: that node's vectors are pending until remade.
             home.graph();
-            home.umx(&["ontology", "add", "field", "problem", "file:string"]);
+            home.umx(&[
+                "ontology",
+                "add",
+                "field",
+                "problem",
+                "file:string",
+                "--role",
+                "content",
+            ]);
             home.umx(&[
                 "node",
                 "add",
@@ -2736,7 +2744,15 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 "--role",
                 "data",
             ]);
-            home.umx(&["ontology", "add", "field", "problem", "file:string"])
+            home.umx(&[
+                "ontology",
+                "add",
+                "field",
+                "problem",
+                "file:string",
+                "--role",
+                "content",
+            ])
         }
         Code::WhereInvalid => {
             home.graph();
@@ -4379,10 +4395,23 @@ fn trigger(code: Code) -> (Envelope, u8) {
             home.graph();
             home.umx(&["graph", "guide", "demo"])
         }
+        Code::FieldDataByDefault => {
+            // PRD 002 search-04: a string field declared with no role is data.
+            home.graph();
+            home.umx(&["ontology", "add", "field", "deal", "summary:string"])
+        }
         Code::FieldLooksLikeLabels | Code::FieldLooksLikeProse => {
             // PRD 002 search-05: a label field declared content and a prose field declared data.
             home.graph();
-            home.ok(&["ontology", "add", "field", "deal", "tier:string"]);
+            home.ok(&[
+                "ontology",
+                "add",
+                "field",
+                "deal",
+                "tier:string",
+                "--role",
+                "content",
+            ]);
             home.ok(&[
                 "ontology",
                 "add",
@@ -14381,7 +14410,13 @@ fn field_roles_are_set_shown_changed_and_written_with_their_format() {
         "--role",
         "data",
     ]);
-    home.ok(&["ontology", "add", "field", "doc", "summary:string"]);
+    // No role: data (PRD 002 search-04), and the reply's hint says so with the command that makes it content.
+    let added = home.ok(&["ontology", "add", "field", "doc", "summary:string"]);
+    let hint = issue(&added, Code::FieldDataByDefault);
+    assert_eq!(
+        hint.next(),
+        "umx ontology set field doc summary --role content --graph demo"
+    );
     let env = home.ok(&["ontology", "show"]);
     let fields = env.data["types"]
         .as_array()
@@ -14392,8 +14427,10 @@ fn field_roles_are_set_shown_changed_and_written_with_their_format() {
         .clone();
     assert_eq!(fields[0]["role"], "data");
     assert_eq!(fields[0]["role_default"], false);
-    assert_eq!(fields[1]["role"], "content");
+    assert_eq!(fields[1]["role"], "data");
     assert_eq!(fields[1]["role_default"], true);
+    run_next(&home, hint);
+    assert_eq!(roles(&home, "doc")["summary"], "content");
     let file = Path::new(&path).join("graph.json");
     let v: Value = umx_protocol::parse_json(&fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(v["umx"], 4);
@@ -25176,7 +25213,15 @@ fn a_field_in_the_wrong_role_group_is_pointed_out_and_keeps_its_role_until_set()
             &region,
         ]);
     }
-    let added = home.ok(&["ontology", "add", "field", "deal", "region:string"]);
+    let added = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "deal",
+        "region:string",
+        "--role",
+        "content",
+    ]);
     let region = role_hints(&added, Code::FieldLooksLikeLabels, "region");
     assert_eq!(region.len(), 1, "{}", added.to_json());
     assert_eq!(

@@ -415,4 +415,32 @@ impl GraphStore {
         }
         hints
     }
+
+    /// PRD 002 search-04: `field_data_by_default` for a `string` field of `type_name` declared with no role (so data:
+    /// no vector, left out of the whole-node text), naming the command that makes it content. None for a stated
+    /// role, another kind or a field umx never embeds.
+    pub fn data_default_hint(
+        &self,
+        alias: &str,
+        type_name: &str,
+        field: &str,
+    ) -> Option<umx_core::Problem> {
+        let decl = self
+            .graphs
+            .get(alias)?
+            .meta
+            .ontology
+            .field_decl(type_name, field)?;
+        let defaulted = decl.role.is_none()
+            && decl.kind.may_be_content()
+            && !umx_core::ontology::never_embedded_field(field);
+        if !defaulted {
+            return None;
+        }
+        Some(problems::field_data_by_default(
+            &alias_name(alias),
+            &ValidName::new(type_name)?,
+            &ValidName::new(field)?,
+        ))
+    }
 }

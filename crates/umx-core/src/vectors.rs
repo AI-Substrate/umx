@@ -34,8 +34,9 @@ pub fn whole_node_version(field: &str) -> Option<u32> {
 }
 
 /// The texts of `node` that get a vector, by field name, sorted by field: the title, the note and each content field
-/// (req-34, req-97: a field the node's type declares as a string whose role is content), when not blank; then the
-/// whole node. Nothing when the node has no text at all, or is an actual provenance record.
+/// (req-34, req-97: a field the node's type declares as a string and states content; PRD 002 search-04: with no
+/// stated role it is data), when not blank; then the whole node. Nothing when the node has no text at all, or is an
+/// actual provenance record.
 ///
 /// Text form v2 (embeddings-expert; the adapter adds its model's own prompt): a field vector embeds
 /// `title: none | text: <value>`; the whole node embeds `title: <title> | text: <other fields>`, the other fields
@@ -81,6 +82,22 @@ pub fn whole_text_v1(node: &Node, ontology: &Ontology) -> Option<String> {
         return None;
     }
     whole_text(node, &text_values(node, ontology))
+}
+
+/// The whole-node text of `node` under the role default before PRD 002 search-04, when a string field with no stated
+/// role was content: its content fields and every string field with no role (provenance and identity keys never).
+/// One exact text per node, so a committed vector made under that default is told from an edit however many
+/// role-less fields the node holds ([`whole_texts_with_data`] tries every set only up to a few).
+pub fn whole_text_before_data_default(node: &Node, ontology: &Ontology) -> Option<String> {
+    if crate::provenance::is_provenance(node) {
+        return None;
+    }
+    let values = values_where(node, ontology, |f| {
+        f.kind.may_be_content()
+            && !never_embedded_field(&f.name)
+            && f.role.unwrap_or(Role::Content) == Role::Content
+    });
+    whole_text(node, &values)
 }
 
 /// Up to this many data fields with a value, [`whole_texts_with_data`] tries every set of them; past it, each alone
@@ -728,15 +745,15 @@ mod tests {
         }
     }
 
+    /// `problem` with `impact`, a string stated content, and `due`, a date.
     fn ontology() -> Ontology {
         let field = |name: &str, kind| FieldDecl::new(name, kind);
+        let mut impact = field("impact", FieldKind::String);
+        impact.role = Some(Role::Content);
         Ontology {
             types: vec![TypeDecl {
                 name: "problem".into(),
-                fields: vec![
-                    field("impact", FieldKind::String),
-                    field("due", FieldKind::Date),
-                ],
+                fields: vec![impact, field("due", FieldKind::Date)],
                 columns: Vec::new(),
                 description: None,
                 extra: BTreeMap::new(),
@@ -816,6 +833,58 @@ mod tests {
         assert_ne!(Some(v1.as_str()), texts.first().map(|(_, t)| t.as_str()));
         // Written values keep the data field, so a write still scans it for secrets.
         assert!(text_values(&n, &o).iter().any(|(f, _)| f == "file"));
+    }
+
+    #[test]
+    fn a_string_field_with_no_role_is_data_and_stated_content_it_embeds() {
+        // PRD 002 search-04: the same field, with no role and then stated content.
+        let mut o = ontology();
+        o.types[0]
+            .fields
+            .push(FieldDecl::new("detail", FieldKind::String));
+        let n = node("", &[("impact", "Teams wait"), ("detail", "zzdetail")]);
+        let texts = node_texts(&n, &o);
+        let fields: Vec<&str> = texts.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(fields, ["@node.v2", "impact", "title"]);
+        assert!(texts.iter().all(|(_, t)| !t.contains("zzdetail")));
+        o.types[0].fields[2].role = Some(Role::Content);
+        let texts = node_texts(&n, &o);
+        let fields: Vec<&str> = texts.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(fields, ["@node.v2", "detail", "impact", "title"]);
+        assert!(texts[0].1.contains("detail: zzdetail"), "{}", texts[0].1);
+    }
+
+    #[test]
+    fn the_text_before_the_data_default_holds_every_role_less_field_however_many() {
+        // Embeddings-expert, s6: 2 fields stated data and 5 with no role, more than whole_texts_with_data tries
+        // every set of. Before search-04 the text held the 5 and not the 2.
+        let mut o = ontology();
+        let mut values = vec![("impact", "Teams wait")];
+        let names = ["d1", "d2", "r1", "r2", "r3", "r4", "r5"];
+        for name in names {
+            let mut f = FieldDecl::new(name, FieldKind::String);
+            if name.starts_with('d') {
+                f.role = Some(Role::Data);
+            }
+            o.types[0].fields.push(f);
+            values.push((name, "zzvalue"));
+        }
+        let n = node("A note", &values);
+        let before = whole_text_before_data_default(&n, &o).unwrap();
+        let mut held = field_values(&n, &o);
+        held.extend(
+            names[2..]
+                .iter()
+                .map(|f| (f.to_string(), "zzvalue".to_string())),
+        );
+        held.sort();
+        assert_eq!(Some(before.clone()), whole_text(&n, &held));
+        assert!(
+            !before.contains("d1:") && !before.contains("d2:"),
+            "{before}"
+        );
+        assert!(!whole_texts_with_data(&n, &o).contains(&before));
+        assert_ne!(whole_text_v1(&n, &o), Some(before));
     }
 
     #[test]
@@ -906,6 +975,7 @@ mod tests {
             assert!(node_texts(&n, &o).is_empty(), "{kind}");
             assert!(field_values(&n, &o).is_empty(), "{kind}");
             assert!(whole_text_v1(&n, &o).is_none());
+            assert!(whole_text_before_data_default(&n, &o).is_none());
             assert!(whole_texts_with_data(&n, &o).is_empty());
         }
     }

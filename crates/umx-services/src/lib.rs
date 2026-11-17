@@ -37,8 +37,8 @@ pub use config::{
 };
 pub use cypher::{CypherRequest, QUERY_BACKSTOP_MS, QUERY_PERMITS, QueryPermit, QueryRows};
 pub use embedding::{
-    Applied, EmbedJob, EmbedNote, EmbedQueue, EmbeddingService, NoteKind, Pacer, Planned, Scan,
-    Step, Ticket, Vectors, batch_tokens, batches, embed, estimate_tokens, settle, step,
+    Applied, EmbedJob, EmbedNote, EmbedQueue, EmbeddingService, Needs, NoteKind, Pacer, Planned,
+    Scan, Step, Ticket, Vectors, batch_tokens, batches, embed, estimate_tokens, settle, step,
 };
 pub use graph_store::ResourceShown;
 pub use graph_store::{AlongInfo, AlongRequest, AlongSource, along_one_graph, reserved_spine_name};
@@ -373,6 +373,12 @@ pub struct Reembed {
     pub nodes: usize,
     pub texts: usize,
     pub estimated_tokens: usize,
+    /// Of `texts`, the whole-node texts that replace a whole-node vector made from other text (PRD 002 search-04: a
+    /// graph made before a string field with no role became data). These are what cost tokens.
+    pub whole_node_texts_changed: usize,
+    /// Field vectors the reembed drops because their node no longer embeds the field (a field now data among them).
+    /// Dropping one sends nothing and costs nothing.
+    pub field_vectors_dropped: usize,
     pub dry_run: bool,
     /// Nodes queued for the embed worker (0 for a dry run).
     pub queued: usize,
@@ -2035,18 +2041,21 @@ impl Services {
             from,
             to,
             local: embedder.locality() == umx_core::ports::Locality::Local,
-            nodes: needs.len(),
-            texts: needs.iter().map(|p| p.texts.len()).sum(),
+            nodes: needs.planned.len(),
+            texts: needs.planned.iter().map(|p| p.texts.len()).sum(),
             estimated_tokens: needs
+                .planned
                 .iter()
                 .flat_map(|p| &p.texts)
                 .map(|w| estimate_tokens(&w.text))
                 .sum(),
+            whole_node_texts_changed: needs.whole_node_texts_changed,
+            field_vectors_dropped: needs.field_vectors_dropped,
             dry_run: true,
             queued: 0,
         };
         Ok(ReembedPlan {
-            nodes: needs.iter().map(|p| p.job.node).collect(),
+            nodes: needs.planned.iter().map(|p| p.job.node).collect(),
             cost,
         })
     }
@@ -2204,7 +2213,23 @@ impl Services {
         fields: &[String],
         description: Option<&str>,
     ) -> Outcome<OntologyAdded> {
-        self.graph.ontology_add_type(ctx, name, fields, description)
+        let mut done = self
+            .graph
+            .ontology_add_type(ctx, name, fields, description)?;
+        if !done.value.unchanged {
+            let declared: Vec<String> = self
+                .graph
+                .loaded(&done.value.alias)
+                .and_then(|l| l.meta.ontology.type_decl(&done.value.name))
+                .map(|t| t.fields.iter().map(|f| f.name.clone()).collect())
+                .unwrap_or_default();
+            let hints: Vec<Problem> = declared
+                .iter()
+                .filter_map(|f| self.data_default_hint(&done.value.alias, &done.value.name, f, &[]))
+                .collect();
+            done.notes.extend(hints);
+        }
+        Ok(done)
     }
 
     pub fn ontology_add_status(
@@ -2270,11 +2295,35 @@ impl Services {
             .graph
             .ontology_add_field(ctx, type_name, spec, description, role)?;
         // search-05: a field whose nodes already hold values (set before it was declared) is judged at once.
-        let hints = self
+        let mut hints = self
             .graph
             .role_hints(&done.value.alias, Some((type_name, &done.value.name)));
+        if !done.value.unchanged {
+            let (alias, name) = (&done.value.alias, &done.value.name);
+            hints.extend(self.data_default_hint(alias, type_name, name, &hints));
+        }
         done.notes.extend(hints);
         Ok(done)
+    }
+
+    /// search-04: `field_data_by_default` for a string field just declared on `type_name` with no role, unless
+    /// `judged` already holds search-05's prose hint for it (which names the same command).
+    fn data_default_hint(
+        &self,
+        alias: &str,
+        type_name: &str,
+        field: &str,
+        judged: &[Problem],
+    ) -> Option<Problem> {
+        let prose = judged.iter().any(|h| {
+            h.code == "field_looks_like_prose"
+                && h.slot("type").as_deref() == Some(type_name)
+                && h.slot("field").as_deref() == Some(field)
+        });
+        if prose {
+            return None;
+        }
+        self.graph.data_default_hint(alias, type_name, field)
     }
 
     /// PRD 002 search-08: a search hit's place in its graph (see [`query::hit_links`]). Read only for the hits a
@@ -2455,14 +2504,20 @@ impl Services {
         let mut done =
             self.graph
                 .ontology_add_field_many(ctx, types, all, spec, description, role)?;
-        // search-05, as the single-type add.
+        // search-05 and search-04, as the single-type add.
         let v = &done.value;
-        let hints: Vec<Problem> = v
+        let mut hints: Vec<Problem> = v
             .types
             .iter()
             .chain(&v.unchanged)
             .flat_map(|t| self.graph.role_hints(&v.alias, Some((t, &v.name))))
             .collect();
+        let defaulted: Vec<Problem> = v
+            .types
+            .iter()
+            .filter_map(|t| self.data_default_hint(&v.alias, t, &v.name, &hints))
+            .collect();
+        hints.extend(defaulted);
         done.notes.extend(hints);
         Ok(done)
     }

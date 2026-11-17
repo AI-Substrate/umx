@@ -76,11 +76,15 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 - **usage 083**: `conflicts_with`, `alternative_to` and `possibly_same_as` (and any relation marked with
   `umx ontology add relation <r> --symmetric`) are one edge both ways: add it once, either way round; the
   reverse is `edge_exists`, and neighbours, walk and path follow it from either end.
-- **usage 114**: declare string fields that hold file names, ids, agent ids, seats, hashes, locators or
-  provenance as data: `umx ontology add field <type> <name>:string --role data` (change later with `umx ontology
-  set field <type> <field> --role data|content`). Data fields are never embedded but word search still finds
-  them; only string fields can be content (`role_not_embeddable`). On `text_form_outdated`, the old vectors are
-  kept and searched; `umx embeddings reembed --dry-run` shows the cost of remaking them.
+- **usage 114**: data fields (file names, ids, agent ids, seats, hashes, locators, provenance) are never
+  embedded but word search still finds them; change a role with `umx ontology set field <type> <field> --role
+  data|content`. Only string fields can be content (`role_not_embeddable`). On `text_form_outdated`, the old
+  vectors are kept and searched; `umx embeddings reembed --dry-run` shows the cost of remaking them.
+- **usage 206**: only prose is searched by meaning. A string field with no `--role` is data: declare a prose field
+  `umx ontology add field <type> <name>:string --role content`. `field_data_by_default` on a declare says the
+  field is data; run its next only if the field holds prose. A graph made before this keeps its old vectors
+  (still searched) until `umx embeddings reembed`: read `--dry-run`'s `whole_node_texts_changed` (the cost) and
+  `field_vectors_dropped` (free) first.
 - **usage 197**: declare a field that holds prose (sentences that differ from node to node) as content, and one
   that holds labels (a handful of short values: a tier, a region, a category) as data. When `umx graph guide`,
   `umx embeddings status` or `ontology add field` gives `field_looks_like_labels` or `field_looks_like_prose`,

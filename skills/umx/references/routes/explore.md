@@ -68,6 +68,9 @@ every named graph it lists; do not combine it or `--scope` with `--all`.
    the words), `similarity_incomplete` (some nodes have no vector yet: their words still find them),
    `similarity_unavailable` / `similarity_no_embedder` (words only, and why), `secured_graphs_skipped` (name the
    graph only if the user asked for it).
+   **usage 206**: meaning searches only the title, the note and string fields stated content; a data string field
+   (any string field with no stated role) is found by words and `--where` only (a data number or date also by exact
+   match), so for a label or an id, search its words.
    **usage 160**: `similarity_no_embedder` means no instance here may serve that graph (a `local` graph, only
    hosted instances): it was searched by words only, so empty means no word matched. Tell the user the fix it
    prints (add a local instance, or the owner's `umx graph set <graph> --embedder trusted`); never run it yourself.

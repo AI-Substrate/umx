@@ -1422,7 +1422,8 @@ fn reembed_json(v: &umx_services::Reembed) -> Value {
     json!({
         "graph": v.alias, "from": v.from.as_ref().map(|k| k.to_string()), "to": v.to.to_string(),
         "locality": if v.local { "local" } else { "hosted" }, "nodes": v.nodes, "texts": v.texts,
-        "estimated_tokens": v.estimated_tokens, "dry_run": v.dry_run, "queued": v.queued,
+        "estimated_tokens": v.estimated_tokens, "whole_node_texts_changed": v.whole_node_texts_changed,
+        "field_vectors_dropped": v.field_vectors_dropped, "dry_run": v.dry_run, "queued": v.queued,
     })
 }
 

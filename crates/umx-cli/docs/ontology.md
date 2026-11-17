@@ -9,7 +9,7 @@ that would declare the name. Change the vocabulary as the work needs.
 Lists types (with their fields, kinds and roles, and default list `columns` when set), statuses, relations, the symmetric relations and
 `relation_fields` (the fields declared on each relation's edges), with the purpose, conventions and descriptions
 that `umx graph guide` shows. Each field shows `role` (`content` or `data`, as umx acts on it) and `role_default`
-(true when the role is its kind's default, not stated).
+(true when no role is stated, so the field is data).
 
     umx ontology show
     umx ontology show --graph launch
@@ -26,6 +26,7 @@ that `umx graph guide` shows. Each field shows `role` (`content` or `data`, as u
     umx ontology add field --all-types owner:string     # every type the graph declares, one write
     umx ontology add status parked --description "Waiting on someone else"
     umx ontology add field doc file:string --role data
+    umx ontology add field doc summary:string --role content   # prose: searched by meaning
 
 One field on several types (a comma list, or several types before the field) or on `--all-types` is one write,
 all or nothing: if any type is not declared (`type_unknown`) or already has the field with another kind
@@ -39,7 +40,8 @@ relation with the same `--symmetric` flag, and a field with the same kind and ro
 refused and changes nothing: a field with another kind (`field_conflict`), a field with another role
 (`field_role_conflict`: change a role only with `ontology set field`), a type re-declared with a field it lacks
 (`field_missing`, whose next adds it), or a plain `add relation` of a symmetric relation such as `conflicts_with`
-(`already_declared`).
+(`already_declared`). No `--role` means data, so re-declaring a field stated content without `--role content` is
+`field_role_conflict`, and re-declaring a field stated data without `--role` is `unchanged`.
 
 `--description <text>` on any `ontology add` gives the new name one line on what it means, shown by `umx graph
 guide` (`umx docs get guide`). Re-declaring a name with the description it has, or none, is
@@ -75,13 +77,22 @@ that declares it gives the same list.
 ## Field roles: content or data
 
 Every declared field has a role. Content fields are embedded (a field vector and a line in the whole-node text);
-data fields never are. Declare as data any string field that holds file names, ids, agent ids, seats, hashes,
-locators or provenance: their text means nothing to an embedding and only adds noise to similarity. Defaults by
-kind: `string` is content; `int, float, bool, date, list` are data and cannot be content (`role_not_embeddable`).
-Word search and exact match treat both roles the same.
+data fields never are. A node's title and note are always embedded. A field with no stated role is data, whatever
+its kind (PRD 002 search-04): declare a string field that holds prose (sentences that differ from node to node)
+with `--role content` so search by meaning finds it. Leave as data a field that holds labels, names, file names,
+ids, agent ids, seats, hashes, locators or provenance: their text means nothing to an embedding and only adds
+noise to similarity. `int, float, bool, date, list` are always data and cannot be content (`role_not_embeddable`).
+Word search, exact match and `--where` treat both roles the same.
 
-    umx ontology add field doc file:string --role data
-    umx ontology set field doc file --role data      # change it later
+    umx ontology add field doc summary:string --role content
+    umx ontology add field doc file:string             # data, the default
+    umx ontology set field doc summary --role data     # change it later
+
+Declaring a string field with no `--role` (with `ontology add field`, or `ontology add type --field`) gives the
+hint `field_data_by_default`: the field is data, so search by meaning never sees it, and its next is the
+`umx ontology set field <type> <field> --role content` that makes it content. Run it only when the field holds
+prose. A re-declare that changes nothing gives no hint. A graph made before this default keeps the vectors its
+role-less string fields have (still searched) until `umx embeddings reembed`; see `umx docs get embeddings`.
 
 `ontology set field` changes a declared field's role (`field_not_declared` if the type does not declare it). The
 nodes of that type with text in the field then have pending vectors, and the background worker remakes them: the

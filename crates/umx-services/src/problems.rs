@@ -28,6 +28,7 @@ pub const HINTS: &[&str] = &[
     "descriptions_missing",
     "field_looks_like_labels",
     "field_looks_like_prose",
+    "field_data_by_default",
     "reason_missing",
     "near_duplicate",
     "near_duplicate_line",
@@ -321,6 +322,7 @@ pub const CODES: &[&str] = &[
     "role_changed",
     "field_looks_like_labels",
     "field_looks_like_prose",
+    "field_data_by_default",
     "role_not_embeddable",
     "field_not_declared",
 ];
@@ -2146,6 +2148,23 @@ pub fn field_looks_like_prose(
         .with("field", name(field))
         .with("count", Slot::Count(count as u64))
         .with("long", Slot::Count(long as u64))
+        .with(
+            "fix",
+            Slot::Command(set_role(graph, type_name, field, Role::Content)),
+        )
+}
+
+/// PRD 002 search-04: a string field just declared with no role is data, so search by meaning never sees it; `fix`
+/// is the `ontology set field ... --role content` that makes it content.
+pub fn field_data_by_default(
+    graph: &ValidName,
+    type_name: &ValidName,
+    field: &ValidName,
+) -> Problem {
+    Problem::new("field_data_by_default")
+        .with("graph", name(graph))
+        .with("type", name(type_name))
+        .with("field", name(field))
         .with(
             "fix",
             Slot::Command(set_role(graph, type_name, field, Role::Content)),

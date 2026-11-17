@@ -465,13 +465,13 @@
 				{
 					"id": "req-34",
 					"title": "Fields and nodes are embedded",
-					"statement": "Each embeddable field of every node gets its own vector, and each whole node gets one from a standard text form of all its fields. Which fields embed is declared per field type; ids, enums, dates and URLs do not.",
+					"statement": "Each embeddable field of every node gets its own vector, and each whole node gets one from a standard text form of its embedded fields. Which fields embed is declared per field type; ids, enums, dates and URLs do not.",
 					"actor": "a-agent",
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Add a node with 3 text fields: the daemon reports 4 vectors for it (3 fields and the whole node).",
 					"source": "brief; workshop 003 (not published) EMB-1, EMB-2",
-					"note": "2026-11-11 (D56): which fields embed is now each field's role, content or data (req-97)."
+					"note": "2026-11-11 (D56): which fields embed is now each field's role, content or data (req-97). 2026-11-17 (PRD 002 search-04): a field with no stated role is data, so a node's embedded fields are its title, its note and the string fields its type states content."
 				},
 				{
 					"id": "req-35",
@@ -1102,12 +1102,13 @@
 				{
 					"id": "req-97",
 					"title": "Data fields are never embedded",
-					"statement": "Each field type has a role, content or data. Data fields (file names, ids, agent ids, seats, hashes, locators, provenance) are never embedded: they get no field vector and are left out of the whole-node text form; content fields embed as before. `umx ontology add field <type> name:kind --role data|content` sets it, with a default per kind (string is content; int, float, bool, date and list are data and cannot be content), and `umx ontology set field` changes it. Leaving data fields out is a new text-form version: a graph with no data field keeps every vector, a node whose whole-node vector included a field now marked data goes pending, and nothing is re-embedded on load: only reembed or an explicit role change remakes vectors. Data fields of kind string stay searchable by words and exact match.",
+					"statement": "Each field type has a role, content or data. Data fields (file names, ids, agent ids, seats, hashes, locators, provenance) are never embedded: they get no field vector and are left out of the whole-node text form; content fields embed as before. `umx ontology add field <type> name:kind --role data|content` sets it and `umx ontology set field` changes it. A field with no stated role is data, whatever its kind (PRD 002 search-04; until then a string field was content); int, float, bool, date and list are always data and cannot be content. Leaving data fields out is a new text-form version: a graph with no data field keeps every vector, a node whose whole-node vector included a field now marked data goes pending, and nothing is re-embedded on load: only reembed or an explicit role change remakes vectors. Data fields of kind string stay searchable by words and exact match.",
 					"actor": "a-agent",
 					"priority": "must",
 					"state": "shipped",
 					"done_when": "A data field gets no field vector and is absent from the whole-node text; a content field embeds; kind defaults apply and a non-string kind is refused as content; a graph made before this with no data field loads with zero pending and zero embed calls; a node whose committed whole-node vector was made from text that included a field now marked data goes pending (text_form_outdated) on load, and nothing remakes it passively: only reembed or an explicit role change does; a graph with no data field records text_form 2 at its next graph.json write, never on load; changing a role marks the affected nodes pending with a warning (count and the dry-run next), and the worker then remakes their whole-node vector (plus the field vector for data to content), dropping data-field lines; with a recording fake embedder, the document texts sent for field and whole-node vectors are built without any data field, and a search query's text is sent unchanged; word search still finds the values of data fields of kind string.",
-					"source": "D56 (2026-11-11); design: plan 082 (not published) (embeddings-expert and architect agreed)"
+					"source": "D56 (2026-11-11); design: plan 082 (not published) (embeddings-expert and architect agreed)",
+					"note": "2026-11-17 (PRD 002 search-04): a field with no stated role is data. A graph made while a string field with no role was content keeps the vectors of those fields, still searched; its nodes whose whole-node text held one are pending (text_form_outdated) and nothing is embedded or dropped on load, until reembed."
 				},
 				{
 					"id": "req-98",

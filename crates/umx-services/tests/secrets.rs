@@ -130,7 +130,7 @@ fn world(locality: Locality) -> World {
         .graph_new(&ctx(), "/work/g", "demo", None, false, None)
         .unwrap();
     w.svc
-        .ontology_add_field(&ctx(), "problem", "impact:string", None)
+        .ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
         .unwrap();
     w
 }
@@ -516,7 +516,13 @@ fn the_allows_file_stays_under_the_reader_cap_by_bytes_as_well_as_count() {
     let long = "a_very_long_field_name_that_reaches_the_limit_of_sixty_four_char";
     assert_eq!(long.len(), 64);
     w.svc
-        .ontology_add_field(&ctx(), "problem", &format!("{long}:string"), None)
+        .ontology_add_field_as(
+            &ctx(),
+            "problem",
+            &format!("{long}:string"),
+            None,
+            Some("content"),
+        )
         .unwrap();
     let mut granted = 0;
     let refused = loop {
@@ -642,7 +648,7 @@ fn a_field_made_data_between_plan_and_send_never_reaches_a_hosted_embedder() {
     // R189-1: the worker plans, releases the lock and checks each batch again right before sending.
     let mut w = world(Locality::Hosted);
     w.svc
-        .ontology_add_field(&ctx(), "problem", "file:string", None)
+        .ontology_add_field_as(&ctx(), "problem", "file:string", None, Some("content"))
         .unwrap();
     w.svc
         .node_add(
