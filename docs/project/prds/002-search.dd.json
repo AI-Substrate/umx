@@ -135,7 +135,7 @@
         {
           "id": "search-04",
           "title": "Only prose is searched by meaning",
-          "statement": "The title and the note of every node are embedded, each on its own and together as the whole-node text. A custom string field is data by default: it gets no vector and is left out of the whole-node text. It is embedded only when its type declares it content (`umx ontology add field <type> <name>:string --role content`, or `umx ontology set field`). Numbers, dates, booleans, lists and provenance are always data. Data fields are still found by exact match, by words and by `--where`. In a graph made before this rule, a field with no recorded role keeps the vectors it has until a person runs `umx embeddings reembed`, which shows the cost first; nothing is embedded again or dropped on load.",
+          "statement": "The title and the note of every node are embedded, each on its own and together as the whole-node text. A custom string field is data by default: it gets no vector and is left out of the whole-node text. It is embedded only when its type declares it content (`umx ontology add field <type> <name>:string --role content`, or `umx ontology set field`). Numbers, dates, booleans, lists and provenance are always data. A data string field is still found by words and by `--where`; a data number or date also by exact match. In a graph made before this rule, a field with no recorded role keeps the vectors it has until a person runs `umx embeddings reembed`, which shows the cost first; nothing is embedded again or dropped on load.",
           "actor": "a-agent",
           "priority": "must",
           "state": "shipped",
@@ -350,7 +350,7 @@
         {
           "id": "q-01",
           "question": "Are the std person fields job_title and org data, or content?",
-          "default": "Data. They are short labels and are found by words and exact match.",
+          "default": "Data. They are short labels and are found by words and by `--where`.",
           "status": "answered",
           "answer": "Data (project lead, 2026-11-16)."
         },

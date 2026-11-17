@@ -679,29 +679,45 @@ impl EmbeddingService {
             .collect()
     }
 
-    /// Which of `ids` lack a current vector in the graph's own space (see [`Self::space`]); empty when it has
-    /// none. Reads each node's shard; for the few nodes a write touched.
+    /// Whether each of `ids` lacks a current vector in the graph's own space (see [`Self::space`]); empty when it
+    /// has none. Reads the shards that hold them one at a time, each once; a node whose shard cannot be read gets
+    /// the read's problem, and only those nodes. For the nodes a write or a role change touched.
     pub fn pending_among(
         &self,
         store: &GraphStore,
         alias: &str,
         ids: &[Id],
-    ) -> Result<Vec<(Id, bool)>, Problem> {
+    ) -> Vec<(Id, Result<bool, Problem>)> {
         let (Some(space), Some(policy)) =
             (self.block_key(store, alias), store.effective_policy(alias))
         else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
-        ids.iter()
-            .map(|id| {
+        let mut by_shard: BTreeMap<ShardFile, Vec<Id>> = BTreeMap::new();
+        for id in ids {
+            by_shard
+                .entry(ShardFile::of(space.clone(), *id))
+                .or_default()
+                .push(*id);
+        }
+        let mut out = Vec::with_capacity(ids.len());
+        for (shard, nodes) in by_shard {
+            let lines = store.read_shard(alias, policy, &shard);
+            for id in nodes {
                 let job = EmbedJob {
                     alias: alias.into(),
-                    node: *id,
+                    node: id,
                 };
-                let planned = self.plan_in(store, &job, policy, Some(space.clone()))?;
-                Ok((*id, planned.is_some_and(|p| !p.texts.is_empty())))
-            })
-            .collect()
+                let pending = match (store.node_texts(alias, id), &lines) {
+                    (None, _) => Ok(false),
+                    (Some(texts), Ok(lines)) => Ok(plan_lines(&job, &texts, lines, space.dims())
+                        .is_some_and(|p| !p.texts.is_empty())),
+                    (Some(_), Err(cause)) => Err(cause.clone()),
+                };
+                out.push((id, pending));
+            }
+        }
+        out
     }
 
     /// Every node of `alias` that needs a vector in `key`'s space, with the texts to embed: what a re-embed
@@ -764,13 +780,7 @@ impl EmbeddingService {
         };
         let dims = key.dims();
         let lines = store.read_shard(&job.alias, policy, &ShardFile::of(key, job.node))?;
-        // A line of the wrong width is never current, whatever its hash (reviewer R60-3).
-        let mine: Vec<&VectorLine> = lines
-            .iter()
-            .filter_map(ShardLine::vector)
-            .filter(|v| v.node == job.node && v.values.len() == dims)
-            .collect();
-        Ok(plan_node(job, &texts, &mine))
+        Ok(plan_lines(job, &texts, &lines, dims))
     }
 
     /// Writes `results` into their shards: each node's current vectors replace its old lines, lines for fields it
@@ -1248,6 +1258,22 @@ fn plan_into(
         }
         None => {}
     }
+}
+
+/// [`plan_node`] for `job`'s node from its shard's `lines`, the vectors of `dims` values only: a line of the wrong width
+/// is never current, whatever its hash (reviewer R60-3).
+fn plan_lines(
+    job: &EmbedJob,
+    texts: &[(String, String)],
+    lines: &[ShardLine],
+    dims: usize,
+) -> Option<Planned> {
+    let mine: Vec<&VectorLine> = lines
+        .iter()
+        .filter_map(ShardLine::vector)
+        .filter(|v| v.node == job.node && v.values.len() == dims)
+        .collect();
+    plan_node(job, texts, &mine)
 }
 
 /// Whether a node's whole-node vector is out of date only because a field it held is now data (see [`plan_into`]):

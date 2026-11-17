@@ -1782,23 +1782,25 @@ impl Services {
     }
 
     /// Updates whether `nodes` have pending vectors. A shard that cannot be read never leaves a node counted
-    /// current: it is marked pending and warned (review R85-1).
+    /// current: each of its nodes is marked pending and warned (review R85-1); the nodes of the shards read are
+    /// marked from their plans.
     fn recheck(&mut self, alias: &str, nodes: &[Id]) -> Vec<Problem> {
-        match self.embedding.pending_among(&self.graph, alias, nodes) {
-            Ok(marks) => {
-                self.graph.mark_vectors_pending(alias, &marks);
-                Vec::new()
-            }
-            Err(cause) => {
-                let marks: Vec<(Id, bool)> = nodes.iter().map(|id| (*id, true)).collect();
-                self.graph.mark_vectors_pending(alias, &marks);
-                let graph = graph_store::alias_name(alias);
-                nodes
-                    .iter()
-                    .map(|id| problems::vector_shard_unreadable(&graph, *id, &cause))
-                    .collect()
-            }
-        }
+        let graph = graph_store::alias_name(alias);
+        let mut warnings = Vec::new();
+        let marks: Vec<(Id, bool)> = self
+            .embedding
+            .pending_among(&self.graph, alias, nodes)
+            .into_iter()
+            .map(|(id, pending)| match pending {
+                Ok(pending) => (id, pending),
+                Err(cause) => {
+                    warnings.push(problems::vector_shard_unreadable(&graph, id, &cause));
+                    (id, true)
+                }
+            })
+            .collect();
+        self.graph.mark_vectors_pending(alias, &marks);
+        warnings
     }
 
     /// Effective policies of the loaded graphs, to see which ones a command changed.
@@ -2415,9 +2417,12 @@ impl Services {
         self.graph.graph_spine_remove(ctx, alias, name)
     }
 
-    /// `ontology set field <type> <field> --role data|content` (D56, req-97): the nodes whose embedded text the
-    /// change alters are pending, with a `role_changed` warning naming how many, and queued so the worker remakes
-    /// their vectors (whole node, plus the field's own for data to content; data lines go at that write).
+    /// `ontology set field <type> <field> --role data|content` (D56, req-97): each node whose embedded text the
+    /// change alters is planned again, and is pending only when a text of it has no current vector (s6b: stating
+    /// content a field that a graph made before PRD 002 search-04 held with no role leaves its vectors current). The
+    /// pending ones are named in `affected` and counted by a `role_changed` warning; every altered node is queued, so
+    /// the worker remakes what it needs (whole node, plus the field's own for data to content; data lines go at that
+    /// write).
     pub fn ontology_set_field(
         &mut self,
         ctx: &Ctx,
@@ -2430,21 +2435,36 @@ impl Services {
         if v.affected.is_empty() {
             return Ok(done);
         }
-        let (alias, affected) = (v.alias.clone(), v.affected.clone());
+        let (alias, altered) = (v.alias.clone(), v.affected.clone());
+        let unreadable = self.recheck(&alias, &altered);
+        let pending: Vec<Id> = match self
+            .graph
+            .loaded(&alias)
+            .and_then(|l| l.vectors_pending.as_ref())
+        {
+            Some(set) => altered
+                .iter()
+                .copied()
+                .filter(|id| set.contains(id))
+                .collect(),
+            None => altered.clone(),
+        };
+        let v = &done.value;
         let names = (ValidName::new(&v.type_name), ValidName::new(&v.field));
-        if let (Some(t), Some(f)) = names {
+        if let (Some(t), Some(f), false) = (names.0, names.1, pending.is_empty()) {
             done.notes.push(problems::role_changed(
                 &graph_store::alias_name(&alias),
                 &t,
                 &f,
                 v.role,
-                affected.len(),
+                pending.len(),
             ));
         }
-        let marks: Vec<(Id, bool)> = affected.iter().map(|id| (*id, true)).collect();
-        self.graph.mark_vectors_pending(&alias, &marks);
-        self.queue(&alias, affected.iter().copied());
-        self.settle_held(&alias, Some(&affected));
+        // One cause, possibly for every altered node: the first says it, the pending count holds the rest (s6b B1).
+        done.notes.extend(unreadable.into_iter().take(1));
+        done.value.affected = pending;
+        self.queue(&alias, altered.iter().copied());
+        self.settle_held(&alias, Some(&altered));
         Ok(done)
     }
 

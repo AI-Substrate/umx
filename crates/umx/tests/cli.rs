@@ -25380,7 +25380,7 @@ fn a_field_in_the_wrong_role_group_is_pointed_out_and_keeps_its_role_until_set()
     assert_eq!(
         labels[0].message(),
         "Field tier of type deal in demo is content, but its 9 values are 3 short labels. As data it would need 9 fewer \
-         embedder calls, and words and exact match still find it."
+         embedder calls, and words and --where still find it."
     );
     assert_eq!(
         prose[0].message(),

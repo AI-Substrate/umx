@@ -28,8 +28,8 @@ pub struct RoleSet {
     pub role: Role,
     /// Whether graph.json changed (false: the field already stated this role).
     pub changed: bool,
-    /// Nodes whose embedded text the change alters (the field holds text and its effective role changed); the
-    /// services mark them pending and queue them.
+    /// Nodes whose embedded text the change alters (the field holds text and its effective role changed). The
+    /// services queue them all and keep here only those whose vectors are then pending (the reply's `pending`).
     pub affected: Vec<Id>,
 }
 

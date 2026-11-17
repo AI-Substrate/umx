@@ -26,7 +26,7 @@ and call the embedder.
 On `text_form_outdated` at load, the graph has vectors made from text that held a field now marked data (a pulled
 graph.json, or vectors from before D56). They are kept and still searched, and stay pending: a load never remakes
 or clears them, and nothing does until you run `umx embeddings reembed --dry-run` to see the cost, then `umx
-embeddings reembed`. graph.json's `text_form` rises to 2 only at reembed, or at the next graph.json write once no
+embeddings reembed`, or you state the field content again. graph.json's `text_form` rises to 2 only at reembed, or at the next graph.json write once no
 node is outdated; never at load.
 
 ## Don't

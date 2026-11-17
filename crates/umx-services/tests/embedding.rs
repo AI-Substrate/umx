@@ -821,6 +821,95 @@ fn a_node_with_seven_string_fields_made_before_the_data_default_loads_with_zero_
     assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
 }
 
+/// A world made before PRD 002 search-04, its model recorded: `problem` holds `detail` (and `extra`) with no stated
+/// role, each embedded as content then, on `n` nodes with a detail, the first `with_extra` of them with an extra too.
+/// Loaded again, so those nodes are outdated and pending.
+fn made_before_the_data_default(n: usize, with_extra: usize) -> (World, Vec<Id>) {
+    let mut w = world();
+    for f in ["detail", "extra"] {
+        w.svc
+            .ontology_add_field_as(
+                &ctx(),
+                "problem",
+                &format!("{f}:string"),
+                None,
+                Some("content"),
+            )
+            .unwrap();
+    }
+    let ids: Vec<Id> = (0..n)
+        .map(|i| {
+            let id = add(&mut w, &format!("Node {i}"), "A note.", "Some impact");
+            set_str(&mut w, id, "detail", &format!("Detail {i}"));
+            if i < with_extra {
+                set_str(&mut w, id, "extra", &format!("Extra {i}"));
+            }
+            id
+        })
+        .collect();
+    run(&mut w);
+    // The graph records its model, so a reembed keeps the key and queues from the pending set.
+    set_graph_json_text_form(&w, 2);
+    unstate_roles(&w, &["detail", "extra"]);
+    assert_eq!(reload(&mut w), ["text_form_outdated"]);
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(n));
+    (w, ids)
+}
+
+#[test]
+fn stating_content_a_field_whose_vectors_are_current_leaves_nothing_pending_and_embeds_nothing() {
+    // s6b (reviewer N1): the vectors made while detail had no role and was content are current once it is stated
+    // content, so nothing is pending: no count, no search hint, nothing for a reembed to queue.
+    let (mut w, _) = made_before_the_data_default(3, 0);
+    let before = counts(&w);
+    let done = w
+        .svc
+        .ontology_set_field(&ctx(), "problem", "detail", "content")
+        .unwrap();
+    assert!(done.value.changed && done.value.affected.is_empty());
+    assert!(done.notes.is_empty(), "no role_changed: {:?}", done.notes);
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
+    run(&mut w);
+    assert_eq!(counts(&w), before, "zero embed calls, no shard write");
+    let searched = w.svc.search(&ctx(), "Detail", None, 10).unwrap();
+    let codes: Vec<&str> = searched.notes.iter().map(|p| p.code).collect();
+    assert!(!codes.contains(&"similarity_incomplete"), "{codes:?}");
+    // The search embedded its query; a same-key reembed then has nothing to queue or embed.
+    let before = counts(&w);
+    let reembed = w.svc.embeddings_reembed(&ctx(), false, None).unwrap().value;
+    assert_eq!(reembed.queued, 0);
+    run(&mut w);
+    assert_eq!(counts(&w), before);
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
+}
+
+#[test]
+fn stating_content_a_field_whose_node_still_holds_another_role_less_field_keeps_it_pending_and_remakes_it()
+ {
+    // The other direction: a node whose whole-node text still differs from its vector stays pending and is remade.
+    let (mut w, ids) = made_before_the_data_default(3, 1);
+    let done = w
+        .svc
+        .ontology_set_field(&ctx(), "problem", "detail", "content")
+        .unwrap();
+    assert_eq!(done.value.affected, [ids[0]]);
+    assert_eq!(done.notes[0].code, "role_changed");
+    assert_eq!(done.notes[0].slot("count").as_deref(), Some("1"));
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(1));
+    let (_, texts, _) = counts(&w);
+    run(&mut w);
+    assert_eq!(
+        w.embedder.texts_embedded() - texts,
+        1,
+        "its whole-node text"
+    );
+    assert_eq!(
+        fields_of(&w, ids[0]),
+        ["@node.v2", "detail", "impact", "note", "title"]
+    );
+    assert_eq!(w.svc.graph_list()[0].vectors_pending, Some(0));
+}
+
 #[test]
 fn declaring_a_string_field_with_no_role_hints_once_that_it_is_data() {
     let mut w = world();
@@ -2454,20 +2543,19 @@ fn a_policy_change_recounts_pending_in_the_store_it_now_uses() {
     );
 }
 
-#[test]
-fn an_unreadable_shard_after_an_edit_counts_the_node_pending_and_warns() {
-    // Review R85-1, on the real fs adapter: a folder where the node's shard file belongs.
+/// Services on the real fs adapter in a fresh temp folder named for `tag`, with the fake embedder; and the folder.
+fn fs_services(tag: &str) -> (Services, Arc<FakeEmbedder>, std::path::PathBuf) {
     let root = std::env::temp_dir()
         .canonicalize()
         .unwrap()
-        .join(format!("umx-s06b-pending-{}", std::process::id()));
+        .join(format!("umx-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir(&root).unwrap();
     let base = GraphDir::parse(root.to_str().unwrap()).unwrap();
     let files: Arc<dyn GraphFiles> =
         Arc::new(umx_adapter_fs::FsGraphFiles::new(vec![base.clone()]));
     let embedder = Arc::new(FakeEmbedder::new(key()));
-    let mut svc = Services::new(Ports {
+    let svc = Services::new(Ports {
         sources: std::sync::Arc::new(umx_fakes::FakeSourceReader::open(
             umx_core::ports::GraphDir::parse("/").unwrap(),
         )),
@@ -2483,6 +2571,13 @@ fn an_unreadable_shard_after_an_edit_counts_the_node_pending_and_warns() {
         lint_terms: Arc::new(FakeLocalState::new().with_absent_ok(true)),
     })
     .with_embedder(embedder.clone());
+    (svc, embedder, root)
+}
+
+#[test]
+fn an_unreadable_shard_after_an_edit_counts_the_node_pending_and_warns() {
+    // Review R85-1, on the real fs adapter: a folder where the node's shard file belongs.
+    let (mut svc, embedder, root) = fs_services("s06b-pending");
     let path = root.join("g");
     let section = umx_core::GraphEmbedding::new(Some(key()), umx_core::Policy::OPEN);
     svc.graph_new(
@@ -2543,7 +2638,77 @@ fn an_unreadable_shard_after_an_edit_counts_the_node_pending_and_warns() {
     assert!(still.is_err() || svc.graph_list()[0].vectors_pending == Some(1));
 }
 
-/// An embedder that records every text it is sent, with its kind, and embeds as the fake does.
+#[test]
+fn a_role_change_over_unreadable_shards_says_so_once_and_still_sets_the_role() {
+    // s6b review B1: one read error is one note, however many altered nodes it leaves pending.
+    let (mut svc, embedder, root) = fs_services("s6b-set-field");
+    let path = root.join("g");
+    let section = umx_core::GraphEmbedding::new(Some(key()), umx_core::Policy::OPEN);
+    svc.graph_new(
+        &ctx(),
+        path.to_str().unwrap(),
+        "demo",
+        None,
+        false,
+        Some(section),
+    )
+    .unwrap();
+    svc.ontology_add_field_as(&ctx(), "problem", "impact:string", None, Some("content"))
+        .unwrap();
+    let ids: Vec<Id> = (0..40)
+        .map(|i| {
+            svc.node_add(
+                &ctx(),
+                NodeAddRequest {
+                    kind: "problem".into(),
+                    title: format!("Node {i}"),
+                    sets: vec![("impact".into(), SetValue::Str(format!("Impact {i}")))],
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .value
+            .node
+            .id
+        })
+        .collect();
+    let jobs = svc.take_embed_jobs();
+    let plans: Vec<Planned> = svc
+        .embed_plan_all(&jobs)
+        .into_iter()
+        .map(|p| p.unwrap().unwrap())
+        .collect();
+    let (vectors, _) = umx_services::embed(embedder.as_ref(), &plans).unwrap();
+    svc.embed_apply(&vectors).unwrap();
+    assert_eq!(svc.graph_list()[0].vectors_pending, Some(0), "control");
+    for id in &ids {
+        let shard_path = path.join(FileRef::Shard(shard(*id)).path());
+        if shard_path.is_file() {
+            std::fs::remove_file(&shard_path).unwrap();
+            std::fs::create_dir(&shard_path).unwrap();
+        }
+    }
+    let done = svc
+        .ontology_set_field(&ctx(), "problem", "impact", "data")
+        .unwrap();
+    let codes: Vec<&str> = done.notes.iter().map(|p| p.code).collect();
+    let role = svc
+        .ontology_show(&ctx())
+        .unwrap()
+        .value
+        .1
+        .field_decl("problem", "impact")
+        .unwrap()
+        .role;
+    let pending = svc.graph_list()[0].vectors_pending;
+    std::fs::remove_dir_all(&root).unwrap();
+    assert_eq!(codes, ["role_changed", "vector_shard_unreadable"]);
+    assert!(done.value.changed);
+    assert_eq!(role, Some(umx_core::Role::Data));
+    assert_eq!(pending, Some(ids.len()), "never a false zero");
+}
+
+/// An embedder that records every text it is sent, with its kind, and embeds as the fake does./// An embedder that records every text it is sent, with its kind, and embeds as the fake does.
 struct Recording {
     inner: FakeEmbedder,
     seen: std::sync::Mutex<Vec<(TextKind, String)>>,

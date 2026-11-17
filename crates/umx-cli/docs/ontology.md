@@ -95,9 +95,11 @@ prose. A re-declare that changes nothing gives no hint. A graph made before this
 role-less string fields have (still searched) until `umx embeddings reembed`; see `umx docs get embeddings`.
 
 `ontology set field` changes a declared field's role (`field_not_declared` if the type does not declare it). The
-nodes of that type with text in the field then have pending vectors, and the background worker remakes them: the
-whole-node vector, plus the field's own vector when it becomes content; a data field's vectors are dropped. The
-reply's `pending` and the `role_changed` warning say how many. `prov_key, authored_by_session,
+nodes of that type with text in the field whose vectors that leaves out of date then have pending vectors, and the
+background worker remakes them: the whole-node vector, plus the field's own vector when it becomes content; a data
+field's vectors are dropped. The reply's `pending` and the `role_changed` warning say how many. A node whose vectors
+already match its new texts (stating content a field that a graph made before this default embedded) is not
+pending, and nothing is embedded for it. `prov_key, authored_by_session,
 edited_by_session, entity_key` and the legacy identity keys `person_key, org_key, team_key` (older graphs may
 still carry them), and provenance nodes, are never embedded, whatever is declared.
 A role needs graph.json format 4, so an older umx refuses the graph instead of embedding its data fields.

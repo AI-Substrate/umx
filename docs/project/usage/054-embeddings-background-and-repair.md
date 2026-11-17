@@ -8,7 +8,7 @@ reqs: [req-34, req-35, req-36]
 supersedes: none
 ---
 ## Do
-Write nodes as usual and move on: `node add`, `node edit` and `node note` return as soon as the node is saved. Its vectors (one per text field, one for the whole node) are made afterwards in the background and land in `embeddings/<model@dims>/<shard>.tsv` in the graph folder. Commit those files with the graph.
+Write nodes as usual and move on: `node add`, `node edit` and `node note` return as soon as the node is saved. Its vectors (one for the title, the note and each content field, one for the whole node) are made afterwards in the background and land in `embeddings/<model@dims>/<shard>.tsv` in the graph folder. Commit those files with the graph.
 
 After a git merge or pull, run `umx embeddings repair --graph <alias>`. It keeps the first of two equal lines, drops leftover ones, and queues any node whose vector is missing, stale or conflicting.
 

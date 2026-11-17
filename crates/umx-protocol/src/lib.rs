@@ -3042,14 +3042,14 @@ catalogue! {
         "umx embeddings reembed --graph <graph> --dry-run";
     FieldLooksLikeLabels => "field_looks_like_labels", Hint, 0,
         "a content field holds a few short values repeated across its nodes (labels): each is an embedder call and they crowd search by meaning; umx never changes the role itself (search-05)",
-        "Field <field> of type <type> in <graph> is content, but its <count> values are <distinct> short labels. As data it would need <count> fewer embedder calls, and words and exact match still find it.",
+        "Field <field> of type <type> in <graph> is content, but its <count> values are <distinct> short labels. As data it would need <count> fewer embedder calls, and words and --where still find it.",
         "<fix>";
     FieldLooksLikeProse => "field_looks_like_prose", Hint, 0,
         "a data field holds prose, mostly long and mostly different values, which search by meaning never sees; umx never changes the role itself (search-05)",
         "Field <field> of type <type> in <graph> is data, but <long> of its <count> values read as prose. As content, search by meaning would find them (<count> embedder calls).",
         "<fix>";
     FieldDataByDefault => "field_data_by_default", Hint, 0,
-        "a string field was declared with no --role, so it is data: words, exact match and --where find it, search by meaning does not; umx never changes the role itself (PRD 002 search-04)",
+        "a string field was declared with no --role, so it is data: words and --where find it, search by meaning does not; umx never changes the role itself (PRD 002 search-04)",
         "Field <field> of type <type> in <graph> is data: words and --where find it, search by meaning does not. If it holds prose (sentences that differ from node to node), make it content.",
         "<fix>";
     RoleNotEmbeddable => "role_not_embeddable", Error, 1,

@@ -26,11 +26,12 @@ next time its shard is written, with no embed call. A node whose whole-node vect
 text that included a field now data, as after a pull that marks a field data, or in a graph made while a string
 field with no role was content, keeps that vector (it is still searched, and so are the field vectors of those
 fields) and counts as pending: its load warns `text_form_outdated` with how many, and nothing remakes or clears it
-until `umx embeddings reembed` (try `--dry-run` first for the cost). The graph records `text_form: 2` in graph.json
-at reembed, or at its next graph.json write once no node is outdated; never at load. Changing a field's role
-(`umx ontology set field`) remakes the nodes it changes through the background worker, with a `role_changed`
-warning naming how many. A text planned before the change and not yet sent is dropped, so a field made data is not
-sent after the change returns.
+until `umx embeddings reembed` (try `--dry-run` first for the cost), or you state the field content again. The graph
+records `text_form: 2` in graph.json at reembed, or at its next graph.json write once no node is outdated; never at
+load. Changing a field's role (`umx ontology set field`) remakes, through the background worker, the nodes whose
+vectors it leaves out of date, with a `role_changed` warning naming how many; a node whose vectors already match is
+not pending. A text planned before the change and not yet sent is dropped, so a field made data is not sent after
+the change returns.
 
 `umx embeddings status` also points out, for each open graph, a string field whose values say it is in the wrong
 group: the hints `field_looks_like_labels` (labels declared content: how many embedder calls data would save) and
