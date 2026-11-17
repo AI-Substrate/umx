@@ -96,11 +96,11 @@ pub use guide::{Guide, GuideEntry, GuideExample, GuideField, GuideType};
 pub(crate) use index::Known;
 pub use index::{FolderState, GraphForgotten, IndexRow};
 pub use lint::{LINT_PAGE, Lint, LintKind, LintRequest, LintRow, RangePair};
-pub(crate) use node::key_refused;
 pub use node::{
     ListedNode, NEAR_DUPLICATE, NEAR_DUPLICATE_OTHER_TYPE, NodeAddRequest, NodeAdded,
     NodeListRequest,
 };
+pub(crate) use node::{key_refused, where_parts};
 pub use node_more::{
     HistoryRow, NodeEditRequest, NodeEdited, NodeNoteRequest, NodeNoted, NodeStatusRequest,
     StatusMoved,

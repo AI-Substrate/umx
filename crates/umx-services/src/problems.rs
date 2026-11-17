@@ -1976,6 +1976,19 @@ pub fn where_invalid(reason: &'static str) -> Problem {
         .with("reason", Slot::Word(reason))
 }
 
+/// `where_invalid` for a date field given a value that is not a date (D82): the field is named in the expression's
+/// place, and the reason shows the dates it takes.
+pub fn where_not_a_date(field: &str) -> Problem {
+    Problem::new("where_invalid")
+        .with("expr", Slot::name_or(field, "(that expression)"))
+        .with(
+            "reason",
+            Slot::Word(
+                "it is a date field and wants a date such as 2026-01-15 or 2026-01-15T09:00:00Z",
+            ),
+        )
+}
+
 pub fn cross_graph_not_yet() -> Problem {
     Problem::new("cross_graph_not_yet")
 }

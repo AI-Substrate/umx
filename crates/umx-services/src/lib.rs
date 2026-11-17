@@ -1355,7 +1355,7 @@ impl Services {
         let mut keys: Vec<String> = req
             .wheres
             .iter()
-            .filter_map(|w| umx_graph::parse_where(w).ok())
+            .filter_map(|w| graph_store::where_parts(w).ok())
             .filter(|(field, op, _)| {
                 field == umx_core::entity::ENTITY_KEY && *op == umx_graph::Op::Eq
             })

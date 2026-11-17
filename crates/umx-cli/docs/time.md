@@ -46,6 +46,9 @@ second. `--where` and `umx query` compare two dates by those spans, with one rul
 | `a <= b` | `a < b` or `a = b` | `2026-10-29T22:40:00Z <= 2026-10-29` |
 | `a >= b` | `a > b` or `a = b` | `2025 >= 2025-06` |
 
+The built-in `created` and `updated` compare the same way in `--where` (`updated>=2026-11-12`, quoted or not),
+and an ordering compare with a value that is not a date (`updated>=next-week`) is refused with `where_invalid`.
+
 So `2025 < 2025-02` does not hold (the year is not wholly before February), and `2025 = 2025-02` does. Two stored
 dates of the same precision compare as they always did; pairs of different precisions changed (ws008 TM2), and so
 did text written another way: a date-time with an offset compares as its instant, in `--where` and `umx query` alike.

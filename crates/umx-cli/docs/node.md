@@ -102,8 +102,13 @@ into a message, log or another graph (`umx docs get safety`).
     umx node list --within 01JC8XA4H7          # everything under it by part_of
 
 `--where '<field><op><value>'` (quote it: `<` and `>` mean redirection to a shell) with `= != < <= > >=`. A node without the field never matches, even for `!=`.
+Quotes around the value are optional: one matching pair, `'...'` or `"..."`, is dropped, so
+`--where "updated>='2026-11-12'"` finds what `--where 'updated>=2026-11-12'` does.
 Two dates compare as spans of UTC time: `due_on<2025-02` is wholly before February, `due_on=2025-01` is anywhere
-in January (table in `umx docs get time`).
+in January (table in `umx docs get time`). `created` and `updated` compare the same way: `updated>=2026-11-12` is
+from the start of that UTC day, `updated=2026-11-12` anywhere in it, and a full date-time works too. On a date field
+(declared, `created` or `updated`), `< <= > >=` with a value that is not a date is refused with `where_invalid`;
+`=` and `!=` still compare it as text, so a stored non-date stays findable.
 On a list field, a value with no comma looks for one element: `=` matches when any element equals it and `!=`
 when none does. A value with commas (`tags=red,blue`) is compared to the whole list. `entity_key=<key>` finds the
 nodes holding a key (see `umx docs get entity`); with no graph named while several are loaded, that lookup covers

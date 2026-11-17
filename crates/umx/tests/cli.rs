@@ -18655,6 +18655,99 @@ fn a_date_field_holds_dates_before_1970() {
     assert_eq!(env.data["node"]["seen_on"], json!("0000-01-01"));
 }
 
+/// D82 (req-158): a `--where` value compares as written. One matching pair of quotes around it is dropped, so a quoted
+/// date finds what the unquoted one does; `created` and `updated` compare as dates (UTC spans), as a declared date
+/// field does; an ordering compare with a value that is not a date on a date field is refused with `where_invalid`,
+/// whose reason shows a date, while `=` and `!=` still compare it as text.
+#[test]
+fn a_where_value_compares_as_written() {
+    let mut home = Home::new("d82-where-as-written");
+    let path = home.graph();
+    let old = rewritten_node(&mut home, &path, |line| {
+        line["created"] = json!("2024-11-11T08:00:00Z");
+        line["updated"] = json!("2024-11-12T08:00:00Z");
+    });
+    let new = home.add("problem", "Fresh");
+    let ids = |w: &str| -> Vec<String> {
+        let mut v: Vec<String> = home.ok(&["node", "list", "--where", w]).data["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_owned())
+            .collect();
+        v.sort();
+        v
+    };
+    let mut both = vec![old.clone(), new.clone()];
+    both.sort();
+    for w in [
+        "updated>=2025-01-01",
+        "updated>='2025-01-01'",
+        "updated>=\"2025-01-01\"",
+        "updated >= '2025-01-01'",
+        "updated>=2025",
+        "updated>2024-11-12",
+    ] {
+        assert_eq!(ids(w), vec![new.clone()], "{w}");
+    }
+    for w in [
+        "updated=2024-11-12",
+        "updated='2024-11-12'",
+        "updated<2024-11-13",
+        "created=\"2024-11-11T08:00:00Z\"",
+        "created<'2025'",
+    ] {
+        assert_eq!(ids(w), vec![old.clone()], "{w}");
+    }
+    assert_eq!(ids("updated>=2024-11-12"), both);
+    // One pair only, and only a matching one: these stay text, so they are not dates.
+    for w in ["updated>='2025-01-01\"", "updated>=''2025-01-01''"] {
+        let (env, exit) = home.umx(&["node", "list", "--where", w]);
+        assert_eq!(exit, 1, "{w}: {}", env.to_json());
+        assert_eq!(env.errors[0].code(), "where_invalid", "{}", env.to_json());
+    }
+    for w in ["updated>=next-week", "created<'last week'", "updated<="] {
+        let (env, exit) = home.umx(&["node", "list", "--where", w]);
+        assert_eq!(exit, 1, "{w}: {}", env.to_json());
+        let e = &env.errors[0];
+        assert_eq!(e.code(), "where_invalid", "{}", env.to_json());
+        assert!(
+            e.message()
+                .contains("wants a date such as 2026-01-15 or 2026-01-15T09:00:00Z."),
+            "{}",
+            env.to_json()
+        );
+        assert_eq!(e.next(), "umx docs get node", "{}", env.to_json());
+    }
+    // = and != still compare a non-date as text: no refusal, nothing equal.
+    assert!(ids("updated=next-week").is_empty());
+    assert_eq!(ids("updated!=next-week"), both);
+    // A declared date field takes a quoted date too.
+    home.ok(&["ontology", "add", "field", "problem", "due_on:date"]);
+    let due = |title: &str, on: &str| {
+        home.ok(&[
+            "node",
+            "add",
+            "--type",
+            "problem",
+            "--title",
+            title,
+            "--set",
+            &format!("due_on={on}"),
+        ])
+        .data["node"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (feb, dec) = (due("February", "2025-02-14"), due("December", "2024-12-01"));
+    assert_eq!(ids("due_on>='2025-02'"), vec![feb.clone()]);
+    assert_eq!(ids("due_on<\"2025-02\""), vec![dec.clone()]);
+    let (env, exit) = home.umx(&["node", "list", "--where", "due_on>=soon"]);
+    assert_eq!(exit, 1, "{}", env.to_json());
+    assert_eq!(env.errors[0].code(), "where_invalid", "{}", env.to_json());
+}
+
 /// F211, pm-003: a graph that already stores year 0000 in a date field (a date before F211 set years 0001 to 9999)
 /// still loads with no refusal and keeps the value as written. A compare reads it as text, which sorts before every
 /// date, so `<1970` still finds it and `>=0001` does not, as when it was a date; `=` matches it exactly. `umx check`

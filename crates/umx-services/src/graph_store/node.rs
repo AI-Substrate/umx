@@ -16,9 +16,10 @@ use umx_core::ontology::{DEFAULT_STATUS, FieldKind, PART_OF, nearest};
 use umx_core::ports::GraphDir;
 use umx_core::problem::Candidate;
 use umx_core::standard::RAISED_IN;
+use umx_core::time::normalise_date;
 use umx_core::value::{SetValue, kind_of, typed_value, where_value};
 use umx_core::{Command, Id, Node, Ontology, Problem, ValidName, Value};
-use umx_graph::{Graph, NodeFilter, NodeRef, Where, parse_where};
+use umx_graph::{Graph, NodeFilter, NodeRef, Op, Where, parse_where};
 
 /// Title score at or above which `node add` warns `near_duplicate` against a node of the same type (workshop 007
 /// section 5).
@@ -169,8 +170,11 @@ pub(crate) fn field_kind(
     type_name: Option<&str>,
     field: &str,
 ) -> Option<FieldKind> {
-    if field == ENTITY_KEY {
-        return Some(FieldKind::List);
+    match field {
+        ENTITY_KEY => return Some(FieldKind::List),
+        // The built-in timestamps compare as dates (UTC spans), as a declared date field does (D82).
+        "created" | "updated" => return Some(FieldKind::Date),
+        _ => {}
     }
     type_name
         .and_then(|t| o.field_kind(t, field))
@@ -251,10 +255,39 @@ pub(crate) fn entity_key_value(value: &SetValue) -> Result<Option<Value>, Proble
     Ok((!keys.is_empty()).then(|| Value::Array(keys.into_iter().map(Value::String).collect())))
 }
 
+/// Splits a `--where` expression as [`parse_where`] does, then takes the value as written (D82): one matching pair of
+/// quotes around the whole value, `'...'` or `"..."`, is dropped, so `updated>='2026-11-12'` reads as unquoted.
+pub(crate) fn where_parts(expr: &str) -> Result<(String, Op, String), Problem> {
+    let (field, op, raw) = parse_where(expr).map_err(|e| problems::where_invalid(e.0))?;
+    Ok((field, op, unquote(&raw).to_string()))
+}
+
+/// `s` without one matching pair of surrounding quotes, if it has them.
+fn unquote(s: &str) -> &str {
+    ['\'', '"']
+        .iter()
+        .find_map(|q| s.strip_prefix(*q)?.strip_suffix(*q))
+        .unwrap_or(s)
+}
+
 /// A `--where` value. On entity_key, one key in stored form. On another list field (ws008 E1), a value with no comma
 /// is one element to look for; with a comma it stays a whole list, compared to the whole field as before
-/// (`tags=red,blue`). Anything else is typed by the field's kind.
-fn list_where_value(field: &str, raw: &str, kind: Option<FieldKind>) -> Result<Value, Problem> {
+/// (`tags=red,blue`). On a date field (declared, or `created` and `updated`) an ordering operator with a value that
+/// is not a date is refused with `where_invalid`, since a text compare would give a silently wrong range (D82); `=`
+/// and `!=` still compare such a value as text, so a stored non-date stays findable. Anything else is typed by the
+/// field's kind.
+fn list_where_value(
+    field: &str,
+    op: Op,
+    raw: &str,
+    kind: Option<FieldKind>,
+) -> Result<Value, Problem> {
+    if kind == Some(FieldKind::Date)
+        && !matches!(op, Op::Eq | Op::Ne)
+        && normalise_date(raw).is_none()
+    {
+        return Err(problems::where_not_a_date(field));
+    }
     if field == ENTITY_KEY {
         return normalise_key(raw)
             .map(Value::String)
@@ -1092,10 +1125,10 @@ impl GraphStore {
         let l = self.get(&alias);
         let mut wheres = Vec::new();
         for expr in &req.wheres {
-            let (field, op, raw) = parse_where(expr).map_err(|e| problems::where_invalid(e.0))?;
+            let (field, op, raw) = where_parts(expr)?;
             let kind = field_kind(&l.meta.ontology, &l.graph, req.kind.as_deref(), &field);
             wheres.push(Where {
-                value: list_where_value(&field, &raw, kind)?,
+                value: list_where_value(&field, op, &raw, kind)?,
                 field,
                 op,
             });

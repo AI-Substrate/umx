@@ -58,6 +58,9 @@ locality, trust or secret rules.
 - **usage 161**: dates compare as spans of UTC time in `--where` and `umx query` alike: `due_on<2025-02` is
   wholly before February, `due_on=2025-01` anywhere in January (a year `2025` too). A UTC day is not the local
   day: `2026-10-29T22:40:00Z` (Friday morning in Sydney) is before `2026-10-30`. In Cypher write a year as text.
+- **usage 203**: a `--where` value compares as written: quotes around it are optional (`updated>='2026-11-12'`
+  is `updated>=2026-11-12`), `created` and `updated` compare as dates, and `< <= > >=` with a value that is not a
+  date on a date field is refused with `where_invalid` (`=` and `!=` still compare it as text).
 - **usage 027**: `evidence_kinds` is computed from a node's evidence: the distinct kinds (`room`, `chat`,
   `screen`, `document`, `analyst`), sorted. Ask for it as a column; never try to set it (it is reserved).
 

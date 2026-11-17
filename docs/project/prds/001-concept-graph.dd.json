@@ -1608,6 +1608,16 @@
 					"state": "shipped",
 					"done_when": "A selected node's edges show arrowheads and relation names in every theme.",
 					"source": "decision D65 (2026-11-12, phase 2 brief via the project lead); workstream 009"
+				},
+				{
+					"id": "req-158",
+					"title": "A --where value compares as written",
+					"statement": "A --where value compares the same quoted or unquoted: one matching pair of quotes around it is dropped. created and updated compare as dates, as spans of UTC time, as a declared date field does. An ordering compare on a date field with a value that is not a date is refused with where_invalid, never compared silently as text.",
+					"actor": "a-agent",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "node list --where \"updated>='2026-11-12'\" returns the nodes the unquoted form does, and updated>=next-week is refused with where_invalid.",
+					"source": "decision D82 (what changed recently); workstream 009, PR D82-1; usage 203"
 				}
 			]
 		},
@@ -1976,6 +1986,11 @@
 					"date": "2026-11-17",
 					"by": "project manager",
 					"change": "req-123 shipped: workstream 004 s28 (D80): related nodes on node add and batch, with --related/--no-related, a graph and a machine related setting, and the related_skipped hint."
+				},
+				{
+					"date": "2026-11-17",
+					"by": "project manager",
+					"change": "req-158 added and shipped: a --where value compares as written (D82, PR D82-1)."
 				}
 			]
 		}
