@@ -532,6 +532,7 @@ mod tests {
         store.batch(
             &author_ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 echo_sentences: echo,
@@ -811,6 +812,7 @@ mod tests {
             let done = store.batch(
                 &author_ctx(),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -912,6 +914,7 @@ mod tests {
             .batch(
                 &Ctx::new("test").graph("author"),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -1021,6 +1024,7 @@ mod tests {
         let result = store.batch(
             &Ctx::new("test").graph("author"),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 echo_sentences: false,

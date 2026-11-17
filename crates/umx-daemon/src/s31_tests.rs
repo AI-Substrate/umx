@@ -653,6 +653,7 @@ fn bench_daemon(graphs: usize, nodes: usize) -> (Daemon, std::path::PathBuf, Vec
                 Op::Batch {
                     related: None,
                     raised_in: None,
+                    idempotency_key: None,
                     reason: None,
                     lines,
                     dry_run: false,

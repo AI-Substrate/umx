@@ -78,10 +78,11 @@ pub enum FilesError {
     /// The file is over its kind's cap ([`FileRef::cap`]): a read refuses it without reading its body, and a set
     /// that would write it changes nothing. `size` is the file's bytes (or the change's), `cap` the most allowed.
     TooLarge { file: FileRef, size: u64, cap: u64 },
-    /// A content file (graph.json, nodes.jsonl, edges.jsonl) is not as the caller last saw it: its stamp differs
-    /// from the expected one (a checkout, a pull, a hand edit, or only a touch). Nothing was written and the set's
-    /// temp files were removed. Never retried by the port: the caller reloads to see the files as they are.
-    Changed(Vec<GraphFile>),
+    /// A file the set checks is not as the caller last saw it: its stamp differs from the expected one (a checkout,
+    /// a pull, a hand edit, or only a touch). The content files (graph.json, nodes.jsonl, edges.jsonl) come first in
+    /// [`GraphFile`] order, then any `also` file ([`GraphFiles::write_set_checked_also`]). Nothing was written and
+    /// the set's temp files were removed. Never retried by the port: the caller reads the files again.
+    Changed(Vec<FileRef>),
     /// [`GraphFiles::relocate`] would cross a file system (`EXDEV`): umx never copies a graph folder, so nothing
     /// moved (ws006 S23, architect).
     CrossDevice,
@@ -192,7 +193,7 @@ impl fmt::Display for FilesError {
             FilesError::Changed(files) => {
                 f.write_str("these files changed on disk since umx read them:")?;
                 for file in files {
-                    write!(f, " {}", file.file_name())?;
+                    write!(f, " {file}")?;
                 }
                 Ok(())
             }
@@ -226,7 +227,14 @@ pub enum FileRef {
     /// `similar/<model@dims>/_meta.tsv`: what that folder's lists were computed from (staleness check). The `_`
     /// cannot clash with a shard name.
     SimilarMeta(ModelKey),
+    /// `receipts.jsonl` at the folder's top: the receipts of batches that carried an idempotency key (ws003 s09,
+    /// [`crate::receipts`]). Read and written only by keyed batches, in the batch's own set; not a content file, so
+    /// never in [`GraphStamps`] (a keyed batch checks its stamp through `also`).
+    Receipts,
 }
+
+/// The receipts file's name.
+pub const RECEIPTS_FILE: &str = "receipts.jsonl";
 
 /// The file name of a similarity folder's staleness line.
 pub const SIMILAR_META: &str = "_meta.tsv";
@@ -239,6 +247,7 @@ pub const RECORDS_CAP: u64 = u32::MAX as u64;
 pub const SHARD_CAP: u64 = 64 << 20;
 pub const GITIGNORE_CAP: u64 = 64 << 10;
 pub const SIMILAR_META_CAP: u64 = 1 << 20;
+pub const RECEIPTS_CAP: u64 = crate::receipts::READ_CAP;
 
 impl FileRef {
     /// The most bytes this file may hold: a read of a bigger one, or a set that would write one, is
@@ -250,6 +259,7 @@ impl FileRef {
             FileRef::Graph(GraphFile::GitIgnore) => GITIGNORE_CAP,
             FileRef::Shard(_) => SHARD_CAP,
             FileRef::SimilarMeta(_) => SIMILAR_META_CAP,
+            FileRef::Receipts => RECEIPTS_CAP,
         }
     }
 
@@ -262,13 +272,14 @@ impl FileRef {
             FileRef::SimilarMeta(key) => {
                 format!("{}/{SIMILAR_META}", ShardKind::Similar.folder(key))
             }
+            FileRef::Receipts => RECEIPTS_FILE.to_string(),
         }
     }
 
     /// The folder a file lives in, relative to the graph folder: `None` for a graph file (the folder itself).
     pub fn folder(&self) -> Option<String> {
         match self {
-            FileRef::Graph(_) => None,
+            FileRef::Graph(_) | FileRef::Receipts => None,
             FileRef::Shard(s) => Some(s.folder()),
             FileRef::SimilarMeta(key) => Some(ShardKind::Similar.folder(key)),
         }
@@ -286,6 +297,9 @@ impl FileRef {
         .find(|f| f.file_name() == path);
         if let Some(f) = graph {
             return Some(FileRef::Graph(f));
+        }
+        if path == RECEIPTS_FILE {
+            return Some(FileRef::Receipts);
         }
         let (top, rest) = path.split_once('/')?;
         let kind = [ShardKind::Vectors, ShardKind::Similar]
@@ -395,19 +409,45 @@ pub trait GraphFiles: Send + Sync {
     ///
     /// Every `Err` means nothing changed (contract clause gf_c13). Once the change stands the call returns `Ok`,
     /// even if a later step failed; that step is reported as `Written::NotSynced`.
+    ///
+    /// [`GraphFiles::write_set_checked_also`] with no `also` file. A default only: adapters implement
+    /// `write_set_checked_also` and never override this, so there is one write path.
     fn write_set_checked(
         &self,
         dir: &GraphDir,
         changes: &[Change<'_>],
         expect: Option<&GraphStamps>,
+    ) -> Result<Committed, FilesError> {
+        self.write_set_checked_also(dir, changes, expect, &[])
+    }
+    /// [`GraphFiles::write_set_checked`], also checking each `also` file against its stamp (ws003 s09: a keyed
+    /// batch's `receipts.jsonl`, stamped when it was read; absent is a stamp too). Each is checked at exactly the
+    /// points the content files are (before the marker, and just before the first rename), in the same pass and with
+    /// the same residual. A mismatch is [`FilesError::Changed`] naming every file that differs, content files first,
+    /// with nothing written. The returned stamps are the content files' only.
+    fn write_set_checked_also(
+        &self,
+        dir: &GraphDir,
+        changes: &[Change<'_>],
+        expect: Option<&GraphStamps>,
+        also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError>;
-    /// A content file's bytes (None if absent) and its stamp, both from the one open handle: the stamp is the file
-    /// the bytes came from, so a change made after the open shows as changed at the next check.
+    /// A file's bytes (None if absent) and its stamp, both from the one open handle: the stamp is the file the bytes
+    /// came from, so a change made after the open shows as changed at the next check. Capped as [`GraphFiles::read_ref`].
+    fn read_ref_stamped(
+        &self,
+        dir: &GraphDir,
+        file: &FileRef,
+    ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError>;
+    /// A content file's bytes and stamp: [`GraphFiles::read_ref_stamped`]. A default only: adapters never override
+    /// it, so there is one stamped read.
     fn read_stamped(
         &self,
         dir: &GraphDir,
         file: GraphFile,
-    ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError>;
+    ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError> {
+        self.read_ref_stamped(dir, &file.into())
+    }
     /// The three content files' stamps as they are now, by path, never following a link (a link swapped in stamps
     /// as changed). For the services' up-front check and the reads' stale warning.
     fn stamps(&self, dir: &GraphDir) -> Result<GraphStamps, FilesError>;
@@ -475,6 +515,7 @@ mod tests {
             meta,
             GraphFile::Nodes.into(),
             GraphFile::GitIgnore.into(),
+            FileRef::Receipts,
         ] {
             assert_eq!(FileRef::parse(&f.path()), Some(f));
         }
@@ -492,6 +533,10 @@ mod tests {
             "similar/m@4/B7.tsv",
             "similarity/m@4/b7.tsv",
             "similar/m@8193/b7.tsv",
+            "/receipts.jsonl",
+            "receipts.jsonl/x",
+            "embeddings/receipts.jsonl",
+            "Receipts.jsonl",
         ] {
             assert_eq!(FileRef::parse(bad), None, "{bad}");
         }

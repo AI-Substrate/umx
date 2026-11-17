@@ -66,8 +66,8 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use umx_core::codec::{self, GraphFile};
 use umx_core::ports::{
-    Change, Clock, FilesError, GraphDir, GraphFiles, GraphStamps, IdGenerator, LocalState,
-    SourceReader, Written,
+    Change, Clock, FileRef, FileStamp, FilesError, GraphDir, GraphFiles, GraphStamps, IdGenerator,
+    LocalState, SourceReader, Written,
 };
 use umx_core::problem::Candidate;
 use umx_core::ui::{Fed, Touched};
@@ -77,6 +77,7 @@ use umx_graph::{Graph, Lookup, NodeRef};
 pub(crate) use batch::add_late_warnings;
 pub use batch::{
     BatchDone, BatchLine, BatchOp, BatchOutcome, BatchRequest, BatchRow, BatchSentence,
+    Idempotency, Keyed,
 };
 pub use copies::PrimarySet;
 pub use edge::{
@@ -591,7 +592,7 @@ impl GraphStore {
         Err(problems::graph_files_changed(
             &alias_name(alias),
             &self.get(alias).dir,
-            &moved,
+            &moved.into_iter().map(FileRef::from).collect::<Vec<_>>(),
         ))
     }
 
@@ -933,6 +934,7 @@ fn persist(
             feed: &mut loaded.feed,
             touched,
             stamps: &mut loaded.stamps,
+            receipts: None,
         },
     )?;
     loaded.meta.umx = written.umx;
@@ -954,6 +956,71 @@ struct Commit<'a> {
     touched: Touched,
     /// The graph's stamps: the set expects them, and a set that stands replaces them (F144).
     stamps: &'a mut GraphStamps,
+    /// A keyed batch's receipts file (ws003 s09), written in the same set so the receipt and the batch stand or fall
+    /// together.
+    receipts: Option<ReceiptsWrite<'a>>,
+}
+
+/// A keyed batch's `receipts.jsonl` (ws003 s09): its new bytes, and its stamp when the batch read it, which the set
+/// checks as it checks the content files (graph-storage: a receipt lost between read and write runs a re-send twice).
+#[derive(Clone, Copy)]
+pub(crate) struct ReceiptsWrite<'a> {
+    pub bytes: &'a [u8],
+    pub read: FileStamp,
+}
+
+impl ReceiptsWrite<'_> {
+    fn change(&self) -> Change<'_> {
+        Change {
+            file: FileRef::Receipts,
+            bytes: Some(self.bytes),
+        }
+    }
+
+    fn also(&self) -> [(FileRef, FileStamp); 1] {
+        [(FileRef::Receipts, self.read)]
+    }
+}
+
+/// A set's refusal because a file it checks changed: the receipts file alone is the keyed batch's own refusal (sent
+/// again, it reads the file afresh); any content file is F144's.
+fn changed_problem(alias: &str, dir: &GraphDir, changed: &[FileRef]) -> Problem {
+    if changed.iter().all(|f| *f == FileRef::Receipts) {
+        return problems::receipts_unreadable(
+            &alias_name(alias),
+            "it changed on disk while this batch ran; send the batch again",
+        );
+    }
+    problems::graph_files_changed(&alias_name(alias), dir, changed)
+}
+
+/// A keyed batch that changed nothing still records its receipt (graph-storage Q4): a set of `receipts.jsonl` alone,
+/// checked against the graph's stamps and the receipts file's own. It moves no feed, revision or embed queue.
+fn persist_receipts(
+    files: &dyn GraphFiles,
+    alias: &str,
+    dir: &GraphDir,
+    stamps: &mut GraphStamps,
+    receipts: &ReceiptsWrite<'_>,
+) -> Result<Vec<Problem>, Problem> {
+    let written =
+        files.write_set_checked_also(dir, &[receipts.change()], Some(stamps), &receipts.also());
+    match written {
+        Ok(committed) => {
+            *stamps = committed.stamps;
+            Ok(match committed.written {
+                Written::Durable => Vec::new(),
+                Written::NotSynced(e) => alloc::vec![problems::receipts_not_durable(&e)],
+            })
+        }
+        Err(FilesError::RecoveryConflict(conflicts)) => Err(problems::recovery_conflict(
+            dir,
+            &conflicts,
+            Some(&alias_name(alias)),
+        )),
+        Err(FilesError::Changed(changed)) => Err(changed_problem(alias, dir, &changed)),
+        Err(e) => Err(problems::files_error(&e, problems::receipts_write_failed)),
+    }
 }
 
 /// [`persist`] from the parts of a loaded graph, for a write that holds its graph (a batch). Every write of a graph's
@@ -972,6 +1039,7 @@ fn persist_parts(
         feed,
         touched,
         stamps,
+        receipts,
     } = commit;
     let had = meta.umx;
     let raised = with_node_format(meta, graph);
@@ -1007,7 +1075,7 @@ fn persist_parts(
             _ => encode_parts(meta, graph, *file),
         })
         .collect::<Result<_, _>>()?;
-    let changes: Vec<Change<'_>> = which
+    let mut changes: Vec<Change<'_>> = which
         .iter()
         .zip(&bytes)
         .map(|(file, b)| Change {
@@ -1015,7 +1083,14 @@ fn persist_parts(
             bytes: Some(&**b),
         })
         .collect();
-    let written = files.write_set_checked(dir, &changes, Some(stamps));
+    let also = match &receipts {
+        Some(r) => {
+            changes.push(r.change());
+            r.also().to_vec()
+        }
+        None => Vec::new(),
+    };
+    let written = files.write_set_checked_also(dir, &changes, Some(stamps), &also);
     if let Ok(committed) = &written {
         feed.commit(graph, touched);
         *stamps = committed.stamps;
@@ -1034,11 +1109,7 @@ fn persist_parts(
             &conflicts,
             Some(&alias_name(alias)),
         )),
-        Err(FilesError::Changed(changed)) => Err(problems::graph_files_changed(
-            &alias_name(alias),
-            dir,
-            &changed,
-        )),
+        Err(FilesError::Changed(changed)) => Err(changed_problem(alias, dir, &changed)),
         Err(e) => Err(problems::files_error(&e, |e| {
             problems::write_failed(named(&which, e), e)
         })),

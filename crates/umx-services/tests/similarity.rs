@@ -233,6 +233,7 @@ fn committed_membership_flips_refresh_lists_without_changing_vector_files() {
                 .batch(
                     &ctx(),
                     umx_services::BatchRequest {
+                        idempotency: None,
                         raised_in: None,
                         reason: None,
                         echo_sentences: false,
@@ -963,11 +964,12 @@ impl GraphFiles for FailSimilar {
     ) -> Result<Option<Vec<u8>>, umx_core::ports::FilesError> {
         self.inner.read_ref(d, f)
     }
-    fn write_set_checked(
+    fn write_set_checked_also(
         &self,
         d: &GraphDir,
         c: &[Change<'_>],
         expect: Option<&umx_core::ports::GraphStamps>,
+        also: &[(FileRef, umx_core::ports::FileStamp)],
     ) -> Result<umx_core::ports::Committed, umx_core::ports::FilesError> {
         let similar = c.iter().any(|c| matches!(c.file, FileRef::SimilarMeta(_)));
         if similar && self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
@@ -975,14 +977,14 @@ impl GraphFiles for FailSimilar {
                 "test: similar write failed",
             ));
         }
-        self.inner.write_set_checked(d, c, expect)
+        self.inner.write_set_checked_also(d, c, expect, also)
     }
-    fn read_stamped(
+    fn read_ref_stamped(
         &self,
         d: &GraphDir,
-        f: umx_core::codec::GraphFile,
+        f: &FileRef,
     ) -> Result<(Option<Vec<u8>>, umx_core::ports::FileStamp), umx_core::ports::FilesError> {
-        self.inner.read_stamped(d, f)
+        self.inner.read_ref_stamped(d, f)
     }
     fn stamps(
         &self,
@@ -1675,11 +1677,12 @@ impl GraphFiles for Recorder {
     ) -> Result<Option<Vec<u8>>, umx_core::ports::FilesError> {
         self.inner.read_ref(d, f)
     }
-    fn write_set_checked(
+    fn write_set_checked_also(
         &self,
         d: &GraphDir,
         c: &[Change<'_>],
         expect: Option<&umx_core::ports::GraphStamps>,
+        also: &[(FileRef, umx_core::ports::FileStamp)],
     ) -> Result<umx_core::ports::Committed, umx_core::ports::FilesError> {
         if c.iter().any(|c| is_similar(&c.file)) {
             self.sets
@@ -1695,14 +1698,14 @@ impl GraphFiles for Recorder {
                 ));
             }
         }
-        self.inner.write_set_checked(d, c, expect)
+        self.inner.write_set_checked_also(d, c, expect, also)
     }
-    fn read_stamped(
+    fn read_ref_stamped(
         &self,
         d: &GraphDir,
-        f: umx_core::codec::GraphFile,
+        f: &FileRef,
     ) -> Result<(Option<Vec<u8>>, umx_core::ports::FileStamp), umx_core::ports::FilesError> {
-        self.inner.read_stamped(d, f)
+        self.inner.read_ref_stamped(d, f)
     }
     fn stamps(
         &self,

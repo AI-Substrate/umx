@@ -287,6 +287,7 @@ impl GraphStore {
                     feed,
                     touched,
                     stamps,
+                    receipts: None,
                 },
             )?;
             let changed = batch.commit().provenance_changed;

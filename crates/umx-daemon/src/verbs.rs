@@ -17,7 +17,7 @@ use umx_protocol::{
 use umx_services::{
     BatchLine, BatchOp, BatchRequest, ConfigServices, Ctx, Direction, Done, EdgeChanged,
     EdgeEditRequest, EdgeEvidence, EdgeListRequest, EdgeRow, GraphKey, GraphfileMode, Guide,
-    GuideEntry, GuideExample, HistoryRow, NeighboursRequest, NodeAddRequest, NodeCell,
+    GuideEntry, GuideExample, HistoryRow, Idempotency, NeighboursRequest, NodeAddRequest, NodeCell,
     NodeEditRequest, NodeListRequest, NodeNoteRequest, NodeStatusRequest, PathRequest, Resolved,
     ScanRequest, Services, SpineLine, SpineProposal, SpineSet, SpinesShown, Target, WalkRequest,
 };
@@ -878,6 +878,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             refs_graph,
             raised_in,
             related: _,
+            idempotency_key,
         } => batch(
             services,
             &ctx,
@@ -887,6 +888,12 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             (reason.clone(), raised_in.clone()),
             *echo_sentences,
             (refs, refs_graph),
+            // ws003 s09 (architect C4, C5): the daemon digests the canonical input, which needs the wire types; the
+            // services check the key and digest it themselves.
+            idempotency_key.clone().map(|key| Idempotency {
+                key,
+                input: umx_core::receipts::input_digest(&op.batch_input().unwrap_or_default()),
+            }),
         ),
         Op::NodeEvidence {
             node,
@@ -1307,6 +1314,7 @@ fn batch(
     (reason, raised_in): (Option<String>, Option<String>),
     echo_sentences: bool,
     imports: (&std::collections::BTreeMap<String, String>, &Option<String>),
+    idempotency: Option<Idempotency>,
 ) -> Envelope {
     // R236-N1: with --reason, every dry run the reply names keeps it (as a placeholder).
     let had_reason = reason.is_some();
@@ -1335,6 +1343,7 @@ fn batch(
         refs: imports.0.clone(),
         refs_graph: imports.1.clone(),
         raised_in,
+        idempotency,
     };
     match services.batch(ctx, req) {
         Ok(done) => {
@@ -1381,6 +1390,13 @@ fn batch(
             data["applied"] = json!(!v.dry_run);
             data["related_floor"] = Value::Null;
             data["refs"] = Value::Object(refs);
+            // ws003 s09: what a receipt keeps, on every reply, so a replay's receipt equals its first run's.
+            data["counts"] = json!(v.counts);
+            if let Some(k) = &v.keyed {
+                data["idempotency_key"] = json!(k.key);
+                data["replayed"] = json!(k.replayed);
+                data["recorded_at"] = json!(k.recorded_at.map(umx_core::receipts::time_text));
+            }
             if let Some(sentences) = &v.sentences {
                 // F234: a sentence holding a flagged title is named `field:sentence` on its own record.
                 data["sentences"] = json!(sentences.iter().map(|s| {
@@ -3539,6 +3555,7 @@ fn retry(op: &Op) -> Command {
             echo_sentences,
             refs,
             related,
+            idempotency_key,
             ..
         } => {
             let c = related_flag(
@@ -3553,6 +3570,12 @@ fn retry(op: &Op) -> Command {
             let c = if *dry_run { c.word("--dry-run") } else { c };
             let c = if *echo_sentences {
                 c.word("--echo-sentences")
+            } else {
+                c
+            };
+            // A retry keeps its key, so it stays at most once (ws003 s09); the key itself is a placeholder.
+            let c = if idempotency_key.is_some() {
+                c.word("--idempotency-key").word("<key>")
             } else {
                 c
             };
@@ -5479,6 +5502,91 @@ mod tests {
         assert_eq!(umx_protocol::MAX_BATCH_EVIDENCE, batch::MAX_BATCH_EVIDENCE);
         assert_eq!(umx_protocol::MAX_IMPORTED_REFS, batch::MAX_IMPORTED_REFS);
         const { assert!(batch::MAX_BATCH_BYTES <= umx_protocol::MAX_FRAME / 2) };
+    }
+
+    /// ws003 s09: the CLI checks an idempotency key with umx-protocol's copy of core's rule, in the same words.
+    #[test]
+    fn the_idempotency_key_rule_is_the_same_on_both_sides_of_the_socket() {
+        use umx_core::receipts;
+        assert_eq!(umx_protocol::IDEMPOTENCY_KEY_RULE, receipts::KEY_RULE);
+        let long = "k".repeat(128);
+        let longer = "k".repeat(129);
+        for key in [
+            "",
+            "a",
+            "window-08",
+            "run:1.a_b-c",
+            "a b",
+            "a/b",
+            "é",
+            "a\n",
+            &long,
+            &longer,
+        ] {
+            assert_eq!(
+                umx_protocol::idempotency_key_ok(key),
+                receipts::check_key(key),
+                "{key:?}"
+            );
+        }
+        for c in 0u8..=127 {
+            let key = (c as char).to_string();
+            assert_eq!(
+                umx_protocol::idempotency_key_ok(&key),
+                receipts::check_key(&key),
+                "{c}"
+            );
+        }
+    }
+
+    /// ws003 s09 (architect C6): the canonical input of a fixed batch has this digest. The canonical form rests on
+    /// serde_json sorting object keys (no `preserve_order`); a crate that turns that feature on unifies it across
+    /// the workspace and changes every stored input digest, so a retry after the upgrade would be refused. This
+    /// test fails first. Line numbers, `dry_run`, `echo_sentences` and the key are not part of the input.
+    #[test]
+    fn a_batch_input_digest_is_pinned() {
+        let line = |n: u32, json: &str| umx_protocol::BatchLine {
+            line: n,
+            op: umx_protocol::BatchOp::from_line(json).ok().unwrap(),
+        };
+        let sample = |lines: Vec<umx_protocol::BatchLine>, dry_run: bool, key: &str| Op::Batch {
+            related: None,
+            lines,
+            dry_run,
+            echo_sentences: dry_run,
+            refs: [("q0".to_owned(), "01JC8XA4H7B3KT9M2NZ5QW6RDG".to_owned())].into(),
+            refs_graph: Some("01JC8XA4H7B3KT9M2NZ5QW6RDH".into()),
+            reason: Some("stale".into()),
+            raised_in: Some("umx:demo/01JC8XA4H7".into()),
+            idempotency_key: Some(key.into()),
+        };
+        let ops = [
+            r#"{"op":"node add","ref":"q","type":"question","title":"Storage choice","sets":[{"field":"meta","value":{"b":1,"a":[2,{"d":3,"c":4}]}}]}"#,
+            r#"{"op":"edge add","from_ref":"q","relation":"answers","to_ref":"q0"}"#,
+        ];
+        let digest = |op: &Op| umx_core::receipts::input_digest(&op.batch_input().unwrap());
+        let first = sample(vec![line(1, ops[0]), line(2, ops[1])], false, "k1");
+        assert_eq!(
+            digest(&first),
+            "ce2b3150a3bbda0148dba427d3714dd7172626fe2c412e8f8409f24c35697d02"
+        );
+        let moved = sample(vec![line(4, ops[0]), line(9, ops[1])], true, "k2");
+        assert_eq!(
+            digest(&moved),
+            digest(&first),
+            "line numbers, dry run, echo and key"
+        );
+        let reordered = sample(vec![line(1, ops[1]), line(2, ops[0])], false, "k1");
+        assert_ne!(digest(&reordered), digest(&first), "op order is the input");
+        assert_eq!(
+            Op::GraphList {
+                all: false,
+                graphfile: None
+            }
+            .batch_input(),
+            None,
+            "only a batch has an input"
+        );
     }
 
     /// Plan 205: the CLI checks refs with umx-protocol's copy of core's rule (r-cli-is-a-client), and says why in the

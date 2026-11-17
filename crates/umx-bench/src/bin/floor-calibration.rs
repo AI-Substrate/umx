@@ -648,6 +648,7 @@ fn build(
                 &ctx(alias),
                 BatchRequest {
                     raised_in: None,
+                    idempotency: None,
                     reason: None,
                     echo_sentences: false,
                     lines,

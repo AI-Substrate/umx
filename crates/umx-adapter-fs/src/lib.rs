@@ -522,7 +522,7 @@ fn is_symlink(path: &Path) -> bool {
 /// could lead out of the roots). Shard folders' parts come from a checked `ModelKey`, so none is `..`.
 fn parent_of(folder: &Path, file: &FileRef) -> Result<PathBuf, ()> {
     match file {
-        FileRef::Graph(_) => Ok(folder.to_path_buf()),
+        FileRef::Graph(_) | FileRef::Receipts => Ok(folder.to_path_buf()),
         FileRef::Shard(s) => space_folder(folder, s.kind(), s.key()),
         FileRef::SimilarMeta(key) => space_folder(folder, ShardKind::Similar, key),
     }
@@ -918,16 +918,39 @@ impl FsGraphFiles {
     /// A check before the point of no return (F144): the content files as they are now, or `Changed` naming each
     /// that differs from `expect`. A set of several runs it twice: before its marker is written (after the old
     /// targets are read for it) and after, just before the first rename; one change just before its rename.
+    /// `also` files (ws003 s09) are stamped in the same pass, by path, and named after the content files.
     fn stamps_before_commit(
         folder: &Path,
         expect: Option<&GraphStamps>,
+        also: &[(FileRef, FileStamp)],
     ) -> Result<GraphStamps, FilesError> {
         #[cfg(test)]
         tests::run_hook(&tests::BEFORE_STAMP_CHECK, folder);
         let now = FsGraphFiles::stamps_in(folder)?;
-        match expect.map(|e| e.changed(&now)) {
-            Some(changed) if !changed.is_empty() => Err(FilesError::Changed(changed)),
-            _ => Ok(now),
+        let mut changed: Vec<FileRef> = expect
+            .map(|e| e.changed(&now))
+            .unwrap_or_default()
+            .into_iter()
+            .map(FileRef::from)
+            .collect();
+        for (file, stamp) in also {
+            let path = parent_of(folder, file)
+                .map_err(|()| FilesError::io(format!("stat {file}: a symlink on the way")))?
+                .join(file.path().rsplit('/').next().unwrap_or_default());
+            let found = match fs::symlink_metadata(&path) {
+                Ok(m) => stamp_of(&m),
+                Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+                    FileStamp::ABSENT
+                }
+                Err(e) => return Err(io_error_at("stat", file, e)),
+            };
+            if found != *stamp {
+                changed.push(file.clone());
+            }
+        }
+        match changed.is_empty() {
+            true => Ok(now),
+            false => Err(FilesError::Changed(changed)),
         }
     }
 
@@ -967,7 +990,7 @@ impl FsGraphFiles {
         dir: &GraphDir,
         folder: &Path,
         c: &Change<'_>,
-        expect: Option<&GraphStamps>,
+        (expect, also): (Option<&GraphStamps>, &[(FileRef, FileStamp)]),
     ) -> Result<Committed, FilesError> {
         let at = |e| io_error_at("write", &c.file, e);
         let outside = |()| FilesError::OutsideRoots(dir.clone());
@@ -1003,7 +1026,7 @@ impl FsGraphFiles {
         }
         #[cfg(test)]
         tests::run_hook(&tests::AFTER_MARKER, folder);
-        let before = match FsGraphFiles::stamps_before_commit(folder, expect) {
+        let before = match FsGraphFiles::stamps_before_commit(folder, expect, also) {
             Ok(before) => before,
             Err(e) => {
                 if let Some(name) = &temp {
@@ -1044,12 +1067,12 @@ impl FsGraphFiles {
         dir: &GraphDir,
         folder: &Path,
         changes: &[Change<'_>],
-        expect: Option<&GraphStamps>,
+        (expect, also): (Option<&GraphStamps>, &[(FileRef, FileStamp)]),
     ) -> Result<Committed, FilesError> {
         if let [one] = changes
             && fast_path()
         {
-            return self.write_one(recovered, dir, folder, one, expect);
+            return self.write_one(recovered, dir, folder, one, (expect, also));
         }
         let first = &changes[0].file;
         fs::create_dir_all(folder).map_err(|e| io_error_at("write", first, e))?;
@@ -1087,7 +1110,7 @@ impl FsGraphFiles {
             };
             let failing = match &c.file {
                 FileRef::Graph(f) => self.temp_refused(*f),
-                FileRef::Shard(_) | FileRef::SimilarMeta(_) => false,
+                FileRef::Shard(_) | FileRef::SimilarMeta(_) | FileRef::Receipts => false,
             };
             let name = c.file.path();
             let what = name.rsplit('/').next().unwrap_or(&name);
@@ -1195,7 +1218,7 @@ impl FsGraphFiles {
             // The first F144 check, between the marker's old stamps and its publication (review R1): a change that
             // landed before the old stamps were taken is refused here, and one that lands after differs from them,
             // so a recovery after a crash calls it a conflict and never rolls forward over it.
-            if let Err(e) = FsGraphFiles::stamps_before_commit(folder, expect) {
+            if let Err(e) = FsGraphFiles::stamps_before_commit(folder, expect, also) {
                 let _ = fs::remove_file(&marker_temp);
                 cleanup(&temps);
                 return Err(e);
@@ -1222,7 +1245,7 @@ impl FsGraphFiles {
         // targets read, nothing is renamed yet. A refusal takes the marker back first, so no recovery finishes this
         // set; a crash before it goes leaves recovery to compare the targets with the marker's old stamps (a
         // conflict, never a write over a change).
-        let before = match FsGraphFiles::stamps_before_commit(folder, expect) {
+        let before = match FsGraphFiles::stamps_before_commit(folder, expect, also) {
             Ok(before) => before,
             Err(e) => {
                 if marked {
@@ -1448,15 +1471,16 @@ impl GraphFiles for FsGraphFiles {
         self.read_capped(dir, &folder, file).map(|(bytes, _)| bytes)
     }
 
-    fn read_stamped(
+    fn read_ref_stamped(
         &self,
         dir: &GraphDir,
-        file: GraphFile,
+        file: &FileRef,
     ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError> {
         let folder = self.check(dir)?;
         let mut recovered = self.recovered.lock().unwrap();
         self.recover(&mut recovered, &folder)?;
-        self.read_capped(dir, &folder, &file.into())
+        parent_of(&folder, file).map_err(|()| FilesError::OutsideRoots(dir.clone()))?;
+        self.read_capped(dir, &folder, file)
     }
 
     fn stamps(&self, dir: &GraphDir) -> Result<GraphStamps, FilesError> {
@@ -1466,11 +1490,12 @@ impl GraphFiles for FsGraphFiles {
         FsGraphFiles::stamps_in(&folder)
     }
 
-    fn write_set_checked(
+    fn write_set_checked_also(
         &self,
         dir: &GraphDir,
         changes: &[Change<'_>],
         expect: Option<&GraphStamps>,
+        also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError> {
         let folder = self.check(dir)?;
         Change::validate(changes)?;
@@ -1480,7 +1505,7 @@ impl GraphFiles for FsGraphFiles {
         self.recover(&mut recovered, &folder)?;
         #[cfg(test)]
         tests::run_hook(&tests::AFTER_RECOVER, &folder);
-        self.write_set_in(&mut recovered, dir, &folder, changes, expect)
+        self.write_set_in(&mut recovered, dir, &folder, changes, (expect, also))
     }
 
     fn list(&self, dir: &GraphDir) -> Result<Vec<GraphFile>, FilesError> {
@@ -2337,11 +2362,11 @@ mod tests {
         fn restart(&self) -> FsGraphFiles {
             self.restart_for_tests()
         }
-        fn tamper(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
-            fs::write(self.check(dir).unwrap().join(file.file_name()), bytes).unwrap();
+        fn tamper(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]) {
+            fs::write(self.check(dir).unwrap().join(file.into().path()), bytes).unwrap();
         }
-        fn raw(&self, dir: &GraphDir, file: GraphFile) -> Option<Vec<u8>> {
-            fs::read(self.check(dir).unwrap().join(file.file_name())).ok()
+        fn raw(&self, dir: &GraphDir, file: impl Into<FileRef>) -> Option<Vec<u8>> {
+            fs::read(self.check(dir).unwrap().join(file.into().path())).ok()
         }
         /// Temp files and the marker in the folder and in its shard folders (named by their relative path).
         fn bytes_read(&self) -> u64 {
@@ -2374,16 +2399,21 @@ mod tests {
                 fs::write(path, bytes).unwrap()
             });
         }
-        fn change_after_next_marker(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
+        fn change_after_next_marker(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]) {
             let folder = self.check(dir).unwrap();
-            let (path, bytes) = (folder.join(file.file_name()), bytes.to_vec());
+            let (path, bytes) = (folder.join(file.into().path()), bytes.to_vec());
             set_hook(&AFTER_MARKER, &folder, move || {
                 fs::write(path, bytes).unwrap()
             });
         }
-        fn change_before_next_marker(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
+        fn change_before_next_marker(
+            &self,
+            dir: &GraphDir,
+            file: impl Into<FileRef>,
+            bytes: &[u8],
+        ) {
             let folder = self.check(dir).unwrap();
-            let (path, bytes) = (folder.join(file.file_name()), bytes.to_vec());
+            let (path, bytes) = (folder.join(file.into().path()), bytes.to_vec());
             set_hook(&BEFORE_OLD_STAMPS, &folder, move || {
                 fs::write(path, bytes).unwrap()
             });
@@ -2546,6 +2576,10 @@ mod tests {
         gf_c31_a_change_since_the_stamps_refuses_the_set(),
         gf_c32_read_stamped_stamps_the_bytes_it_read(),
         gf_c33_a_change_after_the_marker_refuses_the_set(),
+        gf_c34_receipts_round_trip_capped_and_are_no_graph_file(),
+        gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes(),
+        gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps(),
+        gf_c37_a_changed_also_file_refuses_the_set(),
     );
 
     /// graph.json and nodes.jsonl with old bytes, then a two-file set crashed after its marker; returns the folder.

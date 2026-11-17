@@ -18,7 +18,7 @@ const MAX_STATES: usize = 50_000;
 
 /// The names fs.graph-files makes in a graph folder, as a deterministic automaton over bytes: the marker
 /// `.umx-tmp-set.json`, and `.umx-tmp-<n>-<file>` where `<n>` is a counter in decimal (no leading zero) and
-/// `<file>` a graph file name or `set.json` (the marker's own temp).
+/// `<file>` a graph file name, `receipts.jsonl` (ws003 s09) or `set.json` (the marker's own temp).
 struct Names {
     next: Vec<BTreeMap<u8, usize>>,
     accept: Vec<bool>,
@@ -48,6 +48,7 @@ impl Names {
             b"nodes.jsonl",
             b"edges.jsonl",
             b".gitignore",
+            b"receipts.jsonl",
             b"set.json",
         ] {
             let end = n.word(dash, file);
@@ -555,6 +556,7 @@ mod tests {
             "!.umx-tmp-12345-.gitignore",
             "!.umx-tmp-0-set.json",
             "!.umx-tmp-set.json",
+            "!.umx-tmp-7-receipts.jsonl",
             "!.umx-tmp-9*",
             "!*.jsonl",
             "!**/.umx-tmp-?-graph.json",

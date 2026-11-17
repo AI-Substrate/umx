@@ -327,6 +327,16 @@ fn data(data: &Value, command: &str, style: Style) -> String {
                 out.push_str(&format!("{omitted} more edge sentences omitted\n"));
             }
         }
+        // ws003 s09: a replayed batch has no rows; say so, then the refs it bound.
+        if data["replayed"] == true {
+            out.push_str(&format!(
+                "replayed: recorded {}, nothing written\n",
+                clean(&text(&data["recorded_at"]))
+            ));
+            for (name, id) in data["refs"].as_object().into_iter().flatten() {
+                out.push_str(&format!("ref {} {}\n", clean(name), clean(&text(id))));
+            }
+        }
         out.push_str(&table(&cols, rows, data, style));
         // umx doctor: what --fix did, then the verdict last, where it is read first.
         for f in data["fixed"].as_array().into_iter().flatten() {
@@ -877,6 +887,25 @@ mod tests {
         assert_eq!(clean(planted), "Ared link bel next colrtl  end");
         assert!(!clean(planted).chars().any(|c| c.is_control()));
         assert_eq!(clean("Approval delays ✓"), "Approval delays ✓");
+    }
+
+    #[test]
+    fn a_replayed_batch_says_so_and_lists_its_refs() {
+        let replay = json!({
+            "columns": ["line", "op"], "rows": [], "total": 0, "truncated": false,
+            "replayed": true, "recorded_at": "2026-11-17T00:42:00.123Z",
+            "refs": {"jo": "01JC8XA4H7B3KT9M2NZ5QW6RDE"},
+        });
+        let out = data(&replay, "batch", PLAIN);
+        assert!(
+            out.starts_with(
+                "replayed: recorded 2026-11-17T00:42:00.123Z, nothing written\nref jo 01JC8XA4H7B3KT9M2NZ5QW6RDE\n"
+            ),
+            "{out:?}"
+        );
+        let mut first = replay;
+        first["replayed"] = json!(false);
+        assert!(!data(&first, "batch", PLAIN).contains("replayed"));
     }
 
     #[test]

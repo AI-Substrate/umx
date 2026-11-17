@@ -175,12 +175,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// when stated content (`ontology show`'s `role` for such a field is now `data`); the hint `field_data_by_default`
 /// on `ontology add field` and `ontology add type`; `embeddings reembed`'s reply gains `whole_node_texts_changed`
 /// and `field_vectors_dropped`.
+/// 89: ws003 s09: `Op::Batch` takes `idempotency_key`; every batch reply carries `counts` (each op's `lines` and
+/// `existed`), and a keyed one `idempotency_key`, `replayed` and `recorded_at`. New codes `idempotency_key_reused`,
+/// `idempotency_receipt_stale` and `receipts_unreadable` (errors), `batch_replayed` and `idempotency_key_expired`
+/// (hints).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 88;
+pub const PROTOCOL: u32 = 89;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -189,7 +193,7 @@ pub const PROTOCOL: u32 = 88;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (88, 0x2b83_0656_8858_4504);
+const WIRE_FINGERPRINT: (u32, u64) = (89, 0x8bf0_ac63_009d_06e5);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -222,6 +226,17 @@ pub const MAX_BATCH_OPS: usize = 10_000;
 pub const MAX_BATCH_EVIDENCE: usize = 32;
 /// The longest line of a batch file, in bytes.
 pub const MAX_BATCH_LINE: usize = 1 << 20;
+/// `umx batch --idempotency-key`'s rule (ws003 s09), as the CLI states it; umx-core's `receipts::KEY_RULE` and
+/// `check_key` are the services' own, and umx-daemon's test keeps the two the same.
+pub const IDEMPOTENCY_KEY_RULE: &str = "an idempotency key is 1 to 128 of A-Z a-z 0-9 . _ : -";
+
+/// True when `key` is 1 to 128 of `A-Z a-z 0-9 . _ : -`.
+pub fn idempotency_key_ok(key: &str) -> bool {
+    (1..=128).contains(&key.len())
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+}
 /// The most refs one batch may import with `--refs-from`, across every receipt it names.
 pub const MAX_IMPORTED_REFS: usize = 10_000;
 
@@ -1161,6 +1176,38 @@ pub struct BatchLine {
     pub op: BatchOp,
 }
 
+impl Op {
+    /// A batch's canonical input (ws003 s09, architect C5): the bytes `--idempotency-key` compares, as a digest.
+    /// The ops in order, each as its wire JSON without its line number (a comment line added to the file does not
+    /// change the batch); `reason`; the refs `--refs-from` imported and their `refs_graph`, which is a graph id,
+    /// never an alias (graph-addressing); and `raised_in`. Not `dry_run`, `echo_sentences`, `related` (output
+    /// only) or the key. Object keys
+    /// come out sorted because serde_json is built without `preserve_order`; umx-daemon's golden digest test fails
+    /// if that changes. None for any other op.
+    pub fn batch_input(&self) -> Option<Vec<u8>> {
+        let Op::Batch {
+            lines,
+            reason,
+            refs,
+            refs_graph,
+            raised_in,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        let ops: Vec<&BatchOp> = lines.iter().map(|l| &l.op).collect();
+        let input = serde_json::json!({
+            "ops": ops,
+            "reason": reason,
+            "refs": refs,
+            "refs_graph": refs_graph,
+            "raised_in": raised_in,
+        });
+        Some(serde_json::to_vec(&input).expect("a batch always serialises"))
+    }
+}
+
 /// One `--<setting> <value>` of `umx graph set`. The daemon checks the name against umx-core's settings table.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SettingArg {
@@ -1574,6 +1621,11 @@ pub enum Op {
         /// `--related` or `--no-related` (req-123), as on node add.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         related: Option<bool>,
+        /// `--idempotency-key <key>` (ws003 s09): a real batch that succeeds records its receipt under the key in the
+        /// graph folder; the same key with the same input ([`Op::batch_input`]) returns that receipt and writes
+        /// nothing, and with another input is refused.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        idempotency_key: Option<String>,
     },
     /// `umx embeddings allow --node <id> --field <f>` (req-49): lets one field's current text, which the secret scan
     /// holds, go to a hosted embedder on this machine. Only that exact text; any change holds it again.
@@ -3664,6 +3716,27 @@ catalogue! {
         "umx batch --refs-from: a ref a receipt imports is also defined by a line of the batch, or two receipts give it different ids; never shadowed, nothing changed",
         "A ref has two meanings: <why>. Rename the ref in the batch file, or pass one receipt that names it. Nothing changed.",
         "umx docs get batch";
+    // ws003 s09: umx batch --idempotency-key (receipts kept in the graph folder's receipts.jsonl).
+    IdempotencyKeyReused => "idempotency_key_reused", Error, 1,
+        "umx batch --idempotency-key: the key was used on this graph for a batch with another input, and its receipt is still kept; one key names one batch; nothing changed",
+        "Idempotency key <key> was used on graph <graph> for a different batch (recorded <at>). Nothing changed. Use a new key for a new batch, or send that batch exactly as it was.",
+        "umx docs get batch";
+    IdempotencyReceiptStale => "idempotency_receipt_stale", Error, 1,
+        "umx batch --idempotency-key: the receipt kept for the key names ids the graph no longer holds (nodes.jsonl changed under it, by a hand edit or a checkout), so it is not replayed; nothing changed",
+        "The receipt kept for idempotency key <key> names ids graph <graph> no longer holds (<missing> of them), so it was not replayed. Nothing changed. Run the batch with a new key.",
+        "umx docs get batch";
+    ReceiptsUnreadable => "receipts_unreadable", Error, 1,
+        "umx batch --idempotency-key: the graph folder's receipts.jsonl cannot be used (a newer format, not a receipts file, over 16 MiB, another graph's, or changed on disk while the batch ran), so a batch with a key is refused; a batch without a key never reads it; nothing changed",
+        "The batch receipts of graph <graph> cannot be used: <why>. The batch with an idempotency key was not run. Nothing changed.",
+        "umx docs get batch";
+    BatchReplayed => "batch_replayed", Hint, 0,
+        "umx batch --idempotency-key: this key and this input ran before on this graph, so umx returned the receipt recorded then (refs and counts, no rows) and wrote nothing",
+        "This batch ran before with idempotency key <key> (recorded <at>). Nothing was written. The reply is the receipt recorded then: refs and counts, no rows.",
+        "umx docs get batch";
+    IdempotencyKeyExpired => "idempotency_key_expired", Hint, 0,
+        "umx batch --idempotency-key: the key was used on this graph before, but its receipt was dropped (receipts are kept 7 days and at least the last 1,000, in at most 4 MiB), so the batch runs as new",
+        "Idempotency key <key> was used on this graph before (recorded <at>), but its receipt was dropped (receipts are kept 7 days and at least the last 1,000), so this batch runs as new, not as a replay.",
+        "umx docs get batch";
     BatchRefSource => "batch_ref_source", Error, 1,
         "umx batch --refs-from: the CLI's own line after an imported ref's batch_ref_unknown, naming the receipt the ref came from (the daemon never sees receipt paths)",
         "The ref came from --refs-from <file>.",
@@ -5430,6 +5503,7 @@ mod tests {
                 reason: s("stale"),
                 refs: [("q9".to_owned(), "01JC8XA4H7B3KT9M2NZ5QW6RDG".to_owned())].into(),
                 refs_graph: s("01JC8XA4H7B3KT9M2NZ5QW6RDH"),
+                idempotency_key: s("window-08"),
             },
             Op::EmbeddingsAllow {
                 node: "n".into(),

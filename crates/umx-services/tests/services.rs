@@ -641,6 +641,7 @@ fn default_read_scope_hides_provenance_in_counts_pages_resolution_search_and_tra
             .batch(
                 &ctx(),
                 umx_services::BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -1228,6 +1229,7 @@ mod cross_graph_reads {
                 .batch(
                     &ctx().graph("collision"),
                     umx_services::BatchRequest {
+                        idempotency: None,
                         raised_in: None,
                         reason: None,
                         echo_sentences: false,
@@ -1257,6 +1259,7 @@ mod cross_graph_reads {
             .batch(
                 &ctx().graph("collision"),
                 umx_services::BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -1866,6 +1869,7 @@ mod cross_graph_reads {
         assert_eq!(selected.rows[0].node.title, "Copy graph title");
         assert_eq!(selected.rows[0].address, "umx:g2_copy");
         let lines = |target: &str| umx_services::BatchRequest {
+            idempotency: None,
             raised_in: None,
             reason: None,
             echo_sentences: false,
@@ -2533,6 +2537,7 @@ mod external_edges {
             .batch(
                 &ctx().graph("demo"),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     echo_sentences: false,
                     dry_run: false,
@@ -2833,6 +2838,7 @@ mod external_edges {
             .batch(
                 &ctx().graph("demo"),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,

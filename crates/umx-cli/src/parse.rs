@@ -133,6 +133,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--raised-in",
             "--related",
             "--no-related",
+            "--idempotency-key",
         ],
     ),
     ("scope save", &["--replace"]),
@@ -820,6 +821,16 @@ pub fn batch(words: &[&str]) -> Result<(String, Vec<String>, Parsed), Usage> {
         "give the ops with --file <ops.jsonl>, or --file - for stdin",
     )?;
     let receipts = a.all("--refs-from");
+    let idempotency_key = a.one("--idempotency-key");
+    if idempotency_key
+        .as_deref()
+        .is_some_and(|k| !umx_protocol::idempotency_key_ok(k))
+    {
+        return Err(Usage {
+            command: "batch",
+            what: umx_protocol::IDEMPOTENCY_KEY_RULE,
+        });
+    }
     let op = Op::Batch {
         lines: Vec::new(),
         dry_run: a.switches.iter().any(|s| s == "--dry-run"),
@@ -829,6 +840,7 @@ pub fn batch(words: &[&str]) -> Result<(String, Vec<String>, Parsed), Usage> {
         refs_graph: None,
         raised_in: a.one("--raised-in"),
         related: a.related()?,
+        idempotency_key,
     };
     Ok((file, receipts, op.with(a)))
 }
@@ -2186,6 +2198,34 @@ mod tests {
         assert_eq!(rows("--rows ids").ok(), Some(PairRows::Ids));
         let u = rows("--rows titles").expect_err("titles");
         assert_eq!(u.what, "--rows takes full or ids");
+    }
+
+    #[test]
+    fn batch_idempotency_key_takes_the_rule_and_names_it_never_the_value() {
+        let (_, _, parsed) = batch(&["--file", "-", "--idempotency-key", "run:2026-11-17.w_8-a"])
+            .ok()
+            .unwrap();
+        assert!(matches!(
+            &parsed.op,
+            Op::Batch { idempotency_key: Some(k), .. } if k == "run:2026-11-17.w_8-a"
+        ));
+        let long = "k".repeat(129);
+        for bad in ["", "a b", "secret/value", "é", long.as_str()] {
+            let usage = batch(&["--file", "-", "--idempotency-key", bad])
+                .err()
+                .unwrap();
+            assert_eq!(usage.command, "batch");
+            assert_eq!(usage.what, umx_protocol::IDEMPOTENCY_KEY_RULE, "{bad:?}");
+            assert!(!usage.what.contains("secret"));
+        }
+        let (_, _, parsed) = batch(&["--file", "-"]).ok().unwrap();
+        assert!(matches!(
+            parsed.op,
+            Op::Batch {
+                idempotency_key: None,
+                ..
+            }
+        ));
     }
 
     #[test]

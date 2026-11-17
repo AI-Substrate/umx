@@ -52,6 +52,8 @@ pub const HINTS: &[&str] = &[
     "batch_use_ref_field",
     "alias_redirected",
     "on_key_field_held",
+    "batch_replayed",
+    "idempotency_key_expired",
 ];
 
 /// The most hints a reply shows: umx-protocol's MAX_HINTS and its `hints_truncated` (the daemon's test keeps the two
@@ -117,6 +119,11 @@ pub const CODES: &[&str] = &[
     "batch_ref_repeated",
     "batch_ref_conflict",
     "batch_refs_other_graph",
+    "idempotency_key_reused",
+    "idempotency_receipt_stale",
+    "receipts_unreadable",
+    "batch_replayed",
+    "idempotency_key_expired",
     "batch_errors_truncated",
     "batch_warnings_truncated",
     "batch_failed",
@@ -2288,6 +2295,20 @@ pub fn reembed_model_not_configured(
 }
 
 /// `file` was replaced but the folder sync after it failed: the change is made.
+/// `write_not_durable` for a keyed batch's receipts-only set (ws003 s09): the receipt stands.
+pub fn receipts_not_durable(e: &FilesError) -> Problem {
+    Problem::new("write_not_durable")
+        .with("file", Slot::File(FileRef::Receipts))
+        .with("os error", Slot::os(e))
+}
+
+/// `write_failed` for a keyed batch's receipts-only set (ws003 s09): nothing changed.
+pub fn receipts_write_failed(e: &FilesError) -> Problem {
+    Problem::new("write_failed")
+        .with("file", Slot::File(FileRef::Receipts))
+        .with("os error", Slot::os(e))
+}
+
 pub fn write_not_durable(file: GraphFile, e: &FilesError) -> Problem {
     Problem::new("write_not_durable")
         .with("file", Slot::file(file))
@@ -2312,19 +2333,20 @@ pub fn recovery_conflict(dir: &GraphDir, files: &[FileRef], graph: Option<&Valid
 /// F144: a write to `graph` refused because its content `files` changed on disk since it was loaded or last written
 /// (a checkout, a pull, a hand edit, or only a touch): nothing was written and memory is as it was. Never reloaded
 /// for the caller: the next is to unload and load it again.
-pub fn graph_files_changed(graph: &ValidName, dir: &GraphDir, files: &[GraphFile]) -> Problem {
-    files_moved(Problem::new("graph_files_changed"), graph, dir, files)
+pub fn graph_files_changed(graph: &ValidName, dir: &GraphDir, files: &[FileRef]) -> Problem {
+    let names: Vec<String> = files.iter().map(FileRef::path).collect();
+    files_moved(Problem::new("graph_files_changed"), graph, dir, &names)
 }
 
 /// F144: a read of `graph` answered from memory while its content `files` changed on disk since it was loaded.
 pub fn stale_files(graph: &ValidName, dir: &GraphDir, files: &[GraphFile]) -> Problem {
-    files_moved(Problem::new("stale_files"), graph, dir, files)
+    let names: Vec<String> = files.iter().map(|f| f.file_name().to_string()).collect();
+    files_moved(Problem::new("stale_files"), graph, dir, &names)
 }
 
 /// The next for both: unload and load the folder again under the same alias, the folder quoted when it holds a
 /// space ([`Command::path`]) so the line runs as given.
-fn files_moved(p: Problem, graph: &ValidName, dir: &GraphDir, files: &[GraphFile]) -> Problem {
-    let names: Vec<&str> = files.iter().map(|f| f.file_name()).collect();
+fn files_moved(p: Problem, graph: &ValidName, dir: &GraphDir, names: &[String]) -> Problem {
     let fix = Command::new("graph unload")
         .name(graph)
         .then("graph load")
@@ -3229,6 +3251,54 @@ pub fn batch_ref_conflict(line: u32, name: &str, why: &'static str) -> Problem {
 /// A `--refs-from` receipt names another graph id than the batch's graph (ws003 s24).
 pub fn batch_refs_other_graph() -> Problem {
     Problem::new("batch_refs_other_graph")
+}
+
+/// ws003 s09: an idempotency key the caller sent, for a message. Only a key that passed the key rule reaches here, so
+/// the text is exactly what was sent.
+fn idempotency_key(key: &str) -> Slot {
+    Slot::Os(SafeText::lossy(key))
+}
+
+/// A receipt's time, for a message.
+fn receipt_time(ms: u64) -> Slot {
+    Slot::Os(SafeText::lossy(&umx_core::receipts::time_text(ms)))
+}
+
+/// ws003 s09: the key's receipt is of a batch with another input; nothing changed.
+pub fn idempotency_key_reused(key: &str, graph: &ValidName, at: u64) -> Problem {
+    Problem::new("idempotency_key_reused")
+        .with("key", idempotency_key(key))
+        .with("graph", name(graph))
+        .with("at", receipt_time(at))
+}
+
+/// ws003 s09 (graph-addressing): the key's receipt names `missing` ids the graph no longer holds; never replayed.
+pub fn idempotency_receipt_stale(key: &str, graph: &ValidName, missing: usize) -> Problem {
+    Problem::new("idempotency_receipt_stale")
+        .with("key", idempotency_key(key))
+        .with("graph", name(graph))
+        .with("missing", Slot::Count(missing as u64))
+}
+
+/// ws003 s09: the graph's receipts file cannot be used (`why`, umx's own words), so a keyed batch is refused.
+pub fn receipts_unreadable(graph: &ValidName, why: &str) -> Problem {
+    Problem::new("receipts_unreadable")
+        .with("graph", name(graph))
+        .with("why", Slot::Os(SafeText::lossy(why)))
+}
+
+/// ws003 s09: the key and input ran before; the reply is the receipt recorded at `at`.
+pub fn batch_replayed(key: &str, at: u64) -> Problem {
+    Problem::new("batch_replayed")
+        .with("key", idempotency_key(key))
+        .with("at", receipt_time(at))
+}
+
+/// ws003 s09 (prime ruling): the key was seen, but its receipt was dropped, so the batch runs as new.
+pub fn idempotency_key_expired(key: &str, at: u64) -> Problem {
+    Problem::new("idempotency_key_expired")
+        .with("key", idempotency_key(key))
+        .with("at", receipt_time(at))
 }
 
 /// More lines failed than a failed batch lists.

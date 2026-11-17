@@ -3913,6 +3913,72 @@ fn trigger(code: Code) -> (Envelope, u8) {
             }
             home.umx(&args)
         }
+        // ws003 s09: umx batch --idempotency-key.
+        Code::BatchReplayed
+        | Code::IdempotencyKeyReused
+        | Code::IdempotencyReceiptStale
+        | Code::ReceiptsUnreadable
+        | Code::IdempotencyKeyExpired => {
+            let path = home.graph();
+            let receipts = Path::new(&path).join("receipts.jsonl");
+            let one = home.ops_file(
+                "{\"op\":\"node add\",\"ref\":\"q\",\"type\":\"question\",\"title\":\"T\"}\n",
+            );
+            let keyed = |file: &str| -> Vec<String> {
+                ["batch", "--idempotency-key", "window-08", "--file", file]
+                    .map(String::from)
+                    .to_vec()
+            };
+            let args = keyed(&one);
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            match code {
+                Code::BatchReplayed => {
+                    home.ok(&args);
+                }
+                Code::IdempotencyKeyReused => {
+                    home.ok(&args);
+                    let two = home.ops_file(
+                        "{\"op\":\"node add\",\"ref\":\"q\",\"type\":\"question\",\"title\":\"T2\"}\n",
+                    );
+                    let other = keyed(&two);
+                    return home.umx(&other.iter().map(String::as_str).collect::<Vec<_>>());
+                }
+                // The kept receipt names an id the graph does not hold (nodes.jsonl changed under it).
+                Code::IdempotencyReceiptStale => {
+                    home.ok(&args);
+                    let forged: String = fs::read_to_string(&receipts)
+                        .unwrap()
+                        .lines()
+                        .map(|line| {
+                            let mut v: Value = umx_protocol::parse_json(line).unwrap();
+                            if v.get("refs").is_some() {
+                                v["refs"] = json!(["01JC8XA4H7B3KT9M2NZ5QW6RDE"]);
+                            }
+                            format!("{v}\n")
+                        })
+                        .collect();
+                    fs::write(&receipts, forged).unwrap();
+                }
+                Code::ReceiptsUnreadable => {
+                    fs::write(&receipts, "not a receipts file\n").unwrap();
+                }
+                // A key whose receipt the bounds dropped: the file keeps its digest only.
+                _ => {
+                    let (_, probe) = home.receipt("probe", &["batch", "--file", &one, "--dry-run"]);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64;
+                    let file = format!(
+                        "{{\"umx_receipts\":1,\"graph_id\":{}}}\n{{\"key\":\"{}\",\"at\":0,\"dropped\":{now}}}\n",
+                        probe.data["graph_id"],
+                        umx_core::receipts::key_digest("window-08"),
+                    );
+                    fs::write(&receipts, file).unwrap();
+                }
+            }
+            home.umx(&args)
+        }
         Code::BatchRefSource => {
             // A receipt whose ref names no node of the graph (here written by hand, as a stale receipt would be).
             home.graph();
@@ -12032,6 +12098,96 @@ fn derived_retypes_and_deletes_of_repeated_ids_are_refused_and_change_nothing() 
     assert!(kinds(&home).is_empty() && !lines().contains(&r));
 }
 
+/// The folder files an idempotent replay must leave byte for byte.
+fn folder_bytes(path: &str) -> Vec<Option<Vec<u8>>> {
+    ["graph.json", "nodes.jsonl", "edges.jsonl", "receipts.jsonl"]
+        .iter()
+        .map(|f| fs::read(Path::new(path).join(f)).ok())
+        .collect()
+}
+
+/// ws003 s09 (usage 205): through the CLI and the daemon, a keyed batch sent again returns the receipt its first run
+/// recorded (the receipt fields equal), writes nothing (the folder byte for byte), and that reply works as a
+/// `--refs-from` receipt.
+#[test]
+fn batch_idempotency_key_replays_the_first_receipt_byte_for_byte() {
+    let mut home = Home::new("batch-idempotency-replay");
+    let path = home.graph();
+    let file = home.ops_file(
+        "{\"op\":\"node add\",\"ref\":\"q\",\"type\":\"question\",\"title\":\"Storage choice\"}\n\
+         {\"op\":\"node add\",\"ref\":\"a\",\"type\":\"option\",\"title\":\"Files\"}\n\
+         {\"op\":\"edge add\",\"from_ref\":\"a\",\"relation\":\"answers\",\"to_ref\":\"q\"}\n",
+    );
+    let args = ["batch", "--idempotency-key", "window-08", "--file", &file];
+    let first = home.ok(&args);
+    assert_eq!(first.data["replayed"], false);
+    assert_eq!(
+        first.data["counts"]["node add"],
+        json!({"lines": 2, "existed": 0})
+    );
+    let before = folder_bytes(&path);
+    assert!(before[3].is_some(), "the receipt is in the graph folder");
+    let (receipt, again) = home.receipt("again", &args);
+    assert_eq!(again.data["replayed"], true);
+    for field in [
+        "graph_id",
+        "applied",
+        "refs",
+        "counts",
+        "idempotency_key",
+        "recorded_at",
+    ] {
+        assert_eq!(again.data[field], first.data[field], "{field}");
+    }
+    assert_eq!(again.data["rows"], json!([]));
+    assert!(again.hints.iter().any(|h| h.code() == "batch_replayed"));
+    assert_eq!(folder_bytes(&path), before, "a replay writes nothing");
+    let links = home.ops_file("{\"op\":\"node note\",\"node_ref\":\"a\",\"append\":\"chosen\"}\n");
+    home.ok(&["batch", "--refs-from", &receipt, "--file", &links]);
+    let human = home
+        .command(&[
+            "batch",
+            "--idempotency-key",
+            "window-08",
+            "--file",
+            &file,
+            "--human",
+        ])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(text.contains("replayed: recorded"), "{text}");
+    let (env, exit) = home.umx(&["batch", "--idempotency-key", "a b", "--file", &file]);
+    assert_eq!(exit, 2, "{}", env.to_json());
+    assert!(
+        !env.to_json().contains("a b"),
+        "the usage error names the rule, not the key"
+    );
+}
+
+/// ws003 s09: two keyed batches sent at once go through the daemon's one writer in turn: one runs, the other
+/// replays it, and the nodes are added once.
+#[test]
+fn concurrent_batches_with_one_key_run_once() {
+    let mut home = Home::new("batch-idempotency-concurrent");
+    home.graph();
+    let file = home
+        .ops_file("{\"op\":\"node add\",\"ref\":\"q\",\"type\":\"question\",\"title\":\"Once\"}\n");
+    let args = ["batch", "--idempotency-key", "together", "--file", &file];
+    let children: Vec<_> = (0..2)
+        .map(|_| home.command(&args).stdout(Stdio::piped()).spawn().unwrap())
+        .collect();
+    let replies: Vec<Envelope> = children
+        .into_iter()
+        .map(|c| Envelope::from_json(&c.wait_with_output().unwrap().stdout).unwrap())
+        .collect();
+    let replayed: Vec<bool> = replies.iter().map(|r| r.data["replayed"] == true).collect();
+    assert_eq!(replayed.iter().filter(|r| **r).count(), 1, "{replayed:?}");
+    assert_eq!(replies[0].data["refs"], replies[1].data["refs"]);
+    let list = home.ok(&["node", "list", "--type", "question"]);
+    assert_eq!(list.data["rows"].as_array().unwrap().len(), 1);
+}
+
 #[test]
 fn batch_echo_is_opt_in_and_dry_run_matches_the_real_reply() {
     let mut home = Home::new("batch-echo-opt-in");
@@ -12387,6 +12543,7 @@ fn s10_raw_batch_clients_cannot_bypass_the_pointer_cap() {
     let mut request = Request::op(
         umx_protocol::Op::Batch {
             related: None,
+            idempotency_key: None,
             raised_in: None,
             echo_sentences: false,
             lines: vec![umx_protocol::BatchLine {
@@ -12656,6 +12813,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
     let request = Request::op(
         umx_protocol::Op::Batch {
             related: None,
+            idempotency_key: None,
             raised_in: None,
             echo_sentences: false,
             lines: many,
@@ -12674,6 +12832,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
     let request = Request::op(
         umx_protocol::Op::Batch {
             related: None,
+            idempotency_key: None,
             raised_in: None,
             echo_sentences: false,
             lines: vec![
@@ -12810,6 +12969,7 @@ fn the_daemon_refuses_a_raw_batch_over_the_caps_and_writes_nothing() {
         let request = Request::op(
             umx_protocol::Op::Batch {
                 related: None,
+                idempotency_key: None,
                 raised_in: None,
                 echo_sentences: false,
                 lines,

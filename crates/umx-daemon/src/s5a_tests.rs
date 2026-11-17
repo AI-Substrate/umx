@@ -153,6 +153,7 @@ fn batch(lines: &[String], dry_run: bool) -> Op {
     Op::Batch {
         related: None,
         raised_in: None,
+        idempotency_key: None,
         lines: lines
             .iter()
             .enumerate()

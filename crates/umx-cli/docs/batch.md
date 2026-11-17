@@ -11,6 +11,7 @@ work; never loop over `umx node add`, and never build long command lines: put th
     umx batch --file - --graph demo
     umx batch --file links.jsonl --refs-from first.json --refs-from second.json
     umx batch --file fixes.jsonl --reason "question lines are not evidence"
+    umx batch --file window-08.jsonl --idempotency-key window-08
 
 `--file -` reads stdin. `--dry-run` checks and plans every line exactly as the real run would, then writes
 nothing, draws no ids and queues nothing for embedding. It runs the same validation and secret scan as the real
@@ -232,6 +233,33 @@ the call and `--related` turns it on over the graph's and the machine's `related
 
     umx batch --file window-07.jsonl --graph launch --no-related
 
+## Sending a batch again (`--idempotency-key`)
+
+When a batch's reply may be lost (a timeout, a restart, an agent that stopped and resumed), give it a key you
+choose, 1 to 128 of `A-Z a-z 0-9 . _ : -`, and send the same batch with the same key to retry:
+
+    umx batch --file window-08.jsonl --graph launch --idempotency-key launch:window-08
+
+- The first real run that succeeds records its receipt in the graph folder's `receipts.jsonl`, in the same write
+  as the batch. Sent again with the same key and the same input (the same ops in order, `--reason`, `--refs-from`
+  and `--raised-in`; line numbers, `--echo-sentences` and `--related` do not count), umx returns that receipt and
+  writes nothing: no id is drawn, nothing is queued for embedding, and no related check runs. The reply says `replayed: true`, gives `recorded_at`, `refs` and `counts`, and
+  has no rows; the hint `batch_replayed` says so. It is an applied receipt, so `--refs-from` takes it.
+- The same key with another input is `idempotency_key_reused`, and nothing changes. Use a new key for a new batch.
+- A failed batch records nothing, so a retry runs for real. A dry run never records; with a key it says whether
+  a real run would replay (`replayed`), and is refused as the real run would be.
+- Keys belong to one graph folder: another graph, or another copy of this one, never answers for them. With
+  several copies loaded, retry with the same `--graph`. A rename or move keeps them.
+- Receipts are kept 7 days, and at least the last 1,000, in a file of at most 4 MiB. A key whose receipt was
+  dropped runs as new, and the hint `idempotency_key_expired` says so; after 30 more days umx forgets the key.
+- The receipt is what the batch did then: later edits do not change it. If the graph no longer holds an id it
+  names (nodes.jsonl changed under it), the replay is refused with `idempotency_receipt_stale`; run with a new
+  key. A `receipts.jsonl` umx cannot use (from a newer umx, not a receipts file, over 16 MiB, another graph's, or
+  changed while the batch ran) refuses keyed batches with `receipts_unreadable`; batches without a key never read
+  it.
+- The file holds digests, ids, counts and times only: never the key, a ref name, a title or an op. The key's digest
+  is committed and a predictable key can be guessed from it, so never put a client name or secret in a key.
+
 ## The result
 
 `data` lists one row per op line: `line`, `op`, `ref`, `id`, `address`, `parent_edge` (a node add's part_of edge),
@@ -241,8 +269,9 @@ is the floor they were cut at),
 `changed` (an edit, note append or status move's changed fields, including an edge edit's `type`, `direction` and fields;
 `evidence`, and `evidence_removed` for a remove, when an evidence line changed the node) and `existed` (an edge
 add whose edge already existed, so nothing was
-added). `refs` maps each ref the batch defined to its new id. `graph`, `graph_id`, `dry_run` and `applied` say
-what happened; `refs` and `graph_id` are what a later `--refs-from` reads. In a dry run
+added). `refs` maps each ref the batch defined to its new id. `counts` gives each op's `lines` and how many
+`existed`. `graph`, `graph_id`, `dry_run` and `applied` say what happened (a keyed batch adds `idempotency_key`,
+`replayed` and `recorded_at`); `refs` and `graph_id` are what a later `--refs-from` reads. In a dry run
 explicit ids appear unchanged, including in `refs`; ids umx would mint remain null.
 By default the reply carries no titles or other graph text. Use `--echo-sentences`
 to check edge direction without reading each node's edges back.

@@ -1013,6 +1013,7 @@ impl GraphStore {
         self.files_unchanged(author)?;
         let req = super::BatchRequest {
             raised_in: None,
+            idempotency: None,
             lines: alloc::vec![super::BatchLine {
                 line: 1,
                 op: super::BatchOp::EdgeAdd {

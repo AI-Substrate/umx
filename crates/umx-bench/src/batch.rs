@@ -77,6 +77,7 @@ pub fn services(work: &Path, graph: &Path, parent: &str) -> Result<Value, String
             .batch(
                 &ctx,
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     echo_sentences: false,
                     lines,
@@ -213,6 +214,7 @@ pub fn explicit_ids(work: &Path, graph: &Path, fx: &Fixture, runs: usize) -> Res
                 .batch(
                     &ctx,
                     BatchRequest {
+                        idempotency: None,
                         raised_in: None,
                         reason: None,
                         echo_sentences: false,

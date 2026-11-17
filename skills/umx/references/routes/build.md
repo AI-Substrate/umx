@@ -213,6 +213,14 @@ imported and defined, or given two ids, is `batch_ref_conflict`. A deleted, miss
 line as `batch_ref_unknown`, followed by a `batch_ref_source` line naming the receipt. An old receipt without `graph_id` skips
 the graph check; do not rely on it. Refs stay local: write a cross-graph end as `umx:<alias>/<id>`.
 
+**usage 205**: when a batch's reply may be lost, run it with `--idempotency-key <key>` (1 to 128 of
+`A-Z a-z 0-9 . _ : -`) and retry with the same key and the same batch: umx returns the first run's receipt
+(`replayed: true`, its `refs` and `counts`, no rows, hint `batch_replayed`) and writes nothing; it works with
+`--refs-from`. The same key with another batch is `idempotency_key_reused`; a failed batch records nothing. Receipts
+are kept 7 days and at least the last 1,000; a dropped key runs as new with `idempotency_key_expired`. With copies
+loaded, retry with the same `--graph`. `idempotency_receipt_stale` and `receipts_unreadable` change nothing. Never
+put a client name or secret in a key: its digest is committed and can be guessed back.
+
 **usage 202**: to add a thing you may have added before (the same person in the next window), give it an
 `entity_key` and `"on_key":"resolve"` (or `umx node add ... --on-key resolve`). A node of the same type in the
 written graph holding the key is found instead of a new one added: the row says `existed`, its `ref` binds to that

@@ -46,22 +46,24 @@ impl GraphFiles for Counted {
         }
         self.inner.read_ref(dir, file)
     }
-    fn write_set_checked(
+    fn write_set_checked_also(
         &self,
         dir: &GraphDir,
         changes: &[Change<'_>],
         expect: Option<&GraphStamps>,
+        also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError> {
         let names = changes.iter().map(|c| c.file.path()).collect();
         self.sets.lock().unwrap().push(names);
-        self.inner.write_set_checked(dir, changes, expect)
+        self.inner
+            .write_set_checked_also(dir, changes, expect, also)
     }
-    fn read_stamped(
+    fn read_ref_stamped(
         &self,
         dir: &GraphDir,
-        file: GraphFile,
+        file: &FileRef,
     ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError> {
-        self.inner.read_stamped(dir, file)
+        self.inner.read_ref_stamped(dir, file)
     }
     fn stamps(&self, dir: &GraphDir) -> Result<GraphStamps, FilesError> {
         self.inner.stamps(dir)
@@ -258,6 +260,7 @@ fn run(w: &mut World, lines: Vec<BatchLine>, dry_run: bool) -> Result<BatchDone,
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 lines,
@@ -275,6 +278,7 @@ fn echo(w: &mut World, lines: Vec<BatchLine>, dry_run: bool) -> Result<BatchDone
         .batch(
             &ctx().graph("demo"),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 lines,
@@ -1236,6 +1240,7 @@ mod provenance {
             .batch(
                 &editor,
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -1253,6 +1258,7 @@ mod provenance {
                 .batch(
                     &editor,
                     BatchRequest {
+                        idempotency: None,
                         raised_in: None,
                         reason: None,
                         echo_sentences: false,
@@ -1270,6 +1276,7 @@ mod provenance {
             .batch(
                 &editor,
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -1328,6 +1335,7 @@ mod provenance {
                         .batch(
                             editor,
                             BatchRequest {
+                                idempotency: None,
                                 raised_in: None,
                                 reason: None,
                                 echo_sentences: false,
@@ -1601,6 +1609,7 @@ mod provenance {
             let result = w.svc.batch(
                 &ctx,
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     lines,
@@ -1737,6 +1746,7 @@ mod provenance {
             .batch(
                 &writer("h-0123456789abcdef", "coder"),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: true,
@@ -2123,6 +2133,7 @@ fn ports_keep_ids_created_refs_and_line_order_including_dry_runs_and_failed_writ
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -2438,6 +2449,7 @@ fn explicit_node_ids_reserve_only_their_own_graph_id_before_drawing_or_writing()
         .batch(
             &ctx().graph("demo"),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -2506,6 +2518,7 @@ fn explicit_nodes_are_unavailable_before_their_line_and_do_not_infer_future_fiel
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -2615,6 +2628,7 @@ fn unnamed_secured_graphs_cannot_be_probed_by_explicit_ids() {
         w
     };
     let request = || BatchRequest {
+        idempotency: None,
         raised_in: None,
         echo_sentences: false,
         reason: None,
@@ -2836,6 +2850,7 @@ fn copied_node_ids_warn_only_across_different_loaded_graph_identities() {
         .batch(
             &target,
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -2865,6 +2880,7 @@ fn copied_node_ids_warn_only_across_different_loaded_graph_identities() {
         .batch(
             &copy,
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -2900,6 +2916,7 @@ fn copied_node_ids_warn_only_across_different_loaded_graph_identities() {
         .batch(
             &copy,
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -3196,6 +3213,7 @@ fn a_dry_run_writes_nothing_draws_no_id_and_reports_what_the_real_run_does() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -3219,6 +3237,7 @@ fn a_dry_run_writes_nothing_draws_no_id_and_reports_what_the_real_run_does() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -3314,6 +3333,7 @@ fn joined_words_warn_near_duplicate_in_a_batch() {
             .batch(
                 &ctx(),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     echo_sentences: false,
                     lines,
@@ -3560,6 +3580,7 @@ fn edge_add_existing_fields_match_earlier_refs_and_persisted_edges_without_write
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 echo_sentences: false,
@@ -3603,6 +3624,7 @@ fn edge_add_existing_fields_match_earlier_refs_and_persisted_edges_without_write
             .batch(
                 &ctx(),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     echo_sentences: false,
@@ -3844,6 +3866,7 @@ fn an_existing_edge_is_reported_not_added_whether_the_graph_or_an_earlier_line_m
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -3917,6 +3940,7 @@ fn warnings_are_capped_and_an_oversized_reply_is_refused_before_writing() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -3974,6 +3998,7 @@ fn warnings_are_capped_and_an_oversized_reply_is_refused_before_writing() {
             .batch(
                 &ctx(),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     echo_sentences: false,
                     reason: None,
@@ -4077,6 +4102,7 @@ fn a_batch_edge_line_checks_its_fields_against_the_relation_as_edge_add_does() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -4152,6 +4178,7 @@ fn a_batch_edge_line_checks_its_fields_against_the_relation_as_edge_add_does() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 reason: None,
@@ -4211,6 +4238,7 @@ fn duplicate_key_warnings_share_the_batch_cap_and_a_dry_run_reports_the_same() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 lines: copies,
@@ -4239,6 +4267,7 @@ fn duplicate_key_warnings_share_the_batch_cap_and_a_dry_run_reports_the_same() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 lines: edit_winner(),
@@ -4255,6 +4284,7 @@ fn duplicate_key_warnings_share_the_batch_cap_and_a_dry_run_reports_the_same() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 reason: None,
                 lines: edit_winner(),
@@ -4297,6 +4327,7 @@ mod refs_from {
             .batch(
                 &ctx(),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     reason: None,
                     lines,
@@ -4404,6 +4435,7 @@ mod refs_from {
         }
         assert_eq!((disk(&w), memory(&w)), before);
         let mut raw = BatchRequest {
+            idempotency: None,
             raised_in: None,
             reason: None,
             lines: line(),
@@ -4731,6 +4763,7 @@ fn hints_follow_the_warnings_and_never_count_toward_the_cap() {
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 echo_sentences: false,
                 reason: None,
                 lines,
@@ -4773,6 +4806,7 @@ fn noted(
         .batch(
             c,
             BatchRequest {
+                idempotency: None,
                 echo_sentences: false,
                 reason: None,
                 lines,
@@ -5057,6 +5091,7 @@ fn near_duplicate_notes_equal_a_scan_of_every_title_in_batch_order() {
             .batch(
                 &ctx(),
                 BatchRequest {
+                    idempotency: None,
                     raised_in: None,
                     echo_sentences: false,
                     lines,
@@ -5129,6 +5164,7 @@ fn run_notes(w: &mut World, lines: Vec<BatchLine>) -> (BatchDone, Vec<Problem>) 
         .batch(
             &ctx(),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 lines,
@@ -5383,6 +5419,7 @@ fn warnings_after_the_write_join_the_batch_warning_cap_and_its_count() {
         .batch(
             &ctx().graph("emb"),
             BatchRequest {
+                idempotency: None,
                 raised_in: None,
                 echo_sentences: false,
                 lines,

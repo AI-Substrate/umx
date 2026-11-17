@@ -146,6 +146,7 @@ fn run(ceiling: usize) {
         let mut req = op(Op::Batch {
             related: None,
             raised_in: None,
+            idempotency_key: None,
             echo_sentences: false,
             lines: (from..from + 250)
                 .map(|i| BatchLine {

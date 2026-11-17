@@ -6,6 +6,11 @@
 //! write or a dry run rolls the graph back to exactly its state before the batch: all or nothing. Refs name nodes
 //! added earlier in the batch, or nodes an earlier applied batch bound (`--refs-from`, ws003 s24); they are never
 //! stored. An imported ref resolves like an explicit id in this graph, at the line that uses it.
+//!
+//! A batch may carry an idempotency key (ws003 s09). A real batch that succeeds with one records its receipt (the
+//! ids its refs bound and its counts) in the graph folder's `receipts.jsonl`, in the same write set as its files. The
+//! same key with the same input then returns that receipt and writes nothing; with another input it is refused. The
+//! file is read only by keyed batches ([`umx_core::receipts`] holds its format and bounds).
 
 use super::edge::{
     EdgeEditRequest, EdgeEvidence, append_to_existing, check_changeable, check_deletable,
@@ -25,8 +30,8 @@ use super::resolve::Evidence;
 use super::secrets::{edge_write_secrets, node_write_secrets, title_suspect};
 use super::sources::SourceCheck;
 use super::{
-    Ctx, Done, GraphStore, Loaded, NodeAddRequest, NodeEditRequest, alias_name, check_evidence,
-    persist_parts, problems, resolve_in_with,
+    Ctx, Done, GraphStore, Loaded, NodeAddRequest, NodeEditRequest, ReceiptsWrite, alias_name,
+    check_evidence, persist_parts, persist_receipts, problems, resolve_in_with,
 };
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
@@ -39,7 +44,8 @@ use umx_core::batch::{
 use umx_core::codec::{GraphFile, Repeat};
 use umx_core::entity::ENTITY_KEY;
 use umx_core::ontology::PART_OF;
-use umx_core::ports::{GraphDir, IdGenerator};
+use umx_core::ports::{FileRef, FileStamp, FilesError, GraphDir, IdGenerator};
+use umx_core::receipts::{self, Lookup, OpCount, Receipt, Receipts};
 use umx_core::secret_allows::SecretAllows;
 use umx_core::standard::RAISED_IN;
 use umx_core::value::SetValue;
@@ -213,6 +219,27 @@ pub struct BatchRequest {
     /// names its own `raised_in`. Resolved once, before any line runs; an anchor that does not resolve refuses the
     /// batch.
     pub raised_in: Option<String>,
+    /// `--idempotency-key` (ws003 s09).
+    pub idempotency: Option<Idempotency>,
+}
+
+/// A batch's idempotency key as sent, and the digest of its canonical input (umx-protocol builds the bytes and the
+/// daemon hashes them, since only they see the wire). The services check the key again and digest it themselves.
+#[derive(Clone, Debug)]
+pub struct Idempotency {
+    pub key: String,
+    pub input: String,
+}
+
+/// A keyed batch's own reply fields.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Keyed {
+    /// The key as the caller sent it.
+    pub key: String,
+    /// The reply is the receipt a first run recorded: nothing was checked, planned or written.
+    pub replayed: bool,
+    /// When the receipt was recorded (epoch ms); None for a dry run that does not replay (nothing is recorded).
+    pub recorded_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -261,6 +288,38 @@ pub struct BatchDone {
     /// Every warning the batch counted, shown or not: what `batch_warnings_truncated` totals (plan 205: warnings
     /// found after the lines ran join it through [`add_late_warnings`]).
     pub warned: usize,
+    /// Each op's lines, and how many found what they would add already there (ws003 s09): what a receipt keeps.
+    pub counts: BTreeMap<String, OpCount>,
+    /// Set when the batch carried an idempotency key.
+    pub keyed: Option<Keyed>,
+}
+
+/// Each op's lines and existing finds, from a run's rows.
+fn op_counts(rows: &[BatchRow]) -> BTreeMap<String, OpCount> {
+    let mut out: BTreeMap<String, OpCount> = BTreeMap::new();
+    for r in rows {
+        let c = out.entry(r.op.to_string()).or_default();
+        c.lines += 1;
+        c.existed += u32::from(r.existed);
+    }
+    out
+}
+
+/// What a keyed batch found before any line ran (ws003 s09).
+enum KeyedStart {
+    Replay(Done<BatchDone>),
+    Run(KeyedRun),
+}
+
+/// A keyed batch that runs: its receipts as read and bounded, the read's stamp, and whether its key was dropped.
+struct KeyedRun {
+    key: String,
+    digest: String,
+    input: String,
+    receipts: Receipts,
+    read: FileStamp,
+    /// When the key's dropped receipt was recorded: the reply says the key expired (prime ruling).
+    expired: Option<u64>,
 }
 
 /// A batch's result. A failed batch gives every problem to show: a refusal of the whole batch is one problem; failed
@@ -1758,6 +1817,122 @@ impl Run<'_, '_> {
 }
 
 impl GraphStore {
+    /// Reads the graph's receipts for a keyed batch and decides: a replay, a refusal, or a run (ws003 s09). Runs
+    /// after the graph is chosen (so a caller who may not write it cannot read its receipts) and before any line,
+    /// anchor or id: a replay says what the batch did then, not what it would do now.
+    fn keyed_start(
+        &self,
+        alias: &str,
+        graph_id: Id,
+        given: Idempotency,
+        (lines, dry_run, now): (&[BatchLine], bool, u64),
+    ) -> Result<KeyedStart, Problem> {
+        let loaded = &self.graphs[alias];
+        let graph = alias_name(alias);
+        let (bytes, read) = match self
+            .ports
+            .files
+            .read_ref_stamped(&loaded.dir, &FileRef::Receipts)
+        {
+            Ok(read) => read,
+            Err(FilesError::TooLarge { .. }) => {
+                return Err(problems::receipts_unreadable(
+                    &graph,
+                    "it is over the 16 MiB umx reads",
+                ));
+            }
+            Err(FilesError::RecoveryConflict(conflicts)) => {
+                return Err(problems::recovery_conflict(
+                    &loaded.dir,
+                    &conflicts,
+                    Some(&graph),
+                ));
+            }
+            Err(e) => {
+                return Err(problems::receipts_unreadable(
+                    &graph,
+                    &format!("it could not be read ({e})"),
+                ));
+            }
+        };
+        let mut kept = match bytes {
+            None => Receipts::new(graph_id),
+            Some(bytes) => Receipts::decode(&bytes, graph_id)
+                .map_err(|e| problems::receipts_unreadable(&graph, &e.to_string()))?,
+        };
+        kept.evict(now);
+        let digest = receipts::key_digest(&given.key);
+        let expired = match kept.find(&digest) {
+            Lookup::None => None,
+            Lookup::Dropped { at, .. } => Some(at),
+            Lookup::Live { at, input, .. } if input != given.input => {
+                return Err(problems::idempotency_key_reused(&given.key, &graph, at));
+            }
+            Lookup::Live { at, receipt, .. } => {
+                // graph-addressing: never hand back an id the graph does not hold.
+                let missing = receipt
+                    .refs
+                    .iter()
+                    .filter(|id| !loaded.graph.holds_id(**id))
+                    .count();
+                if missing > 0 {
+                    return Err(problems::idempotency_receipt_stale(
+                        &given.key, &graph, missing,
+                    ));
+                }
+                // The same input, so the same lines: the ref names are the replay's own, in definition order.
+                let names: Vec<String> = lines
+                    .iter()
+                    .filter_map(|l| match &l.op {
+                        BatchOp::NodeAdd {
+                            ref_name: Some(name),
+                            ..
+                        } => Some(name.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if names.len() != receipt.refs.len() {
+                    return Err(problems::receipts_unreadable(
+                        &graph,
+                        "a receipt does not match its batch's refs",
+                    ));
+                }
+                let refs = names
+                    .into_iter()
+                    .zip(receipt.refs.iter().map(|id| Some(*id)))
+                    .collect();
+                return Ok(KeyedStart::Replay(Done {
+                    value: BatchDone {
+                        alias: alias.to_string(),
+                        dry_run,
+                        graph_id,
+                        refs,
+                        rows: Vec::new(),
+                        sentences: None,
+                        sentences_omitted: 0,
+                        touched: Vec::new(),
+                        warned: 0,
+                        counts: receipt.counts.clone(),
+                        keyed: Some(Keyed {
+                            key: given.key.clone(),
+                            replayed: true,
+                            recorded_at: Some(at),
+                        }),
+                    },
+                    notes: alloc::vec![problems::batch_replayed(&given.key, at)],
+                }));
+            }
+        };
+        Ok(KeyedStart::Run(KeyedRun {
+            key: given.key,
+            digest,
+            input: given.input,
+            receipts: kept,
+            read,
+            expired,
+        }))
+    }
+
     fn batch_ids(
         &self,
         alias: &str,
@@ -1845,12 +2020,34 @@ impl GraphStore {
                 MAX_BATCH_OPS as u64,
             )]);
         }
+        if let Some(given) = &req.idempotency {
+            if !receipts::check_key(&given.key) {
+                return Err(alloc::vec![problems::usage_invalid(
+                    receipts::KEY_RULE,
+                    "batch"
+                )]);
+            }
+            if !receipts::is_digest(&given.input) {
+                return Err(alloc::vec![problems::internal("batch_input_digest")]);
+            }
+        }
         let imported = imported_refs(&req.refs).map_err(|p| alloc::vec![p])?;
         let named: Vec<Option<&str>> = req.lines.iter().flat_map(|l| l.op.named()).collect();
         let alias = self
             .select_author(ctx, &named)
             .map_err(|p| alloc::vec![p])?;
         let graph_id = self.graphs[&alias].meta.id;
+        let now_ms = self.ports.clock.now_ms();
+        let mut keyed = match req.idempotency.take() {
+            None => None,
+            Some(given) => match self
+                .keyed_start(&alias, graph_id, given, (&req.lines, req.dry_run, now_ms))
+                .map_err(|p| alloc::vec![p])?
+            {
+                KeyedStart::Replay(done) => return Ok(done),
+                KeyedStart::Run(run) => Some(run),
+            },
+        };
         // TM4: the batch's anchor, resolved once right after the graph is chosen, before any line is checked (R341-2:
         // its refusal is edge add's own, never a line's preflight error); one that does not resolve refuses the batch
         // as edge add would refuse that end. Its warnings are the batch's, once.
@@ -1881,7 +2078,6 @@ impl GraphStore {
                 )]);
             }
         }
-        let now_ms = self.ports.clock.now_ms();
         let reserved = self.batch_ids(&alias, &req.lines, now_ms)?;
         let mut other_warnings = BTreeMap::new();
         for BatchLine { line, op } in &req.lines {
@@ -2085,7 +2281,7 @@ impl GraphStore {
             Ids::Real(id_port.as_ref(), first)
         };
         let (
-            refs,
+            (refs, counts),
             rows,
             sentences,
             sentences_omitted,
@@ -2193,6 +2389,12 @@ impl GraphStore {
             let (mut rows, mut warnings, mut errors) = (Vec::new(), Vec::new(), Vec::new());
             // Hints (ws002 X1) are listed after the warnings, capped alike, and never counted in `warned`.
             let mut hints = Vec::new();
+            // ws003 s09 (prime ruling): a key whose receipt was dropped runs as new, and the reply says so.
+            if let Some(k) = &keyed
+                && let Some(at) = k.expired
+            {
+                hints.push(problems::idempotency_key_expired(&k.key, at));
+            }
             let (mut failed, mut warned) = (0usize, 0usize);
             for p in anchor_warnings {
                 warned += 1;
@@ -2371,6 +2573,7 @@ impl GraphStore {
                     .then(|| core::mem::take(&mut run.sentences));
                 let sentences_omitted = run.sentences_omitted;
                 run.b.rollback();
+                let counts = op_counts(&rows);
                 return Ok(Done {
                     value: BatchDone {
                         alias,
@@ -2382,6 +2585,12 @@ impl GraphStore {
                         sentences_omitted,
                         touched: Vec::new(),
                         warned,
+                        counts,
+                        keyed: keyed.map(|k| Keyed {
+                            key: k.key,
+                            replayed: false,
+                            recorded_at: None,
+                        }),
                     },
                     notes: warnings,
                 });
@@ -2399,6 +2608,46 @@ impl GraphStore {
             let mut written_umx = None;
             // Warnings from the write itself, added under the cap with the vector recheck's (plan 205).
             let mut late = Vec::new();
+            let counts = op_counts(&rows);
+            // ws003 s09: the receipt, in the order the batch defined its refs. A real run that got here bound every
+            // ref it defined (a failed line fails the batch).
+            let receipt_bytes = match keyed.as_mut() {
+                None => None,
+                Some(k) => {
+                    let Some(ids) = refs.iter().map(|(_, id)| *id).collect::<Option<Vec<Id>>>()
+                    else {
+                        run.b.rollback();
+                        return Err(alloc::vec![problems::internal("batch_receipt_refs")]);
+                    };
+                    let receipt = Receipt {
+                        refs: ids,
+                        counts: counts.clone(),
+                    };
+                    k.receipts
+                        .record(k.digest.clone(), now_ms, k.input.clone(), receipt);
+                    k.receipts.evict(now_ms);
+                    Some(k.receipts.encode())
+                }
+            };
+            let receipts_write = match (&receipt_bytes, &keyed) {
+                (Some(bytes), Some(k)) => Some(ReceiptsWrite {
+                    bytes,
+                    read: k.read,
+                }),
+                _ => None,
+            };
+            if which.is_empty()
+                && let Some(w) = &receipts_write
+            {
+                // graph-storage Q4: a keyed batch that changed nothing still records its receipt, alone.
+                match persist_receipts(files.as_ref(), &alias, dir, stamps, w) {
+                    Ok(warnings) => late.extend(warnings),
+                    Err(p) => {
+                        run.b.rollback();
+                        return Err(alloc::vec![p]);
+                    }
+                }
+            }
             if !which.is_empty() {
                 // prepare places out-of-order edges and drops the deleted edges' rows, so the file is encoded
                 // without them.
@@ -2423,6 +2672,7 @@ impl GraphStore {
                         feed,
                         touched,
                         stamps,
+                        receipts: receipts_write,
                     },
                 ) {
                     Ok(written) => {
@@ -2445,7 +2695,7 @@ impl GraphStore {
             let external_old = core::mem::take(&mut run.external_old);
             let applied = run.b.commit();
             (
-                refs,
+                (refs, counts),
                 rows,
                 sentences,
                 sentences_omitted,
@@ -2483,6 +2733,12 @@ impl GraphStore {
                 sentences_omitted,
                 touched,
                 warned,
+                counts,
+                keyed: keyed.map(|k| Keyed {
+                    key: k.key,
+                    replayed: false,
+                    recorded_at: Some(now_ms),
+                }),
             },
             notes: warnings,
         };

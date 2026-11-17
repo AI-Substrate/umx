@@ -421,7 +421,7 @@ impl GraphStore {
             .iter()
             .filter_map(|c| match &c.file {
                 FileRef::Graph(f) => Some(*f),
-                FileRef::Shard(_) | FileRef::SimilarMeta(_) => None,
+                FileRef::Shard(_) | FileRef::SimilarMeta(_) | FileRef::Receipts => None,
             })
             .collect();
         let mut warnings = Vec::new();

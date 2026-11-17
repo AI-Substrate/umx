@@ -32,21 +32,23 @@ impl GraphFiles for Planted {
     fn read_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<Option<Vec<u8>>, FilesError> {
         self.inner.read_ref(dir, file)
     }
-    fn write_set_checked(
+    fn write_set_checked_also(
         &self,
         dir: &GraphDir,
         changes: &[Change<'_>],
         expect: Option<&GraphStamps>,
+        also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError> {
         let expect = expect.filter(|_| !self.no_commit_check);
-        self.inner.write_set_checked(dir, changes, expect)
+        self.inner
+            .write_set_checked_also(dir, changes, expect, also)
     }
-    fn read_stamped(
+    fn read_ref_stamped(
         &self,
         dir: &GraphDir,
-        file: GraphFile,
+        file: &FileRef,
     ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError> {
-        self.inner.read_stamped(dir, file)
+        self.inner.read_ref_stamped(dir, file)
     }
     fn stamps(&self, dir: &GraphDir) -> Result<GraphStamps, FilesError> {
         match self.no_up_front {

@@ -142,6 +142,7 @@ fn batch(d: &Daemon, titles: &[&str], dry_run: bool, related: Option<bool>) -> E
         })
         .collect();
     ok(d.handle(&op(Op::Batch {
+        idempotency_key: None,
         related,
         lines,
         dry_run,

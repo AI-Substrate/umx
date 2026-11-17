@@ -19,9 +19,9 @@ pub trait SetHarness: GraphFiles + Sized {
     /// A new instance over the same storage, as after a restart: the files stay, everything else is lost.
     fn restart(&self) -> Self;
     /// Writes a file behind the port's back (a pull, a checkout, a hand edit).
-    fn tamper(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]);
+    fn tamper(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]);
     /// A file's bytes straight from storage, with no recovery run.
-    fn raw(&self, dir: &GraphDir, file: GraphFile) -> Option<Vec<u8>>;
+    fn raw(&self, dir: &GraphDir, file: impl Into<FileRef>) -> Option<Vec<u8>>;
     /// The names in the folder that start with `.umx-tmp-` (temp files and the marker), sorted.
     fn leftovers(&self, dir: &GraphDir) -> Vec<String>;
     /// Every byte a read so far took out of storage, so a clause can prove a body was never read (gf_c26).
@@ -34,10 +34,10 @@ pub trait SetHarness: GraphFiles + Sized {
     /// Lands `bytes` in `file` while the next `read_stamped` of it is under way: after its open, before it returns.
     fn change_during_next_read(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]);
     /// Lands `bytes` in `file` once the next set's temps and marker are in place, before its first rename (F144).
-    fn change_after_next_marker(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]);
+    fn change_after_next_marker(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]);
     /// Lands `bytes` in `file` once the next set's temps are written, before it takes the old stamps for its marker
     /// (F144).
-    fn change_before_next_marker(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]);
+    fn change_before_next_marker(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]);
 }
 
 // gf_c12 retired 2026-11-10: remove was folded into write_set (bytes None); covered by gf_c14 and gf_c21. Clause
@@ -75,6 +75,10 @@ pub const CLAUSES: &[&str] = &[
     "gf_c31_a_change_since_the_stamps_refuses_the_set",
     "gf_c32_read_stamped_stamps_the_bytes_it_read",
     "gf_c33_a_change_after_the_marker_refuses_the_set",
+    "gf_c34_receipts_round_trip_capped_and_are_no_graph_file",
+    "gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes",
+    "gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps",
+    "gf_c37_a_changed_also_file_refuses_the_set",
 ];
 
 fn dir(root: &GraphDir, child: &str) -> GraphDir {
@@ -987,7 +991,7 @@ pub fn gf_c31_a_change_since_the_stamps_refuses_the_set<P: SetHarness, G>(
             let disk = GraphStamps::FILES.map(|f| port.raw(&g, f));
             assert_eq!(
                 port.write_set_checked(&g, set, Some(&stamps)),
-                Err(FilesError::Changed(vec![GraphFile::Edges])),
+                Err(FilesError::Changed(vec![GraphFile::Edges.into()])),
                 "{what}, {} change(s)",
                 set.len()
             );
@@ -1007,7 +1011,7 @@ pub fn gf_c31_a_change_since_the_stamps_refuses_the_set<P: SetHarness, G>(
     port.tamper(&g, GraphFile::Edges, b"e\n");
     assert_eq!(
         port.write_set_checked(&g, one, Some(&stamps)),
-        Err(FilesError::Changed(vec![GraphFile::Edges])),
+        Err(FilesError::Changed(vec![GraphFile::Edges.into()])),
         "a file where there was none"
     );
     assert_eq!(read(&port, &g, GraphFile::Nodes), None);
@@ -1034,7 +1038,7 @@ pub fn gf_c33_a_change_after_the_marker_refuses_the_set<P: SetHarness, G>(
     let before = [GraphFile::Graph, GraphFile::Nodes].map(|f| port.raw(&g, f));
     assert_eq!(
         port.write_set_checked(&g, several, Some(&stamps)),
-        Err(FilesError::Changed(vec![GraphFile::Edges]))
+        Err(FilesError::Changed(vec![GraphFile::Edges.into()]))
     );
     assert!(port.leftovers(&g).is_empty(), "{:?}", port.leftovers(&g));
     let restarted = port.restart();
@@ -1089,7 +1093,7 @@ pub fn gf_c32_read_stamped_stamps_the_bytes_it_read<P: SetHarness, G>(
     stamps.nodes = stamp;
     assert_eq!(
         port.write_set_checked(&g, &[put(GraphFile::Graph, b"g1\n")], Some(&stamps)),
-        Err(FilesError::Changed(vec![GraphFile::Nodes]))
+        Err(FilesError::Changed(vec![GraphFile::Nodes.into()]))
     );
     assert_eq!(
         port.raw(&g, GraphFile::Graph).as_deref(),
@@ -1099,6 +1103,255 @@ pub fn gf_c32_read_stamped_stamps_the_bytes_it_read<P: SetHarness, G>(
         port.read_stamped(&g, GraphFile::Edges).unwrap(),
         (None, FileStamp::ABSENT)
     );
+}
+
+/// ws003 s09: `receipts.jsonl` is a file the port reads and writes in sets, at the folder's top, under its own cap, and
+/// never a graph file: `list` leaves it out. A stamped read of it is capped as any read is: over the cap is
+/// `TooLarge` with the body unread, and absent is stamped absent.
+pub fn gf_c34_receipts_round_trip_capped_and_are_no_graph_file<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let g = dir(&root, "g");
+    assert_eq!(
+        port.read_ref_stamped(&g, &FileRef::Receipts).unwrap(),
+        (None, FileStamp::ABSENT)
+    );
+    port.write(&g, GraphFile::Graph, b"g0\n").unwrap();
+    port.write_set(&g, &[put(FileRef::Receipts, b"r0\n")])
+        .unwrap();
+    assert_eq!(
+        port.read_ref(&g, &FileRef::Receipts).unwrap().as_deref(),
+        Some(&b"r0\n"[..])
+    );
+    let (bytes, stamp) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+    assert_eq!(bytes.as_deref(), Some(&b"r0\n"[..]));
+    assert_ne!(stamp, FileStamp::ABSENT);
+    assert_eq!(
+        port.raw(&g, FileRef::Receipts).as_deref(),
+        Some(&b"r0\n"[..])
+    );
+    assert_eq!(
+        port.list(&g).unwrap(),
+        vec![GraphFile::Graph],
+        "not a graph file"
+    );
+    let cap = FileRef::Receipts.cap();
+    port.tamper(&g, FileRef::Receipts, &vec![b' '; cap as usize + 1]);
+    let before = port.bytes_read();
+    for read in [
+        port.read_ref(&g, &FileRef::Receipts).map(|_| ()),
+        port.read_ref_stamped(&g, &FileRef::Receipts).map(|_| ()),
+    ] {
+        assert_eq!(
+            read,
+            Err(FilesError::TooLarge {
+                file: FileRef::Receipts,
+                size: cap + 1,
+                cap
+            })
+        );
+    }
+    assert_eq!(port.bytes_read(), before, "an over-cap body is never read");
+}
+
+/// ws003 s09: a set of content files and `receipts.jsonl` is all or nothing at every crash point, so a keyed batch's
+/// receipt never stands without its write, or its write without its receipt.
+pub fn gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    for (i, point) in [
+        CrashPoint::AfterTemps,
+        CrashPoint::AfterMarker,
+        CrashPoint::AfterFirstRename,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let g = dir(&root, &format!("g{i}"));
+        old_state(&port, &g);
+        port.write_set(&g, &[put(FileRef::Receipts, b"r0\n")])
+            .unwrap();
+        let stamps = loaded_stamps(&port, &g);
+        let (_, seen) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+        port.crash_at(Some(point));
+        let set = [
+            put(GraphFile::Nodes, b"n1\n"),
+            put(GraphFile::Edges, b"e1\n"),
+            put(FileRef::Receipts, b"r1\n"),
+        ];
+        assert_eq!(
+            port.write_set_checked_also(&g, &set, Some(&stamps), &[(FileRef::Receipts, seen)]),
+            Err(FilesError::io("crash"))
+        );
+        let after = port.restart();
+        let got = (
+            read(&after, &g, GraphFile::Nodes),
+            read(&after, &g, GraphFile::Edges),
+            after.read_ref(&g, &FileRef::Receipts).unwrap(),
+        );
+        let old = (
+            Some(b"n0\n".to_vec()),
+            Some(b"e0\n".to_vec()),
+            Some(b"r0\n".to_vec()),
+        );
+        let new = (
+            Some(b"n1\n".to_vec()),
+            Some(b"e1\n".to_vec()),
+            Some(b"r1\n".to_vec()),
+        );
+        match point {
+            CrashPoint::AfterTemps => assert_eq!(got, old, "{point:?}"),
+            _ => assert_eq!(got, new, "{point:?}"),
+        }
+        assert!(after.leftovers(&g).is_empty(), "{:?}", after.leftovers(&g));
+    }
+}
+
+/// ws003 s09 (graph-storage Q4): a keyed batch that changed nothing writes `receipts.jsonl` alone, checked against
+/// the content stamps and its own; it writes, and the content stamps it returns are unchanged. A crash before its one
+/// rename leaves the old receipts and no temp after recovery; a crash after it leaves the new.
+pub fn gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let g = dir(&root, "g");
+    old_state(&port, &g);
+    let stamps = loaded_stamps(&port, &g);
+    let (bytes, absent) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+    assert_eq!((bytes, absent), (None, FileStamp::ABSENT));
+    let committed = port
+        .write_set_checked_also(
+            &g,
+            &[put(FileRef::Receipts, b"r1\n")],
+            Some(&stamps),
+            &[(FileRef::Receipts, absent)],
+        )
+        .unwrap();
+    assert_eq!(committed.stamps, stamps, "only the receipts changed");
+    assert_old(&port, &g);
+    assert_eq!(
+        port.read_ref(&g, &FileRef::Receipts).unwrap().as_deref(),
+        Some(&b"r1\n"[..])
+    );
+    for (i, point) in [CrashPoint::AfterTemps, CrashPoint::AfterFirstRename]
+        .into_iter()
+        .enumerate()
+    {
+        let (_, seen) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+        let bytes = format!("r{}\n", i + 2);
+        port.crash_at(Some(point));
+        assert!(
+            port.write_set_checked_also(
+                &g,
+                &[put(FileRef::Receipts, bytes.as_bytes())],
+                Some(&stamps),
+                &[(FileRef::Receipts, seen)],
+            )
+            .is_err()
+        );
+        port.crash_at(None);
+        let after = port.restart();
+        let got = after.read_ref(&g, &FileRef::Receipts).unwrap();
+        match point {
+            CrashPoint::AfterTemps => assert_eq!(got.as_deref(), Some(&b"r1\n"[..])),
+            _ => assert_eq!(got.as_deref(), Some(bytes.as_bytes())),
+        }
+        assert!(after.leftovers(&g).is_empty(), "{:?}", after.leftovers(&g));
+        assert_old(&after, &g);
+    }
+}
+
+/// ws003 s09 (architect A3, A5): each `also` file is checked against its stamp at the points the content files are,
+/// in the same pass. A changed one refuses the set with `Changed` naming it, after any changed content file, with
+/// nothing written and no temp or marker left; an unchanged one writes. One change or several, a change before the
+/// set or after its marker, alike.
+pub fn gf_c37_a_changed_also_file_refuses_the_set<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let one: &[Change<'_>] = &[put(FileRef::Receipts, b"r1\n")];
+    let several: &[Change<'_>] = &[
+        put(GraphFile::Nodes, b"n1\n"),
+        put(FileRef::Receipts, b"r1\n"),
+    ];
+    for (j, set) in [one, several].into_iter().enumerate() {
+        // Changed after the read: refused, nothing written.
+        let g = dir(&root, &format!("before{j}"));
+        old_state(&port, &g);
+        port.write_set(&g, &[put(FileRef::Receipts, b"r0\n")])
+            .unwrap();
+        let stamps = loaded_stamps(&port, &g);
+        let (_, seen) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+        port.tamper(&g, FileRef::Receipts, b"pulled\n");
+        assert_eq!(
+            port.write_set_checked_also(&g, set, Some(&stamps), &[(FileRef::Receipts, seen)]),
+            Err(FilesError::Changed(vec![FileRef::Receipts])),
+            "{} change(s)",
+            set.len()
+        );
+        assert_eq!(
+            port.raw(&g, FileRef::Receipts).as_deref(),
+            Some(&b"pulled\n"[..])
+        );
+        assert_old(&port, &g);
+        assert!(port.leftovers(&g).is_empty(), "{:?}", port.leftovers(&g));
+        // Unchanged since a fresh read: writes.
+        let (_, seen) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+        port.write_set_checked_also(&g, set, Some(&stamps), &[(FileRef::Receipts, seen)])
+            .unwrap();
+        assert_eq!(
+            port.raw(&g, FileRef::Receipts).as_deref(),
+            Some(&b"r1\n"[..])
+        );
+        // A content file and the also file both changed: both named, content first.
+        let g = dir(&root, &format!("both{j}"));
+        old_state(&port, &g);
+        let stamps = loaded_stamps(&port, &g);
+        let (_, seen) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+        port.tamper(&g, GraphFile::Edges, b"pulled\n");
+        port.tamper(&g, FileRef::Receipts, b"pulled\n");
+        assert_eq!(
+            port.write_set_checked_also(&g, set, Some(&stamps), &[(FileRef::Receipts, seen)]),
+            Err(FilesError::Changed(vec![
+                GraphFile::Edges.into(),
+                FileRef::Receipts
+            ]))
+        );
+        assert_eq!(
+            read(&port, &g, GraphFile::Nodes).as_deref(),
+            Some(&b"n0\n"[..])
+        );
+        assert_eq!(
+            port.raw(&g, FileRef::Receipts).as_deref(),
+            Some(&b"pulled\n"[..])
+        );
+        assert!(port.leftovers(&g).is_empty(), "{:?}", port.leftovers(&g));
+        // Changed after the marker (the late check).
+        let g = dir(&root, &format!("late{j}"));
+        old_state(&port, &g);
+        port.write_set(&g, &[put(FileRef::Receipts, b"r0\n")])
+            .unwrap();
+        let stamps = loaded_stamps(&port, &g);
+        let (_, seen) = port.read_ref_stamped(&g, &FileRef::Receipts).unwrap();
+        port.change_after_next_marker(&g, FileRef::Receipts, b"pulled late\n");
+        assert_eq!(
+            port.write_set_checked_also(&g, set, Some(&stamps), &[(FileRef::Receipts, seen)]),
+            Err(FilesError::Changed(vec![FileRef::Receipts]))
+        );
+        let restarted = port.restart();
+        assert_eq!(
+            restarted.raw(&g, FileRef::Receipts).as_deref(),
+            Some(&b"pulled late\n"[..])
+        );
+        assert_old(&restarted, &g);
+        assert!(
+            restarted.leftovers(&g).is_empty(),
+            "{:?}",
+            restarted.leftovers(&g)
+        );
+    }
 }
 
 /// What the find clauses need beyond the port: build a tree under the root (ws002 s17). Paths are folders.

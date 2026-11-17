@@ -294,6 +294,7 @@ fn batch(svc: &mut Services, lines: Vec<BatchLine>) -> Result<usize, Vec<String>
     svc.batch(
         &ctx(),
         BatchRequest {
+            idempotency: None,
             raised_in: None,
             reason: None,
             lines,

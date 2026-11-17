@@ -46,10 +46,11 @@ pub use graph_store::{
     BatchDone, BatchLine, BatchOp, BatchOutcome, BatchRequest, BatchRow, BatchSentence, CheckRow,
     Checked, EdgeAdded, EdgeChanged, EdgeEditRequest, EdgeEvidence, EdgeListRequest, EdgeRow,
     FieldsAdded, GraphInfo, GraphLoaded, GraphNew, GraphSet, GraphStore, GraphUnloaded, Guide,
-    GuideEntry, GuideExample, GuideField, GuideType, HistoryRow, IncomingIndex, ListedNode, Loaded,
-    NodeAddRequest, NodeAdded, NodeEditRequest, NodeEdited, NodeListRequest, NodeNoteRequest,
-    NodeNoted, NodeStatusRequest, OntologyAdded, OntologyRemoved, PolicyConfirmed, PolicyView,
-    Ports, ReadEdge, ResolveStatus, Resolved, RoleSet, SecretAllowed, StatusMoved, Target,
+    GuideEntry, GuideExample, GuideField, GuideType, HistoryRow, Idempotency, IncomingIndex, Keyed,
+    ListedNode, Loaded, NodeAddRequest, NodeAdded, NodeEditRequest, NodeEdited, NodeListRequest,
+    NodeNoteRequest, NodeNoted, NodeStatusRequest, OntologyAdded, OntologyRemoved, PolicyConfirmed,
+    PolicyView, Ports, ReadEdge, ResolveStatus, Resolved, RoleSet, SecretAllowed, StatusMoved,
+    Target,
 };
 pub use graph_store::{DeclaredSpine, SpineRemoved, SpineSet, SpinesShown};
 pub use graph_store::{

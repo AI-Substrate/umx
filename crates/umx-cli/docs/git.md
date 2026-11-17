@@ -2,7 +2,8 @@
 
 A graph folder is made to be committed. Saving an unchanged graph rewrites identical bytes, and a write changes
 only the lines of the nodes and edges it changed, so `git diff` shows what changed: one JSON line per node or
-edge, in id order. Commit `graph.json`, `nodes.jsonl`, `edges.jsonl`, `embeddings/` and `.gitignore`; the
+edge, in id order. Commit `graph.json`, `nodes.jsonl`, `edges.jsonl`, `embeddings/`, `receipts.jsonl` (when a
+batch used `--idempotency-key`) and `.gitignore`; the
 `.umx-tmp-*` line keeps writes in progress out (`umx check` reports `gitignore_line_missing` if it goes).
 
 ## Unload before git changes the files
@@ -22,7 +23,8 @@ A graph you unloaded stays unloaded until you load it (`graph_not_loaded`); it d
 
 Ids are time-ordered, so nodes added on two branches all go at the end of `nodes.jsonl` and git reports a
 conflict there. Keep both sides: delete only the `<<<<<<<`, `=======` and `>>>>>>>` lines, then commit. The same
-goes for `edges.jsonl`. `graph.json` is one JSON document: keep both sides' entries and keep it valid JSON. Then
+goes for `edges.jsonl`, and for `receipts.jsonl` (its lines may come in any order; if one key is on two lines,
+keep one). `graph.json` is one JSON document: keep both sides' entries and keep it valid JSON. Then
 load the graph and check it:
 
     umx graph load /path/to/my-graph

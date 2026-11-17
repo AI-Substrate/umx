@@ -55,7 +55,7 @@ pub struct FakeGraphFiles {
 }
 
 /// The set's folder, then the folder, file and bytes of the change that lands after its marker.
-type LateChange = (GraphDir, GraphDir, GraphFile, Vec<u8>);
+type LateChange = (GraphDir, GraphDir, FileRef, Vec<u8>);
 
 const TEMP_PREFIX: &str = ".umx-tmp-";
 const MARKER: &str = ".umx-tmp-set.json";
@@ -109,9 +109,9 @@ impl Disk {
             .insert((dir.clone(), name.to_owned()), self.next_gen);
     }
 
-    fn stamp(&self, dir: &GraphDir, file: GraphFile) -> FileStamp {
+    fn stamp(&self, dir: &GraphDir, file: &FileRef) -> FileStamp {
         self.gens
-            .get(&(dir.clone(), file.file_name().to_owned()))
+            .get(&(dir.clone(), file.path()))
             .map_or(FileStamp::ABSENT, |g| {
                 FileStamp::from_parts([*g, 0, 0, 0, 0])
             })
@@ -120,7 +120,7 @@ impl Disk {
     fn stamps(&self, dir: &GraphDir) -> GraphStamps {
         let mut out = GraphStamps::ABSENT;
         for file in GraphStamps::FILES {
-            out.set(file, self.stamp(dir, file));
+            out.set(file, self.stamp(dir, &file.into()));
         }
         out
     }
@@ -250,11 +250,11 @@ impl FakeGraphFiles {
     }
 
     /// Tests only: writes a file behind the port's back (a pull, a checkout). Its generation moves on.
-    pub fn tamper_for_tests(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
+    pub fn tamper_for_tests(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]) {
         self.disk
             .lock()
             .unwrap()
-            .put(dir, file.file_name(), bytes.to_vec());
+            .put(dir, &file.into().path(), bytes.to_vec());
     }
 
     /// Tests only: a touch, the bytes kept and the generation moved on.
@@ -278,11 +278,11 @@ impl FakeGraphFiles {
         &self,
         set_in: &GraphDir,
         dir: &GraphDir,
-        file: GraphFile,
+        file: impl Into<FileRef>,
         bytes: &[u8],
     ) {
         *self.after_marker.lock().unwrap() =
-            Some((set_in.clone(), dir.clone(), file, bytes.to_vec()));
+            Some((set_in.clone(), dir.clone(), file.into(), bytes.to_vec()));
     }
 
     /// Tests only: lands `bytes` in `file` once the next set in `dir` has its temps written, before it takes the old
@@ -290,18 +290,19 @@ impl FakeGraphFiles {
     pub fn change_before_next_marker_for_tests(
         &self,
         dir: &GraphDir,
-        file: GraphFile,
+        file: impl Into<FileRef>,
         bytes: &[u8],
     ) {
-        *self.before_old.lock().unwrap() = Some((dir.clone(), dir.clone(), file, bytes.to_vec()));
+        *self.before_old.lock().unwrap() =
+            Some((dir.clone(), dir.clone(), file.into(), bytes.to_vec()));
     }
 
     /// Tests only: a file's bytes with no recovery run.
-    pub fn raw_for_tests(&self, dir: &GraphDir, file: GraphFile) -> Option<Vec<u8>> {
+    pub fn raw_for_tests(&self, dir: &GraphDir, file: impl Into<FileRef>) -> Option<Vec<u8>> {
         self.disk
             .lock()
             .unwrap()
-            .get(dir, file.file_name())
+            .get(dir, &file.into().path())
             .cloned()
     }
 
@@ -569,10 +570,10 @@ impl GraphFiles for FakeGraphFiles {
         self.read_in(&self.disk.lock().unwrap(), dir, file)
     }
 
-    fn read_stamped(
+    fn read_ref_stamped(
         &self,
         dir: &GraphDir,
-        file: GraphFile,
+        file: &FileRef,
     ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError> {
         self.check(dir)?;
         self.recover(&mut self.recovered.lock().unwrap(), dir)?;
@@ -580,14 +581,14 @@ impl GraphFiles for FakeGraphFiles {
         // bytes' own, whatever lands after.
         let read = {
             let disk = self.disk.lock().unwrap();
-            self.read_in(&disk, dir, &file.into())
+            self.read_in(&disk, dir, file)
                 .map(|bytes| (bytes, disk.stamp(dir, file)))
         };
         let racing = self
             .mid_read
             .lock()
             .unwrap()
-            .take_if(|(d, f, _)| d == dir && *f == file);
+            .take_if(|(d, f, _)| d == dir && FileRef::Graph(*f) == *file);
         if let Some((d, f, bytes)) = racing {
             self.tamper_for_tests(&d, f, &bytes);
         }
@@ -600,12 +601,28 @@ impl GraphFiles for FakeGraphFiles {
         Ok(self.disk.lock().unwrap().stamps(dir))
     }
 
-    fn write_set_checked(
+    fn write_set_checked_also(
         &self,
         dir: &GraphDir,
         changes: &[Change<'_>],
         expect: Option<&GraphStamps>,
+        also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError> {
+        // Every file the set checks whose stamp differs now: the content files first, then the `also` ones.
+        let changed_in = |disk: &Disk| -> Vec<FileRef> {
+            let mut out: Vec<FileRef> = expect
+                .map(|e| e.changed(&disk.stamps(dir)))
+                .unwrap_or_default()
+                .into_iter()
+                .map(FileRef::from)
+                .collect();
+            out.extend(
+                also.iter()
+                    .filter(|(f, stamp)| disk.stamp(dir, f) != *stamp)
+                    .map(|(f, _)| f.clone()),
+            );
+            out
+        };
         self.check(dir)?;
         Change::validate(changes)?;
         // Like fs.graph-files, the set runs under the recovery boundary from its recovery to its end.
@@ -681,7 +698,7 @@ impl GraphFiles for FakeGraphFiles {
             .unwrap()
             .take_if(|(set_in, ..)| set_in == dir);
         if let Some((_, there, file, bytes)) = early {
-            disk.put(&there, file.file_name(), bytes);
+            disk.put(&there, &file.path(), bytes);
         }
         // Like fs.graph-files, the old targets are taken for the marker once the temps are in place.
         for line in &mut lines {
@@ -690,10 +707,8 @@ impl GraphFiles for FakeGraphFiles {
         // The first F144 check, as fs.graph-files makes it for a set of several: once the old targets are taken and
         // before the marker, so a change made while the temps were written is never recorded as old for a
         // recovery to roll forward over.
-        if lines.len() > 1
-            && let Some(expect) = expect
-        {
-            let changed = expect.changed(&disk.stamps(dir));
+        if lines.len() > 1 {
+            let changed = changed_in(&disk);
             if !changed.is_empty() {
                 for line in &lines {
                     if let MarkerLine { temp: Some(t), .. } = line {
@@ -720,12 +735,12 @@ impl GraphFiles for FakeGraphFiles {
             .unwrap()
             .take_if(|(set_in, ..)| set_in == dir);
         if let Some((_, there, file, bytes)) = late {
-            disk.put(&there, file.file_name(), bytes);
+            disk.put(&there, &file.path(), bytes);
         }
         // The second F144 check, as fs.graph-files makes it, as late as the set allows: every temp and the marker are in
         // place, nothing is renamed yet. A refusal takes the marker back and drops the temps.
-        if let Some(expect) = expect {
-            let changed = expect.changed(&disk.stamps(dir));
+        {
+            let changed = changed_in(&disk);
             if !changed.is_empty() {
                 disk.markers.remove(dir);
                 for line in &lines {
@@ -746,7 +761,7 @@ impl GraphFiles for FakeGraphFiles {
                 FileRef::Shard(_) | FileRef::SimilarMeta(_) => {
                     self.similar_writes.fetch_add(1, Ordering::SeqCst);
                 }
-                FileRef::Graph(_) => {
+                FileRef::Graph(_) | FileRef::Receipts => {
                     self.graph_writes.fetch_add(1, Ordering::SeqCst);
                 }
             }
@@ -2294,10 +2309,10 @@ mod tests {
         fn restart(&self) -> FakeGraphFiles {
             self.restart_for_tests()
         }
-        fn tamper(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
+        fn tamper(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]) {
             self.tamper_for_tests(dir, file, bytes);
         }
-        fn raw(&self, dir: &GraphDir, file: GraphFile) -> Option<Vec<u8>> {
+        fn raw(&self, dir: &GraphDir, file: impl Into<FileRef>) -> Option<Vec<u8>> {
             self.raw_for_tests(dir, file)
         }
         fn leftovers(&self, dir: &GraphDir) -> Vec<String> {
@@ -2317,10 +2332,15 @@ mod tests {
         fn change_during_next_read(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
             self.change_during_next_read_for_tests(dir, file, bytes);
         }
-        fn change_after_next_marker(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
+        fn change_after_next_marker(&self, dir: &GraphDir, file: impl Into<FileRef>, bytes: &[u8]) {
             self.change_after_next_marker_for_tests(dir, dir, file, bytes);
         }
-        fn change_before_next_marker(&self, dir: &GraphDir, file: GraphFile, bytes: &[u8]) {
+        fn change_before_next_marker(
+            &self,
+            dir: &GraphDir,
+            file: impl Into<FileRef>,
+            bytes: &[u8],
+        ) {
             self.change_before_next_marker_for_tests(dir, file, bytes);
         }
     }
@@ -2413,6 +2433,10 @@ mod tests {
         gf_c31_a_change_since_the_stamps_refuses_the_set(),
         gf_c32_read_stamped_stamps_the_bytes_it_read(),
         gf_c33_a_change_after_the_marker_refuses_the_set(),
+        gf_c34_receipts_round_trip_capped_and_are_no_graph_file(),
+        gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes(),
+        gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps(),
+        gf_c37_a_changed_also_file_refuses_the_set(),
     );
     umx_contracts::clock_contract!(
         FakeClock::default;
