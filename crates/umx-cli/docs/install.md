@@ -65,8 +65,13 @@ The /umx skill sends an agent to the right docs for a job. Install it once per m
 out-of-date copy (`doctor_skill_out_of_date`), it prints the install line pinned to the commit this umx was
 built from:
 
-    npx skills@1.7.6 add AI-Substrate/umx#<commit> --skill umx -g --agent '*'
+    npx skills@1.7.6 add AI-Substrate/umx#<commit> --skill umx -g --agent '*' -y
     just skill-link           # instead, in a umx clone: links ~/.agents/skills/umx to it
+
+The line carries `-y`, so it runs without a prompt. With a umx binary that was not built from a clone here, run
+`umx doctor` right after installing it: it prints `umx daemon install` (the service row) and this skill line, pinned to
+the binary's commit; run both. Such a umx has no graph view: `umx ui` comes only with a source build of the
+commit `umx version` reports, not the default branch (`umx docs get ui`, In a binary install).
 
 When the skill is a link (from `just skill-link`) into a clone whose skill differs from this umx's
 (`doctor_skill_link_out_of_date`), don't run the npx line: in the clone umx is built from, run

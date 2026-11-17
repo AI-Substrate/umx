@@ -3596,9 +3596,10 @@ catalogue! {
         "The service runs <program> with UMX_HOME <home>; this is <this>.",
         "umx daemon status";
     // F77: the /umx agent skill in ~/.agents/skills/umx, compared by fingerprint with the one this umx was built with.
+    // ws012 s9 (D76a Q10): agents run the pinned line, so it carries -y; without it the installer stops to ask.
     DoctorSkillOutOfDate => "doctor_skill_out_of_date", Warning, 5,
         "umx doctor: the /umx agent skill installed as a copy (the npx skills CLI) differs from the one this umx was built with, so it may teach agents the wrong commands",
-        "The /umx skill at <path> differs from the one this umx (<build>) was built with. Update it: npx skills@1.7.6 add <source> --skill umx -g --agent '*'",
+        "The /umx skill at <path> differs from the one this umx (<build>) was built with. Update it: npx skills@1.7.6 add <source> --skill umx -g --agent '*' -y",
         "umx docs get doctor";
     DoctorSkillLinkOutOfDate => "doctor_skill_link_out_of_date", Warning, 5,
         "umx doctor: the /umx agent skill is a link into a umx checkout (just skill-link) whose skill differs from the one this umx was built with, so it may teach agents the wrong commands",
@@ -3606,7 +3607,7 @@ catalogue! {
         "umx docs get doctor";
     DoctorSkillMissing => "doctor_skill_missing", Warning, 0,
         "umx doctor: no /umx agent skill is installed in ~/.agents/skills/umx",
-        "No /umx agent skill at <path>. Install it: npx skills@1.7.6 add <source> --skill umx -g --agent '*' (or just skill-link in a umx checkout).",
+        "No /umx agent skill at <path>. Install it: npx skills@1.7.6 add <source> --skill umx -g --agent '*' -y (or just skill-link in a umx checkout).",
         "umx docs get doctor";
     // ws003 s07: umx batch (req-88). Line issues carry `line`; no message quotes the batch's text.
     BatchTooLarge => "batch_too_large", Error, 1,
@@ -3805,6 +3806,15 @@ impl Code {
     }
 }
 
+/// `commit` when it is exactly 40 of `[0-9a-f]`: a build's own full commit, the only thing a pinned source names.
+fn full_commit(commit: &str) -> Option<&str> {
+    (commit.len() == 40
+        && commit
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+    .then_some(commit)
+}
+
 /// A value that may fill a `<slot>` in a message or next. Only umx's own words, counts, validated names,
 /// paths, builds and OS error text can become one; graph text cannot (req-41).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3837,14 +3847,29 @@ impl Fill {
     /// when `commit` is exactly 40 of `[0-9a-f]` (the build's own full commit), else the unpinned repo.
     pub fn skill_source(commit: &str) -> Fill {
         const REPO: &str = "AI-Substrate/umx";
-        let pinned = commit.len() == 40
-            && commit
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-        Fill(if pinned {
-            format!("{REPO}#{commit}")
-        } else {
-            REPO.to_owned()
+        Fill(match full_commit(commit) {
+            Some(commit) => format!("{REPO}#{commit}"),
+            None => REPO.to_owned(),
+        })
+    }
+
+    /// Why `umx ui` has no view in a binary install, and how to build the one that matches it (D76a Q11): the view
+    /// pins the protocol it speaks, so it is built from this umx's own commit, checked as in [`Fill::skill_source`].
+    /// A build that does not know its commit says to use the source it was built from or update umx first.
+    pub fn source_build(commit: &str) -> Fill {
+        const WHY: &str = "it is the source folder this umx was built from and it is not on this machine, as in a \
+                           binary install. The graph view ships only with a source build of the commit this umx was \
+                           built from, since the view and the daemon must speak the same protocol";
+        Fill(match full_commit(commit) {
+            Some(commit) => format!(
+                "{WHY}: git clone https://github.com/AI-Substrate/umx && git -C umx checkout {commit}, build \
+                 umx/apps/ui (umx docs get ui), then set UMX_UI_DIR or ui.dir to that apps/ui folder"
+            ),
+            None => format!(
+                "{WHY}, and this umx does not know its commit: use the source this umx was built from or update \
+                 umx first, then build its apps/ui (umx docs get ui) and set UMX_UI_DIR or ui.dir to that apps/ui \
+                 folder"
+            ),
         })
     }
 
@@ -4475,6 +4500,33 @@ mod tests {
                 Fill::skill_source(unpinned).0,
                 "AI-Substrate/umx",
                 "{unpinned:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_source_build_checks_out_only_a_full_lowercase_commit() {
+        // ws012 s9 B1: the view pins its protocol, so a binary install builds the view from the binary's own commit.
+        let full = "0123456789abcdef0123456789abcdef01234567";
+        let pinned = Fill::source_build(full).0;
+        assert!(
+            pinned.contains(&format!(
+                "git clone https://github.com/AI-Substrate/umx && git -C umx checkout {full}, build umx/apps/ui"
+            )),
+            "{pinned}"
+        );
+        for unknown in [
+            "unknown",
+            "",
+            "0123456789ab",
+            &full.to_uppercase(),
+            "0123456789abcdef0123456789abcdef012345;7",
+        ] {
+            let reason = Fill::source_build(unknown).0;
+            assert!(
+                reason.contains("does not know its commit: use the source this umx was built from or update umx first")
+                    && !reason.contains("checkout"),
+                "{unknown:?}: {reason}"
             );
         }
     }

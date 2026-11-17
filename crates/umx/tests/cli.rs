@@ -8395,12 +8395,12 @@ fn doctor_knows_the_skill_this_umx_was_built_with() {
         "{}",
         env.to_json()
     );
-    // F94: the installer is pinned, the repo is pinned to this build's own commit when the build knows it, and an
-    // agent's line never confirms the install for it (no -y).
+    // F94: the installer is pinned, and the repo is pinned to this build's own commit when the build knows it. The
+    // agent runs the line (D76a Q10), so it carries -y and never stops to ask.
     let message = issue(&env, Code::DoctorSkillOutOfDate).message().to_owned();
     assert!(
         message.contains("npx skills@1.7.6 add AI-Substrate/umx")
-            && message.ends_with(" --skill umx -g --agent '*'"),
+            && message.ends_with(" --skill umx -g --agent '*' -y"),
         "{message}"
     );
     let source = message
@@ -8415,6 +8415,68 @@ fn doctor_knows_the_skill_this_umx_was_built_with() {
                 .is_some_and(|c| c.len() == 40),
         "{source}"
     );
+}
+
+/// ws012 s9 (D76a Q10): a binary install, as an agent meets it: umx copied out of any checkout into
+/// `~/.local/bin`, a fresh HOME and UMX_HOME, no daemon, no skill and no service. Doctor prints both commands the
+/// agent runs next, in JSON and in human text: `umx daemon install` and the skill line, pinned to this binary's own
+/// commit when its build knows it, with -y so it runs without a prompt.
+#[test]
+fn doctor_in_a_binary_install_prints_the_service_and_pinned_skill_commands() {
+    let mut home = Home::new("doc-bin");
+    let bin = home.path.join(".local/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let copied = bin.join("umx");
+    fs::copy(env!("CARGO_BIN_EXE_umx"), &copied).unwrap();
+    home.binary = Box::leak(copied.display().to_string().into_boxed_str());
+    home.cwd = Some(home.path.clone());
+    let commit = home.ok(&["version"]).data["cli"]["commit"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // The daemon is down, so doctor's verdict is not ok; only the two rows matter here.
+    let (env, _) = home.umx(&["doctor"]);
+    let rows = env.data["rows"].as_array().unwrap();
+    let row = |check: &str| {
+        rows.iter()
+            .find(|r| r["check"] == check)
+            .unwrap_or_else(|| panic!("no {check} row in {}", env.to_json()))
+    };
+    assert_eq!(row("service")["code"], "doctor_service_none");
+    assert_eq!(
+        issue(&env, Code::DoctorServiceNone).next(),
+        "umx daemon install"
+    );
+    assert_eq!(row("skill")["code"], "doctor_skill_missing");
+    let message = issue(&env, Code::DoctorSkillMissing).message().to_owned();
+    let line = message
+        .split("Install it: ")
+        .nth(1)
+        .and_then(|rest| rest.split(" (or ").next())
+        .unwrap_or_else(|| panic!("{message}"));
+    let source = line
+        .strip_prefix("npx skills@1.7.6 add ")
+        .and_then(|rest| rest.strip_suffix(" --skill umx -g --agent '*' -y"))
+        .unwrap_or_else(|| panic!("{line}"));
+    // Pinned when the build knew its full commit (skills/umx as committed), and then to this binary's commit.
+    assert!(
+        source == "AI-Substrate/umx"
+            || source
+                .strip_prefix("AI-Substrate/umx#")
+                .is_some_and(|c| c.len() == 40 && c.starts_with(&commit)),
+        "{source} for build {commit}"
+    );
+
+    let human = home.command(&["doctor", "--human"]).output().unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&human.stdout),
+        String::from_utf8_lossy(&human.stderr)
+    );
+    for want in [line, "umx daemon install"] {
+        assert!(text.contains(want), "{want} not in {text}");
+    }
 }
 
 /// Round 1 (B1, B2): below the skill's root doctor follows no link and opens only regular files, and its

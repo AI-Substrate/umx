@@ -45,14 +45,18 @@ It checks, in this order:
   `doctor_skill_link_out_of_date`, both degraded, since a stale skill teaches agents the wrong commands. No skill
   there is `doctor_skill_missing`, information. To install or update it, run the exact line the warning prints:
 
-      npx skills@1.7.6 add AI-Substrate/umx#<commit> --skill umx -g --agent '*'   # teammates
-      just skill-link                                                                    # in a umx checkout, then just dev
+      npx skills@1.7.6 add AI-Substrate/umx#<commit> --skill umx -g --agent '*' -y   # teammates, binary installs
+      just skill-link                                                                       # in a umx checkout, then just dev
 
   The installer is pinned to skills 1.7.6, and the repo to the full commit this umx was built from, so the install
   is exactly the skill doctor compares with. A build whose skills/umx was not as committed, or that does not know
   its commit, prints the line without `#<commit>`. A build from a local commit that was never pushed prints a commit
-  GitHub does not have, and that install fails: use the line without `#<commit>` then. The line leaves out `-y`, so
-  the installer asks before it installs.
+  GitHub does not have, and that install fails: use the line without `#<commit>` then. The line carries `-y`, so it
+  runs without a prompt: an agent runs it (D76a Q10), and the pins already fix what it installs.
+
+After a binary install (umx copied onto `PATH`, no checkout), `umx doctor` is where the next steps are: the service
+row's next is `umx daemon install`, and the skill row prints the pinned install line. Run both. The graph view is
+not in a binary install (`umx docs get ui`, In a binary install).
 
 Each finding is a warning with a `code` (all start `doctor_`), a `message` and a `next` to run. `data.rows`
 has one row per check with its outcome: `ok`, `info`, `degraded` or `broken`. `data.verdict` is the worst of

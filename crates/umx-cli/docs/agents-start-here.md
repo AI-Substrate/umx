@@ -83,6 +83,10 @@ The /umx agent skill teaches agents these commands. Install it once per machine,
     umx doctor                                                   # prints the exact pinned install line
     just skill-link                                              # instead, in a umx checkout
 
+After a binary install (no umx checkout), run `umx doctor` and run what it prints: `umx daemon install` and the pinned
+skill line (it carries `-y`, so it runs without a prompt). The graph view (`umx ui`) needs a source build of the
+commit `umx version` reports, not the default branch: `umx docs get ui`.
+
 `umx doctor`'s skill row says when the installed skill is not the one this umx was built with
 (`doctor_skill_out_of_date` or `doctor_skill_link_out_of_date`) and names the command to update it; see
 `umx docs get doctor`.

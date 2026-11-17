@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use umx_core::config::ConfigValue;
+use umx_core::config::{ConfigValue, Source};
 use umx_core::ports::{
     LocalState, LocalStateError, UiCodeUse, UiEnd, UiError, UiHost, UiLaunch, UiServed,
 };
@@ -661,7 +661,26 @@ fn refused(dir: &Path, reason: &'static str) -> Issue {
 /// standalone build's .next/standalone/server.js, both with the same checks (security F1: node runs both).
 pub(crate) fn app_dir(config: &Config) -> Result<PathBuf, Issue> {
     let given = PathBuf::from(text(config, "ui.dir").unwrap_or_else(umx_compose::default_ui_dir));
-    let dir = fs::canonicalize(&given).map_err(|_| refused(&given, "it does not exist"))?;
+    // Only the default can be the source folder umx was built from; when it is gone, umx is a binary install
+    // (D76a Q11: releases ship binaries only, and the view is built from source).
+    let built_from = config
+        .started
+        .get("ui.dir")
+        .is_none_or(|s| s.source == Source::Default);
+    let dir = fs::canonicalize(&given).map_err(|_| {
+        if built_from {
+            // The view pins its protocol, so only this binary's own commit builds a view its daemon accepts (s9 B1).
+            Issue::fill(
+                Code::UiDirRefused,
+                &[
+                    ("dir", Fill::path(&given)),
+                    ("reason", Fill::source_build(env!("UMX_COMMIT_FULL"))),
+                ],
+            )
+        } else {
+            refused(&given, "it does not exist")
+        }
+    })?;
     let trusted = |p: &Path, what: &'static str| -> Result<(), Issue> {
         let m = fs::metadata(p).map_err(|_| refused(&dir, what))?;
         if config.uid.is_some_and(|uid| m.uid() != uid) {
@@ -811,6 +830,58 @@ mod tests {
         let built = dir.join(".next/standalone/server.js");
         fs::set_permissions(&built, fs::Permissions::from_mode(0o646)).unwrap();
         assert_eq!(code(app_dir(&c)), "ui_dir_refused");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// ws012 s9 (D76a Q11): in a binary install the source folder umx was built from (the default ui.dir) is not on
+    /// the machine, and the refusal says the view ships only with a source build and how to get it. A folder set by
+    /// UMX_UI_DIR or ui.dir that is missing is only missing.
+    #[test]
+    fn a_binary_install_is_told_the_view_comes_from_a_source_build() {
+        let root = temp();
+        let mut c = config(&root);
+        c.settings.env.remove("UMX_UI_DIR");
+        c.settings.defaults.insert(
+            "ui.dir".to_owned(),
+            ConfigValue::Text(root.join("runner/umx/apps/ui").display().to_string()),
+        );
+        c.started = umx_core::config::resolve(&c.settings);
+        let issue = app_dir(&c).unwrap_err();
+        assert_eq!(
+            (issue.code(), issue.next()),
+            ("ui_dir_refused", "umx docs get ui")
+        );
+        // The source to build is this binary's own commit (s9 B1), or, unknown, the source it was built from.
+        let commit = env!("UMX_COMMIT_FULL");
+        let pinned = format!(
+            "git clone https://github.com/AI-Substrate/umx && git -C umx checkout {commit}, build umx/apps/ui"
+        );
+        let known = commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit());
+        let source = if known {
+            pinned.as_str()
+        } else {
+            "does not know its commit: use the source this umx was built from or update umx first"
+        };
+        for part in [
+            "as in a binary install",
+            "ships only with a source build of the commit this umx was built from",
+            source,
+            "(umx docs get ui)",
+            "set UMX_UI_DIR or ui.dir",
+        ] {
+            assert!(
+                issue.message().contains(part),
+                "{part}: {}",
+                issue.message()
+            );
+        }
+        let c = with(config(&root), "ui.dir", &root.join("nowhere"));
+        let issue = app_dir(&c).unwrap_err();
+        assert!(
+            issue.message().ends_with(": it does not exist."),
+            "{}",
+            issue.message()
+        );
         let _ = fs::remove_dir_all(root);
     }
 

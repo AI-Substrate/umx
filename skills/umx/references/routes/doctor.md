@@ -18,9 +18,10 @@ Job: get from an error to a working command, or settle what a merge left in a gr
      `umx daemon restart`: run it. It waits for queued writes, restarts through the service when the daemon
      runs as one, else in place with the same flags, and never starts a daemon that is not running.
      `daemon_restart_refused` means an older daemon: `umx daemon stop`, then `umx daemon start`.
-   - **usage 142**: `doctor_skill_out_of_date` or `doctor_skill_link_out_of_date`: this skill is not the one
-     your umx was built with, so some routes may name the wrong verbs. Tell the human the pinned update command
-     the message names, and trust `umx <noun> --help` over this skill until it is updated.
+   - **usage 207**: `doctor_skill_out_of_date` or `doctor_skill_link_out_of_date`: this skill is not the one
+     your umx was built with, so some routes may name the wrong verbs. Run the pinned update line the message
+     names (a copy; it carries `-y`), or for a link `just skill-link` then `just dev` in the checkout umx is built
+     from, and trust `umx <noun> --help` over this skill until it is updated.
    - **usage 093**: `internal` with `request_timed_out`: the daemon waited (60 s for the first byte, 10 s
      for each later pause, 120 s in all) and the request did not complete, usually an overloaded machine. Wait a
      moment and run it again; if it repeats, `umx doctor`. `request_unreadable` is different: the request

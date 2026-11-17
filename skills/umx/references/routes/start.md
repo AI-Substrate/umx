@@ -42,7 +42,12 @@ Job: umx is not running, or you are new to it.
 Then hand over: making or changing a graph is `/umx build`; turning a source into nodes is `/umx ingest`;
 asking a graph a question is `/umx explore`.
 
-**usage 142** (supersedes usage 117): to install this skill for every agent on the machine, run `umx doctor` for the exact pinned install
-line (`npx skills@1.7.6 add AI-Substrate/umx#<commit> --skill umx -g --agent '*'`), or `just skill-link` in a umx repo's main
-checkout (it also links the Claude, Codex and Pi skills folders). `umx doctor`'s skill row says when the installed
-skill is not the one this umx was built with, and names the command to update it.
+**usage 207** (supersedes usage 142): after a binary install (no umx checkout), run `umx doctor` and run what it
+prints: `umx daemon install` (`doctor_service_none`) and the exact pinned skill install line
+(`npx skills@1.7.6 add AI-Substrate/umx#<commit> --skill umx -g --agent '*' -y`; `-y` so it runs without a prompt).
+In a umx repo's main checkout, `just skill-link` instead (it also links the Claude, Codex and Pi skills folders).
+`umx doctor`'s skill row says when the installed skill is not the one this umx was built with, and names the command
+to update it. The graph view (`umx ui`) ships only with a source build: in a binary install it refuses with
+`ui_dir_refused`; clone the repo, check out the commit `umx version` reports (not the default branch: the view
+and daemon must speak the same protocol), build its `apps/ui` (`umx docs get ui`), then set `UMX_UI_DIR` or
+`ui.dir`.

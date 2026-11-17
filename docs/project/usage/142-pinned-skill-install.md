@@ -2,10 +2,11 @@
 id: 142
 title: Install or update the /umx skill with the pinned line umx doctor prints
 route: start
-status: current
+status: superseded
 source: F94 (security after F77, the project manager 2026-11-12), plan 112
 reqs: [req-70, req-85]
 supersedes: 117
+superseded_by: 207
 ---
 ## Do
 

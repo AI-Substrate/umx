@@ -82,12 +82,31 @@ umx never falls back to anything that puts the link in argv: it stops and says s
       pnpm --dir apps/ui install --frozen-lockfile && pnpm --dir apps/ui build
 
 - `ui_node_not_found`: no node. Install Node.js 20.9 or later, or set `ui.node`.
-- `ui_dir_refused`: the folder is missing, not a folder, not yours, or writable by others.
+- `ui_dir_refused`: the folder is missing, not a folder, not yours, or writable by others. When no `UMX_UI_DIR` or
+  `ui.dir` is set and the source folder umx was built from is not on this machine, it says so: see below.
 - `ui_start_timed_out`: the server did not say it was ready within 60 seconds; umx stopped it.
 - `ui_failed`: the server could not start or stopped early (its own message is on stderr).
 - `ui_open_failed`: the browser could not be opened; the view was stopped. Run `umx ui --no-open --human` in a
   terminal for a person, or `umx ui --detach --no-open` and let `umx ui open --raise` open it later.
 - `ui_already_running`: a view already runs for this UMX_HOME. Run its next, or `umx ui stop` first.
+
+## In a binary install
+
+The graph view ships only with a source build; a umx binary installed on its own (not built from a clone here)
+has no view, and `umx ui` refuses with `ui_dir_refused`, saying the folder it was built from is not on this machine.
+Build the view from the commit this umx was built from, not the default branch: the view speaks one protocol and the
+daemon refuses any other (`protocol_mismatch`), so a newer checkout can build a view your daemon rejects. The
+refusal prints the full commit; `umx version` reports it too (`cli.commit`). If umx does not know its commit, use the
+source it was built from, or update umx first. Then build apps/ui and point umx at it (Node.js 20.9 or later and
+pnpm):
+
+    git clone https://github.com/AI-Substrate/umx.git ~/src/umx
+    git -C ~/src/umx checkout <commit>              # the commit umx version reports
+    pnpm --dir ~/src/umx/apps/ui install --frozen-lockfile && pnpm --dir ~/src/umx/apps/ui build
+    umx config set ui.dir ~/src/umx/apps/ui        # or UMX_UI_DIR=~/src/umx/apps/ui for one shell
+    umx ui
+
+After you update umx, check out its new commit and build again.
 
 ## A view that outlives the terminal
 
