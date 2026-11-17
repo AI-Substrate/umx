@@ -13,7 +13,7 @@
 # template's `Docs:` line lists what was touched.
 
 # Build, lint, test and prove the architecture rules.
-check: slots home-paths customer-names private-refs install-sh fmt build clippy test arch walkthrough bakeoff
+check: slots home-paths customer-names private-refs install-sh release-assets fmt build clippy test arch walkthrough bakeoff
 
 # scripts/cargo-slot's guarantees (two slots, TERM and INT stop the build before the slot frees, exit codes), with a
 # fake cargo in a private slot folder.
@@ -43,6 +43,10 @@ private-refs:
 install-sh:
     scripts/install-sh-test
     if command -v shellcheck >/dev/null; then shellcheck install.sh scripts/install-sh-test; else echo "install-sh: shellcheck is not installed; skipped"; fi
+
+# The release archives, SHA256SUMS and smoke run's argument checks (ws012 s7, s8), on a stand-in binary: no build.
+release-assets:
+    scripts/release-assets-test
 
 # The seed export, the seed gate and its range and pre-push modes prove themselves on fixtures and planted controls
 # (needs ddocs and a built umx-core example, not the names list). Not part of `check`: run it when any of them changes.

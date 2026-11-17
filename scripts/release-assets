@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# Release assets, built to the asset contract (docs/versioning.md, Releases): one archive per target,
+# `umx-<target>.tar.gz`, holding one folder `umx-<target>/` with exactly `umx` (mode 0755), `LICENSE` and
+# `THIRD_PARTY_NOTICES`; and `SHA256SUMS` in sha256sum format. .github/workflows/release.yml runs every command here;
+# scripts/release-assets-test proves them.
+#
+#   scripts/release-assets package <target> <umx> <out>     writes <out>/umx-<target>.tar.gz and its .sha256 line
+#   scripts/release-assets check <archive> <target>         exit 0 when the archive holds exactly the contract's layout
+#   scripts/release-assets verify <dir> <target>...         each target's archive in <dir> matches its .sha256 and passes check
+#   scripts/release-assets sums <dir> <file>...             prints SHA256SUMS for those files in <dir>, sorted by name
+#   scripts/release-assets smoke <umx> <version> <commit>   runs the binary in a private home: version and commit,
+#                                                           daemon start and status, a graph write and read, a docs
+#                                                           topic, daemon stop
+#
+# Exit 0 on success; 1 when a check fails, with the reason on stderr; 2 on a usage error.
+set -euo pipefail
+
+TARGETS="aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu"
+
+# Temp folders, and a daemon smoke started, are cleaned up when the script exits, however it exits.
+CLEAN=()
+DAEMON=
+cleanup() {
+    if [ -n "$DAEMON" ]; then
+        kill "$DAEMON" 2>/dev/null || true
+    fi
+    if [ "${#CLEAN[@]}" -gt 0 ]; then
+        rm -rf "${CLEAN[@]}"
+    fi
+}
+trap cleanup EXIT
+
+# A new temp folder, removed at exit, in REPLY.
+tempdir() {
+    REPLY="$(mktemp -d "${TMPDIR:-/tmp}/umx-release.XXXXXX")"
+    CLEAN+=("$REPLY")
+}
+
+die() {
+    echo "release-assets: $*" >&2
+    exit 1
+}
+
+usage() {
+    echo "release-assets: $*" >&2
+    sed -n '7,14p' "$0" >&2
+    exit 2
+}
+
+known_target() {
+    case " $TARGETS " in
+    *" $1 "*) ;;
+    *) die "unknown target '$1': the release targets are $TARGETS" ;;
+    esac
+}
+
+# One sha256sum line, `<64 hex>  <name>`, for a file in the current folder.
+sha256() {
+    if command -v sha256sum >/dev/null; then
+        sha256sum -- "$1"
+    else
+        shasum -a 256 -- "$1"
+    fi
+}
+
+package() {
+    [ $# = 3 ] || usage "package takes <target> <umx> <out>"
+    local target="$1" bin="$2" out="$3" root stage name
+    known_target "$target"
+    [ -f "$bin" ] && [ ! -L "$bin" ] || die "$bin is not a regular file"
+    root="$(cd "$(dirname "$0")/.." && pwd)"
+    tempdir
+    stage="$REPLY"
+    mkdir "$stage/umx-$target"
+    cp "$bin" "$stage/umx-$target/umx"
+    cp "$root/LICENSE" "$root/THIRD_PARTY_NOTICES" "$stage/umx-$target/"
+    chmod 0755 "$stage/umx-$target" "$stage/umx-$target/umx"
+    chmod 0644 "$stage/umx-$target/LICENSE" "$stage/umx-$target/THIRD_PARTY_NOTICES"
+    mkdir -p "$out"
+    name="umx-$target.tar.gz"
+    # ustar holds no extended attributes or macOS metadata, and owners are numeric 0 on both tars.
+    local owner=(--owner=0 --group=0 --numeric-owner)
+    if ! tar --version 2>/dev/null | grep -q 'GNU tar'; then
+        owner=(--uid 0 --gid 0 --uname '' --gname '')
+    fi
+    (cd "$stage" && COPYFILE_DISABLE=1 tar --format ustar "${owner[@]}" --no-recursion -cf - "umx-$target" \
+        "umx-$target/umx" "umx-$target/LICENSE" "umx-$target/THIRD_PARTY_NOTICES" | gzip -n -9) >"$out/$name"
+    (cd "$out" && sha256 "$name") >"$out/$name.sha256"
+    check "$out/$name" "$target"
+}
+
+check() {
+    [ $# = 2 ] || usage "check takes <archive> <target>"
+    local archive="$1" target="$2" listed want work
+    known_target "$target"
+    [ -f "$archive" ] || die "$archive: no such file"
+    [ "$(basename "$archive")" = "umx-$target.tar.gz" ] || die "$archive: an archive for $target is named umx-$target.tar.gz"
+    listed="$(tar -tzf "$archive" | sed 's:/$::' | LC_ALL=C sort)" || die "$archive: not a gzipped tar"
+    want="$(printf 'umx-%s%s\n' "$target" "" "$target" /LICENSE "$target" /THIRD_PARTY_NOTICES "$target" /umx |
+        LC_ALL=C sort)"
+    [ "$listed" = "$want" ] || die "$archive: holds
+$listed
+not exactly
+$want"
+    tempdir
+    work="$REPLY"
+    tar -xpzf "$archive" -C "$work" || die "$archive: does not extract"
+    [ -z "$(find "$work" -type l)" ] || die "$archive: holds a symbolic link"
+    [ -d "$work/umx-$target" ] || die "$archive: umx-$target is not a folder"
+    [ -z "$(find "$work" -type f -links +1)" ] || die "$archive: holds a hard link"
+    local f
+    for f in umx LICENSE THIRD_PARTY_NOTICES; do
+        [ -f "$work/umx-$target/$f" ] || die "$archive: umx-$target/$f is not a regular file"
+    done
+    [ -n "$(find "$work/umx-$target/umx" -perm 0755)" ] || die "$archive: umx-$target/umx is not mode 0755"
+}
+
+verify() {
+    [ $# -ge 2 ] || usage "verify takes <dir> <target>..."
+    local dir="$1" target name want got
+    shift
+    for target in "$@"; do
+        known_target "$target"
+        name="umx-$target.tar.gz"
+        [ -f "$dir/$name" ] || die "$dir/$name is missing"
+        [ -f "$dir/$name.sha256" ] || die "$dir/$name.sha256 is missing"
+        want="$(cat "$dir/$name.sha256")"
+        got="$(cd "$dir" && sha256 "$name")"
+        [ "$got" = "$want" ] || die "$name: sha256 is
+$got
+but its build recorded
+$want"
+        check "$dir/$name" "$target"
+    done
+}
+
+sums() {
+    [ $# -ge 2 ] || usage "sums takes <dir> <file>..."
+    local dir="$1" f
+    shift
+    for f in "$@"; do
+        case "$f" in
+        SHA256SUMS | */* | *[[:space:]]* | "") die "'$f' cannot be listed in SHA256SUMS" ;;
+        esac
+        [ -f "$dir/$f" ] || die "$dir/$f is missing"
+    done
+    printf '%s\n' "$@" | LC_ALL=C sort -u | while IFS= read -r f; do
+        (cd "$dir" && sha256 "$f")
+    done
+}
+
+smoke() {
+    [ $# = 3 ] || usage "smoke takes <umx> <version> <commit>"
+    local bin version="$2" commit="$3" home
+    bin="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "the expected commit '$commit' is not 40 hex characters"
+    tempdir
+    home="$REPLY"
+    run() {
+        env -u XDG_CONFIG_HOME -u UMX_GRAPH -u UMX_OUTPUT HOME="$home" UMX_HOME="$home" UMX_ROOTS="$home" \
+            "$bin" "$@"
+    }
+    local out
+    out="$(run version)" || die "umx version failed: $out"
+    jq -e --arg v "$version" --arg c "$commit" '.data.cli.version == $v and .data.cli.commit == $c' \
+        <<<"$out" >/dev/null || die "umx version reports $(jq -c .data.cli <<<"$out"), want version $version and commit $commit"
+    echo "version: $(jq -c .data.cli <<<"$out")"
+
+    run daemon start >"$home/daemon.out" 2>"$home/daemon.err" &
+    DAEMON=$!
+    local tries=0
+    until out="$(run daemon status)" && jq -e '.data.running == true' <<<"$out" >/dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -gt 60 ] || ! kill -0 "$DAEMON" 2>/dev/null; then
+            cat "$home/daemon.out" "$home/daemon.err" >&2
+            die "the daemon did not come up: $out"
+        fi
+        sleep 0.5
+    done
+    echo "daemon: running, pid $(jq -r .data.pid <<<"$out")"
+    out="$(run version)" || die "umx version with the daemon up failed: $out"
+    jq -e --arg c "$commit" '.data.daemon.commit == $c' <<<"$out" >/dev/null ||
+        die "the daemon reports $(jq -c .data.daemon <<<"$out"), want commit $commit"
+
+    out="$(run graph new "$home/g" --alias smoke)" || die "umx graph new failed: $out"
+    out="$(run node add --type problem --title "release smoke")" || die "umx node add failed: $out"
+    local id
+    id="$(jq -r .data.node.id <<<"$out")"
+    out="$(run node get "$id")" || die "umx node get $id failed: $out"
+    jq -e '.data.node.title == "release smoke"' <<<"$out" >/dev/null || die "umx node get $id read back: $out"
+    echo "graph: wrote and read node $id"
+
+    out="$(run docs get graph)" || die "umx docs get graph failed: $out"
+    jq -e '.data | tostring | test("graph new")' <<<"$out" >/dev/null || die "umx docs get graph: $out"
+    echo "docs: graph topic read"
+
+    out="$(run daemon stop)" || die "umx daemon stop failed: $out"
+    tries=0
+    while kill -0 "$DAEMON" 2>/dev/null; do
+        tries=$((tries + 1))
+        [ "$tries" -le 60 ] || die "the daemon did not stop"
+        sleep 0.5
+    done
+    local code=0
+    wait "$DAEMON" || code=$?
+    DAEMON=
+    [ "$code" = 0 ] || die "the daemon exited $code"
+    echo "daemon: stopped"
+}
+
+[ $# -ge 1 ] || usage "name a command"
+command="$1"
+shift
+case "$command" in
+package | check | verify | sums | smoke) "$command" "$@" ;;
+*) usage "unknown command '$command'" ;;
+esac

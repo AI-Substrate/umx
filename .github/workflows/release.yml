@@ -1,0 +1,222 @@
+name: release
+
+# Builds umx for every release platform on each push to main, and publishes the builds when release-please cuts a
+# release (D76; ws012 s7 and s8). A manual run builds only and never publishes. There is no release or tag trigger: a
+# tag or release made with GITHUB_TOKEN starts no workflow, so the builds and the publish run here, in release-please's
+# own run, on the commit it tagged (security s1 C4). Assets follow the asset contract in docs/versioning.md.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: {}
+
+# One run per ref at a time, and a running one is never cancelled: a cancelled publish would leave half a draft (C4).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Keeps the release PR open and, when it has been merged, tags its commit v<version> and makes the release as a
+  # draft (release-please-config.json: draft, force-tag-creation). GITHUB_TOKEN only (C7).
+  release-please:
+    name: release-please
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # One clean build per release target, each on its own architecture (D76a Q3, Q4, Q5; C1): no cache, so an attested
+  # archive comes from a clean build (C5). Runs on every push and manual run, also when release-please failed, so main
+  # always proves it builds; only publish needs a release. A leg builds release-please's tagged commit when it made a
+  # release, else the pushed one.
+  build:
+    name: build (${{ matrix.target }})
+    needs: release-please
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            file: ELF 64-bit LSB pie executable, x86-64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            file: ELF 64-bit LSB pie executable, ARM aarch64
+          - os: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+            file: Mach-O 64-bit executable arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      TARGET: ${{ matrix.target }}
+      SHA: ${{ needs.release-please.outputs.release_created == 'true' && needs.release-please.outputs.sha || github.sha }}
+      RELEASE_CREATED: ${{ needs.release-please.outputs.release_created }}
+      RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+    steps:
+      # The machine is the expected architecture, never emulated (C1).
+      - name: Architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          actual="$(uname -m)"
+          echo "uname -m: $actual (expected $EXPECTED_ARCH)"
+          [ "$actual" = "$EXPECTED_ARCH" ]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+      # rust-toolchain.toml's compiler, whose host must be this leg's target: a native build, not a cross build (Q4).
+      - name: Rust toolchain
+        run: |
+          [ "$(git rev-parse HEAD)" = "$SHA" ]
+          rustup toolchain install
+          rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+          rustc -vV
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          [ "$host" = "$TARGET" ]
+      - name: Build
+        run: cargo build --release --locked -p umx
+      - name: Binary architecture
+        env:
+          EXPECTED_FILE: ${{ matrix.file }}
+        run: |
+          desc="$(file -b target/release/umx)"
+          echo "file: $desc"
+          [[ "$desc" == "$EXPECTED_FILE"* ]] || { echo "target/release/umx is not $EXPECTED_FILE" >&2; exit 1; }
+      # The binary reports the workspace version and this commit in full (docs/versioning.md), and, in a release, the
+      # version release-please tagged; then it runs: daemon, a graph write and read, a docs topic.
+      - name: Smoke run
+        run: |
+          version="$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "umx") | .version')"
+          if [ "$RELEASE_CREATED" = true ]; then
+            echo "release $RELEASE_VERSION"
+            [ "$version" = "$RELEASE_VERSION" ]
+          fi
+          scripts/release-assets smoke target/release/umx "$version" "$SHA"
+      - name: Package
+        run: |
+          scripts/release-assets package "$TARGET" target/release/umx dist
+          cat "dist/umx-$TARGET.tar.gz.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: umx-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+
+  # Attaches every leg's archive, SHA256SUMS and their build attestations to release-please's draft, checks them, and
+  # only then publishes it. Any leg failing skips this job, so the release stays a draft and the previous latest stays
+  # latest (C5, C8).
+  publish:
+    name: publish
+    needs:
+      - release-please
+      - build
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+      SHA: ${{ needs.release-please.outputs.sha }}
+    steps:
+      # Only the asset script and the install scripts, from the tagged commit; nothing here is built.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/release-assets
+            /install.sh
+            /install.ps1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      # Each archive is the one its leg recorded, in the contract's layout; then SHA256SUMS over the archives and the
+      # install scripts the tag holds.
+      - name: Release files
+        run: |
+          [ "$(git rev-parse HEAD)" = "$SHA" ]
+          [ "$TAG" = "v$VERSION" ]
+          targets=(aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
+          scripts/release-assets verify dist "${targets[@]}"
+          mkdir release
+          files=()
+          for target in "${targets[@]}"; do
+            cp "dist/umx-$target.tar.gz" release/
+            files+=("umx-$target.tar.gz")
+          done
+          for script in install.sh install.ps1; do
+            if [ -f "$script" ]; then
+              cp "$script" release/
+              files+=("$script")
+            fi
+          done
+          scripts/release-assets sums release "${files[@]}" > release/SHA256SUMS
+          cat release/SHA256SUMS
+          printf '%s\n' "${files[@]}" SHA256SUMS | LC_ALL=C sort > expected-assets
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release/umx-aarch64-apple-darwin.tar.gz
+            release/umx-x86_64-unknown-linux-gnu.tar.gz
+            release/umx-aarch64-unknown-linux-gnu.tar.gz
+            release/SHA256SUMS
+      # The release is still release-please's draft and its tag names the commit the legs built.
+      - name: Check the draft
+        run: |
+          draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          echo "draft: $draft"
+          [ "$draft" = true ]
+          tagged="$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)"
+          echo "$TAG is $tagged"
+          [ "$tagged" = "$SHA" ]
+      - name: Upload
+        run: gh release upload "$TAG" release/* --clobber
+      # Every promised file is on the draft, nothing else is, and each downloads back as SHA256SUMS says.
+      - name: Check the assets
+        run: |
+          want="$(cat expected-assets)"
+          got="$(gh release view "$TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort)"
+          echo "$got"
+          [ "$got" = "$want" ]
+          gh release download "$TAG" --dir back
+          cd back
+          sha256sum -c SHA256SUMS
+          cmp SHA256SUMS ../release/SHA256SUMS
+      - name: Publish
+        run: gh release edit "$TAG" --draft=false --latest

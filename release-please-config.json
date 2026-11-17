@@ -4,6 +4,8 @@
   "bootstrap-sha": "44ddec0b784091f47a19d73c8acae7edd4f8cf2b",
   "include-component-in-tag": false,
   "include-v-in-tag": true,
+  "draft": true,
+  "force-tag-creation": true,
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "pull-request-title-pattern": "chore: release ${version}",

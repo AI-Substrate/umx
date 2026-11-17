@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Proves scripts/release-assets (the release asset contract, docs/versioning.md) with a stand-in binary, no build:
+# package makes exactly the contract's archive and sha256 line for every target; check refuses each planted layout
+# fault (a missing, extra, linked or misnamed entry, a umx not mode 0755, a wrong archive name); verify refuses an
+# archive that no longer matches its build's sha256; sums writes sorted sha256sum lines that `-c` accepts and refuses
+# a name it must not list. RELEASE_ASSETS runs another copy of the script.
+set -euo pipefail
+
+script="${RELEASE_ASSETS:-$(cd "$(dirname "$0")" && pwd)/release-assets}"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+fail=0
+
+# expect <exit> <what> <command...>: the command exits <exit>; for a refusal, its stderr names the fault (EXPECT_SAYS).
+expect() {
+    local want="$1" what="$2" out code=0
+    shift 2
+    out=$("$@" 2>&1) || code=$?
+    if [ "$code" != "$want" ]; then
+        echo "FAIL: $what: exit $code, want $want: $out" >&2
+        fail=1
+    elif [ -n "${EXPECT_SAYS:-}" ] && ! grep -qF -- "$EXPECT_SAYS" <<<"$out"; then
+        echo "FAIL: $what: '$EXPECT_SAYS' not in: $out" >&2
+        fail=1
+    else
+        echo "ok: $what"
+    fi
+}
+
+sha() {
+    if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+
+printf '#!/bin/sh\necho umx\n' >"$work/umx"
+chmod 0700 "$work/umx"
+
+# Every target packages to the contract, even from a binary that is not mode 0755.
+for target in aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+    expect 0 "package $target" "$script" package "$target" "$work/umx" "$work/dist"
+    line=$(cat "$work/dist/umx-$target.tar.gz.sha256")
+    if [[ ! "$line" =~ ^[0-9a-f]{64}\ \ umx-$target\.tar\.gz$ ]]; then
+        echo "FAIL: $target sha256 line: $line" >&2
+        fail=1
+    fi
+    listed=$(tar -tzf "$work/dist/umx-$target.tar.gz" | LC_ALL=C sort | tr '\n' ' ')
+    if [ "$listed" != "umx-$target/ umx-$target/LICENSE umx-$target/THIRD_PARTY_NOTICES umx-$target/umx " ]; then
+        echo "FAIL: $target archive lists: $listed" >&2
+        fail=1
+    fi
+done
+mkdir "$work/x"
+tar -xzf "$work/dist/umx-aarch64-unknown-linux-gnu.tar.gz" -C "$work/x"
+if ! cmp -s "$work/umx" "$work/x/umx-aarch64-unknown-linux-gnu/umx"; then
+    echo "FAIL: the packaged umx is not the binary given" >&2
+    fail=1
+fi
+
+EXPECT_SAYS="unknown target" expect 1 "package refuses a target outside the contract" \
+    "$script" package x86_64-apple-darwin "$work/umx" "$work/other"
+ln -s "$work/umx" "$work/umx-link"
+EXPECT_SAYS="not a regular file" expect 1 "package refuses a linked binary" \
+    "$script" package aarch64-apple-darwin "$work/umx-link" "$work/other"
+
+# A hand-made archive for x86_64-unknown-linux-gnu: `plain <name> <step> [<prefix>]` builds the folder, runs <step>
+# in it and tars it, each entry named <prefix>umx-<target>/...
+t=x86_64-unknown-linux-gnu
+plain() {
+    local name="$1" step="$2" prefix="${3:-}" stage="$work/stage-$1"
+    mkdir -p "$stage/umx-$t" "$work/$name"
+    printf 'x\n' >"$stage/umx-$t/umx"
+    printf 'license\n' >"$stage/umx-$t/LICENSE"
+    printf 'notices\n' >"$stage/umx-$t/THIRD_PARTY_NOTICES"
+    chmod 0755 "$stage/umx-$t/umx"
+    (cd "$stage/umx-$t" && eval "$step")
+    (cd "$stage" && COPYFILE_DISABLE=1 tar -cf - "${prefix}umx-$t" | gzip -n) >"$work/$name/umx-$t.tar.gz"
+    echo "$work/$name/umx-$t.tar.gz"
+}
+
+expect 0 "check passes a hand-made archive in the contract's layout" "$script" check "$(plain good :)" "$t"
+EXPECT_SAYS="not exactly" expect 1 "check refuses an extra file" \
+    "$script" check "$(plain extra 'printf x >README')" "$t"
+EXPECT_SAYS="not exactly" expect 1 "check refuses a missing file" \
+    "$script" check "$(plain missing 'rm THIRD_PARTY_NOTICES')" "$t"
+EXPECT_SAYS="not exactly" expect 1 "check refuses entries outside the one folder" \
+    "$script" check "$(plain dotslash : ./)" "$t"
+EXPECT_SAYS="symbolic link" expect 1 "check refuses a symbolic link" \
+    "$script" check "$(plain symlink 'rm umx && ln -s LICENSE umx')" "$t"
+EXPECT_SAYS="hard link" expect 1 "check refuses a hard link" \
+    "$script" check "$(plain hardlink 'rm umx && ln LICENSE umx')" "$t"
+EXPECT_SAYS="not mode 0755" expect 1 "check refuses a umx that is not mode 0755" \
+    "$script" check "$(plain mode 'chmod 0644 umx')" "$t"
+EXPECT_SAYS="not mode 0755" expect 1 "check refuses a group-writable umx" \
+    "$script" check "$(plain wide 'chmod 0775 umx')" "$t"
+EXPECT_SAYS="not a regular file" expect 1 "check refuses a folder where a file belongs" \
+    "$script" check "$(plain folder 'rm LICENSE && mkdir LICENSE')" "$t"
+cp "$work/dist/umx-$t.tar.gz" "$work/umx-aarch64-apple-darwin.tar.gz"
+EXPECT_SAYS="named umx-aarch64-apple-darwin.tar.gz" expect 1 "check refuses another target's archive" \
+    "$script" check "$work/dist/umx-$t.tar.gz" aarch64-apple-darwin
+EXPECT_SAYS="not exactly" expect 1 "check refuses an archive renamed to another target" \
+    "$script" check "$work/umx-aarch64-apple-darwin.tar.gz" aarch64-apple-darwin
+
+EXPECT_SAYS='' expect 0 "verify passes every target's archive" \
+    "$script" verify "$work/dist" aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+cp -R "$work/dist" "$work/tampered"
+printf 'x' >>"$work/tampered/umx-$t.tar.gz"
+EXPECT_SAYS="but its build recorded" expect 1 "verify refuses an archive changed after its build" \
+    "$script" verify "$work/tampered" "$t"
+rm "$work/tampered/umx-aarch64-apple-darwin.tar.gz"
+EXPECT_SAYS="is missing" expect 1 "verify refuses a missing leg" \
+    "$script" verify "$work/tampered" aarch64-apple-darwin
+
+printf '#!/bin/sh\n' >"$work/dist/install.sh"
+sums_out=$("$script" sums "$work/dist" install.sh umx-x86_64-unknown-linux-gnu.tar.gz \
+    umx-aarch64-unknown-linux-gnu.tar.gz umx-aarch64-apple-darwin.tar.gz)
+names=$(cut -c67- <<<"$sums_out" | tr '\n' ' ')
+if [ "$names" != "install.sh umx-aarch64-apple-darwin.tar.gz umx-aarch64-unknown-linux-gnu.tar.gz umx-x86_64-unknown-linux-gnu.tar.gz " ]; then
+    echo "FAIL: SHA256SUMS names not sorted: $names" >&2
+    fail=1
+else
+    echo "ok: sums lists every file once, sorted by name"
+fi
+printf '%s\n' "$sums_out" >"$work/dist/SHA256SUMS"
+EXPECT_SAYS='' expect 0 "SHA256SUMS passes sha256sum -c" sh -c "cd '$work/dist' && $(declare -f sha); sha -c SHA256SUMS"
+EXPECT_SAYS="cannot be listed" expect 1 "sums refuses SHA256SUMS itself" "$script" sums "$work/dist" SHA256SUMS
+EXPECT_SAYS="cannot be listed" expect 1 "sums refuses a path" "$script" sums "$work/dist" ../umx
+EXPECT_SAYS="is missing" expect 1 "sums refuses a file that is not there" "$script" sums "$work/dist" install.ps1
+
+EXPECT_SAYS="not 40 hex" expect 1 "smoke refuses a short commit" "$script" smoke "$work/umx" 0.1.0 abc1234
+EXPECT_SAYS='' expect 2 "an unknown command is a usage error" "$script" publish
+EXPECT_SAYS='' expect 2 "a missing argument is a usage error" "$script" check "$work/dist/umx-$t.tar.gz"
+
+if [ "$fail" != 0 ]; then
+    echo "release-assets-test: FAILED" >&2
+    exit 1
+fi
+echo "release-assets-test: all cases passed"
