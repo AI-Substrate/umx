@@ -841,10 +841,22 @@ mod tests {
         }
     }
 
+    /// A socket path no other call makes, whatever `name` it is given (F260: two tests that both said "silent"
+    /// raced to remove and bind one path). Short, as macOS caps a socket path at 104 bytes.
+    fn fresh_socket(name: &str) -> PathBuf {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let socket = PathBuf::from(format!(
+            "/tmp/umx-cli-{}-{n}-{name}.sock",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&socket);
+        socket
+    }
+
     /// A stand-in daemon on a fresh socket: it reads one request, then does `reply` with the stream.
     fn peer(name: &str, reply: impl FnOnce(UnixStream) + Send + 'static) -> PathBuf {
-        let socket = PathBuf::from(format!("/tmp/umx-cli-{}-{name}.sock", std::process::id()));
-        let _ = std::fs::remove_file(&socket);
+        let socket = fresh_socket(name);
         let listener = UnixListener::bind(&socket).unwrap();
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
@@ -857,8 +869,7 @@ mod tests {
 
     /// A stand-in daemon that answers with `reply` as soon as it accepts, reading nothing.
     fn peer_unread(name: &str, reply: impl FnOnce(UnixStream) + Send + 'static) -> PathBuf {
-        let socket = PathBuf::from(format!("/tmp/umx-cli-{}-{name}.sock", std::process::id()));
-        let _ = std::fs::remove_file(&socket);
+        let socket = fresh_socket(name);
         let listener = UnixListener::bind(&socket).unwrap();
         std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
@@ -878,6 +889,36 @@ mod tests {
 
     fn timed_out(got: &Result<Envelope, String>) -> bool {
         matches!(got, Err(m) if m.contains("reply_timed_out"))
+    }
+
+    /// F260: stand-ins made at once with one name each bind their own socket and answer only for themselves.
+    #[test]
+    fn stand_ins_with_one_name_made_at_once_each_get_their_own_socket() {
+        let start = std::sync::Barrier::new(4);
+        let sockets: Vec<PathBuf> = std::thread::scope(|scope| {
+            let made: Vec<_> = (0..4)
+                .map(|i| {
+                    let start = &start;
+                    scope.spawn(move || {
+                        let reply = Envelope::ok("daemon status", json!({ "twin": i }));
+                        start.wait();
+                        peer("twin", move |mut s| {
+                            let _ = s.write_all(reply.to_json().as_bytes());
+                        })
+                    })
+                })
+                .collect();
+            made.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        for (i, socket) in sockets.iter().enumerate() {
+            assert_eq!(
+                sockets.iter().filter(|other| *other == socket).count(),
+                1,
+                "{sockets:?}"
+            );
+            let (got, _) = ask(socket);
+            assert_eq!(got.unwrap().data["twin"], i, "{socket:?}");
+        }
     }
 
     #[test]
