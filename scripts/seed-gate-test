@@ -30,7 +30,10 @@ packages:
   left-pad@1.3.0:
     resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}
 EOF
-printf 'name: check\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n' >"$base/.github/workflows/check.yml"
+# the repository's own workflows: G9 must keep passing them (the clean controls below prove it)
+cp "$repo"/.github/workflows/*.yml "$base/.github/workflows/"
+# a job calling a workflow in this repository passes G9 (a remote one is planted below)
+printf 'name: call\non: workflow_dispatch\njobs:\n  call:\n    uses: ./.github/workflows/check.yml\n' >"$base/.github/workflows/call-local.yml"
 printf 'fn main() {}\n' >"$base/src/main.rs"
 printf '# a clean seed\n' >"$base/README.md"
 git init -q --initial-branch=main "$base"
@@ -96,6 +99,31 @@ p_submodule() { printf '[submodule "x"]\n\tpath = x\n' >.gitmodules; }
 p_selfhosted() { printf 'name: x\njobs:\n  a:\n    runs-on: self-hosted\n' >.github/workflows/x.yml; }
 p_label() { printf 'name: x\njobs:\n  a:\n    runs-on: my-big-runner\n' >.github/workflows/x.yml; }
 p_matrix() { printf 'name: x\njobs:\n  a:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, my-runner]\n    runs-on: ${{ matrix.os }}\n' >.github/workflows/x.yml; }
+# G9 reads runs-on line by line, so each YAML form it cannot read as a hosted label is refused (security F1)
+p_runs_on_map() { printf 'name: x\njobs:\n  a:\n    runs-on:\n      group: my-group\n      labels: ubuntu-latest\n' >.github/workflows/x.yml; }
+p_runs_on_list() { printf 'name: x\njobs:\n  a:\n    runs-on:\n      - my-runner\n' >.github/workflows/x.yml; }
+p_quoted_key() { printf 'name: x\njobs:\n  a:\n    "runs-on": my-runner\n' >.github/workflows/x.yml; }
+p_single_quoted_key() { printf "name: x\njobs:\n  a:\n    'runs-on': my-runner\n" >.github/workflows/x.yml; }
+p_flow_job() { printf 'name: x\njobs:\n  a: {runs-on: my-runner, steps: []}\n' >.github/workflows/x.yml; }
+p_matrix_include() { printf 'name: x\njobs:\n  a:\n    strategy:\n      matrix:\n        os: [ubuntu-latest]\n        include:\n          - os: my-runner\n    runs-on: ${{ matrix.os }}\n' >.github/workflows/x.yml; }
+p_matrix_block() {
+    printf 'name: x\njobs:\n  a:\n    strategy:\n      matrix:\n        os: [ubuntu-latest]\n    runs-on: ${{ matrix.os }}\n' >.github/workflows/x.yml
+    printf '  b:\n    strategy:\n      matrix:\n        os:\n          - ubuntu-latest\n          - my-runner\n    runs-on: ${{ matrix.os }}\n' >>.github/workflows/x.yml
+}
+# only the listed hosted labels pass: not a hosted-looking custom label, not a larger runner (B1)
+p_hosted_shape() { printf 'name: x\njobs:\n  a:\n    runs-on: ubuntu-9999\n' >.github/workflows/x.yml; }
+p_larger() { printf 'name: x\njobs:\n  a:\n    runs-on: macos-15-xlarge\n' >.github/workflows/x.yml; }
+# each of these is the only guard for its form (security N1)
+p_escaped_key() { printf 'name: x\njobs:\n  a:\n    %s: my-runner\n' '"runs\u002don"' >.github/workflows/x.yml; }
+p_explicit_key() { printf 'name: x\njobs:\n  a:\n    ? %s\n    : my-runner\n' '"runs\u002don"' >.github/workflows/x.yml; }
+p_continued() { printf 'name: x\njobs:\n  a:\n    runs-on: ubuntu-latest\n      my-runner\n' >.github/workflows/x.yml; }
+# a job calling another repository's workflow runs where that workflow says (security ruling 2)
+p_remote_job() { printf 'name: x\njobs:\n  a:\n    uses: org/repo/.github/workflows/x.yml@%s\n' "$(printf '0%.0s' $(seq 40))" >.github/workflows/x.yml; }
+p_uses_after_steps() { printf 'name: x\njobs:\n  a:\n    steps:\n    - run: echo\n    uses: org/repo/.github/workflows/x.yml@v1\n' >.github/workflows/x.yml; }
+p_uses_alias() {
+    printf 'name: x\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - &call\n        uses: org/repo/.github/workflows/x.yml@v1\n' >.github/workflows/x.yml
+    printf '  b: *call\n' >>.github/workflows/x.yml
+}
 p_slug() { printf 'clone %s%s\n' AI-Substrate/ Unimatrix >src/clone.md; }
 p_ip() { printf 'host %s.%s is the proxy\n' 10.1 2.3 >src/ip.md; }
 p_host() { printf 'registry at %s\n' "$host" >src/reg.md; }
@@ -132,6 +160,21 @@ plant "a .gitmodules" shape p_submodule
 plant "a self-hosted runner" workflow-runners p_selfhosted
 plant "a custom runner label" workflow-runners p_label
 plant "a custom label in the matrix" workflow-runners p_matrix
+plant "runs-on as a block mapping (group, labels)" workflow-runners p_runs_on_map
+plant "runs-on as a block list" workflow-runners p_runs_on_list
+plant "a double-quoted runs-on key" workflow-runners p_quoted_key
+plant "a single-quoted runs-on key" workflow-runners p_single_quoted_key
+plant "a flow-style job" workflow-runners p_flow_job
+plant "a custom label in a matrix include" workflow-runners p_matrix_include
+plant "a custom label in a block-list matrix os" workflow-runners p_matrix_block
+plant "a hosted-looking custom label" workflow-runners p_hosted_shape
+plant "a larger hosted runner" workflow-runners p_larger
+plant "an escaped runs-on key" workflow-runners p_escaped_key
+plant "an explicit (?) runs-on key" workflow-runners p_explicit_key
+plant "a runs-on value continued on the next line" workflow-runners p_continued
+plant "a job calling another repository's workflow" workflow-runners p_remote_job
+plant "a job uses beside a compact steps list" workflow-runners p_uses_after_steps
+plant "an alias carrying a remote uses up to a job" workflow-runners p_uses_alias
 plant "the old repository slug" private-infrastructure p_slug
 plant "a private IP" private-infrastructure p_ip
 plant "a private host" private-infrastructure p_host

@@ -265,6 +265,169 @@ def line_of(body, start):
     return body.count(b"\n", 0, start) + 1
 
 
+# G9 reads workflows line by line, not with a YAML parser (stdlib only), so it fails closed: a runs-on, os, matrix or
+# strategy it cannot read as GitHub-hosted labels is refused, and so is any YAML that could spell those keys or values in
+# a way the line reading does not see (escaped or explicit keys, other line breaks, anchors in a matrix). The matching is
+# by text: any line mentioning runs-on that is not the one-line runner key is refused, even in a step name or a run
+# script, and in a file using matrix.os every os: key is read as a runner. A job may call a reusable workflow only from
+# this repository (./.github/workflows/<file>.yml), since a job calling another repository's workflow runs where that
+# workflow says; a uses: G9 cannot place inside a sequence item (a step) is read as a job's, and a file with a remote
+# uses: may hold no alias that could carry one up to a job.
+# The labels G9 accepts, exactly. Adding one is a gate change and needs a security verdict (D76a: no Windows runner;
+# no larger, -intel or core-count runners).
+HOSTED_RUNNERS = frozenset({
+    "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-24.04-arm", "ubuntu-22.04-arm",
+    "macos-latest", "macos-15", "macos-14",
+})
+MATRIX_OS = re.compile(r"\$\{\{\s*matrix\.os\s*\}\}")
+YAML_TAIL = r"(?:[ \t]+#.*)?[ \t]*$"  # an optional comment, which YAML starts only after whitespace
+
+
+def yaml_key(name):
+    """Any mention of `name` as a key: plain, quoted, spaced before the colon, in a block or in a flow mapping."""
+    return re.compile(rf"(?i)(?<![\w.$-])['\"]?{name}['\"]?[ \t]*:(?:[ \t]|$)")
+
+
+OS_KEY, MATRIX_KEY, STRATEGY_KEY = (yaml_key(k) for k in ("os", "matrix", "strategy"))
+ESCAPED_KEY = re.compile(r'"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*"[ \t]*:(?:[ \t]|$)')
+EXPLICIT_KEY = re.compile(r"^[ \t]*(?:-[ \t]+)*\?(?:[ \t]|$)")
+USES_KEY = yaml_key("uses")
+LOCAL_WORKFLOW = re.compile(r"\./\.github/workflows/[\w.-]+\.ya?ml")
+ALIAS = re.compile(r"(?:^[ \t]*|[:?,\[{-][ \t]*)\*")  # a `*` where YAML could read an alias (or merge one in)
+
+
+def unquoted(value):
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        return value[1:-1]
+    return value
+
+
+def hosted(value):
+    return unquoted(value) in HOSTED_RUNNERS
+
+
+def indent_of(line):
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def runner_faults(body):
+    """The 1-based lines of one workflow file that G9 refuses (line 1 when the file itself cannot be read)."""
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return [1]
+    text = text.removeprefix("\ufeff")
+    # YAML also breaks lines at a lone CR, NEL, LS and PS; splitting only at LF would let a value hide past them
+    if re.search("\x00|\r(?!\n)|[\x85\u2028\u2029]", text):
+        return [1]
+    lines = [line.removesuffix("\r") for line in text.split("\n")]
+    code = [bool(line.strip()) and not line.lstrip().startswith("#") for line in lines]
+
+    def continues(i, col):
+        """True when the next non-blank line is indented past `col`: a plain scalar going on, or a block value."""
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip():
+                return indent_of(lines[j]) > col
+        return False
+
+    def block(i, col):
+        """The lines of the block value under the key at `col` on line i (a sequence may sit at the key's own column)."""
+        out = []
+        for j in range(i + 1, len(lines)):
+            if not code[j]:
+                continue
+            ind = indent_of(lines[j])
+            if ind > col or (ind == col and lines[j].lstrip().startswith("-")):
+                out.append(j)
+            else:
+                break
+        return out
+
+    def item_key(i, col):
+        """True when the key at `col` on line i sits under a block sequence item, so it is not a job's own key (a job's
+        parent line is its id, never a `- ` item)."""
+        for j in range(i - 1, -1, -1):
+            if not code[j] or indent_of(lines[j]) >= col:
+                continue  # nested content, a sibling key, or a sequence at a sibling key's column
+            return bool(re.match(r" *-(?:[ \t]|$)", lines[j]))
+        return False
+
+    bad, os_bad, matrix_bad, uses_matrix, os_values = set(), set(), set(), [], []
+    remote_uses, aliases = False, set()
+    for i, line in enumerate(lines):
+        if "self-hosted" in line.lower():
+            bad.add(i)
+        if not code[i]:
+            continue
+        if ESCAPED_KEY.search(line) or EXPLICIT_KEY.match(line):
+            bad.add(i)
+        if "runs-on" in line.lower():  # any spelling of the key (quoted, spaced, in a flow mapping) must be the one-line form
+            m = re.match(rf"^( *)runs-on:[ \t]+(.+?){YAML_TAIL}", line)
+            value = m and m.group(2)
+            if not m or continues(i, len(m.group(1))):
+                bad.add(i)
+            elif MATRIX_OS.fullmatch(unquoted(value)):
+                uses_matrix.append(i)
+            elif not hosted(value):
+                bad.add(i)
+        if OS_KEY.search(line):
+            m = re.match(rf"^( *(?:-[ \t]+)?)os:(?:[ \t]+(.+?))?{YAML_TAIL}", line)
+            col = m and len(m.group(1))
+            if not m:
+                os_bad.add(i)
+            elif m.group(2) is None:  # a block list: `os:` then `- label` lines
+                items = block(i, col)
+                for j in items:
+                    item = re.match(rf"^( *)-[ \t]+(.+?){YAML_TAIL}", lines[j])
+                    if item and indent_of(lines[j]) == indent_of(lines[items[0]]) and hosted(item.group(2)):
+                        os_values.append(item.group(2))
+                    else:
+                        os_bad.add(j)
+                if not items:
+                    os_bad.add(i)
+            elif continues(i, col):
+                os_bad.add(i)
+            elif m.group(2).startswith("["):
+                flow = re.fullmatch(r"\[([^\[\]{}]*)\]", m.group(2))
+                values = [v.strip() for v in flow.group(1).split(",")] if flow else []
+                if values and all(hosted(v) for v in values):
+                    os_values.extend(values)
+                else:
+                    os_bad.add(i)
+            elif hosted(m.group(2)):
+                os_values.append(m.group(2))
+            else:
+                os_bad.add(i)
+        if USES_KEY.search(line):  # one line, `uses: x` or `- uses: x`; a remote one only inside a step
+            m = re.match(rf"^( *(?:-[ \t]+)?)uses:[ \t]+(.+?){YAML_TAIL}", line)
+            if not m:
+                bad.add(i)
+            elif LOCAL_WORKFLOW.fullmatch(unquoted(m.group(2))) and not continues(i, len(m.group(1))):
+                pass
+            elif "-" in m.group(1) or item_key(i, len(m.group(1))):
+                remote_uses = True
+            else:
+                bad.add(i)
+        if ALIAS.search(line):
+            aliases.add(i)
+        if STRATEGY_KEY.search(line) and not re.match(rf"^ *strategy:{YAML_TAIL}", line):
+            matrix_bad.add(i)
+        if MATRIX_KEY.search(line):
+            m = re.match(rf"^( *)matrix:{YAML_TAIL}", line)
+            if not m:
+                matrix_bad.add(i)
+            else:
+                # what a matrix holds must be literal: no expression, anchor, alias or merge can add an os
+                matrix_bad.update(j for j in block(i, len(m.group(1))) if re.search(r"\$\{\{|[*&]|<<", lines[j]))
+    if uses_matrix:
+        bad |= os_bad | matrix_bad
+        if not os_values:
+            bad.update(uses_matrix)
+    if remote_uses:
+        bad |= aliases
+    return sorted(n + 1 for n in bad)
+
+
 class Gate:
     def __init__(self, opts, tree):
         self.opts, self.tree = opts, tree
@@ -526,31 +689,25 @@ class Gate:
 
     # G9: workflows run only on GitHub-hosted labels
     def workflows(self):
-        label = re.compile(r"^(ubuntu|macos|windows)-(latest|\d+(\.\d+)?)(-arm|-intel|-xlarge)?$")
         bad = 0
         for path, (_sha, body) in self.tree.files():
             if not re.match(rb"\.github/workflows/[^/]+\.ya?ml$", path):
                 continue
-            text = body.decode("utf-8", "replace")
-            matrix = [v.strip(" '\"") for m in re.finditer(r"^\s*os:\s*\[(.*?)\]", text, re.M) for v in m.group(1).split(",")]
-            for n, line in enumerate(text.splitlines(), 1):
-                if "self-hosted" in line.lower():
-                    bad += 1
-                    self.locate(path, n)
-                m = re.match(r"^\s*runs-on:\s*(.+?)\s*(#.*)?$", line)
-                if not m:
-                    continue
-                value = m.group(1).strip("'\"")
-                if value.startswith("${{") and "matrix.os" in value:
-                    ok = bool(matrix) and all(label.match(v) for v in matrix)
-                else:
-                    ok = bool(label.match(value))
-                if not ok:
-                    bad += 1
-                    self.locate(path, n)
+            for n in runner_faults(body):
+                bad += 1
+                self.locate(path, n)
         self.add("workflow-runners", bad == 0, bad,
-                 "every runs-on must be a GitHub-hosted label (ubuntu-latest, macos-latest, windows-latest or a numbered image); "
-                 "remove self-hosted and custom labels")
+                 "every runs-on must be one of " + ", ".join(sorted(HOSTED_RUNNERS)) + " (a new label is a gate change "
+                 "and needs a security verdict); remove self-hosted, custom, larger and Windows labels. Write it on one "
+                 "line, `runs-on: ubuntu-latest`, or as `runs-on: ${{ matrix.os }}` with every os a listed label: "
+                 "`os: [ubuntu-latest, macos-latest]`, `- os: ubuntu-latest` in an include, or `os:` over `- ubuntu-latest` "
+                 "lines. Refused: runs-on as a block or flow mapping or list (group:, labels:, - x), quoted, escaped or "
+                 "explicit (?) keys, a flow-style job, a value that runs onto the next line, and expressions, anchors or "
+                 "aliases inside a matrix. A job may call only a workflow in this repository, `uses: "
+                 "./.github/workflows/<file>.yml`; a remote uses: must be a step's (`- uses: owner/action@sha`), and that "
+                 "file may hold no YAML alias (`*name`). G9 matches text, not YAML: a line mentioning runs-on that is not "
+                 "the one-line runner key is refused, and in a file using matrix.os every os: key is read as a runner, so "
+                 "rename the step text or the key")
 
     # G6: the lock files
     def locks(self):
