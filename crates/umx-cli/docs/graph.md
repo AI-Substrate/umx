@@ -474,7 +474,8 @@ still remembered: the next command that names it loads it again (see Loading on 
 An address `umx:<alias>/<id>` names its own graph. Otherwise `--graph <alias>` picks one, else `UMX_GRAPH`, else
 the only loaded graph. With several loaded and none named, the error's `next` repeats your command with
 `--graph`. An address and a `--graph` that disagree are refused (`graph_mismatch`). When every loaded graph is a
-copy of one graph, the command takes its primary (see Copies below).
+copy of one graph, the command takes its primary (see Copies below). Give `--graph` once: a second one is refused
+(`usage_invalid`), never read as the last one given; several graphs go in one `--graph a,b` (`umx docs get scope`).
 
 One folder is one loaded graph, however its path is spelled (symlinks, `/tmp` and `/private/tmp`): loading it
 again replaces the earlier load, under the new alias.
