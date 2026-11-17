@@ -2,6 +2,7 @@
 
 Use `--graph a,b` for a list of loaded graph aliases, or `--scope <name>` for one saved scope.
 Do not use both. `--set` still sets node fields; it does not select graphs.
+Give each once: a second `--graph` or `--scope` is refused (`usage_invalid`), never read as the last one given.
 
     umx node list --graph design,delivery
     umx edge list --graph design,delivery --type blocks

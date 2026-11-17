@@ -25690,3 +25690,106 @@ fn secured_graphs_left_out_are_a_hint_in_every_verb_that_counts_them() {
         );
     }
 }
+
+#[test]
+fn a_repeated_graph_or_scope_is_refused_never_read_as_its_last() {
+    // F256: `--graph alpha --graph beta` kept only beta, so node find answered ok with no rows for a title in alpha.
+    let mut home = Home::new("graph-twice");
+    home.start();
+    for alias in ["alpha", "beta"] {
+        let dir = home.path.join(alias).display().to_string();
+        home.ok(&["graph", "new", &dir, "--alias", alias]);
+    }
+    let added = home.ok(&[
+        "node",
+        "add",
+        "--graph",
+        "alpha",
+        "--type",
+        "problem",
+        "--title",
+        "Latency budget",
+    ]);
+    let id = added.data["node"]["id"].as_str().unwrap().to_owned();
+    home.ok(&[
+        "node",
+        "add",
+        "--graph",
+        "beta",
+        "--type",
+        "problem",
+        "--title",
+        "Latency spikes",
+    ]);
+    let alone = home.ok(&["node", "find", "budget", "--graph", "alpha"]);
+    assert_eq!(alone.data["total"], json!(1), "{}", alone.to_json());
+
+    let list = "name every graph in one --graph a,b";
+    let one = "use --graph with one name";
+    let refused: [(&[&str], &str); 9] = [
+        (
+            &[
+                "node", "find", "budget", "--graph", "alpha", "--graph", "beta",
+            ],
+            one,
+        ),
+        (
+            &["node", "find", "budget", "--graph=alpha", "--graph=beta"],
+            one,
+        ),
+        (&["node", "find", "budget", "--graph", "alpha,beta"], one),
+        (
+            &["node", "get", &id, "--graph", "alpha", "--graph", "beta"],
+            one,
+        ),
+        (
+            &["node", "list", "--graph", "alpha", "--graph", "beta"],
+            list,
+        ),
+        (
+            &["edge", "list", "--graph", "alpha", "--graph", "beta"],
+            list,
+        ),
+        (
+            &["neighbours", &id, "--graph", "alpha", "--graph", "beta"],
+            list,
+        ),
+        (
+            &[
+                "scope", "save", "both", "--graph", "alpha", "--graph", "beta",
+            ],
+            list,
+        ),
+        (
+            &["node", "list", "--scope", "both", "--scope", "both"],
+            "--scope",
+        ),
+    ];
+    for (args, says) in refused {
+        let (env, exit) = home.umx(args);
+        assert_eq!(
+            (exit, env.status),
+            (2, Status::Error),
+            "{args:?}: {}",
+            env.to_json()
+        );
+        let message = issue(&env, Code::UsageInvalid).message();
+        assert!(message.contains(says), "{args:?}: {message}");
+    }
+
+    // The refused scope save saved nothing; the list forms read both graphs.
+    home.ok(&["scope", "save", "both", "--graph", "alpha,beta"]);
+    for args in [
+        &["node", "list", "--graph", "alpha,beta"][..],
+        &["node", "list", "--scope", "both"],
+    ] {
+        let env = home.ok(args);
+        let graphs: Vec<&str> = env.data["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["graph"].as_str().unwrap())
+            .collect();
+        assert_eq!(graphs, ["alpha", "beta"], "{args:?}");
+    }
+}

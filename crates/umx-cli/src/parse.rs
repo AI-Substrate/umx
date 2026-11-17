@@ -482,6 +482,24 @@ impl Args {
                 "this command takes one graph (use --graph with one name)",
             ));
         }
+        // F256: a second --graph or --scope used to replace the first, so a read named two graphs and answered
+        // from one, often empty. Each is given once; several graphs go in one list.
+        let given = |flag: &str| args.flags.iter().filter(|(f, _)| f == flag).count();
+        if given("--graph") > 1 {
+            return Err(fail(
+                if MULTI_GRAPH.contains(&command) || command == "scope save" || command == "ui open"
+                {
+                    "--graph is given more than once (name every graph in one --graph a,b)"
+                } else {
+                    "--graph is given more than once (this command takes one graph: use --graph with one name)"
+                },
+            ));
+        }
+        if given("--scope") > 1 {
+            return Err(fail(
+                "--scope is given more than once (name one saved scope, or the graphs in one --graph a,b)",
+            ));
+        }
         Ok(args)
     }
 
