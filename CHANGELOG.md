@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0](https://github.com/AI-Substrate/umx/compare/v0.1.0...v0.1.0) (2026-11-18)
+
+
+### Documentation
+
+* install umx from a release; the README starts with the agent block ([f368ebf](https://github.com/AI-Substrate/umx/commit/f368ebfeb32e9aa62ecb7d4acbc928dadbd70ec2))
+
 ## 0.1.0 (2026-11-18)
 
 
