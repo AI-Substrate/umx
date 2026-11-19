@@ -94,6 +94,9 @@ every named graph it lists; do not combine it or `--scope` with `--all`.
 3. Filter: `umx node list --type <type> --status <status>`, `--where '<field><op><value>'`.
    **usage 066**: `--within <node>` scopes `node list`, `node find` and `walk` to everything under a node by
    `part_of` (not the node itself).
+   **usage 216**: in a std graph `--tag a` (repeat for AND, `a,b` for OR, `'origin:*'` a facet) and `--no-tag x`
+   narrow `node find`, `search` (before ranking), `walk` (the nodes listed) and `neighbours` (far ends) as they do
+   `node list`; in `umx query` use `'x' IN n.tags`. `tag_filter_untested` counts rows the read could not show.
    **usage 169**: `--columns all` on `node list` and `node get` adds every custom field on the page (sorted, null
    where a node lacks one) and overrides a type's own columns; give `all` alone, never `all,owner`.
 4. One node in full: `umx node get <node>`. How it got here: `umx node history <node>`.

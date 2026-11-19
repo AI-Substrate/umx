@@ -645,6 +645,9 @@ enum Prop {
     Authored(FieldIds),
     Edited(FieldIds),
     EvidenceKinds,
+    /// `tags` (ws008 t2b): in a std graph the canonical list from its tag index, so `'x' IN n.tags` matches a
+    /// hand-edited value as a tag filter does; in a graph without std an ordinary custom field.
+    Tags(FieldIds),
     Custom(FieldIds),
 }
 
@@ -677,6 +680,7 @@ impl Prop {
             "authored_by_session" => Prop::Authored(fields()),
             "edited_by_session" => Prop::Edited(fields()),
             "evidence_kinds" => Prop::EvidenceKinds,
+            umx_core::tags::TAGS => Prop::Tags(fields()),
             _ => Prop::Custom(fields()),
         }
     }
@@ -808,7 +812,15 @@ impl<S: Space> Provider<'_, '_, S> {
             Prop::Authored(fields) => n.authored_by_session().map_or_else(|| custom(fields), id),
             Prop::Edited(fields) => n.edited_by_session().map_or_else(|| custom(fields), id),
             Prop::EvidenceKinds => CypherValue::List(n.evidence_kinds().map(text).collect()),
-            Prop::Custom(fields) => custom(fields),
+            Prop::Tags(_) if self.view.graph(part).std_tags() => {
+                let tags = self.view.graph(part).tags_of(n);
+                if tags.is_empty() {
+                    CypherValue::Null
+                } else {
+                    CypherValue::List(tags.into_iter().map(text).collect())
+                }
+            }
+            Prop::Tags(fields) | Prop::Custom(fields) => custom(fields),
         }
     }
 
@@ -1157,13 +1169,30 @@ impl<S: Space> GraphProvider for Provider<'_, '_, S> {
         if self.view.lists_off.get() {
             return false;
         }
-        if !matches!(self.slots.borrow()[key.0 as usize].1, Prop::EvidenceKinds) {
-            return false;
-        }
+        let tags = match self.slots.borrow()[key.0 as usize].1 {
+            Prop::EvidenceKinds => false,
+            Prop::Tags(_) => true,
+            _ => return false,
+        };
         let (part, ViewNode::Stored(ix)) = S::node_at(node) else {
             return false;
         };
-        for kind in self.view.graph(part).node_at(ix).evidence_kinds() {
+        let g = self.view.graph(part);
+        if tags {
+            // ws008 t2b: a std graph's tags from its index, as `property_at` reads them; any other graph reads the field.
+            let held = g.tags_of(g.node_at(ix));
+            // A node with no tags reads null, as `property_at` gives it, never an empty list.
+            if !g.std_tags() || held.is_empty() {
+                return false;
+            }
+            for tag in held {
+                if visit(tag).is_break() {
+                    break;
+                }
+            }
+            return true;
+        }
+        for kind in g.node_at(ix).evidence_kinds() {
             if visit(kind).is_break() {
                 break;
             }

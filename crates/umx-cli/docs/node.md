@@ -155,6 +155,7 @@ in notes or another form of a word.
     # finds "Approval delays at month end for the regional finance team and the shared services desk" (15 words)
     umx node find "launch" --type decision
     umx node find "launch" --within 01JC8XA4H7   # only nodes under it by part_of
+    umx node find "launch" --tag needs_review    # only matches holding that std tag (--no-tag leaves out)
     umx node find "launch" --along day --after 01JC8XA4H7   # only nodes the spine places from that segment on
 
 ## umx node edit <node>

@@ -37,7 +37,7 @@ mod similar;
 mod sources;
 mod spine;
 mod spine_decl;
-mod tags;
+pub(crate) mod tags;
 mod time_check;
 mod ui;
 mod unload;

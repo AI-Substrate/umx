@@ -1115,6 +1115,8 @@ fn raw_all_graph_selectors_are_checked_before_any_operation_runs() {
     home.graph();
     for op in [
         umx_protocol::Op::Search {
+            no_tags: Default::default(),
+            tags: Default::default(),
             text: "words".into(),
             within: None,
             limit: None,

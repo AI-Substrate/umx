@@ -76,6 +76,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--limit",
             "--offset",
             "--provenance",
+            "--tag",
+            "--no-tag",
         ],
     ),
     (
@@ -88,6 +90,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--limit",
             "--offset",
             "--provenance",
+            "--tag",
+            "--no-tag",
         ],
     ),
     (
@@ -123,6 +127,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--all",
             "--include-named",
             "--provenance",
+            "--tag",
+            "--no-tag",
         ],
     ),
     (
@@ -263,6 +269,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--after",
             "--before",
             "--provenance",
+            "--tag",
+            "--no-tag",
         ],
     ),
     (
@@ -969,6 +977,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 direction: a.direction()?,
                 limit: a.number("--limit")?,
                 offset: a.number("--offset")?,
+                tags: a.all("--tag"),
+                no_tags: a.all("--no-tag"),
             }
             .with(a));
         }
@@ -983,6 +993,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 within: a.one("--within"),
                 limit: a.number("--limit")?,
                 offset: a.number("--offset")?,
+                tags: a.all("--tag"),
+                no_tags: a.all("--no-tag"),
             }
             .with(a));
         }
@@ -1070,6 +1082,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             limit: a.number("--limit")?,
             along: a.along()?,
             also,
+            tags: a.all("--tag"),
+            no_tags: a.all("--no-tag"),
         }
         .with(a));
     }
@@ -1369,6 +1383,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 limit: a.number("--limit")?,
                 within: a.one("--within"),
                 along: a.along()?,
+                tags: a.all("--tag"),
+                no_tags: a.all("--no-tag"),
             }
             .with(a)
         }

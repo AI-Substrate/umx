@@ -313,6 +313,8 @@ fn hidden_provenance_preserves_nonempty_similarity_results_and_query_work() {
         .collect();
     run(&mut w);
     let req = NeighboursRequest {
+        no_tags: Default::default(),
+        tags: Default::default(),
         node: ids[0].to_text(),
         relation: Some("similar_to".into()),
         direction: Direction::Out,
@@ -604,6 +606,8 @@ fn neighbours(
         .neighbours(
             &ctx(),
             NeighboursRequest {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 node: node.to_text(),
                 relation: relation.map(str::to_owned),
                 direction: Direction::Both,
@@ -670,6 +674,8 @@ fn similar_to_is_followed_only_when_named_with_scores_and_no_ids() {
         w.svc.walk(
             &ctx(),
             WalkRequest {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 node: ids[0].to_text(),
                 depth,
                 relation: Some("similar_to".into()),
@@ -1144,6 +1150,8 @@ fn a_walk_that_reaches_a_node_with_no_vector_is_incomplete() {
             .walk(
                 &ctx(),
                 WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: first.to_text(),
                     relation: relation.map(Into::into),
                     direction: Direction::Out,

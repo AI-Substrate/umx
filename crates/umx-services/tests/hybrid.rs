@@ -1630,3 +1630,60 @@ fn a_hit_shows_its_best_phrasings_details_and_the_earlier_on_a_tie() {
     assert_eq!((v.rank, r.hits[0].phrasings.clone()), (1, vec![1, 2]));
     assert!((v.cosine - 0.707).abs() < 0.01, "{}", v.cosine);
 }
+
+/// ws008 t2b: `--tag` narrows the vector leg too, before it ranks: "feline" finds both cat nodes by meaning alone, and
+/// with a tag only the tagged one, still by vector.
+#[test]
+fn a_tag_filter_narrows_the_vector_leg() {
+    let mut w = world_with(Concepts::new(Locality::Local));
+    w.svc
+        .graph_new_with(
+            &ctx(),
+            "/work/demo",
+            "demo",
+            None,
+            false,
+            Some(section(None, Policy::OPEN)),
+            umx_services::GraphfileMode::Skip,
+            true,
+        )
+        .unwrap();
+    let mut c = ctx();
+    c.graph = Some("demo".into());
+    let mut cat = |title: &str, tags: &[&str]| {
+        w.svc
+            .node_add(
+                &c,
+                NodeAddRequest {
+                    kind: "risk".into(),
+                    title: title.into(),
+                    tags: tags.iter().map(|t| t.to_string()).collect(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .value
+            .node
+            .id
+    };
+    let tagged = cat("Cat food shortage", &["pets"]);
+    let other = cat("Kitten rescue", &[]);
+    run(&mut w);
+    let found = |tags: &[String]| {
+        let done = w
+            .svc
+            .search_tagged(&c, "feline", &[], None, 10, None, (tags, &[]))
+            .unwrap();
+        done.value
+            .hits
+            .iter()
+            .map(|h| (h.node.id, h.legs()))
+            .collect::<Vec<_>>()
+    };
+    let mut all = found(&[]);
+    all.sort();
+    let mut want = vec![(tagged, "vector"), (other, "vector")];
+    want.sort();
+    assert_eq!(all, want);
+    assert_eq!(found(&["pets".into()]), vec![(tagged, "vector")]);
+}

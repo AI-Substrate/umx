@@ -411,6 +411,16 @@ impl<'a> NodeSet<'a> {
         self.len == 0
     }
 
+    /// The members also in `other`, a set of the same graph (one AND per word of 64 handles).
+    pub fn and(mut self, other: &NodeSet<'_>) -> NodeSet<'a> {
+        debug_assert_eq!(self.bits.len(), other.bits.len(), "sets of one graph");
+        for (a, b) in self.bits.iter_mut().zip(&other.bits) {
+            *a &= *b;
+        }
+        self.len = self.bits.iter().map(|w| w.count_ones() as usize).sum();
+        self
+    }
+
     /// The members' ids, in id order.
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = Id> + '_ {

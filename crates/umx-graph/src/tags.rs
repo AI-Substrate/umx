@@ -190,6 +190,16 @@ impl Graph {
             && !self.tags.row_matches(n.h, &f.none)
     }
 
+    /// The nodes `f` admits, as a set, from the tag index alone (as [`Self::tagged_rows`]): a read that narrows by a
+    /// set (search's legs, ws008 t2b) is narrowed by tags before it ranks. Empty while the index is off.
+    pub fn tag_set(&self, f: &TagFilter) -> crate::NodeSet<'_> {
+        let mut set = crate::NodeSet::empty(&self.ids);
+        for h in self.tagged_rows(f) {
+            set.insert(h);
+        }
+        set
+    }
+
     /// Each node whose `tags` a hand edit left out of stored form, or holds an entry that cannot be used, with what
     /// it holds (ws008 t2b), while the index is on. Only the field's holders are read.
     pub fn tag_findings(&self) -> Vec<(umx_core::Id, umx_core::tags::StoredFindings)> {
@@ -309,6 +319,12 @@ mod tests {
         assert_eq!(got.len(), 997);
         assert!(!got.contains(&10) && !got.contains(&100) && !got.contains(&500));
         assert_eq!(g.tags.reads.take(), 1000);
+        // As a set (search's legs): the same rows, from the same index reads.
+        let set = g.tag_set(&all(&[&["origin:*"]]));
+        assert_eq!(g.tags.reads.take(), 2);
+        let mut held: Vec<u128> = set.iter().map(|id| id.0).collect();
+        held.sort();
+        assert_eq!(held, vec![10, 100]);
     }
 
     /// A line the scanner takes and one only the codec reads (a field nested past the scanner's depth) both give

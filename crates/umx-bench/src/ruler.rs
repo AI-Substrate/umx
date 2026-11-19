@@ -574,6 +574,8 @@ fn read_rows(
         svc.walk(
             &c,
             WalkRequest {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 node: n.clone(),
                 depth: 3,
                 relation: None,
@@ -595,6 +597,8 @@ fn read_rows(
             svc.walk(
                 &c,
                 WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: n.clone(),
                     depth: 3,
                     relation: None,
@@ -651,6 +655,8 @@ fn read_rows(
                 svc.walk(
                     &c,
                     WalkRequest {
+                        no_tags: Default::default(),
+                        tags: Default::default(),
                         node: n.clone(),
                         depth: 3,
                         relation: None,

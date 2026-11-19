@@ -24,6 +24,7 @@ relation means there.
 | Everything upstream or downstream | `umx walk <node> --depth 3 --direction in --relation depends_on` |
 | How two nodes are connected | `umx path <node> <node>` |
 | What sits under a node by `part_of` | `--within <node>` on list, find, search and walk |
+| Nodes holding a std tag | `--tag <tag>` (and `--no-tag`) on list, find, search, walk and neighbours |
 | Nodes like this one | `umx neighbours <node> --relation similar_to` |
 | Joins, counts, absence ("questions with no answer") | `umx query '<cypher>'` |
 

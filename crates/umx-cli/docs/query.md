@@ -71,8 +71,13 @@ that would otherwise widen to every node. `std` as a variable or a property is a
   where LadybugDB says 0, and `date_diff` is umx's own (LadybugDB writes the day gap `date(b) - date(a)`, which umx
   does not have). `now()` and `datetime()` are not functions here: use `current_timestamp()` and `timestamp(x)`.
 - Fields: `n.id`, `n.type`, `n.title`, `n.status`, `n.note`, `n.created`, `n.updated`, `n.created_by`,
-  `n.evidence_kinds`, `n.address`, `n.graph` and any custom field by name; on an edge, `r.id`, `r.from`, `r.to`,
+  `n.evidence_kinds`, `n.address`, `n.graph`, `n.tags` (in a std graph its tags in stored form, so
+  `'needs_review' IN n.tags` matches as `--tag` does; a node with no tags reads null) and any custom field by name; on an edge, `r.id`, `r.from`, `r.to`,
   `r.address`, `r.graph` and its fields; on a similar_to edge, `s.score`.
+- `NOT` is two-valued here: `NOT 'x' IN n.tags` keeps nodes whose `n.tags` is null (no tags) as well as nodes
+  whose tags leave `x` out. For "nodes without `x`" write `n.tags IS NULL OR NOT 'x' IN n.tags`, which says so
+  and keeps the same rows if `NOT` ever follows openCypher's three-valued rule (where null stays null and the row
+  is dropped).
 - Resource nodes (`umx docs get resource`) answer `n.locator_kind`, `n.locator_source`, `n.locator_format`,
   `n.locator_hash`, `n.locator_length` and `n.locator_seq_max` (null on a plain node). `n.locator` is not a
   property: it reads null with `query_unknown_property`.

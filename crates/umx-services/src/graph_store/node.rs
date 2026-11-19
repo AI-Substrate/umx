@@ -1261,6 +1261,7 @@ impl GraphStore {
 
     /// Nodes by approximate title, best first, with their scores.
     /// Approximate title match (req-57), best first; `within` keeps only nodes under that node by part_of.
+    #[allow(clippy::too_many_arguments)]
     pub fn node_find(
         &self,
         ctx: &Ctx,
@@ -1269,12 +1270,23 @@ impl GraphStore {
         within: Option<&str>,
         limit: usize,
         along: Option<&super::AlongRequest>,
+        (tags, no_tags): (&[String], &[String]),
     ) -> Outcome<Page<(Node, f64)>> {
         if along.is_some() {
             super::along::one_graph(ctx)?;
         }
         let alias = self.select(ctx, &[within])?;
         let l = self.get(&alias);
+        // ws008 t2b: --tag/--no-tag keep matches before the page is cut. node find reads one graph.
+        let base = Command::new("node find").word("<text>");
+        let base = match kind.and_then(ValidName::new) {
+            Some(k) => base.word("--type").name(&k),
+            None => base,
+        };
+        if !(tags.is_empty() && no_tags.is_empty()) && !super::tags::is_std(l.ontology()) {
+            return Err(problems::tag_needs_std(&alias_name(&alias)));
+        }
+        let tagged = super::tags::read_filter(tags, no_tags, ctx.same_graph(base))?;
         let scope = match within {
             Some(w) => Some(
                 ctx.read_scope(&l.graph)
@@ -1292,8 +1304,12 @@ impl GraphStore {
             .filter(|(n, _)| ctx.read_scope(&l.graph).contains_ix(n.ix()))
             .filter(|(n, _)| scope.as_ref().is_none_or(|w| w.contains(n.id())))
             .collect();
-        // No title matched at all, before --along: a range that left every match out is not a miss.
+        // No title matched at all, before --along and the tags: a range or tag filter that left every match out is not
+        // a miss.
         let empty = all.is_empty();
+        if let Some(f) = &tagged {
+            all.retain(|(n, _)| l.graph.tags_pass(*n, f));
+        }
         let mut notes = Vec::new();
         let info = match along {
             Some(a) => {

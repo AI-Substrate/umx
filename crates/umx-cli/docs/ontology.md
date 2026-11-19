@@ -340,7 +340,18 @@ in another facet, or with no facet, never warns. A declared tag names its facet;
 `unchanged`.
 
 `--tag` and `--no-tag` filter `umx node list` from one inverted tag index per graph, so they never scan nodes;
-with `--graph a,b` or `--scope` a graph without std is skipped and `tag_filter_not_std` counts it. In a graph
+with `--graph a,b` or `--scope` a graph without std is skipped and `tag_filter_not_std` counts it. The same flags,
+read the same way, filter the other reads: `umx search` narrows every leg to the tagged nodes before it ranks (so
+`--limit 1` gives the best tagged hit, never an empty page), `umx node find` keeps its tagged matches, `umx walk`
+lists only the tagged nodes it reaches (the walk goes on through the others, as with `--within`) and
+`umx neighbours` lists only the tagged far ends. A row whose node the read cannot show (an unnamed secured graph,
+one not loaded, a missing node) is never tested under `--tag` or `--no-tag`: it is left out and
+`tag_filter_untested` counts it, naming nothing. A walk counts only the rows it reached to fill its page. A
+graph without std is skipped and counted in `tag_filter_not_std` whenever the read may cover several graphs (a
+list, a scope, `--all`, or no graph named while several are loaded, even when a walk or neighbours starts in it);
+only a read of that graph alone is `tag_needs_std`. In
+`umx query`, `n.tags` in a std graph reads the stored form, so `'needs_review' IN n.tags` matches a hand-edited
+`Needs_Review` too; it reads every node it is asked about, as any property does. In a graph
 without std `tags` stays an ordinary custom field: nothing normalises it, and `--tag`, `--untag`, `--no-tag` and
 `ontology add tag` are refused with `tag_needs_std`, whose `next` is `umx ontology adopt-std --dry-run`.
 

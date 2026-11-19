@@ -125,6 +125,9 @@ pub struct NeighboursRequest {
     pub direction: Direction,
     pub limit: usize,
     pub offset: usize,
+    /// `--tag` and `--no-tag` (ws008 t2b): only far ends that pass are listed.
+    pub tags: Vec<String>,
+    pub no_tags: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +140,9 @@ pub struct WalkRequest {
     pub within: Option<String>,
     pub limit: usize,
     pub offset: usize,
+    /// `--tag` and `--no-tag` (ws008 t2b): like `within`, only the listed nodes are filtered.
+    pub tags: Vec<String>,
+    pub no_tags: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -290,6 +296,8 @@ impl QueryService {
             || ctx.scope.is_some()
             || ctx.graph.as_deref().is_some_and(|g| g.contains(','))
             || req.node.starts_with("umx:")
+            || !req.tags.is_empty()
+            || !req.no_tags.is_empty()
         {
             return crate::traversal::neighbours(store, ctx, req);
         }
@@ -468,6 +476,8 @@ impl QueryService {
             || ctx.scope.is_some()
             || ctx.graph.as_deref().is_some_and(|g| g.contains(','))
             || req.node.starts_with("umx:")
+            || !req.tags.is_empty()
+            || !req.no_tags.is_empty()
         {
             return crate::traversal::walk(store, ctx, req);
         }
@@ -746,6 +756,8 @@ mod tests {
 
     fn request(depth: usize, limit: usize, offset: usize) -> WalkRequest {
         WalkRequest {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: String::new(),
             depth,
             relation: None,

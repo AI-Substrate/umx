@@ -636,7 +636,13 @@ fn flag_cell(
     column: &str,
     cell: &mut Cell,
 ) -> bool {
-    let text = |s: &str| umx_core::secrets::field_suspect(column, s).is_some();
+    // As given and upper cased: std tags are stored lowercased, so `n.tags` reads a key lowercased (the rule the tag
+    // write and node get use, ws008 t2b).
+    let text = |s: &str| {
+        umx_core::secrets::field_suspect(column, s).is_some()
+            || (s.bytes().any(|b| b.is_ascii_lowercase())
+                && umx_core::secrets::field_suspect(column, &s.to_ascii_uppercase()).is_some())
+    };
     match cell {
         Cell::Null | Cell::Bool(_) | Cell::Int(_) | Cell::Float(_) => false,
         Cell::Similar(_) | Cell::Provenance(_) => false,

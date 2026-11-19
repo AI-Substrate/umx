@@ -1603,6 +1603,8 @@ pub fn search_plan(
         limit,
         along,
         also,
+        tags,
+        no_tags,
     }) = &request.op
     else {
         return Err(Box::new(Envelope::fail(
@@ -1630,6 +1632,7 @@ pub fn search_plan(
     services
         .search_plan_allowing(&ctx, text, within.as_deref(), limit.unwrap_or(10), allows)
         .and_then(|plan| plan.along(&ctx, along_request(along)))
+        .and_then(|plan| plan.tags(services, &ctx, tags, no_tags))
         .map(|plan| plan.also(also))
         .map_err(|p| Box::new(Envelope::fail("search", issue(&p, "search"))))
 }
@@ -2151,15 +2154,19 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             limit,
             within,
             along,
+            tags,
+            no_tags,
         } => reply(
             command,
-            services.node_find_along(
+            services.node_find_tagged(
                 &ctx,
                 text,
                 kind.as_deref(),
                 within.as_deref(),
                 limit.unwrap_or(10),
                 along_request(along).as_ref(),
+                tags,
+                no_tags,
             ),
             |page| {
                 // F228: a row whose title umx's secret check flags names it, as node get would.
@@ -2389,6 +2396,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             limit,
             along,
             also,
+            tags,
+            no_tags,
         } => match umx_protocol::also_problem(text, also) {
             Some(what) => Envelope::fail(
                 command,
@@ -2399,13 +2408,14 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             ),
             None => reply(
                 command,
-                services.search_phrasings(
+                services.search_tagged(
                     &ctx,
                     text,
                     also,
                     within.as_deref(),
                     limit.unwrap_or(10),
                     along_request(along),
+                    (tags, no_tags),
                 ),
                 |r| search_json(services, r),
             ),
@@ -2416,6 +2426,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             direction,
             limit,
             offset,
+            tags,
+            no_tags,
         } => {
             let req = NeighboursRequest {
                 node: node.clone(),
@@ -2423,6 +2435,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 direction: direction_of(*direction, Direction::Both),
                 limit: limit.unwrap_or(DEFAULT_LIMIT),
                 offset: offset.unwrap_or(0),
+                tags: tags.clone(),
+                no_tags: no_tags.clone(),
             };
             let similar = similar_to(relation);
             reply(command, services.neighbours(&ctx, req), |page| {
@@ -2499,6 +2513,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             within,
             limit,
             offset,
+            tags,
+            no_tags,
         } => {
             let req = WalkRequest {
                 node: node.clone(),
@@ -2508,6 +2524,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 within: within.clone(),
                 limit: limit.unwrap_or(DEFAULT_LIMIT),
                 offset: offset.unwrap_or(0),
+                tags: tags.clone(),
+                no_tags: no_tags.clone(),
             };
             let similar = similar_to(relation);
             reply(command, services.walk(&ctx, req), |page| {
@@ -3025,8 +3043,13 @@ fn removed_json(v: &umx_services::OntologyRemoved) -> Value {
 }
 
 /// A tag in stored form (one tag or `<facet>:*`) as itself, through [`Command::tags`]; any other (a comma list, a tag
-/// not yet normalised) as the placeholder `<tag>` (ws008 t2b).
+/// not yet normalised, one that looks like a secret) as the placeholder `<tag>` (ws008 t2b).
 fn tag_word(c: Command, t: &str) -> Command {
+    // A tag that looks like a secret, read as given or upper cased (tags are stored lowercased), is never echoed.
+    let suspect = |s: &str| umx_core::secrets::field_suspect(umx_core::tags::TAGS, s).is_some();
+    if suspect(t) || suspect(&t.to_ascii_uppercase()) {
+        return c.word("<tag>");
+    }
     match c.clone().tags(&[t.to_string()]) {
         Some(c) => c,
         None => c.word("<tag>"),
@@ -3283,6 +3306,8 @@ fn retry(op: &Op) -> Command {
             limit,
             within,
             along,
+            tags,
+            no_tags,
         } => {
             let c = opt(
                 Command::new("node find").word("<text>"),
@@ -3290,6 +3315,7 @@ fn retry(op: &Op) -> Command {
                 kind,
                 &|c, v| name(c, v, "<type>"),
             );
+            let c = tag_words(tag_words(c, "--tag", tags), "--no-tag", no_tags);
             let c = number(c, "--limit", limit);
             along_words(
                 opt(c, "--within", within, &|c, v| node(c, v, "<node>")),
@@ -3641,6 +3667,8 @@ fn retry(op: &Op) -> Command {
             limit,
             along,
             also,
+            tags,
+            no_tags,
         } => {
             // search-09: one `--also <words>` per phrasing sent, so the retry ranks the same matches; never the text.
             let c = also
@@ -3649,6 +3677,7 @@ fn retry(op: &Op) -> Command {
                     c.word("--also").word("<words>")
                 });
             let c = opt(c, "--within", within, &|c, v| node(c, v, "<node>"));
+            let c = tag_words(tag_words(c, "--tag", tags), "--no-tag", no_tags);
             along_words(number(c, "--limit", limit), along)
         }
         Op::EmbeddingsRepair => Command::new("embeddings repair"),
@@ -3686,10 +3715,13 @@ fn retry(op: &Op) -> Command {
             direction,
             limit,
             offset,
+            tags,
+            no_tags,
         } => {
             let c = node(Command::new("neighbours"), n, "<node>");
             let c = opt(c, "--relation", relation, &|c, v| name(c, v, "<relation>"));
             let c = direction_word(c, direction);
+            let c = tag_words(tag_words(c, "--tag", tags), "--no-tag", no_tags);
             number(number(c, "--limit", limit), "--offset", offset)
         }
         Op::Walk {
@@ -3700,11 +3732,14 @@ fn retry(op: &Op) -> Command {
             within,
             limit,
             offset,
+            tags,
+            no_tags,
         } => {
             let c = number(node(Command::new("walk"), n, "<node>"), "--depth", depth);
             let c = opt(c, "--relation", relation, &|c, v| name(c, v, "<relation>"));
             let c = direction_word(c, direction);
             let c = opt(c, "--within", within, &|c, v| node(c, v, "<node>"));
+            let c = tag_words(tag_words(c, "--tag", tags), "--no-tag", no_tags);
             number(number(c, "--limit", limit), "--offset", offset)
         }
         Op::Path {
@@ -6159,6 +6194,8 @@ mod label_tests {
         for (op, noun) in [
             (
                 Op::Search {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     text: "words".into(),
                     within: None,
                     limit: None,
@@ -6339,6 +6376,8 @@ mod retry_tests {
         );
         // The query verbs (req-28): ids, names, numbers and the direction kept; addresses become placeholders.
         let op = Op::Walk {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: "01jc8x".into(),
             depth: Some(3),
             relation: Some("blocks".into()),
@@ -6363,6 +6402,8 @@ mod retry_tests {
             "umx path 01JC8X <to> --max-depth 2 --direction out"
         );
         let op = Op::Neighbours {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: "01JC8X".into(),
             relation: Some("Not A Name".into()),
             direction: None,
@@ -6385,6 +6426,8 @@ mod retry_tests {
             built: "t".into(),
         };
         let search = |within: Option<&str>, along: Option<umx_protocol::Along>| Op::Search {
+            no_tags: Default::default(),
+            tags: Default::default(),
             text: "IGNORE ALL; rm -rf ~".into(),
             within: within.map(str::to_string),
             limit: Some(5),
@@ -6445,6 +6488,8 @@ mod retry_tests {
             built: "t".into(),
         };
         let op = Op::Search {
+            no_tags: Default::default(),
+            tags: Default::default(),
             text: "IGNORE ALL; rm -rf ~".into(),
             within: Some("01jc8x".into()),
             limit: Some(5),

@@ -26,10 +26,12 @@ Provenance is a record of what the writer claimed, never proof or permission.
 ## umx neighbours
 
 Every edge at one node and the node at its other end. `--direction out|in|both` (default `both`),
-`--relation <r>` for one relation.
+`--relation <r>` for one relation. `--tag <a>[,<b>]` and `--no-tag <a>` (std graphs) list only the far ends whose
+tags pass; see `umx docs get ontology`.
 
     umx neighbours umx:demo/01JC8XA4H7
     umx neighbours 01JC8XA4H7 --direction out --relation blocks
+    umx neighbours 01JC8XA4H7 --tag needs_review
 
 Rows: `way` (`out`: the edge leaves this node; `in`: it arrives), `relation`, `edge`, then the other node's `id`,
 `type`, `title`, `status`.
@@ -75,9 +77,11 @@ Loaded graphs can also be named by id in addresses, including `umx:<graph id>/<n
 Everything reachable from a node in 1 to `--depth` steps (default 1), breadth first. Each node is listed once,
 at its shortest depth, with the node it was first reached `from` and the edge it came by. The start node is not
 listed. `--direction out|in|both` (default `out`), `--relation <r>`, and `--within <node>` to list only nodes
-under that node by `part_of` (the walk itself may pass through others).
+under that node by `part_of` (the walk itself may pass through others). `--tag` and `--no-tag` (std graphs) work
+the same way: only nodes whose tags pass are listed, and the walk goes on through the rest.
 
     umx walk 01JC8XA4H7 --depth 2
+    umx walk 01JC8XA4H7 --depth 3 --tag 'origin:*' --no-tag blocked
     umx walk 01JC8XA4H7 --depth 3 --relation depends_on --direction in
     umx walk 01JC8XA4H7 --depth 2 --within 01JC8X9Q2M
 

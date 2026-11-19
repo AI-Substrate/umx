@@ -246,3 +246,129 @@ pub(crate) fn edited(
         added,
     ))
 }
+
+/// Whether a read may cover several graphs (ws008 t2b): `--graph a,b`, `--scope`, `--all`, or no graph named (nor a
+/// default) while `loaded` graphs are loaded, more than one. A graph in it without std is skipped with
+/// `tag_filter_not_std`; only a read of a single graph is refused with `tag_needs_std`.
+pub(crate) fn several(ctx: &crate::Ctx, loaded: usize) -> bool {
+    ctx.scope.is_some()
+        || ctx.graph.as_deref().is_some_and(|g| g.contains(','))
+        || (ctx.graph.is_none() && ctx.default_graph.is_none() && loaded > 1)
+}
+
+/// `cmd` with the graph a tag next repeats: a single named graph as named, and a read of several as `first`, its
+/// first std graph (t2b-p1 ruling), else none.
+pub(crate) fn read_graph(
+    ctx: &crate::Ctx,
+    cmd: Command,
+    first: Option<&str>,
+    loaded: usize,
+) -> Command {
+    if !several(ctx, loaded) {
+        return ctx.same_graph(cmd);
+    }
+    match first.and_then(ValidName::alias) {
+        Some(g) => cmd.word("--graph").name(&g),
+        None => cmd,
+    }
+}
+
+/// A read's `--tag` and `--no-tag` as a filter, None when it has neither; a refused tag's next is `base` and the tag
+/// flags again, fixed ([`TagRetry`]).
+pub(crate) fn read_filter(
+    tags: &[String],
+    no_tags: &[String],
+    base: Command,
+) -> Result<Option<umx_graph::TagFilter>, Problem> {
+    if tags.is_empty() && no_tags.is_empty() {
+        return Ok(None);
+    }
+    let retry = TagRetry {
+        base,
+        flags: alloc::vec![
+            ("--tag", tags, Reads::Patterns),
+            ("--no-tag", no_tags, Reads::Patterns),
+        ],
+    };
+    filter(tags, no_tags, &retry).map(Some)
+}
+
+/// [`read_filter`], where a refused tag's next is the tags docs when there is no `base` that could run as printed.
+pub(crate) fn read_filter_or_docs(
+    tags: &[String],
+    no_tags: &[String],
+    base: Option<Command>,
+) -> Result<Option<umx_graph::TagFilter>, Problem> {
+    let Some(base) = base else {
+        return read_filter(tags, no_tags, docs()).map_err(|mut p| {
+            for (key, slot) in &mut p.slots {
+                if *key == "fix" {
+                    *slot = umx_core::problem::Slot::Command(docs());
+                }
+            }
+            p
+        });
+    };
+    read_filter(tags, no_tags, base)
+}
+
+/// A tag filter applied to rows a read found another way (walk's listed nodes, neighbours' far ends; ws008 t2b). A row
+/// whose node the read cannot show (its graph not shown or not loaded, the node missing) is never tested: it is left
+/// out and only counted (d-20), so neither `--tag` nor `--no-tag` tells anything about it. A row in a graph without
+/// std is left out and its graph counted.
+pub(crate) struct RowTags {
+    filter: umx_graph::TagFilter,
+    not_std: alloc::collections::BTreeSet<umx_core::Id>,
+    untested: usize,
+}
+
+impl RowTags {
+    pub(crate) fn new(filter: umx_graph::TagFilter) -> RowTags {
+        RowTags {
+            filter,
+            not_std: Default::default(),
+            untested: 0,
+        }
+    }
+
+    /// Counts graph `id` as skipped for having no std, whether or not a row lands in it.
+    pub(crate) fn skip(&mut self, id: umx_core::Id) {
+        self.not_std.insert(id);
+    }
+
+    /// Whether the row of `node` stays: `graph` is the loaded graph the read shows it in, with that graph's id, or
+    /// None when the read cannot show it.
+    pub(crate) fn keeps(
+        &mut self,
+        graph: Option<(&umx_graph::Graph, umx_core::Id)>,
+        node: umx_core::Id,
+    ) -> bool {
+        let Some((g, id)) = graph else {
+            self.untested += 1;
+            return false;
+        };
+        if !g.std_tags() {
+            self.not_std.insert(id);
+            return false;
+        }
+        match g.node(node) {
+            Some(n) => g.tags_pass(n, &self.filter),
+            None => {
+                self.untested += 1;
+                false
+            }
+        }
+    }
+
+    /// `tag_filter_not_std` and `tag_filter_untested`, each carrying a count alone, when any.
+    pub(crate) fn notes(&self) -> Vec<Problem> {
+        let mut out = Vec::new();
+        if !self.not_std.is_empty() {
+            out.push(problems::tag_filter_not_std(self.not_std.len()));
+        }
+        if self.untested > 0 {
+            out.push(problems::tag_filter_untested(self.untested));
+        }
+        out
+    }
+}

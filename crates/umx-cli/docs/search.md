@@ -208,6 +208,12 @@ coverage. Words with digits or other letters (`iso27001`, `v2`, `café`) match e
 - `--within <node>` scores only the nodes under that node by `part_of`, in its graph. With several graphs, give
   it as an address, `umx:<graph>/<id>`, naming one of them. The counts stay the whole
   graph's, so a node scores the same inside and outside a subtree.
+- `--tag <a>[,<b>]` and `--no-tag <a>` (std graphs, repeat for AND, a comma is OR, `'<facet>:*'` a facet; see
+  `umx docs get ontology`) search only the nodes whose tags pass: every leg is narrowed from the graph's tag index
+  before ranking, so `--limit 1` gives the best tagged hit. A graph without std in a list, a scope, `--all` or an
+  unnamed search of several loaded graphs is skipped and counted (`tag_filter_not_std`); a search of that graph
+  alone is `tag_needs_std`. A refused tag's `next` names one graph: the one named, else (a list, a scope, `--all`
+  or an unnamed search of several) the first std graph searched, so it searches that graph alone.
 - `--along <spine>` with `--after <end>` and `--before <end>` searches only the nodes a spine places in that range
   (both ends inclusive), in one graph: every leg is narrowed before ranking, so strong matches outside the range
   never crowd weaker ones inside it out of a leg's best 100. Word counts stay the whole graph's. The reply's

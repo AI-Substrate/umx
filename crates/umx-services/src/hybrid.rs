@@ -22,7 +22,7 @@ use umx_core::ports::{EmbedError, Embedder, GraphDir, Locality, ModelKey, TextKi
 use umx_core::secrets;
 use umx_core::similarity::{self, inverse_length, top_k};
 use umx_core::vectors::quantise;
-use umx_core::{Id, Node, Policy, Problem, ValidName, Value};
+use umx_core::{Command, Id, Node, Policy, Problem, ValidName, Value};
 use umx_graph::{Graph, NodeIx, NodeSet, WordQuery, WordStats};
 
 /// The reciprocal rank constant: a hit at rank r in a leg adds `1 / (RRF_K + r)` (embeddings-expert, 008 section 11).
@@ -203,6 +203,9 @@ pub struct SearchPlan {
     warnings: Vec<(Option<String>, Problem)>,
     /// `--along` (D71 step 12): the spine range the legs are narrowed to, before fusion. One graph only.
     along: Option<crate::AlongRequest>,
+    /// `--tag` and `--no-tag` (ws008 t2b): every leg is narrowed to the nodes that pass, from each graph's tag index,
+    /// before it ranks; a graph without std gives no hits and is counted.
+    tags: Option<umx_graph::TagFilter>,
 }
 
 impl SearchPlan {
@@ -256,6 +259,42 @@ impl SearchPlan {
             }
         }
         self.along = along;
+        Ok(self)
+    }
+
+    /// `--tag` and `--no-tag` (ws008 t2b, req-117). A search of one graph that does not use std is refused
+    /// (`tag_needs_std`); a list, a scope, `--all` or an unnamed search of several graphs skips those without std,
+    /// with `tag_filter_not_std` at finish. A refused tag's next repeats the graph (a list's first std graph) and every
+    /// tag; the words are a placeholder.
+    pub fn tags(
+        mut self,
+        services: &Services,
+        ctx: &Ctx,
+        tags: &[String],
+        no_tags: &[String],
+    ) -> Result<SearchPlan, Problem> {
+        use crate::graph_store::tags as t;
+        if tags.is_empty() && no_tags.is_empty() {
+            return Ok(self);
+        }
+        let is_std = |a: &String| {
+            services
+                .graph
+                .loaded(a)
+                .is_some_and(|l| t::is_std(l.ontology()))
+        };
+        let loaded = services.graph.loaded_count();
+        if let [only] = self.aliases.as_slice()
+            && !t::several(ctx, loaded)
+            && !is_std(only)
+        {
+            return Err(problems::tag_needs_std(&crate::graph_store::alias_name(
+                only,
+            )));
+        }
+        let first = self.aliases.iter().find(|a| is_std(a)).map(String::as_str);
+        let base = t::read_graph(ctx, Command::new("search").word("<words>"), first, loaded);
+        self.tags = t::read_filter(tags, no_tags, base)?;
         Ok(self)
     }
 
@@ -660,6 +699,7 @@ impl Services {
             embedders,
             warnings,
             along: None,
+            tags: None,
         })
     }
 
@@ -695,6 +735,7 @@ impl Services {
             routes,
             warnings: planned,
             along,
+            tags,
             ..
         } = plan;
         if all.is_some() {
@@ -747,6 +788,18 @@ impl Services {
                 .filter(|(alias, _)| alias.as_ref().is_none_or(|a| aliases.contains(a)))
                 .map(|(_, w)| w),
         );
+        // ws008 t2b: a graph without std has no std tags, so a tag filter finds nothing there; counted, never named.
+        // By graph id: named copies of one graph are one graph skipped (d-21).
+        let not_std = aliases
+            .iter()
+            .map(|a| store.loaded(a).expect("checked"))
+            .filter(|l| tags.is_some() && !l.graph.std_tags())
+            .map(|l| l.meta.id)
+            .collect::<BTreeSet<Id>>()
+            .len();
+        if not_std > 0 {
+            warnings.push(problems::tag_filter_not_std(not_std));
+        }
         let ctx = Ctx::new("reader").with_provenance(include_provenance);
         let root = match &within {
             Some(w) if !aliases.is_empty() => Some(store.search_root(&ctx, &aliases, w)?),
@@ -863,7 +916,12 @@ impl Services {
                     let Some(scope) = scope_of(&root, a, g, include_provenance) else {
                         continue;
                     };
-                    let scope = narrow(scope, kept.as_ref(), a, g);
+                    let scope = tagged(
+                        narrow(scope, kept.as_ref(), a, g),
+                        tags.as_ref(),
+                        g,
+                        include_provenance,
+                    );
                     let hits =
                         g.word_search_marked(&q, &stats, scope.as_ref(), LEG_DEPTH, &informative);
                     for hit in hits {
@@ -910,7 +968,12 @@ impl Services {
                 let Some(scope) = scope_of(&root, alias, g, include_provenance) else {
                     continue;
                 };
-                let scope = narrow(scope, kept.as_ref(), alias, g);
+                let scope = tagged(
+                    narrow(scope, kept.as_ref(), alias, g),
+                    tags.as_ref(),
+                    g,
+                    include_provenance,
+                );
                 let l = store.loaded(alias).expect("checked");
                 let (p, h) = pending_in(
                     g,
@@ -953,7 +1016,12 @@ impl Services {
             let Some(scope) = scope_of(&root, a, &l.graph, include_provenance) else {
                 continue;
             };
-            let scope = narrow(scope, kept.as_ref(), a, &l.graph);
+            let scope = tagged(
+                narrow(scope, kept.as_ref(), a, &l.graph),
+                tags.as_ref(),
+                &l.graph,
+                include_provenance,
+            );
             let text_fields = l.ontology().text_fields();
             for n in ctx.read_scope(&l.graph).nodes() {
                 if scope.as_ref().is_some_and(|s| !s.contains_ix(n.ix())) {
@@ -1072,12 +1140,28 @@ impl Services {
         limit: usize,
         along: Option<crate::AlongRequest>,
     ) -> Outcome<HybridResult> {
+        self.search_tagged(ctx, text, also, within, limit, along, (&[], &[]))
+    }
+
+    /// [`Self::search_phrasings`] narrowed by `--tag` and `--no-tag` (ws008 t2b): see [`SearchPlan::tags`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_tagged(
+        &self,
+        ctx: &Ctx,
+        text: &str,
+        also: &[String],
+        within: Option<&str>,
+        limit: usize,
+        along: Option<crate::AlongRequest>,
+        (tags, no_tags): (&[String], &[String]),
+    ) -> Outcome<HybridResult> {
         if along.is_some() {
             crate::graph_store::along_one_graph(ctx)?;
         }
         let plan = self
             .search_plan(ctx, text, within, limit)?
             .along(ctx, along)?
+            .tags(self, ctx, tags, no_tags)?
             .also(also);
         let queries = plan.embed_with(
             &|alias, name| self.embedding.admits_now(&self.graph, alias, name),
@@ -1120,6 +1204,25 @@ fn narrow<'g>(
         }),
         _ => scope,
     }
+}
+
+/// A leg's scope narrowed to the nodes `tags` admits (ws008 t2b), from the graph's tag index: a set the legs search
+/// within, so the tags cut before ranking and a page is never emptied after. A graph without std admits none.
+fn tagged<'g>(
+    scope: Option<NodeSet<'g>>,
+    tags: Option<&umx_graph::TagFilter>,
+    g: &'g Graph,
+    include_provenance: bool,
+) -> Option<NodeSet<'g>> {
+    let Some(f) = tags else {
+        return scope;
+    };
+    let set = g.tag_set(f);
+    Some(match scope {
+        Some(s) => s.and(&set),
+        None if include_provenance => set,
+        None => g.node_set_where(|ix| set.contains_ix(ix) && !g.is_provenance(ix)),
+    })
 }
 
 /// Whether `graph` holds any vector in `key`'s space.

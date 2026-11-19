@@ -140,6 +140,8 @@ pub fn measure(runs: usize, fx: &fixture::Fixture) -> Result<Value, String> {
                 svc.walk(
                     &ctx,
                     WalkRequest {
+                        no_tags: Default::default(),
+                        tags: Default::default(),
                         node: start.clone(),
                         depth: 3,
                         relation: Some("bench_hop".into()),
@@ -181,6 +183,8 @@ pub fn measure(runs: usize, fx: &fixture::Fixture) -> Result<Value, String> {
                 svc.walk(
                     &ctx,
                     WalkRequest {
+                        no_tags: Default::default(),
+                        tags: Default::default(),
                         node: at.clone(),
                         depth: 1,
                         relation: Some("bench_hop".into()),
@@ -227,6 +231,8 @@ pub fn measure(runs: usize, fx: &fixture::Fixture) -> Result<Value, String> {
         svc.walk(
             if cross { &cross_ctx } else { &local_ctx },
             WalkRequest {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 node: if cross {
                     cross_at.clone()
                 } else {

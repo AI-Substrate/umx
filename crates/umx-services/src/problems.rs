@@ -215,6 +215,7 @@ pub const CODES: &[&str] = &[
     "tag_not_canonical",
     "tag_unusable",
     "tag_filter_not_std",
+    "tag_filter_untested",
     "entity_link_invalid",
     "entity_type_mismatch",
     "entity_graph_twice",
@@ -1243,6 +1244,12 @@ pub fn tag_unusable(graph: &ValidName, node: Id) -> Problem {
 /// A tag filter over several graphs read `count` that do not use std (ws008 t2b): nothing in them matched.
 pub fn tag_filter_not_std(count: usize) -> Problem {
     Problem::new("tag_filter_not_std").with("count", Slot::Count(count as u64))
+}
+
+/// A tag filter left out `count` rows whose node the read cannot show (ws008 t2b, d-20): never tested, only counted,
+/// so the warning carries the count alone.
+pub fn tag_filter_untested(count: usize) -> Problem {
+    Problem::new("tag_filter_untested").with("count", Slot::Count(count as u64))
 }
 
 pub fn duplicate_id(graph: &ValidName, r: &Repeat) -> Problem {

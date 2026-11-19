@@ -204,6 +204,8 @@ fn similar(d: &Daemon, alias: &str, node: &str) -> (Value, Vec<Value>) {
     let env = ok(ask(
         d,
         Op::Neighbours {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: node.into(),
             relation: Some("similar_to".into()),
             direction: None,
@@ -225,6 +227,8 @@ fn search(d: &Daemon, text: &str, graphs: &str) -> Envelope {
     ok(ask(
         d,
         Op::Search {
+            no_tags: Default::default(),
+            tags: Default::default(),
             text: text.into(),
             within: None,
             limit: None,

@@ -293,6 +293,8 @@ fn provenance_neighbours_exposes_derived_relations_in_both_directions() {
     let (w, a, _, session) = provenance_read_world();
     for (node, direction, expected) in [(a, Direction::Out, session), (session, Direction::In, a)] {
         let req = NeighboursRequest {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: node.to_text(),
             relation: Some("authored_by".into()),
             direction,
@@ -326,6 +328,8 @@ fn provenance_walk_follows_derived_relations_only_when_asked() {
     use umx_services::{Direction, WalkRequest};
     let (w, a, _, session) = provenance_read_world();
     let req = WalkRequest {
+        no_tags: Default::default(),
+        tags: Default::default(),
         node: a.to_text(),
         depth: 1,
         relation: Some("edited_by".into()),
@@ -469,6 +473,8 @@ fn provenance_default_search_walk_and_query_match_a_provenance_free_control() {
         bare.svc.search(&ctx(), "content", None, 100)
     );
     let walk = WalkRequest {
+        no_tags: Default::default(),
+        tags: Default::default(),
         node: a.to_text(),
         depth: 3,
         relation: None,
@@ -762,6 +768,8 @@ fn default_read_scope_hides_provenance_in_counts_pages_resolution_search_and_tra
         .neighbours(
             &ctx(),
             NeighboursRequest {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 node: a.id.to_text(),
                 relation: None,
                 direction: Direction::Both,
@@ -784,6 +792,8 @@ fn default_read_scope_hides_provenance_in_counts_pages_resolution_search_and_tra
         .walk(
             &ctx(),
             WalkRequest {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 node: a.id.to_text(),
                 depth: 3,
                 relation: None,
@@ -1355,6 +1365,8 @@ mod cross_graph_reads {
             .walk(
                 context,
                 WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: start.to_text(),
                     depth: 3,
                     relation: None,
@@ -1629,6 +1641,8 @@ mod cross_graph_reads {
         }
         w.svc.graph_unload(&ctx(), "g2").unwrap();
         let request = WalkRequest {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: format!("umx:copy_one/{b}"),
             depth: 1,
             relation: None,
@@ -1659,6 +1673,8 @@ mod cross_graph_reads {
         let (mut w, a, b, _) = setup();
         link(&mut w, "g1", &a.to_text(), &format!("umx:g2/{b}"));
         let request = umx_services::NeighboursRequest {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: a.to_text(),
             relation: Some("blocks".into()),
             direction: Direction::Out,
@@ -2397,6 +2413,8 @@ mod external_edges {
                 assert!(w.svc.path(&ctx(), request).unwrap().value.rows.is_empty());
             } else {
                 let request = umx_services::WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: format!("umx:beta/{b}"),
                     depth: 2,
                     relation: None,
@@ -2462,6 +2480,8 @@ mod external_edges {
             .neighbours(
                 &ctx().graph(alias),
                 NeighboursRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: id.to_text(),
                     relation: None,
                     direction: Direction::Both,
@@ -2971,6 +2991,8 @@ mod external_edges {
             .neighbours(
                 &ctx().default_graph("beta"),
                 NeighboursRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: format!("umx:demo/{a}"),
                     relation: None,
                     direction: Direction::Both,
@@ -3123,6 +3145,8 @@ mod external_edges {
             .walk(
                 &ctx().graph("demo"),
                 umx_services::WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: a.to_text(),
                     depth: 2,
                     relation: None,
@@ -7250,6 +7274,8 @@ mod symmetric {
             .neighbours(
                 &ctx(),
                 NeighboursRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: a.to_text(),
                     relation: None,
                     direction: Direction::Both,
@@ -7267,6 +7293,8 @@ mod symmetric {
             .neighbours(
                 &ctx(),
                 NeighboursRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: node.to_text(),
                     relation: None,
                     direction,
@@ -7398,6 +7426,8 @@ mod symmetric {
                 .neighbours(
                     &ctx(),
                     NeighboursRequest {
+                        no_tags: Default::default(),
+                        tags: Default::default(),
                         node: b.to_text(),
                         relation: None,
                         direction: dir,
@@ -7424,6 +7454,8 @@ mod symmetric {
             .walk(
                 &ctx(),
                 WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: b.to_text(),
                     depth: 1,
                     relation: Some("conflicts_with".into()),

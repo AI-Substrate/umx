@@ -1254,6 +1254,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
         | Code::TagNotCanonical
         | Code::TagUnusable
         | Code::TagFilterNotStd => tags::tags_trigger(&mut home, code),
+        Code::TagFilterUntested => tag_reads::untested_trigger(&mut home),
         Code::ReservedRelationStored => {
             let path = home.graph();
             let a = home.add("problem", "First");
@@ -5447,6 +5448,8 @@ mod provenance;
 mod search_query;
 #[path = "cli/secrets.rs"]
 mod secrets;
+#[path = "cli/tag_reads.rs"]
+mod tag_reads;
 #[path = "cli/tags.rs"]
 mod tags;
 #[path = "cli/ui.rs"]

@@ -1495,7 +1495,25 @@ impl Services {
         limit: usize,
         along: Option<&AlongRequest>,
     ) -> Outcome<Page<(Node, f64)>> {
-        self.graph.node_find(ctx, text, kind, within, limit, along)
+        self.node_find_tagged(ctx, text, kind, within, limit, along, &[], &[])
+    }
+
+    /// [`Self::node_find_along`] keeping only the matches that pass `--tag` and `--no-tag` (ws008 t2b), before the
+    /// page is cut.
+    #[allow(clippy::too_many_arguments)]
+    pub fn node_find_tagged(
+        &self,
+        ctx: &Ctx,
+        text: &str,
+        kind: Option<&str>,
+        within: Option<&str>,
+        limit: usize,
+        along: Option<&AlongRequest>,
+        tags: &[String],
+        no_tags: &[String],
+    ) -> Outcome<Page<(Node, f64)>> {
+        self.graph
+            .node_find(ctx, text, kind, within, limit, along, (tags, no_tags))
     }
 
     pub fn neighbours(&self, ctx: &Ctx, req: NeighboursRequest) -> Outcome<Page<NeighbourRow>> {

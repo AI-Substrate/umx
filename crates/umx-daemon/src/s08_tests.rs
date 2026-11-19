@@ -392,6 +392,8 @@ fn a_query_embed_past_five_seconds_falls_back_to_words_at_the_bound() {
     eventually("the node's vectors", || shards(&g) > 0);
     let started = Instant::now();
     let env = d.handle(&op(Op::Search {
+        no_tags: Default::default(),
+        tags: Default::default(),
         text: "approval delays".into(),
         within: None,
         limit: None,
@@ -462,6 +464,8 @@ fn a_query_during_ingest_finishes_inside_the_bound() {
         let d = &d;
         let search = s.spawn(move || {
             d.handle(&op(Op::Search {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 text: "approval delay".into(),
                 within: None,
                 limit: None,
@@ -561,6 +565,8 @@ fn a_query_in_flight_on_one_instance_never_holds_another_instances_batches() {
     a.hold_queries();
     std::thread::scope(|s| {
         let mut search = op(Op::Search {
+            no_tags: Default::default(),
+            tags: Default::default(),
             text: "approval".into(),
             within: None,
             limit: None,
@@ -620,6 +626,8 @@ fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
     add(&d, "Approval queue", "a second node, still being embedded");
     let search = || {
         d.handle(&op(Op::Search {
+            no_tags: Default::default(),
+            tags: Default::default(),
             text: "approval".into(),
             within: None,
             limit: None,
@@ -711,6 +719,8 @@ fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
         )));
     }
     let env = d.handle(&op(Op::Search {
+        no_tags: Default::default(),
+        tags: Default::default(),
         text: "approval".into(),
         within: None,
         limit: Some(1),
@@ -742,6 +752,8 @@ fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
 
 fn search_also(text: &str, also: &[&str], limit: Option<usize>) -> Request {
     op(Op::Search {
+        no_tags: Default::default(),
+        tags: Default::default(),
         text: text.into(),
         within: None,
         limit,

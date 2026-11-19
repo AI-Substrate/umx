@@ -202,12 +202,14 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `tags` and `no_tags` (`--tag`/`--no-tag`), `Op::OntologyAddTag` (`umx ontology add tag`), the ontology's `tags`;
 /// new codes `tag_invalid`, `tag_limit` and `tag_needs_std` (errors), `tag_off_vocabulary`, `tag_not_canonical`,
 /// `tag_unusable` and `tag_filter_not_std` (warnings).
+/// 96: tag filters on reads (ws008 t2b, req-117): `tags` and `no_tags` (`--tag`/`--no-tag`) on `Op::NodeFind`,
+/// `Op::Search`, `Op::Walk` and `Op::Neighbours`; new code `tag_filter_untested` (warning).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 95;
+pub const PROTOCOL: u32 = 96;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -216,7 +218,7 @@ pub const PROTOCOL: u32 = 95;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (95, 0x2de9_acb6_8afa_7163);
+const WIRE_FINGERPRINT: (u32, u64) = (96, 0x1685_025d_de52_9d56);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1424,6 +1426,11 @@ pub enum Op {
         within: Option<String>,
         #[serde(default)]
         along: Option<Along>,
+        /// `--tag` and `--no-tag` (ws008 t2b, req-117, PROTOCOL 96): as node list's, from the tag index.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        no_tags: Vec<String>,
     },
     EdgeAdd {
         from: String,
@@ -1671,6 +1678,11 @@ pub enum Op {
         direction: Option<Direction>,
         limit: Option<usize>,
         offset: Option<usize>,
+        /// `--tag` and `--no-tag` (ws008 t2b, req-117, PROTOCOL 96): as node list's, from the tag index.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        no_tags: Vec<String>,
     },
     /// `umx walk <node>` (req-28): nodes reachable within `depth` steps, breadth first.
     Walk {
@@ -1681,6 +1693,11 @@ pub enum Op {
         within: Option<String>,
         limit: Option<usize>,
         offset: Option<usize>,
+        /// `--tag` and `--no-tag` (ws008 t2b, req-117, PROTOCOL 96): as node list's, from the tag index.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        no_tags: Vec<String>,
     },
     /// `umx path <from> <to>` (req-28): a shortest path, edges named.
     Path {
@@ -1701,6 +1718,11 @@ pub enum Op {
         /// searched alike and fused into one list; each hit names the phrasings that found it by position.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         also: Vec<String>,
+        /// `--tag` and `--no-tag` (ws008 t2b, req-117, PROTOCOL 96): as node list's, from the tag index.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        no_tags: Vec<String>,
     },
     /// `umx embeddings probe [--embedder <name>] [--graph <alias>]`: ready() (no text sent), then one embed of
     /// umx's own fixed sentence. Runs on the request's thread, never the writer (architect F1).
@@ -2524,6 +2546,10 @@ catalogue! {
     TagFilterNotStd => "tag_filter_not_std", Warning, 0,
         "a tag filter over several graphs left out the graphs that do not use std (they have no std tags)",
         "The tag filter skipped <count> of the graphs read: they do not use std, so they have no std tags.",
+        "umx docs get ontology";
+    TagFilterUntested => "tag_filter_untested", Warning, 0,
+        "a tag filter left out rows whose node this read cannot show (its graph is not shown, not loaded, or the node is missing); they are never tested, only counted",
+        "The tag filter left out <count> rows whose node this read cannot show; their tags were not read.",
         "umx docs get ontology";
     StdFieldConflict => "std_field_conflict", Error, 1,
         "a std graph declares a field std v1 has with another kind than std's; nothing changed",
@@ -5447,6 +5473,8 @@ mod tests {
             },
             Op::NodeFind {
                 text: "t".into(),
+                tags: vec!["t".into()],
+                no_tags: vec!["n".into()],
                 kind: s("k"),
                 limit: Some(1),
                 within: s("w"),
@@ -5582,6 +5610,8 @@ mod tests {
             Op::GraphConfirmPolicy { alias: "g".into() },
             Op::Neighbours {
                 node: "n".into(),
+                tags: vec!["t".into()],
+                no_tags: vec!["n".into()],
                 relation: s("r"),
                 direction: Some(Direction::In),
                 limit: Some(1),
@@ -5590,6 +5620,8 @@ mod tests {
             Op::Walk {
                 node: "n".into(),
                 depth: Some(2),
+                tags: vec!["t".into()],
+                no_tags: vec!["n".into()],
                 relation: s("r"),
                 direction: Some(Direction::Both),
                 within: s("w"),
@@ -5609,6 +5641,8 @@ mod tests {
             },
             Op::Search {
                 text: "approval delay".into(),
+                tags: vec!["t".into()],
+                no_tags: vec!["n".into()],
                 within: s("n"),
                 limit: Some(5),
                 along: Some(Along {
@@ -6100,6 +6134,8 @@ mod tests {
         }
         let mut all = Request::op(
             Op::Search {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 text: "words".into(),
                 within: None,
                 limit: None,

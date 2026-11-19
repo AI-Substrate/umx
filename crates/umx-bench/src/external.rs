@@ -279,6 +279,8 @@ pub fn measure_services(runs: usize, fx: &fixture::Fixture) -> Result<Value, Str
             .neighbours(
                 &ctx,
                 NeighboursRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: target.to_text(),
                     relation: None,
                     direction: Direction::Both,

@@ -390,6 +390,8 @@ fn a_query_gets_its_slot_during_a_full_background_load() {
         "full calls in flight: {running:?}"
     );
     let mut search = op(Op::Search {
+        no_tags: Default::default(),
+        tags: Default::default(),
         text: "concept".into(),
         within: None,
         limit: None,
@@ -834,6 +836,8 @@ fn ws004_batching_bench() {
     while !aliases.iter().all(|a| pending(&d, a) == 0) {
         if Instant::now() >= next {
             let mut search = op(Op::Search {
+                no_tags: Default::default(),
+                tags: Default::default(),
                 text: "concept".into(),
                 within: None,
                 limit: None,

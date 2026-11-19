@@ -405,6 +405,68 @@ impl<'a> ReadSpace<'a> {
             .unwrap_or_else(|| at.graph.to_text())
     }
 
+    /// The loaded graph the read shows `at` in, with its id; None when it cannot show it (a graph not shown or not
+    /// loaded, a copy it cannot choose): a tag filter never tests such a row (ws008 t2b, d-20).
+    fn shown(&self, at: At) -> Option<(&umx_graph::Graph, Id)> {
+        let part = at.part?;
+        Some((
+            &self
+                .store
+                .loaded(&self.aliases[part])
+                .expect("selected")
+                .graph,
+            at.graph,
+        ))
+    }
+
+    /// The tag filter of a read from `start` (ws008 t2b), None when it has none. A read of one graph that does not use
+    /// std is refused (`tag_needs_std`); several graphs skip any without std. A refused tag's next repeats `noun`,
+    /// the start's address, the graph and every tag.
+    fn tag_rows(
+        &self,
+        ctx: &Ctx,
+        noun: &'static str,
+        start: At,
+        tags: &[String],
+        no_tags: &[String],
+    ) -> Result<Option<crate::graph_store::tags::RowTags>, Problem> {
+        use crate::graph_store::tags;
+        if tags.is_empty() && no_tags.is_empty() {
+            return Ok(None);
+        }
+        let is_std = |a: &str| tags::is_std(self.store.loaded(a).expect("selected").ontology());
+        let alias = &self.aliases[start.part.expect("a start is loaded")];
+        let loaded = self.store.loaded_count();
+        if !is_std(alias) && !tags::several(ctx, loaded) {
+            return Err(problems::tag_needs_std(&crate::graph_store::alias_name(
+                alias,
+            )));
+        }
+        let cmd = match umx_core::ValidName::alias(alias) {
+            Some(g) => umx_core::Command::new(noun).address(&g, start.node),
+            None => umx_core::Command::new(noun).word("<node>"),
+        };
+        // The next names the start by address, so it adds no `--graph` that could disagree with it: a read naming no
+        // graph is repeated as given; a list or scope as the start's graph when that is std, else it gives the docs
+        // (one graph without std is tag_needs_std).
+        let base = if ctx.graph.is_none() && ctx.scope.is_none() {
+            Some(cmd)
+        } else if is_std(alias) {
+            Some(tags::read_graph(ctx, cmd, Some(alias), loaded))
+        } else {
+            None
+        };
+        let Some(filter) = tags::read_filter_or_docs(tags, no_tags, base)? else {
+            return Ok(None);
+        };
+        let mut rows = tags::RowTags::new(filter);
+        // A start in a graph without std, in a read of several: that graph is skipped and counted, as search does.
+        if !is_std(alias) {
+            rows.skip(start.graph);
+        }
+        Ok(Some(rows))
+    }
+
     fn start(&self, text: &str) -> Result<At, Problem> {
         let at = self.resolve(text)?;
         if at.part.is_some() {
@@ -646,9 +708,15 @@ pub(crate) fn neighbours(
     let (mut space, scope) = ReadSpace::new(store, ctx, &refs, "neighbours")?;
     for pass in 0..2 {
         let at = space.start(&req.node)?;
+        let mut tagged = space.tag_rows(ctx, "neighbours", at, &req.tags, &req.no_tags)?;
         let rows: Vec<_> = space
             .steps(at, req.direction, req.relation.as_deref())
             .into_iter()
+            .filter(|hop| {
+                tagged
+                    .as_mut()
+                    .is_none_or(|t| t.keeps(space.shown(hop.to), hop.to.node))
+            })
             .map(|hop| {
                 let owner = store.loaded(&space.aliases[hop.owner]).expect("owner");
                 let (from, to) = if hop.edge.way == Way::Out {
@@ -716,6 +784,7 @@ pub(crate) fn neighbours(
             if let Some(saved) = &scope.saved {
                 warnings.extend(store.saved_warnings(saved, &space.aliases)?);
             }
+            warnings.extend(tagged.iter().flat_map(|t| t.notes()));
             return Ok(Done {
                 value,
                 notes: warnings,
@@ -737,6 +806,7 @@ pub(crate) fn walk(store: &GraphStore, ctx: &Ctx, req: WalkRequest) -> Outcome<P
     let (mut space, scope) = ReadSpace::new(store, ctx, &refs, "walk")?;
     for pass in 0..2 {
         let start = space.start(&req.node)?;
+        let mut tagged = space.tag_rows(ctx, "walk", start, &req.tags, &req.no_tags)?;
         let within = req.within.as_ref().map(|w| space.resolve(w)).transpose()?;
         if within.is_some_and(|root| space.state(root).is_some() || root.node == root.graph) {
             return Err(problems::usage_invalid(
@@ -791,6 +861,12 @@ pub(crate) fn walk(store: &GraphStore, ctx: &Ctx, req: WalkRequest) -> Outcome<P
                         }) {
                             continue;
                         }
+                        // ws008 t2b: like --within, the tags filter the listed nodes; the walk goes on through.
+                        if let Some(t) = tagged.as_mut()
+                            && !t.keeps(space.shown(to), to.node)
+                        {
+                            continue;
+                        }
                         ready.push_back(WalkRow {
                             depth: depth + 1,
                             node: handles.cell(step.to),
@@ -830,6 +906,7 @@ pub(crate) fn walk(store: &GraphStore, ctx: &Ctx, req: WalkRequest) -> Outcome<P
             }
             warnings.extend(notices);
             warnings.extend(store.stale_notes(&space.aliases));
+            warnings.extend(tagged.iter().flat_map(|t| t.notes()));
             return Ok(Done {
                 value,
                 notes: warnings,

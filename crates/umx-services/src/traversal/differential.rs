@@ -502,6 +502,8 @@ fn walk_and_path_match_the_oracle_on_mixed_stores() {
         for (c, ctx) in contexts().iter().enumerate() {
             for _ in 0..60 {
                 let req = WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: rng.pick(&w.refs).clone(),
                     depth: 1 + rng.below(4),
                     relation: relation(&mut rng),
@@ -724,6 +726,8 @@ fn a_provenance_node_on_the_only_path_matches_the_oracle_shown_and_hidden() {
                 let expected = (shown && dir == Direction::Both).then_some("session");
                 assert_eq!(through, expected, "{shown} {dir:?} {relation:?}");
                 let req = WalkRequest {
+                    no_tags: Default::default(),
+                    tags: Default::default(),
                     node: ids[0].to_text(),
                     depth: 2,
                     relation,
@@ -785,6 +789,8 @@ fn a_link_stored_in_a_third_graph_is_followed_only_when_that_graph_is_selected()
             "{graphs:?}"
         );
         let req = WalkRequest {
+            no_tags: Default::default(),
+            tags: Default::default(),
             node: format!("umx:g0/{a}"),
             depth: 2,
             relation: None,
