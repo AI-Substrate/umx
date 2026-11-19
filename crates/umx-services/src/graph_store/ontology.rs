@@ -1530,7 +1530,7 @@ impl GraphStore {
 }
 
 /// Fails with `errors` if there are any, keeping the first [`MAX_BATCH_ERRORS`] and a count of the rest.
-fn cap(errors: &mut Vec<Problem>) -> Result<(), Vec<Problem>> {
+pub(super) fn cap(errors: &mut Vec<Problem>) -> Result<(), Vec<Problem>> {
     if errors.is_empty() {
         return Ok(());
     }

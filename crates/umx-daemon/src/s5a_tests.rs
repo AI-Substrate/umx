@@ -214,6 +214,7 @@ fn writes(op: &Op) -> Writes {
         | Op::OntologyRemoveRelation { .. }
         | Op::OntologyRemoveField { .. }
         | Op::OntologyRemoveRelationField { .. }
+        | Op::OntologyAdoptStd { dry_run: false, .. }
         | Op::EntityKey { .. }
         | Op::NodeEdit { .. }
         | Op::NodeNote { .. }
@@ -247,6 +248,7 @@ fn writes(op: &Op) -> Writes {
         | Op::SimilarityRebuild
         | Op::Batch { dry_run: true, .. }
         | Op::EntityLink { dry_run: true, .. }
+        | Op::OntologyAdoptStd { dry_run: true, .. }
         | Op::EmbeddingsAllow { .. }
         | Op::GraphForget { .. }
         | Op::GraphPrimary { .. }

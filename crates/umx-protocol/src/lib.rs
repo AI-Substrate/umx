@@ -193,12 +193,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 93: PRD 002 search-09: `Op::Search` takes `also` (`--also`, up to 4 more phrasings, embedded in one call per
 /// instance and fused into one list); with it, each search row carries `phrasings`, the 1-based positions of the
 /// phrasings that found it (1 is the main text).
+/// 94: adopt std (ws008 T3, req-101): `Op::OntologyAdoptStd` (`umx ontology adopt-std [--map <from>=<to>]...
+/// [--dry-run]`); new codes `adopt_field_kind_clash`, `adopt_reserved_relation`, `adopt_map_unknown`,
+/// `adopt_map_ambiguous`, `adopt_map_merge`, `adopt_map_symmetry`, `adopt_map_duplicate_edge` (errors),
+/// `adopt_value_kind` and `std_field_conflict_stored` (warnings), `already_std` and `adopt_rename_suggested` (hints).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 93;
+pub const PROTOCOL: u32 = 94;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -207,7 +211,7 @@ pub const PROTOCOL: u32 = 93;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (93, 0x5573_3fbf_5f7d_d569);
+const WIRE_FINGERPRINT: (u32, u64) = (94, 0x122d_0fb7_f039_a5e0);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1515,6 +1519,13 @@ pub enum Op {
         relation: String,
         field: String,
     },
+    /// ws008 T3 (req-101): `ontology adopt-std [--map <from>=<to>]... [--dry-run]` moves the graph onto std v1 in one
+    /// write set: `std: 1`, the graph's own declarations std supplies folded in, each `--map` renaming a type or
+    /// relation on its lines (ids kept). Conflicts are listed and block the write; `dry_run` writes nothing.
+    OntologyAdoptStd {
+        map: Vec<String>,
+        dry_run: bool,
+    },
     GraphUnload {
         alias: String,
     },
@@ -2162,6 +2173,7 @@ impl Op {
         "graph spine remove",
         "graph rename",
         "graph move",
+        "ontology adopt-std",
     ];
 
     /// Labels only the graph view sends (ws009 S6): no CLI verb, so no example, help, flags row or skill home.
@@ -2259,6 +2271,7 @@ impl Op {
             Op::GraphSpineRemove { .. } => 77,
             Op::GraphRename { .. } => 78,
             Op::GraphMove { .. } => 79,
+            Op::OntologyAdoptStd { .. } => 80,
         }]
     }
 
@@ -2344,6 +2357,7 @@ impl Op {
                 | Op::GraphPrimary { .. }
                 | Op::GraphRename { .. }
                 | Op::GraphMove { .. }
+                | Op::OntologyAdoptStd { .. }
                 | Op::GraphSpineSet { .. }
                 | Op::GraphSpineConfirm { .. }
                 | Op::GraphSpineRemove { .. }
@@ -3303,6 +3317,51 @@ catalogue! {
         "a read of a std graph's vocabulary (ontology show, graph guide) lists std entries the graph's graph.json does not hold; each is marked std: true",
         "Graph <graph> uses std v<std>: entries marked std come from umx's standard vocabulary, not from graph.json.",
         "umx ontology show --std";
+    // ws008 T3 (req-101): `ontology adopt-std`.
+    AdoptFieldKindClash => "adopt_field_kind_clash", Error, 1,
+        "ontology adopt-std: the graph declares a field std v1 has with another kind than std's (F285); nothing changed",
+        "<on> declares <field> as <kind>, but std's <field> is <std kind>: graph <graph> cannot adopt std while it does. Unset it on the <holders> that hold it (node edit or edge edit --unset <field>), then remove the declaration. Nothing changed.",
+        "<fix>";
+    AdoptReservedRelation => "adopt_reserved_relation", Error, 1,
+        "ontology adopt-std: the graph stores edges of a relation a std graph reserves or derives (authored_by, edited_by, similar_to, or a provenance relation between nodes that are not provenance records); nothing changed",
+        "Graph <graph> stores <count> <relation> edges, a relation umx keeps or derives itself in a std graph. Rename it with --map, from <relation> to a name of your own. Nothing changed.",
+        "<fix>";
+    AdoptMapUnknown => "adopt_map_unknown", Error, 1,
+        "ontology adopt-std: a --map names a type or relation the graph neither declares nor uses; nothing changed",
+        "--map names <from>, which is no type or relation of graph <graph>. Nothing changed.",
+        "<fix>";
+    AdoptMapAmbiguous => "adopt_map_ambiguous", Error, 1,
+        "ontology adopt-std: a --map names a name the graph has both as a type and as a relation; nothing changed",
+        "<from> is both a type and a relation of graph <graph>, so --map cannot tell which to rename. Nothing changed.",
+        "<fix>";
+    AdoptMapMerge => "adopt_map_merge", Error, 1,
+        "ontology adopt-std: a --map renames a type or relation onto one the graph declares too, and the two declare something differently; nothing changed",
+        "--map renames <what> <from> to <to>, which graph <graph> declares too, and the two declare <item> differently. Nothing changed.",
+        "<fix>";
+    AdoptMapSymmetry => "adopt_map_symmetry", Error, 1,
+        "ontology adopt-std: a --map renames a symmetric relation to one that is not, or the other way, so stored edges would read differently; nothing changed",
+        "--map renames relation <from> to <to>, but one of them is symmetric and the other is not. Nothing changed.",
+        "<fix>";
+    AdoptMapDuplicateEdge => "adopt_map_duplicate_edge", Error, 1,
+        "ontology adopt-std: a --map would make two stored edges the same edge (same ends, same relation); nothing changed",
+        "--map renames <from> to <to>, which would make edge <id> the same <to> edge as edge <other>. Nothing changed.",
+        "<fix>";
+    AdoptValueKind => "adopt_value_kind", Warning, 0,
+        "ontology adopt-std: nodes or edges hold a std field with a value of another kind than std's; the values are kept as written",
+        "<count> <on> <records> hold <field> with a value that is not a <kind>, std's kind for it; kept as written.",
+        "<fix>";
+    StdFieldConflictStored => "std_field_conflict_stored", Warning, 0,
+        "a std graph's graph.json declares a field std v1 has with another kind than std's, as a hand edit can (F285); it loads, and std's kind is used",
+        "<on> declares <field> as <kind> in graph <graph>'s graph.json, but std's <field> is <std kind>, which is used.",
+        "<fix>";
+    AlreadyStd => "already_std", Hint, 0,
+        "ontology adopt-std on a graph that already uses std; nothing was written",
+        "Graph <graph> already uses std v<std>; nothing changed.",
+        "<fix>";
+    AdoptRenameSuggested => "adopt_rename_suggested", Hint, 0,
+        "ontology adopt-std --dry-run: a custom type or relation is a small slip from a std name; a rename is only ever offered, never inferred",
+        "<what> <from> is close to std's <to>. To rename it, run the dry run with that --map.",
+        "<fix>";
     // ws008 TM4 (req-148): soft endpoint types of a std relation; the edge is stored.
     RelationEndpointUnexpected => "relation_endpoint_unexpected", Warning, 0,
         "an edge of a std relation ends at a node of a type the relation does not expect; it is stored (soft vocabulary)",
@@ -5757,6 +5816,10 @@ mod tests {
                 alias: "g".into(),
                 to: "/work/graphs/h".into(),
             },
+            Op::OntologyAdoptStd {
+                map: vec!["individual=person".into()],
+                dry_run: true,
+            },
             Op::EntityLink {
                 a: "a".into(),
                 b: "umx:g/b".into(),
@@ -5880,6 +5943,7 @@ mod tests {
             Op::GraphSpineRemove { .. } => 86,
             Op::GraphRename { .. } => 87,
             Op::GraphMove { .. } => 88,
+            Op::OntologyAdoptStd { .. } => 89,
         }
     }
 
@@ -6023,7 +6087,7 @@ mod tests {
         let seen: std::collections::BTreeSet<usize> = ops.iter().map(variant).collect();
         assert_eq!(
             (seen.len(), ops.len()),
-            (89, 89),
+            (90, 90),
             "one sample per Op variant"
         );
         let now = (PROTOCOL, fnv1a(wire_samples().as_bytes()));

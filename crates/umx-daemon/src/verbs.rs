@@ -304,6 +304,9 @@ fn std_plain(op: &Op) -> Option<Op> {
         Op::OntologyAddRelation { name, from, to, .. } => {
             named(name) || from.iter().chain(to).any(|t| named(t))
         }
+        Op::OntologyAdoptStd { map, .. } => map
+            .iter()
+            .any(|m| m.split_once('=').is_some_and(|(_, to)| named(to))),
         _ => false,
     };
     if !any {
@@ -340,6 +343,18 @@ fn std_plain(op: &Op) -> Option<Op> {
             from.iter_mut()
                 .chain(to.iter_mut())
                 .for_each(|t| fix(NameKind::Type, t));
+        }
+        // A target is a type or a relation: std's name of either kind, stored plain.
+        Op::OntologyAdoptStd { map, .. } => {
+            for m in map.iter_mut() {
+                if let Some((from, to)) = m.split_once('=') {
+                    let plain_to = match plain(NameKind::Type, to) {
+                        same if same == to => plain(NameKind::Relation, to),
+                        other => other,
+                    };
+                    *m = format!("{from}={plain_to}");
+                }
+            }
         }
         _ => {}
     }
@@ -722,6 +737,12 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             services.ontology_remove_relation(&ctx, name),
             removed_json,
         ),
+        Op::OntologyAdoptStd { map, dry_run } => {
+            match services.ontology_adopt_std(&ctx, map, *dry_run) {
+                Ok(done) => reply(command, Ok(done), adopted_json),
+                Err(problems) => batch_errors(command, &problems),
+            }
+        }
         Op::OntologyRemoveRelationField { relation, field } => reply(
             command,
             services.ontology_remove_relation_field(&ctx, relation, field),
@@ -2949,6 +2970,33 @@ fn role_word(role: &str) -> &'static str {
 /// numbers kept; free text (titles, notes, values, expressions, paths) and anything that fails its check become
 /// placeholders. Every field of every operation is bound by name, with no `..`, so a field added to `Op` does not
 /// compile until it is handled here (B2).
+/// `ontology adopt-std`'s reply (ws008 T3): the plan, or what was written.
+fn adopted_json(v: &umx_services::StdAdopted) -> Value {
+    let names = |n: &umx_core::adopt::Names| json!({ "types": n.types, "relations": n.relations, "statuses": n.statuses });
+    let fields = |fs: &[umx_core::adopt::FieldAt]| -> Vec<Value> {
+        fs.iter()
+            .map(|f| match f.relation {
+                true => json!({ "relation": f.on, "field": f.field }),
+                false => json!({ "type": f.on, "field": f.field }),
+            })
+            .collect()
+    };
+    let mut folded = names(&v.folded);
+    folded["fields"] = json!(fields(&v.folded_fields));
+    json!({
+        "graph": v.alias,
+        "std": v.std,
+        "dry_run": v.dry_run,
+        "unchanged": v.unchanged,
+        "folded": folded,
+        "extended": fields(&v.extended),
+        "custom": names(&v.custom),
+        "renamed": v.renamed.iter().map(|r| json!({
+            "what": r.what.as_str(), "from": r.from, "to": r.to, "nodes": r.nodes, "edges": r.edges,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 /// `ontology remove`'s reply (F76).
 fn removed_json(v: &umx_services::OntologyRemoved) -> Value {
     json!({ "removed": v.removed, "name": v.name, "unchanged": v.unchanged })
@@ -3367,6 +3415,19 @@ fn retry(op: &Op) -> Command {
             n,
             "<name>",
         ),
+        Op::OntologyAdoptStd { map, dry_run } => {
+            let mut c = Command::new("ontology adopt-std");
+            for m in map {
+                c = match m
+                    .split_once('=')
+                    .and_then(|(a, b)| Some((ValidName::new(a)?, ValidName::new(b)?)))
+                {
+                    Some((a, b)) => c.word("--map").names(&[a, b], "="),
+                    None => c.word("--map").word("<from>=<to>"),
+                };
+            }
+            if *dry_run { c.word("--dry-run") } else { c }
+        }
         Op::OntologyRemoveRelationField { relation, field } => name(
             name(
                 Command::new("ontology remove field").word("--relation"),

@@ -21,6 +21,10 @@ mod rows;
 #[path = "cli/capture.rs"]
 mod capture;
 
+/// req-101: `umx ontology adopt-std`'s tests, in their own file so this one stays under the seed gate's size cap.
+#[path = "cli/adopt_std.rs"]
+mod adopt_std;
+
 /// A private UMX_HOME under /tmp (short, for the 104-byte socket path limit) and maybe a daemon in it.
 struct Home {
     path: PathBuf,
@@ -1231,6 +1235,17 @@ fn trigger(code: Code) -> (Envelope, u8) {
             home.graph();
             home.umx(&["ontology", "add", "field", "person", "job_title:int"])
         }
+        Code::AdoptFieldKindClash
+        | Code::AdoptReservedRelation
+        | Code::AdoptMapUnknown
+        | Code::AdoptMapAmbiguous
+        | Code::AdoptMapMerge
+        | Code::AdoptMapSymmetry
+        | Code::AdoptMapDuplicateEdge
+        | Code::AdoptValueKind
+        | Code::StdFieldConflictStored
+        | Code::AlreadyStd
+        | Code::AdoptRenameSuggested => adopt_std::adopt_trigger(&mut home, code),
         Code::ReservedRelationStored => {
             let path = home.graph();
             let a = home.add("problem", "First");

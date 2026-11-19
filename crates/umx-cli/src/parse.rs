@@ -352,6 +352,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
         ],
     ),
     ("ontology set", &["--columns", "--reset", "--role"]),
+    ("ontology adopt-std", &["--map", "--dry-run"]),
     ("config show", &[]),
     ("config check", &[]),
     ("config set", &["--repo"]),
@@ -1617,6 +1618,19 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 .positionals(1, "name one node by id, prefix or address")?
                 .remove(0);
             Op::NodeWho { node }.with(a)
+        }
+        // ws008 T3 (req-101): `ontology adopt-std [--map <from>=<to>]... [--dry-run]`.
+        "ontology adopt-std" => {
+            let a = args()?;
+            a.positionals(
+                0,
+                "ontology adopt-std takes --map <from>=<to> and --dry-run only",
+            )?;
+            Op::OntologyAdoptStd {
+                map: a.all("--map"),
+                dry_run: a.has("--dry-run"),
+            }
+            .with(a)
         }
         "ontology show" => {
             let a = args()?;

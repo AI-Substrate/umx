@@ -4,6 +4,7 @@
 extern crate alloc;
 
 pub mod address;
+pub mod adopt;
 pub mod batch;
 pub mod codec;
 pub mod config;

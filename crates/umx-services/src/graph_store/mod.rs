@@ -1,5 +1,6 @@
 //! The graph store service (blueprint 001, d-12): loaded graphs, their files and every write to them.
 
+mod adopt_std;
 mod along;
 mod batch;
 mod casefold;
@@ -42,6 +43,7 @@ mod unload;
 mod vectors;
 mod who;
 
+pub use adopt_std::StdAdopted;
 pub use along::{
     AlongInfo, AlongRequest, AlongSource, one_graph as along_one_graph, reserved_spine_name,
 };

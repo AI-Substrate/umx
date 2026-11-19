@@ -7497,3 +7497,62 @@ fn a_search_hits_link_to_itself_is_one_link() {
     );
     assert_eq!(links.more, 0);
 }
+
+/// ws008 T3 (req-101): `ontology adopt-std --map` is one write set across graph.json and the node and edge lines: a
+/// crash before the set's marker leaves the graph as it was, after it the whole adoption; never `std: 1` beside the
+/// old type, or the new type beside a graph.json without std.
+#[test]
+fn adopt_std_with_a_map_is_all_or_nothing_across_a_crash() {
+    for (point, stands) in [
+        (CrashPoint::AfterTemps, false),
+        (CrashPoint::AfterMarker, true),
+        (CrashPoint::AfterFirstRename, true),
+    ] {
+        let mut w = demo();
+        w.svc
+            .ontology_add_type(&ctx(), "individual", &[], None)
+            .unwrap();
+        let ada = add(&mut w.svc, "individual", "Ada").unwrap().value.node.id;
+        let p = add(&mut w.svc, "problem", "Approvals")
+            .unwrap()
+            .value
+            .node
+            .id;
+        w.svc
+            .edge_add(&ctx(), &ada.to_text(), "supports", &p.to_text(), &[])
+            .unwrap();
+        w.files.crash_at_for_tests(Some(point));
+        let map = [
+            "individual=person".to_string(),
+            "supports=backs".to_string(),
+        ];
+        assert!(
+            w.svc.ontology_adopt_std(&ctx(), &map, false).is_err(),
+            "{point:?}"
+        );
+        let after = w.files.restart_for_tests();
+        let text =
+            |file| String::from_utf8(after.read(&dir("/work/g"), file).unwrap().unwrap()).unwrap();
+        let (graph, nodes, edges) = (
+            text(GraphFile::Graph),
+            text(GraphFile::Nodes),
+            text(GraphFile::Edges),
+        );
+        let ada_line = nodes.lines().find(|l| l.contains(&ada.to_text())).unwrap();
+        assert_eq!(
+            (
+                serde_json::from_str::<serde_json::Value>(&graph).unwrap()["ontology"]["std"] == 1,
+                ada_line.contains("\"type\":\"person\""),
+                edges.contains("\"type\":\"backs\""),
+            ),
+            (stands, stands, stands),
+            "{point:?}"
+        );
+        assert_eq!(
+            ada_line.contains("\"type\":\"individual\"") && edges.contains("\"type\":\"supports\""),
+            !stands,
+            "{point:?}"
+        );
+        assert!(after.leftovers_for_tests(&dir("/work/g")).is_empty());
+    }
+}

@@ -1146,7 +1146,7 @@
 					"statement": "`umx ontology adopt-std` moves an existing graph onto std in one write set: it sets `std: 1`, folds in the graph's own declarations that std now supplies, keeps custom fields as extensions, and leaves every other custom name alone. `--map individual=person` renames a type or relation on matching lines and never changes ids or addresses; renames are never inferred, only suggested in `--dry-run`, which writes nothing. Conflicts are listed with their fix and block the write. The verb is idempotent and works on secured graphs.",
 					"actor": "a-operator",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A graph built to the interim sheet adopts with zero line changes; `--map individual=person` rewrites only those lines and keeps ids; a second run reports `already_std` and writes nothing; `--dry-run` writes nothing and prints the plan; each conflict kind (field kind clash, a custom relation named like a reserved or derived one with edges) has a fixture and writes nothing.",
 					"source": "decision D57 (2026-11-11); graph-addressing expert ws008 design"
 				},

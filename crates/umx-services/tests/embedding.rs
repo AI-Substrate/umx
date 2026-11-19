@@ -3099,3 +3099,47 @@ fn a_field_in_the_wrong_role_group_is_hinted_and_its_role_never_changes_by_itsel
     assert!(w.svc.role_hints_unnamed("demo").is_empty());
     assert_eq!(w.svc.role_hints("demo", None).len(), 1);
 }
+
+/// ws008 T3 (req-101): `ontology adopt-std --map` queues the nodes it renames, as any node write does. Their text has
+/// no type name, so one whose new type embeds nothing new remakes nothing; one whose new type makes a field it holds
+/// content is embedded again.
+#[test]
+fn adopt_std_map_queues_renamed_nodes_and_remakes_only_changed_texts() {
+    let mut w = world();
+    let same = add(&mut w, "Approvals", "Slow", "High");
+    let other = w
+        .svc
+        .node_add(
+            &ctx(),
+            NodeAddRequest {
+                kind: "chore".into(),
+                title: "Sweep".into(),
+                sets: vec![("detail".into(), SetValue::Str("Every room".into()))],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .value
+        .node
+        .id;
+    // `task` embeds `detail`; `chore` declares nothing, so its `detail` is not embedded yet.
+    w.svc
+        .ontology_add_field_as(&ctx(), "task", "detail:string", None, Some("content"))
+        .unwrap();
+    run(&mut w);
+    let map = ["problem=issue".to_string(), "chore=task".to_string()];
+    let done = w.svc.ontology_adopt_std(&ctx(), &map, false).unwrap();
+    assert_eq!(done.value.nodes.len(), 2);
+    let jobs = w.svc.take_embed_jobs();
+    let queued: Vec<Id> = jobs.iter().map(|j| j.node).collect();
+    assert!(
+        queued.contains(&same) && queued.contains(&other),
+        "{queued:?}"
+    );
+    let planned: Vec<Id> = jobs
+        .iter()
+        .filter_map(|j| w.svc.embed_plan(j).unwrap())
+        .map(|p| p.job.node)
+        .collect();
+    assert_eq!(planned, [other]);
+}

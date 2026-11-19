@@ -36,6 +36,11 @@ unchanged; another kind is `std_field_conflict`. Several types take a field at o
 (`risk,team`); `--all-types` means graph.json's types only. `ontology remove field` refuses std's own fields
 (`reserved_name`) and removes only your extension or your role for a std field.
 
+**usage 213**: move a graph made without std onto std with `umx ontology adopt-std` (`--dry-run` first): graph.json
+gets `std: 1` and drops its own copies of std's entries; lines change only for a `--map individual=person`, which
+keeps ids and addresses. Renames are only suggested, never made. A conflict (a std field of another kind, stored
+`authored_by` edges, a `--map` that cannot apply) writes nothing and names its fix; a std graph is `already_std`.
+
 An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
 ## Vocabulary and settings

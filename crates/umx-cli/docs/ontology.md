@@ -245,7 +245,55 @@ types graph.json declares, never std's.
   even while nodes hold the field; when that changes the role, it is a role change like `ontology set field`'s
   (`role_changed`, the nodes pending until remade). A field std allows on any node but does not place on the type
   (`starts_on` on a `widget`) is the graph's own once declared, and is in use while a node holds it.
-- A graph.json edited by hand to give a std field another kind still loads; std's kind wins.
+- A graph.json edited by hand to give a std field another kind still loads, std's kind wins, and the load warns
+  `std_field_conflict_stored` with the `umx ontology remove field` command that drops the graph's declaration.
+
+### Adopting std: umx ontology adopt-std
+
+A graph made without std (`--no-std`, or before std existed) moves onto std v1 with `umx ontology adopt-std`, in
+one write set:
+
+    umx ontology adopt-std --dry-run --graph launch                    # the plan; writes nothing
+    umx ontology adopt-std --graph launch                              # std: 1, the graph's own std copies folded in
+    umx ontology adopt-std --map individual=person --map knows_of=mentions --graph launch
+
+- graph.json gets `"std": 1`. A type, relation or status std has is dropped from the graph's own lists, and so is a
+  field std places on that type or relation with std's kind and role and no description. What std does not supply
+  stays: a field std lacks (an extension), a field with another role or a description (an override), and every name
+  std does not have. The reply lists them as `folded`, `extended` and `custom`. Roles and kinds read as before, so
+  no embedded text changes; std's string fields (`job_title`, `org`) become searchable by words.
+- With no `--map`, only graph.json is written: every node and edge line is left as it is. A graph built to std's
+  names adopts with no line change.
+- `--map <from>=<to>` (repeat it) renames a type or a relation on the lines that have it, and nowhere else. Ids,
+  ends and `umx:<graph>/<id>` addresses stay, so links from other graphs keep working; each renamed line is stamped
+  as `umx node edit --type` and `umx edge edit --relation` stamp it (a node's `updated`, an edge's `updated` and
+  `updated_by`, and `edited_by_session`); an edge whose own `updated` or `updated_by` is not umx's stamp is
+  refused (`edge_reserved_field_in_use`), as edge edit refuses it. The
+  declaration moves with it (merged into `<to>`'s when the graph declares both), with its fields, roles,
+  description and columns, and so do the relation's symmetric mark, end types and description and the spines
+  that name it. `<to>` may be `std:person`. umx never renames on its own: `--dry-run` only suggests a rename for a
+  name a small slip from std's (`organization`, hint `adopt_rename_suggested`, whose next is the dry run with that
+  `--map`). Other graphs are never read or written: one whose own `--from`/`--to` end types name the old type warns
+  `relation_endpoint_unexpected` there until it is changed.
+- A conflict blocks the write and is listed with its fix, with or without `--dry-run`: a field declared with another
+  kind than std's (`adopt_field_kind_clash`, next `umx ontology remove field ...`); stored edges of a relation a std
+  graph keeps for umx, `authored_by`, `edited_by`, `similar_to` or a provenance relation between user nodes
+  (`adopt_reserved_relation`: rename them with `--map authored_by=written_by`); and a `--map` that names nothing of
+  the graph (`adopt_map_unknown`), a name that is both a type and a relation (`adopt_map_ambiguous`), merges two
+  declarations that differ (`adopt_map_merge`), renames a symmetric relation to one that is not
+  (`adopt_map_symmetry`), would make two edges one (`adopt_map_duplicate_edge`), chains or swaps names
+  (`--map a=b --map b=c`, `usage_invalid`), or targets a name other writes refuse: a relation named `std`,
+  `not_same_as`, `similar_to` or another derived or provenance relation, a type named `std`, `graph` or a provenance
+  type. `not_same_as` edges are `umx entity deny`'s and are never renamed. While nodes or edges hold a field of
+  another kind, `adopt_field_kind_clash`'s next lists them: unset it there (`--unset <field>`), then remove the
+  declaration.
+- Nodes or edges that hold a std field with a value of another kind (`aliases` as a string, a `starts_on` on a
+  `works_for` edge that is not a date) warn `adopt_value_kind` with how many and the first; the values are kept as
+  written.
+- A `--map` over many lines is one write: memory holds about one more image of the graph while it runs. Run
+  `--dry-run` first to see how many lines it renames.
+- A graph that already uses std is `already_std`: `"unchanged": true`, nothing written, so a script can re-run.
+- It works on a secured graph named with `--graph` like any write, and its reply names nothing outside that graph.
 
 ### Expected end types
 

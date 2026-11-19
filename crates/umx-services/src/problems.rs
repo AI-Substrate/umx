@@ -40,6 +40,8 @@ pub const HINTS: &[&str] = &[
     "graphfile_no_repo",
     "segment_without_parent",
     "std_entries_shown",
+    "already_std",
+    "adopt_rename_suggested",
     "edge_direction_normalised",
     "lint_orphans",
     "lint_proposed_keys",
@@ -89,6 +91,17 @@ pub const CODES: &[&str] = &[
     "derived_relation",
     "reserved_relation_stored",
     "std_field_conflict",
+    "std_field_conflict_stored",
+    "adopt_field_kind_clash",
+    "adopt_reserved_relation",
+    "adopt_map_unknown",
+    "adopt_map_ambiguous",
+    "adopt_map_merge",
+    "adopt_map_symmetry",
+    "adopt_map_duplicate_edge",
+    "adopt_value_kind",
+    "already_std",
+    "adopt_rename_suggested",
     "session_agent_conflict",
     "duplicate_prov_key",
     "node_id_is_graph_id",
@@ -1918,6 +1931,180 @@ pub fn std_field_conflict(graph: &ValidName, field: &ValidName, std_kind: FieldK
         .with("graph", name(graph))
         .with("field", name(field))
         .with("kind", Slot::Word(std_kind.as_str()))
+}
+
+/// ws008 T3 (req-101, F285): `ontology adopt-std` finds a field declared with another kind than std's. `fix` removes
+/// the graph's declaration (refused with `ontology_in_use` while nodes hold the field, whose next lists them).
+/// `relation`: the field is declared on a relation's edges. `fix` lists the holders while any is left, else removes
+/// the declaration.
+pub fn adopt_field_kind_clash(
+    graph: &ValidName,
+    (on, relation): (&str, bool),
+    field: &ValidName,
+    (kind, std_kind): (FieldKind, FieldKind),
+    fix: Command,
+) -> Problem {
+    Problem::new("adopt_field_kind_clash")
+        .with("graph", name(graph))
+        .with("on", Slot::name_or(on, "(a type)"))
+        .with("field", name(field))
+        .with("kind", Slot::Word(kind.as_str()))
+        .with("std kind", Slot::Word(std_kind.as_str()))
+        .with(
+            "holders",
+            Slot::Word(if relation { "edges" } else { "nodes" }),
+        )
+        .with("fix", Slot::Command(fix))
+}
+
+/// F285: a std graph's graph.json declares a field with another kind than std's; it loads, std's kind is used.
+pub fn std_field_conflict_stored(
+    graph: &ValidName,
+    on: &str,
+    field: &ValidName,
+    (kind, std_kind): (FieldKind, FieldKind),
+    fix: Command,
+) -> Problem {
+    Problem::new("std_field_conflict_stored")
+        .with("graph", name(graph))
+        .with("on", Slot::name_or(on, "(a type)"))
+        .with("field", name(field))
+        .with("kind", Slot::Word(kind.as_str()))
+        .with("std kind", Slot::Word(std_kind.as_str()))
+        .with("fix", Slot::Command(fix))
+}
+
+/// ws008 T3 (req-101): the graph stores `count` edges of `relation`, which a std graph reserves or derives.
+pub fn adopt_reserved_relation(graph: &ValidName, relation: &ValidName, count: usize) -> Problem {
+    Problem::new("adopt_reserved_relation")
+        .with("graph", name(graph))
+        .with("relation", name(relation))
+        .with("count", Slot::Count(count as u64))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("edge list")
+                    .word("--type")
+                    .name(relation)
+                    .word("--graph")
+                    .name(graph),
+            ),
+        )
+}
+
+/// `umx ontology show --graph <graph>`: what a `--map` problem's next shows.
+fn show_ontology(graph: &ValidName) -> Slot {
+    Slot::Command(Command::new("ontology show").word("--graph").name(graph))
+}
+
+pub fn adopt_map_unknown(graph: &ValidName, from: &ValidName) -> Problem {
+    Problem::new("adopt_map_unknown")
+        .with("graph", name(graph))
+        .with("from", name(from))
+        .with("fix", show_ontology(graph))
+}
+
+pub fn adopt_map_ambiguous(graph: &ValidName, from: &ValidName) -> Problem {
+    Problem::new("adopt_map_ambiguous")
+        .with("graph", name(graph))
+        .with("from", name(from))
+        .with("fix", show_ontology(graph))
+}
+
+/// `item` is a field name, `columns`, `description` or a key graph.json holds that this build does not know.
+pub fn adopt_map_merge(
+    graph: &ValidName,
+    what: &'static str,
+    (from, to): (&ValidName, &ValidName),
+    item: &str,
+) -> Problem {
+    Problem::new("adopt_map_merge")
+        .with("graph", name(graph))
+        .with("what", Slot::Word(what))
+        .with("from", name(from))
+        .with("to", name(to))
+        .with("item", Slot::name_or(item, "(a key)"))
+        .with("fix", show_ontology(graph))
+}
+
+pub fn adopt_map_symmetry(graph: &ValidName, from: &ValidName, to: &ValidName) -> Problem {
+    Problem::new("adopt_map_symmetry")
+        .with("from", name(from))
+        .with("to", name(to))
+        .with("fix", show_ontology(graph))
+}
+
+/// Edge `id`, renamed, would have the ends and relation edge `other` has.
+pub fn adopt_map_duplicate_edge(
+    graph: &ValidName,
+    (from, to): (&ValidName, &ValidName),
+    id: Id,
+    other: Id,
+) -> Problem {
+    Problem::new("adopt_map_duplicate_edge")
+        .with("from", name(from))
+        .with("to", name(to))
+        .with("id", Slot::Id(id))
+        .with("other", Slot::Id(other))
+        .with(
+            "fix",
+            Slot::Command(Command::new("edge show").address(graph, id)),
+        )
+        .subject(id.to_text())
+}
+
+/// `count` nodes of type `on` (edges of relation `on` when `edges`) hold std field `field` with a value that is not
+/// std's `std_kind`; `first` is one of them.
+pub fn adopt_value_kind(
+    graph: &ValidName,
+    (on, edges): (&ValidName, bool),
+    field: &ValidName,
+    std_kind: FieldKind,
+    (count, first): (usize, Id),
+) -> Problem {
+    let show = if edges {
+        Command::new("edge show")
+    } else {
+        Command::new("node get")
+    };
+    Problem::new("adopt_value_kind")
+        .with("count", Slot::Count(count as u64))
+        .with("on", name(on))
+        .with("records", Slot::Word(if edges { "edges" } else { "nodes" }))
+        .with("field", name(field))
+        .with("kind", Slot::Word(std_kind.as_str()))
+        .with("fix", Slot::Command(show.address(graph, first)))
+}
+
+pub fn already_std(graph: &ValidName, std: u32) -> Problem {
+    Problem::new("already_std")
+        .with("graph", name(graph))
+        .with("std", Slot::Count(u64::from(std)))
+        .with("fix", show_ontology(graph))
+}
+
+/// `--dry-run` offers `--map <from>=<to>`; never applied.
+pub fn adopt_rename_suggested(
+    graph: &ValidName,
+    what: &'static str,
+    from: &ValidName,
+    to: &ValidName,
+) -> Problem {
+    Problem::new("adopt_rename_suggested")
+        .with("what", Slot::Word(what))
+        .with("from", name(from))
+        .with("to", name(to))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("ontology adopt-std")
+                    .word("--map")
+                    .names(&[from.clone(), to.clone()], "=")
+                    .word("--dry-run")
+                    .word("--graph")
+                    .name(graph),
+            ),
+        )
 }
 
 /// ws008 T2b (req-99): a std graph's edges.jsonl holds an edge of a relation umx derives or keeps for provenance

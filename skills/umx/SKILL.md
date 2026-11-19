@@ -43,7 +43,7 @@ A module missing at its path: say so and stop. Never improvise a route from memo
 | umx verbs | home route |
 |---|---|
 | `umx agents-start-here` `umx docs list` `umx docs get` `umx daemon start` `umx daemon install` `umx daemon uninstall` `umx models fetch` | start |
-| `umx graph new` `umx graph set` `umx ontology show` `umx ontology add` `umx ontology set` `umx ontology remove` `umx node add` `umx node edit` `umx node status` `umx edge add` `umx edge edit` `umx edge delete` `umx node evidence` `umx batch` `umx graph spine propose` `umx graph spine confirm` `umx graph spine set` `umx graph spine show` `umx graph spine remove` | build |
+| `umx graph new` `umx graph set` `umx ontology show` `umx ontology add` `umx ontology set` `umx ontology remove` `umx ontology adopt-std` `umx node add` `umx node edit` `umx node status` `umx edge add` `umx edge edit` `umx edge delete` `umx node evidence` `umx batch` `umx graph spine propose` `umx graph spine confirm` `umx graph spine set` `umx graph spine show` `umx graph spine remove` | build |
 | `umx node note` `umx resource show` `umx embeddings allow` `umx root add` `umx root list` `umx root remove` | ingest |
 | `umx query` | query |
 | `umx scope save` `umx scope list` `umx scope show` `umx scope delete` `umx entity key` `umx entity link` `umx entity unlink` `umx entity deny` `umx entity undeny` `umx entity show` `umx graph primary` `umx graph rename` `umx graph move` | multi-graph |

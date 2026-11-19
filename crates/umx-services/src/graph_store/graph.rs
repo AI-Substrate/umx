@@ -684,6 +684,31 @@ impl GraphStore {
                     }),
             );
         }
+        // F285 (ws008 T3): a std graph's graph.json that gives a std field another kind, as a hand edit can, loads with
+        // std's kind; say so, with the command that drops the graph's declaration.
+        if meta.ontology.std_version().is_some() {
+            for c in umx_core::adopt::kind_clashes(&meta.ontology) {
+                let (Some(on), Some(field)) = (
+                    umx_core::ValidName::new(&c.at.on),
+                    umx_core::ValidName::new(&c.at.field),
+                ) else {
+                    continue;
+                };
+                let fix = Command::new("ontology remove field");
+                let fix = if c.at.relation {
+                    fix.word("--relation").name(&on)
+                } else {
+                    fix.name(&on)
+                };
+                rules.push(problems::std_field_conflict_stored(
+                    &alias,
+                    &c.at.on,
+                    &field,
+                    (c.kind, c.std_kind),
+                    fix.name(&field).word("--graph").name(&alias),
+                ));
+            }
+        }
         // req-98: a newer std loads, read with this build's std names (`Ontology::effective`).
         if let Some(std) = meta.ontology.std_version().filter(|&v| v > STD_VERSION) {
             rules.push(problems::std_newer(&alias, std, STD_VERSION));

@@ -53,7 +53,7 @@ pub use graph_store::{
     PolicyView, Ports, ReadEdge, ResolveStatus, Resolved, RoleSet, SecretAllowed, StatusMoved,
     Target,
 };
-pub use graph_store::{DeclaredSpine, SpineRemoved, SpineSet, SpinesShown};
+pub use graph_store::{DeclaredSpine, SpineRemoved, SpineSet, SpinesShown, StdAdopted};
 pub use graph_store::{
     EntityDenied, EntityLinked, EntityMatch, EntityMember, EntityProposed, EntityShown,
     EntityUnlinked,
@@ -2562,6 +2562,26 @@ impl Services {
         self.queue(alias, altered.iter().copied());
         self.settle_held(alias, Some(altered));
         pending
+    }
+
+    /// `umx ontology adopt-std` (ws008 T3, req-101; see the store's doc). Renamed nodes are rechecked and queued as any
+    /// node write's are: their embedded text has no type name, so a vector goes pending only when the type they now
+    /// have embeds other fields.
+    pub fn ontology_adopt_std(
+        &mut self,
+        ctx: &Ctx,
+        map: &[String],
+        dry_run: bool,
+    ) -> Result<Done<StdAdopted>, Vec<Problem>> {
+        let mut done = self.graph.ontology_adopt_std(ctx, map, dry_run)?;
+        let (alias, nodes) = (done.value.alias.clone(), done.value.nodes.clone());
+        if !nodes.is_empty() {
+            self.queue(&alias, nodes.iter().copied());
+            self.settle_held(&alias, Some(&nodes));
+            done.notes
+                .extend(self.recheck(&alias, &nodes).into_iter().take(1));
+        }
+        Ok(done)
     }
 
     /// F76: `ontology remove type`; refused while in use (see the store's doc).
