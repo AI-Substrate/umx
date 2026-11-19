@@ -219,6 +219,21 @@ impl QueryLanes {
         }
     }
 
+    /// For tests: the searches and related checks waiting (not running) on `embedder`'s lane.
+    #[cfg(test)]
+    fn waiting(&self, embedder: &Arc<dyn Embedder>) -> (usize, usize) {
+        self.with_lane(embedder, |lane| {
+            let p = lane.work.pending.lock().unwrap_or_else(|e| e.into_inner());
+            (p.searches.len(), p.related.len())
+        })
+    }
+
+    /// For tests: whether `embedder`'s lane has answered a call or warmed.
+    #[cfg(test)]
+    fn answered(&self, embedder: &Arc<dyn Embedder>) -> bool {
+        self.with_lane(embedder, |lane| lane.warm.load(Ordering::SeqCst))
+    }
+
     /// Whether a query embed is waiting or running on `embedder` (the embed worker holds its batches meanwhile).
     pub(crate) fn busy(&self, embedder: &Arc<dyn Embedder>) -> bool {
         self.lanes
@@ -318,82 +333,62 @@ mod tests {
         }
     }
 
-    fn slow(ms: u64) -> Arc<dyn Embedder> {
-        Arc::new(Slow {
-            delay: Duration::from_millis(ms),
-            calls: AtomicUsize::new(0),
-            locality: Locality::Local,
-        })
-    }
-
-    #[test]
-    fn a_slow_query_embed_times_out_at_the_bound_and_says_warming_until_one_answers() {
-        let lanes = QueryLanes::with_bound(Duration::from_millis(200));
-        let e = slow(600);
-        let started = Instant::now();
-        assert_eq!(
-            lanes.embed(&e, "q"),
-            Err(QueryFailed::TimedOut { warming: true })
-        );
-        let took = started.elapsed();
-        assert!(took < Duration::from_millis(450), "bounded: {took:?}");
-        // The timed-out call finishes on its thread and warms the instance; then the lane is idle again.
-        std::thread::sleep(Duration::from_millis(700));
-        assert!(!lanes.busy(&e));
-        let fast = QueryLanes::with_bound(Duration::from_secs(5));
-        assert_eq!(fast.embed(&e, "q"), Ok(vec![1.0, 0.0]));
-    }
-
-    #[test]
-    fn a_second_search_waits_within_its_own_budget_and_abandoned_queries_are_skipped() {
-        let lanes = QueryLanes::with_bound(Duration::from_millis(300));
-        let inner = Arc::new(Slow {
-            delay: Duration::from_millis(200),
-            calls: AtomicUsize::new(0),
-            locality: Locality::Local,
-        });
-        let e: Arc<dyn Embedder> = inner.clone();
-        // Two searches at once: the second waits behind the first (200 ms) and still answers inside its 300 ms.
-        std::thread::scope(|s| {
-            let a = s.spawn(|| lanes.embed(&e, "a"));
-            std::thread::sleep(Duration::from_millis(20));
-            let b = s.spawn(|| lanes.embed(&e, "b"));
-            assert!(a.join().unwrap().is_ok());
-            // b waited ~180 ms then ran 200 ms: past its budget, so it timed out (not warming: a answered).
-            assert_eq!(
-                b.join().unwrap(),
-                Err(QueryFailed::TimedOut { warming: false })
-            );
-        });
-        // Five searches pile up behind a slow call; those that gave up before their turn are never run.
-        let lanes = QueryLanes::with_bound(Duration::from_millis(50));
-        let before = inner.calls.load(Ordering::SeqCst);
-        for _ in 0..5 {
-            assert!(lanes.embed(&e, "c").is_err());
+    /// Waits until `ready` holds. Never a test's proof: the 60 s only stops a broken test from hanging.
+    fn wait_until(what: &str, ready: impl Fn() -> bool) {
+        let until = Instant::now() + Duration::from_secs(60);
+        while !ready() {
+            assert!(Instant::now() < until, "never: {what}");
+            std::thread::sleep(Duration::from_millis(1));
         }
-        std::thread::sleep(Duration::from_millis(1200));
-        let ran = inner.calls.load(Ordering::SeqCst) - before;
-        assert!(ran < 5, "abandoned queries were skipped: {ran} ran");
-        assert!(!lanes.busy(&e));
     }
 
-    /// Embeds each call's first text after `delay`, logging it, so a test sees the order calls ran in.
-    struct Logged {
-        delay: Duration,
-        seen: Mutex<Vec<String>>,
+    /// The next call the gate started (its first text). A search that times out before the lane takes it is skipped
+    /// and starts no call, so this waits at most 60 s and fails, never hangs.
+    fn started(starts: &std::sync::mpsc::Receiver<String>) -> String {
+        starts
+            .recv_timeout(Duration::from_secs(60))
+            .expect("no call started within 60 s")
     }
 
-    impl Embedder for Logged {
+    /// Each call says it started (its first text) and then holds until the test lets one call go, so a test drives
+    /// the lane's order itself and nothing in it depends on how long a step takes. Dropping the release lets every
+    /// call go.
+    struct Gate {
+        started: Mutex<std::sync::mpsc::Sender<String>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+        calls: AtomicUsize,
+        readies: AtomicUsize,
+    }
+
+    /// A gate, the calls it started (in order) and its release (one send lets one call go).
+    fn gate() -> (
+        Arc<Gate>,
+        std::sync::mpsc::Receiver<String>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        let (started, starts) = channel();
+        let (go, release) = channel();
+        let gate = Arc::new(Gate {
+            started: Mutex::new(started),
+            release: Mutex::new(release),
+            calls: AtomicUsize::new(0),
+            readies: AtomicUsize::new(0),
+        });
+        (gate, starts, go)
+    }
+
+    impl Embedder for Gate {
         fn embed(&self, texts: &[String], _: TextKind) -> Result<Embedded, EmbedError> {
-            std::thread::sleep(self.delay);
-            self.seen.lock().unwrap().push(texts[0].clone());
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let _ = self.started.lock().unwrap().send(texts[0].clone());
+            let _ = self.release.lock().unwrap().recv();
             Ok(Embedded {
                 vectors: texts.iter().map(|_| vec![1.0, 0.0]).collect(),
                 ..Embedded::default()
             })
         }
         fn key(&self) -> ModelKey {
-            ModelKey::parse("logged@2").unwrap()
+            ModelKey::parse("gate@2").unwrap()
         }
         fn concurrency_ceiling(&self) -> usize {
             1
@@ -405,52 +400,131 @@ mod tests {
             Locality::Local
         }
         fn ready(&self) -> Result<(), EmbedError> {
+            self.readies.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
         fn credential(&self) -> Option<Credential> {
             None
         }
         fn adapter_id(&self) -> &'static str {
-            "test.logged"
+            "test.gate"
         }
     }
 
+    /// A query embed is bounded: with its call held, the search still comes back, timed out, and says warming while
+    /// the instance has never answered. The held call finishes on its thread and warms the instance; the next timed-out
+    /// search no longer says warming.
+    #[test]
+    fn a_slow_query_embed_times_out_at_the_bound_and_says_warming_until_one_answers() {
+        let lanes = QueryLanes::with_bound(Duration::from_secs(1));
+        let (inner, starts, go) = gate();
+        let e: Arc<dyn Embedder> = inner.clone();
+        assert_eq!(
+            lanes.embed(&e, "q"),
+            Err(QueryFailed::TimedOut { warming: true })
+        );
+        assert_eq!(started(&starts), "q");
+        go.send(()).unwrap();
+        wait_until("the held call finished", || !lanes.busy(&e));
+        assert!(lanes.answered(&e), "the timed-out call warmed the instance");
+        assert_eq!(
+            lanes.embed(&e, "q2"),
+            Err(QueryFailed::TimedOut { warming: false })
+        );
+        drop(go);
+        wait_until("the lane drained", || !lanes.busy(&e));
+    }
+
+    /// A search's budget counts its wait behind another search's embed, and a search that gave up is never run. The
+    /// first search's call is held until the end, so the others can only time out waiting behind it, whatever the
+    /// machine's speed; once it is let go, none of theirs runs. Not warming: the lane warmed first.
+    #[test]
+    fn a_second_search_waits_within_its_own_budget_and_abandoned_queries_are_skipped() {
+        let lanes = QueryLanes::with_bound(Duration::from_secs(1));
+        let (inner, starts, go) = gate();
+        let e: Arc<dyn Embedder> = inner.clone();
+        lanes.warm(&e);
+        wait_until("the lane warmed", || lanes.answered(&e));
+        std::thread::scope(|s| {
+            let a = s.spawn(|| lanes.embed(&e, "a"));
+            assert_eq!(started(&starts), "a");
+            // a's call is held: b waits behind it and its own budget runs out meanwhile.
+            let b = s.spawn(|| lanes.embed(&e, "b"));
+            assert_eq!(
+                b.join().unwrap(),
+                Err(QueryFailed::TimedOut { warming: false })
+            );
+            // More searches pile up behind the held call and give up too.
+            for _ in 0..5 {
+                assert_eq!(
+                    lanes.embed(&e, "c"),
+                    Err(QueryFailed::TimedOut { warming: false })
+                );
+            }
+            assert_eq!(lanes.waiting(&e), (6, 0), "b and the five wait, abandoned");
+            // a outlived its own budget too: it finishes on its thread, its search long gone.
+            assert_eq!(
+                a.join().unwrap(),
+                Err(QueryFailed::TimedOut { warming: false })
+            );
+            // Lets a go, and any call after it: one that ran would count.
+            drop(go);
+        });
+        wait_until("the lane drained", || !lanes.busy(&e));
+        assert_eq!(
+            inner.calls.load(Ordering::SeqCst),
+            1,
+            "only a ran: the abandoned searches were skipped"
+        );
+    }
+
     /// ws004 s28 (embeddings-expert): a related check never takes the query slot from a waiting search. With one
-    /// related check running and another queued, a search that arrives next runs before the queued one and answers
-    /// inside its bound.
+    /// related check running and another queued, a search that arrives next runs before the queued one. Each step
+    /// waits for the lane to hold what it should (a call started, a check or search queued), never for time.
     #[test]
     fn a_search_queued_behind_a_related_check_still_gets_its_slot() {
-        let lanes = QueryLanes::with_bound(Duration::from_secs(5));
-        let inner = Arc::new(Logged {
-            delay: Duration::from_millis(150),
-            seen: Mutex::new(Vec::new()),
-        });
+        let lanes = QueryLanes::with_bound(Duration::from_secs(60));
+        let (inner, starts, go) = gate();
         let e: Arc<dyn Embedder> = inner.clone();
         std::thread::scope(|s| {
             let r1 = s.spawn(|| {
                 lanes.embed_related(&e, vec!["r1".into(), "r1b".into()], TextKind::Query)
             });
-            std::thread::sleep(Duration::from_millis(40));
+            assert_eq!(started(&starts), "r1");
             let r2 = s.spawn(|| lanes.embed_related(&e, vec!["r2".into()], TextKind::Query));
-            std::thread::sleep(Duration::from_millis(40));
+            wait_until("r2 queued", || lanes.waiting(&e) == (0, 1));
             let q = s.spawn(|| lanes.embed(&e, "q"));
+            wait_until("q queued", || lanes.waiting(&e) == (1, 1));
+            let mut order = vec!["r1".to_string()];
+            for _ in 0..2 {
+                go.send(()).unwrap();
+                order.push(started(&starts));
+            }
+            go.send(()).unwrap();
+            assert_eq!(order, ["r1", "q", "r2"]);
             assert_eq!(q.join().unwrap(), Ok(vec![1.0, 0.0]));
             assert_eq!(r1.join().unwrap().map(|v| v.len()), Ok(2));
             assert!(r2.join().unwrap().is_ok());
         });
-        assert_eq!(*inner.seen.lock().unwrap(), ["r1", "q", "r2"]);
     }
 
+    /// A graph's load warms its local instance once (`ready()`, which embeds nothing), so its first search finds
+    /// the model loaded; a hosted instance has nothing to load and gets no lane. Waits for the warm-up, never for time.
     #[test]
     fn warming_loads_a_local_instance_once_and_never_a_hosted_one() {
-        let lanes = QueryLanes::with_bound(Duration::from_millis(50));
-        let local = slow(10);
+        let lanes = QueryLanes::with_bound(Duration::from_secs(60));
+        let (inner, _starts, go) = gate();
+        drop(go);
+        let local: Arc<dyn Embedder> = inner.clone();
         lanes.warm(&local);
-        std::thread::sleep(Duration::from_millis(100));
+        wait_until("the local instance warmed", || lanes.answered(&local));
+        lanes.warm(&local);
+        assert_eq!(lanes.embed(&local, "q").map(|v| v.len()), Ok(2));
+        assert_eq!(inner.readies.load(Ordering::SeqCst), 1, "warmed once");
         assert_eq!(
-            lanes.embed(&local, "q").map(|v| v.len()),
-            Ok(2),
-            "warm: answered inside 50 ms"
+            inner.calls.load(Ordering::SeqCst),
+            1,
+            "warming embeds nothing"
         );
         let hosted: Arc<dyn Embedder> = Arc::new(Slow {
             delay: Duration::from_millis(10),
