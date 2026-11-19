@@ -249,6 +249,13 @@ pub trait Embedder: Send + Sync {
     /// large graph embeds needlessly slowly. Each adapter knows its own limit (hosted: provider quota; local: 1).
     fn concurrency_ceiling(&self) -> usize;
 
+    /// The most inputs one `embed` call takes; a caller never sends more (ws004). Past it a provider refuses the call
+    /// (Azure: 2,048) or a local model runs out of room in one run. The default, 16, is the size every call had
+    /// before ws004: safe for any adapter, and slow for a hosted one, so an adapter that takes more says so.
+    fn max_batch_inputs(&self) -> usize {
+        16
+    }
+
     /// The model's real input window, in its own tokens. Longer inputs are either refused (`InputTooLong`) or cut
     /// and listed in `Embedded::truncated`, whichever the adapter does; never cut silently. Required, with no
     /// default, because a guessed cap either refuses text the model takes or hides text it cuts.

@@ -7,9 +7,11 @@ use alloc::collections::{BTreeSet, VecDeque};
 use alloc::vec::Vec;
 use umx_core::ports::{EmbedError, Embedder};
 
-/// Texts per provider call.
+/// Texts per provider call where no instance's own limit applies ([`batches`]); the embed worker cuts each
+/// instance's calls at its `max_batch_inputs` instead ([`batches_up_to`], ws004).
 pub const MAX_BATCH_TEXTS: usize = 16;
-/// Estimated tokens per provider call.
+/// Estimated tokens per provider call, whatever the instance takes: at two bytes a token about 100,000 real tokens,
+/// inside a hosted provider's per-request total.
 pub const MAX_BATCH_TOKENS: usize = 200_000;
 /// Background rate when nothing has been refused: 4M tokens a minute (Flowspace's measured deployment allowed 6.85M).
 pub const START_TOKENS_PER_MIN: u64 = 4_000_000;
@@ -25,14 +27,21 @@ fn tokens(p: &Planned) -> usize {
     p.texts.iter().map(|w| estimate_tokens(&w.text)).sum()
 }
 
-/// Splits planned nodes into provider calls of at most [`MAX_BATCH_TEXTS`] texts and [`MAX_BATCH_TOKENS`]
-/// estimated tokens, in order. A node's texts are never split; a node over either limit goes alone.
+/// [`batches_up_to`] at [`MAX_BATCH_TEXTS`] texts a call.
 pub fn batches(planned: Vec<Planned>) -> Vec<Vec<Planned>> {
+    batches_up_to(planned, MAX_BATCH_TEXTS)
+}
+
+/// Splits planned nodes into provider calls of at most `max_texts` texts (the instance's `max_batch_inputs`) and
+/// [`MAX_BATCH_TOKENS`] estimated tokens, in order. A node's texts are never split, so all of a node's vectors come
+/// from one call and are applied together; a node over either limit goes alone.
+pub fn batches_up_to(planned: Vec<Planned>, max_texts: usize) -> Vec<Vec<Planned>> {
+    let max_texts = max_texts.max(1);
     let mut out: Vec<Vec<Planned>> = Vec::new();
     let (mut texts, mut toks) = (0, 0);
     for p in planned {
         let (n, t) = (p.texts.len(), tokens(&p));
-        let fits = texts + n <= MAX_BATCH_TEXTS && toks + t <= MAX_BATCH_TOKENS;
+        let fits = texts + n <= max_texts && toks + t <= MAX_BATCH_TOKENS;
         match out.last_mut() {
             Some(last) if fits || last.is_empty() => {
                 last.push(p);
@@ -344,6 +353,33 @@ mod tests {
         assert_eq!(sizes, [2, 1]);
         let lone = batches(vec![planned(1, 20, 1), planned(2, 1, 1)]);
         assert_eq!(lone.iter().map(Vec::len).collect::<Vec<_>>(), [1, 1]);
+    }
+
+    /// ws004: the worker cuts calls at the instance's own limit, not 16: 3,000 one-text nodes make one call of
+    /// 2,048 and one of the rest; the token budget still cuts first, and a node's texts still go together.
+    #[test]
+    fn batches_up_to_an_instances_limit_keep_the_token_budget_and_whole_nodes() {
+        let sizes: Vec<usize> = batches_up_to((0..3000).map(|n| planned(n, 1, 10)).collect(), 2048)
+            .iter()
+            .map(Vec::len)
+            .collect();
+        assert_eq!(sizes, [2048, 952]);
+        let quarter = MAX_BATCH_TOKENS / 2; // a quarter of the budget in tokens, at 2 bytes a token
+        let sizes: Vec<usize> =
+            batches_up_to((0..5).map(|n| planned(n, 1, quarter)).collect(), 2048)
+                .iter()
+                .map(Vec::len)
+                .collect();
+        assert_eq!(sizes, [4, 1]);
+        let texts: Vec<usize> = batches_up_to((0..5).map(|n| planned(n, 3, 1)).collect(), 8)
+            .iter()
+            .map(|b| b.iter().map(|p| p.texts.len()).sum())
+            .collect();
+        assert_eq!(
+            texts,
+            [6, 6, 3],
+            "two 3-text nodes fit in 8, a third would split"
+        );
     }
 
     #[test]

@@ -2147,6 +2147,9 @@ impl Embedder for ProvenanceGuard {
     fn concurrency_ceiling(&self) -> usize {
         self.0.concurrency_ceiling()
     }
+    fn max_batch_inputs(&self) -> usize {
+        self.0.max_batch_inputs()
+    }
     fn max_input_tokens(&self) -> usize {
         self.0.max_input_tokens()
     }
@@ -2678,8 +2681,10 @@ fn a_role_change_over_unreadable_shards_says_so_once_and_still_sets_the_role() {
         .into_iter()
         .map(|p| p.unwrap().unwrap())
         .collect();
-    let (vectors, _) = umx_services::embed(embedder.as_ref(), &plans).unwrap();
-    svc.embed_apply(&vectors).unwrap();
+    for batch in batches(plans) {
+        let (vectors, _) = umx_services::embed(embedder.as_ref(), &batch).unwrap();
+        svc.embed_apply(&vectors).unwrap();
+    }
     assert_eq!(svc.graph_list()[0].vectors_pending, Some(0), "control");
     for id in &ids {
         let shard_path = path.join(FileRef::Shard(shard(*id)).path());
@@ -2725,6 +2730,9 @@ impl Embedder for Recording {
     }
     fn concurrency_ceiling(&self) -> usize {
         self.inner.concurrency_ceiling()
+    }
+    fn max_batch_inputs(&self) -> usize {
+        self.inner.max_batch_inputs()
     }
     fn max_input_tokens(&self) -> usize {
         self.inner.max_input_tokens()

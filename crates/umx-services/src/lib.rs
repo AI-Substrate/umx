@@ -38,7 +38,8 @@ pub use config::{
 pub use cypher::{CypherRequest, QUERY_BACKSTOP_MS, QUERY_PERMITS, QueryPermit, QueryRows};
 pub use embedding::{
     Applied, EmbedJob, EmbedNote, EmbedQueue, EmbeddingService, Needs, NoteKind, Pacer, Planned,
-    Scan, Step, Ticket, Vectors, batch_tokens, batches, embed, estimate_tokens, settle, step,
+    Scan, Step, Ticket, Vectors, batch_tokens, batches, batches_up_to, embed, estimate_tokens,
+    settle, step,
 };
 pub use graph_store::ResourceShown;
 pub use graph_store::{AlongInfo, AlongRequest, AlongSource, along_one_graph, reserved_spine_name};

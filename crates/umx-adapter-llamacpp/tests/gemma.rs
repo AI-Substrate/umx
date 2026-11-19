@@ -158,6 +158,9 @@ impl Embedder for Shared {
     fn concurrency_ceiling(&self) -> usize {
         self.0.concurrency_ceiling()
     }
+    fn max_batch_inputs(&self) -> usize {
+        self.0.max_batch_inputs()
+    }
     fn max_input_tokens(&self) -> usize {
         self.0.max_input_tokens()
     }

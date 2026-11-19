@@ -1014,6 +1014,11 @@ impl Embedder for LlamaEmbedder {
         self.config.sessions
     }
 
+    /// The texts one run packs (`batch_size`, llama.cpp's n_seq_max).
+    fn max_batch_inputs(&self) -> usize {
+        self.config.batch_size.max(1)
+    }
+
     fn max_input_tokens(&self) -> usize {
         self.config.spec.max_tokens
     }

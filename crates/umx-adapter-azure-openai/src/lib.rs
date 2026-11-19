@@ -39,6 +39,9 @@ pub const MAX_INPUT_TOKENS: usize = 8192;
 
 /// Calls at once the deployment takes (Flowspace's measured choice): its quota, not umx, is the limit.
 const CONCURRENCY_CEILING: usize = 32;
+
+/// Inputs one embeddings request takes: Azure OpenAI refuses more.
+pub const MAX_BATCH_INPUTS: usize = 2048;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
@@ -427,6 +430,11 @@ impl Embedder for AzureOpenAiEmbedder {
     /// `Retry-After` and are absorbed by the retry; throttling here would leave quota unused.
     fn concurrency_ceiling(&self) -> usize {
         CONCURRENCY_CEILING
+    }
+
+    /// [`MAX_BATCH_INPUTS`].
+    fn max_batch_inputs(&self) -> usize {
+        MAX_BATCH_INPUTS
     }
 
     /// [`MAX_INPUT_TOKENS`]: Azure rejects longer inputs (400) rather than truncating them.

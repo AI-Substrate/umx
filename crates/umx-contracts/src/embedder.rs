@@ -19,6 +19,7 @@ pub const CLAUSES: &[&str] = &[
     "em_c11_ready_is_ok_online",
     "em_c12_a_hosted_adapter_names_its_credential_after_ready",
     "em_c13_reported_tokens_are_none_or_count_the_batch",
+    "em_c14_a_batch_of_max_batch_inputs_embeds",
 ];
 
 /// `em_c10` builds an input longer than `max_input_tokens()` and is skipped above this cap, where that input would
@@ -240,6 +241,30 @@ pub fn em_c13_reported_tokens_are_none_or_count_the_batch<P: Embedder>(
             );
         }
     }
+}
+
+/// `em_c14` sends a batch of `max_batch_inputs()` texts, or this many where the adapter takes more, so a run never
+/// sends thousands of texts to a hosted provider.
+pub const FULL_BATCH_CAP: usize = 64;
+
+/// A caller fills calls up to `max_batch_inputs()` (ws004), so a batch that size embeds, one vector per input.
+pub fn em_c14_a_batch_of_max_batch_inputs_embeds<P: Embedder>(factory: impl Fn(Reach) -> P) {
+    let port = factory(Reach::Online);
+    let max = port.max_batch_inputs();
+    assert!(max >= 1, "max_batch_inputs is {max}");
+    let n = max.min(FULL_BATCH_CAP);
+    let batch: Vec<String> = (0..n)
+        .map(|i| format!("{} number {i}", TEXTS[i % TEXTS.len()]))
+        .collect();
+    let out = port
+        .embed(&batch, TextKind::Document)
+        .expect("a full batch embeds");
+    assert_eq!(
+        out.vectors.len(),
+        n,
+        "{n} inputs, {} vectors",
+        out.vectors.len()
+    );
 }
 
 /// `ready()` sends no text, ready or not. `sent` counts the texts the adapter has sent its provider so far (the

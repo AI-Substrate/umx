@@ -759,6 +759,7 @@ umx_contracts::embedder_contract!(
     em_c11_ready_is_ok_online(),
     em_c12_a_hosted_adapter_names_its_credential_after_ready(),
     em_c13_reported_tokens_are_none_or_count_the_batch(),
+    em_c14_a_batch_of_max_batch_inputs_embeds(),
 );
 
 /// ready() gets a token and calls nothing: the stub records no request at all, so no body carries input.

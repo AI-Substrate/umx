@@ -45,6 +45,9 @@ impl Embedder for Recorder {
     fn concurrency_ceiling(&self) -> usize {
         self.inner.concurrency_ceiling()
     }
+    fn max_batch_inputs(&self) -> usize {
+        self.inner.max_batch_inputs()
+    }
     fn max_input_tokens(&self) -> usize {
         self.inner.max_input_tokens()
     }

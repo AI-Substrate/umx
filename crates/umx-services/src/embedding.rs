@@ -28,8 +28,8 @@ use umx_core::vectors::{self, ShardFile, ShardLine, TextHash, VectorLine, quanti
 use umx_core::{EmbedderRule, Id, Policy, Problem, ValidName};
 
 pub use pacing::{
-    EmbedQueue, MAX_BATCH_TEXTS, Pacer, QUIET_RECOVERY_MS, Step, Ticket, batch_tokens, batches,
-    estimate_tokens, settle, step,
+    EmbedQueue, MAX_BATCH_TEXTS, MAX_BATCH_TOKENS, Pacer, QUIET_RECOVERY_MS, Step, Ticket,
+    batch_tokens, batches, batches_up_to, estimate_tokens, settle, step,
 };
 
 /// A node whose vectors may need work.

@@ -1494,6 +1494,7 @@ impl LocalState for FakeLocalState {
 pub struct FakeEmbedder {
     key: ModelKey,
     max_input_tokens: usize,
+    max_batch_inputs: usize,
     locality: Locality,
     offline: AtomicBool,
     calls: AtomicUsize,
@@ -1505,6 +1506,7 @@ impl FakeEmbedder {
         FakeEmbedder {
             key,
             max_input_tokens: 512,
+            max_batch_inputs: 16,
             locality: Locality::Local,
             offline: AtomicBool::new(false),
             calls: AtomicUsize::new(0),
@@ -1514,6 +1516,12 @@ impl FakeEmbedder {
 
     pub fn with_max_input_tokens(mut self, max: usize) -> FakeEmbedder {
         self.max_input_tokens = max;
+        self
+    }
+
+    /// The most inputs one call takes; a longer call is refused, as a provider would.
+    pub fn with_max_batch_inputs(mut self, max: usize) -> FakeEmbedder {
+        self.max_batch_inputs = max.max(1);
         self
     }
 
@@ -1600,6 +1608,13 @@ impl Embedder for FakeEmbedder {
                 next: "switch the fake back online".to_string(),
             });
         }
+        if texts.len() > self.max_batch_inputs {
+            return Err(EmbedError::BadResponse(format!(
+                "{} inputs in one call; the fake takes {}",
+                texts.len(),
+                self.max_batch_inputs
+            )));
+        }
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.texts.fetch_add(texts.len(), Ordering::SeqCst);
         let mut out = Embedded::default();
@@ -1619,6 +1634,10 @@ impl Embedder for FakeEmbedder {
 
     fn concurrency_ceiling(&self) -> usize {
         4
+    }
+
+    fn max_batch_inputs(&self) -> usize {
+        self.max_batch_inputs
     }
 
     fn max_input_tokens(&self) -> usize {
@@ -2594,6 +2613,7 @@ mod tests {
         em_c11_ready_is_ok_online(),
     em_c12_a_hosted_adapter_names_its_credential_after_ready(),
     em_c13_reported_tokens_are_none_or_count_the_batch(),
+    em_c14_a_batch_of_max_batch_inputs_embeds(),
     );
 
     /// ws006 S23 (review R26): under the root `/`, a folder's parent may be `/` itself, as the stub daemon's is.
@@ -2687,6 +2707,9 @@ mod tests {
         }
         fn concurrency_ceiling(&self) -> usize {
             self.0.concurrency_ceiling()
+        }
+        fn max_batch_inputs(&self) -> usize {
+            self.0.max_batch_inputs()
         }
         fn max_input_tokens(&self) -> usize {
             self.0.max_input_tokens()

@@ -14,9 +14,10 @@ use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use umx_core::ports::{EmbedError, Embedder, GraphDir};
 use umx_services::embedding::{Counted, Instance, embed_counted};
+use umx_services::embedding::{MAX_BATCH_TEXTS, MAX_BATCH_TOKENS};
 use umx_services::{
-    EmbedJob, EmbedQueue, Pacer, Planned, Services, Step, Ticket, Vectors, batch_tokens, batches,
-    settle,
+    EmbedJob, EmbedQueue, Pacer, Planned, Services, Step, Ticket, Vectors, batch_tokens,
+    batches_up_to, settle,
 };
 
 pub(crate) type Queue = Arc<(Mutex<EmbedQueue<EmbedJob>>, Condvar)>;
@@ -146,11 +147,11 @@ fn defer(queue: &Queue, jobs: impl IntoIterator<Item = EmbedJob>) {
 /// How long a batch for an instance with a query in flight waits before it is looked at again.
 const QUERY_WAIT_MS: u64 = 20;
 
-/// Nodes planned per round, at most: enough to fill a few provider calls.
-const PLAN_PER_ROUND: usize = 64;
+/// Nodes planned per round, at most: bounds a round's memory and time when every slot is free and texts are short.
+const PLAN_NODES_MAX: usize = 4096;
 
-/// Nodes planned for each free slot: about one provider batch (16 texts of 2 to 4 per node).
-const NODES_PER_BATCH: usize = 8;
+/// Nodes popped and planned per hold of the shared lock, at most, so a write waits behind one chunk's planning only.
+const PLAN_CHUNK: usize = 256;
 
 /// Queues the writer's new embed jobs and wakes the worker. Without an embedder nothing is ever queued.
 pub(crate) fn enqueue(queue: &Queue, jobs: Vec<EmbedJob>) {
@@ -282,20 +283,45 @@ fn call_thread(rx: &Mutex<Receiver<Call>>, outcomes: &Outcomes, queue: &Queue) {
     }
 }
 
-/// Plans up to `nodes` (at most [`PLAN_PER_ROUND`]) queued nodes under the shared lock, each graph's policy read once
-/// (architect) and its nodes grouped by the instance that graph embeds with, as provider-sized batches. A job for an
-/// instance in `blocked` (paused, paced or with every slot busy) goes back to the end of the queue unplanned and the
-/// round reads on, at most once through the queue, so one instance's wait never hides another's work (R201-2). The flag
-/// is true when the queue held only such jobs: plan again when a wait ends or work arrives.
+/// One instance's nodes planned in a round, as [`plan_round`] fills it.
+struct Group {
+    instance: Instance,
+    /// The instance's `max_batch_inputs`.
+    limit: usize,
+    planned: Vec<Planned>,
+    texts: usize,
+    tokens: usize,
+}
+
+impl Group {
+    /// Texts still to plan for `want` full calls; zero once the texts or the estimated tokens would fill them.
+    fn short_of(&self, want: usize) -> usize {
+        if self.tokens >= want.saturating_mul(MAX_BATCH_TOKENS) {
+            return 0;
+        }
+        want.saturating_mul(self.limit).saturating_sub(self.texts)
+    }
+}
+
+/// Plans queued nodes under the shared lock, a chunk per hold, each graph's policy read once a chunk (architect) and
+/// its nodes grouped by the instance that graph embeds with, until one instance has enough for `want` full calls (its
+/// `max_batch_inputs` texts or [`MAX_BATCH_TOKENS`] each, ws004), [`PLAN_NODES_MAX`] nodes are planned, or the queue
+/// has been read through once. Each group is cut into calls at its instance's limit. While more work waits, a group
+/// that filled its calls sends only those: its last, partial call goes back to the front of the queue to fill the next
+/// round's first call, so a backlog is sent in full calls, never in the handful a round happened to hold.
+///
+/// A job for an instance in `blocked` (paused, paced or with every slot busy) goes back to the end of the queue
+/// unplanned and the round reads on, at most once through the queue, so one instance's wait never hides another's work
+/// (R201-2). The flag is true when the queue held only such jobs: plan again when a wait ends or work arrives.
 fn plan_round(
     services: &RwLock<Services>,
     queue: &Queue,
     allows: &FolderAllows,
     drain: &Drain,
-    nodes: usize,
+    want: usize,
     blocked: &BTreeSet<String>,
 ) -> (Vec<(Instance, Vec<Planned>)>, bool) {
-    let want = nodes.clamp(1, PLAN_PER_ROUND);
+    let want = want.max(1);
     let mut left = {
         let q = queue.0.lock().unwrap_or_else(|e| e.into_inner());
         if q.is_empty() {
@@ -305,14 +331,22 @@ fn plan_round(
         drain.busy.store(true, Ordering::SeqCst);
         q.len()
     };
-    let mut jobs: Vec<EmbedJob> = Vec::new();
-    let mut put_back = 0;
-    while jobs.len() < want && left > 0 {
-        let popped = queue
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pop((want - jobs.len()).min(left));
+    let mut groups: BTreeMap<String, Group> = BTreeMap::new();
+    let (mut taken, mut put_back) = (0, 0);
+    let mut filled = false;
+    while !filled && taken < PLAN_NODES_MAX && left > 0 {
+        // Texts still wanted, as nodes of one text each (a node has at least one): a round first takes a call's worth
+        // at the default size, then what the groups it found still lack.
+        let short = if groups.is_empty() {
+            want.saturating_mul(MAX_BATCH_TEXTS)
+        } else {
+            groups.values().map(|g| g.short_of(want)).max().unwrap_or(0)
+        };
+        let n = short
+            .clamp(1, PLAN_CHUNK)
+            .min(PLAN_NODES_MAX - taken)
+            .min(left);
+        let popped = queue.0.lock().unwrap_or_else(|e| e.into_inner()).pop(n);
         if popped.is_empty() {
             break;
         }
@@ -321,52 +355,68 @@ fn plan_round(
         {
             let s = services.read().unwrap_or_else(|e| e.into_inner());
             let mut chosen: BTreeMap<String, Option<Instance>> = BTreeMap::new();
+            let mut jobs = Vec::new();
+            let mut instances = Vec::new();
             for j in popped {
                 let instance = chosen
                     .entry(j.alias.clone())
-                    .or_insert_with(|| instance_for(&s, allows, &j.alias));
+                    .or_insert_with(|| instance_for(&s, allows, &j.alias))
+                    .clone();
                 match instance {
                     Some(i) if blocked.contains(&i.name) => back.push(j),
-                    _ => jobs.push(j),
+                    i => {
+                        jobs.push(j);
+                        instances.push(i);
+                    }
                 }
+            }
+            taken += jobs.len();
+            for ((j, instance), planned) in jobs.iter().zip(instances).zip(s.embed_plan_all(&jobs))
+            {
+                let planned = match planned {
+                    Ok(Some(planned)) => planned,
+                    Ok(None) => continue,
+                    Err(problem) => {
+                        report(j, &problem);
+                        continue;
+                    }
+                };
+                let Some(instance) = instance else { continue };
+                let g = groups
+                    .entry(instance.name.clone())
+                    .or_insert_with(|| Group {
+                        limit: instance.embedder.max_batch_inputs().max(1),
+                        instance,
+                        planned: Vec::new(),
+                        texts: 0,
+                        tokens: 0,
+                    });
+                g.texts += planned.texts.len();
+                g.tokens += batch_tokens(core::slice::from_ref(&planned));
+                g.planned.push(planned);
             }
         }
         put_back += back.len();
         defer(queue, back);
+        filled = groups.values().any(|g| g.short_of(want) == 0);
     }
-    let only_blocked = jobs.is_empty() && put_back > 0;
-    let s = services.read().unwrap_or_else(|e| e.into_inner());
-    let mut groups: BTreeMap<String, (Instance, Vec<Planned>)> = BTreeMap::new();
-    let mut chosen: BTreeMap<String, Option<Instance>> = BTreeMap::new();
-    for (j, planned) in jobs.iter().zip(s.embed_plan_all(&jobs)) {
-        let planned = match planned {
-            Ok(Some(planned)) => planned,
-            Ok(None) => continue,
-            Err(problem) => {
-                report(j, &problem);
-                continue;
-            }
-        };
-        let instance = chosen
-            .entry(j.alias.clone())
-            .or_insert_with(|| instance_for(&s, allows, &j.alias));
-        if let Some(instance) = instance {
-            groups
-                .entry(instance.name.clone())
-                .or_insert_with(|| (instance.clone(), Vec::new()))
-                .1
-                .push(planned);
+    let only_blocked = taken == 0 && put_back > 0;
+    let more_waiting = !queue.0.lock().unwrap_or_else(|e| e.into_inner()).is_empty();
+    let mut out = Vec::new();
+    for g in groups.into_values() {
+        let full = g.short_of(want) == 0;
+        let mut cut = batches_up_to(g.planned, g.limit);
+        if full && more_waiting && cut.len() > 1 {
+            let last = cut.pop().expect("more than one");
+            queue
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retry(last.into_iter().map(|p| p.job).collect());
         }
+        out.extend(cut.into_iter().map(|b| (g.instance.clone(), b)));
     }
-    let batches = groups
-        .into_values()
-        .flat_map(|(instance, planned)| {
-            batches(planned)
-                .into_iter()
-                .map(move |b| (instance.clone(), b))
-        })
-        .collect();
-    (batches, only_blocked)
+    (out, only_blocked)
 }
 
 /// The instance a graph embeds with now: the folder rule filters first, then the tie-break picks among what is
@@ -453,11 +503,13 @@ fn dispatch(
                     });
                     defer(queue, back);
                 }
-                // One bad input fails the whole call: try each node alone, so only that node is dropped.
+                // One bad input fails the whole call: try each half, and so on down to the node alone, so only that
+                // node is dropped, in a few calls however full the batch was.
                 Step::Failed { .. } if f.batch.len() > 1 => {
-                    for one in f.batch.into_iter().rev() {
-                        ready.push_front((f.instance.clone(), vec![one]));
-                    }
+                    let mut first = f.batch;
+                    let second = first.split_off(first.len() / 2);
+                    ready.push_front((f.instance.clone(), second));
+                    ready.push_front((f.instance, first));
                 }
                 // Nothing more to try: say which node and what kind of failure, never the text.
                 Step::Failed { jobs, error } => {
@@ -523,8 +575,8 @@ fn dispatch(
         }
         let mut deferred = false;
         if to_apply.is_empty() && want(&lanes, &ready, &stuck) > 0 {
-            let nodes = want(&lanes, &ready, &stuck) * NODES_PER_BATCH;
-            let (planned, only_blocked) = plan_round(services, queue, allows, drain, nodes, &stuck);
+            let calls = want(&lanes, &ready, &stuck);
+            let (planned, only_blocked) = plan_round(services, queue, allows, drain, calls, &stuck);
             ready.extend(planned);
             deferred |= only_blocked;
         }

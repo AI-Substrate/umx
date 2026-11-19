@@ -63,6 +63,15 @@ struct Provider {
     in_flight: AtomicUsize,
     most: AtomicUsize,
     calls: AtomicUsize,
+    texts: AtomicUsize,
+    /// Each background call's texts, in order.
+    sizes: Mutex<Vec<usize>>,
+    /// The most inputs a call takes: a longer one is refused, as a provider would (ws004).
+    max_batch: usize,
+    /// A call holding a text with this in it is refused for good (a bad input).
+    poison: Option<&'static str>,
+    /// Report what a call counted (bytes / 4), as Azure does.
+    count_tokens: bool,
     limited: AtomicUsize,
     retry_after_ms: u64,
     /// (ms since t0 when the call started, refused with a 429).
@@ -84,6 +93,11 @@ impl Provider {
             in_flight: AtomicUsize::new(0),
             most: AtomicUsize::new(0),
             calls: AtomicUsize::new(0),
+            texts: AtomicUsize::new(0),
+            sizes: Mutex::new(Vec::new()),
+            max_batch: 16,
+            poison: None,
+            count_tokens: false,
             limited: AtomicUsize::new(0),
             retry_after_ms: 0,
             log: Mutex::new(Vec::new()),
@@ -103,6 +117,8 @@ impl Embedder for Provider {
         let background = kind == TextKind::Document;
         if background {
             self.calls.fetch_add(1, Ordering::SeqCst);
+            self.texts.fetch_add(texts.len(), Ordering::SeqCst);
+            self.sizes.lock().unwrap().push(texts.len());
             let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.most.fetch_max(now, Ordering::SeqCst);
         }
@@ -134,6 +150,18 @@ impl Embedder for Provider {
                 retry_after_ms: Some(self.retry_after_ms),
             });
         }
+        if texts.len() > self.max_batch {
+            return Err(EmbedError::BadResponse(format!(
+                "{} inputs; the provider takes {}",
+                texts.len(),
+                self.max_batch
+            )));
+        }
+        if let Some(bad) = self.poison
+            && texts.iter().any(|t| t.contains(bad))
+        {
+            return Err(EmbedError::BadResponse("a bad input".into()));
+        }
         let dims = ModelKey::parse(self.key).unwrap().dims();
         Ok(Embedded {
             vectors: texts
@@ -145,7 +173,9 @@ impl Embedder for Provider {
                 })
                 .collect(),
             truncated: Vec::new(),
-            tokens: None,
+            tokens: self
+                .count_tokens
+                .then(|| texts.iter().map(|t| (t.len() / 4).max(1) as u64).sum()),
         })
     }
     fn key(&self) -> ModelKey {
@@ -153,6 +183,9 @@ impl Embedder for Provider {
     }
     fn concurrency_ceiling(&self) -> usize {
         self.ceiling
+    }
+    fn max_batch_inputs(&self) -> usize {
+        self.max_batch
     }
     fn max_input_tokens(&self) -> usize {
         8191
@@ -332,11 +365,14 @@ fn a_429_pauses_only_its_instance_and_its_jobs_come_back() {
 }
 
 /// A search's query embed has its own slot: with every background slot busy on a provider that takes no more than
-/// the ceiling at once, the query still goes at once, not behind a background call.
+/// the ceiling at once, the query still goes at once, not behind a background call. The calls are full ones of 64
+/// texts (ws004): a larger call never takes the query's slot.
 #[test]
 fn a_query_gets_its_slot_during_a_full_background_load() {
     let root = root("query");
-    let p = Arc::new(Provider::new("aaa@4", 4, Duration::ZERO));
+    let mut provider = Provider::new("aaa@4", 4, Duration::ZERO);
+    provider.max_batch = 64;
+    let p = Arc::new(provider);
     let d = daemon(&root, &[("a", &p)]);
     // Some vectors first, so the search runs its vector leg (and so a query embed).
     add(&d, "ga", 0, 8);
@@ -346,6 +382,12 @@ fn a_query_gets_its_slot_during_a_full_background_load() {
     eventually("every background slot busy", SETTLE, || {
         p.in_flight.load(Ordering::SeqCst) == embed_worker::slots(&*p)
     });
+    let running = sizes(&p);
+    let in_flight = &running[running.len() - embed_worker::slots(&*p)..];
+    assert!(
+        in_flight.iter().all(|&n| n > 16),
+        "full calls in flight: {running:?}"
+    );
     let mut search = op(Op::Search {
         text: "concept".into(),
         within: None,
@@ -582,4 +624,241 @@ fn s25_drain_rate_bench() {
         );
         let _ = fs::remove_dir_all(&root);
     }
+}
+
+/// The texts of `p`'s background calls, in order.
+fn sizes(p: &Provider) -> Vec<usize> {
+    p.sizes.lock().unwrap().clone()
+}
+
+/// Graphs `r0`.. of `aaa@4` beside the daemon's own, each with `nodes` nodes (three texts each: title, note and the
+/// whole node), added one graph at a time.
+fn graphs(d: &Daemon, root: &std::path::Path, count: usize, nodes: usize) -> Vec<String> {
+    let aliases: Vec<String> = (0..count).map(|i| format!("r{i}")).collect();
+    for a in &aliases {
+        ok(d.handle(&op(Op::GraphNew {
+            path: root.join(a).display().to_string(),
+            alias: a.clone(),
+            title: None,
+            empty: false,
+            embedding_model: Some("aaa@4".into()),
+            secured: false,
+            no_graphfile: false,
+            graphfile: false,
+            no_std: false,
+        })));
+    }
+    for a in &aliases {
+        add(d, a, 0, nodes);
+    }
+    aliases
+}
+
+/// ws004: with work plentiful, calls are cut at the instance's own limit (`max_batch_inputs`), not at 16 and not
+/// at whatever few nodes a round held: 3 graphs of 200 nodes (1,800 texts) at 64 a call go in about 29 full calls,
+/// where 16 a call or 8 nodes a round made 113 or more. At most one partial call per graph's burst of work and the
+/// last, since a round that filled its calls puts its partial one back while more waits.
+#[test]
+fn background_calls_fill_to_the_instances_batch_limit() {
+    let root = root("fill");
+    let mut provider = Provider::new("aaa@4", 4, Duration::ZERO);
+    provider.max_batch = 64;
+    let p = Arc::new(provider);
+    let d = daemon(&root, &[("a", &p)]);
+    let aliases = graphs(&d, &root, 3, 200);
+    eventually("every vector", SETTLE, || {
+        aliases.iter().all(|a| pending(&d, a) == 0)
+    });
+    let sizes = sizes(&p);
+    let texts: usize = sizes.iter().sum();
+    assert_eq!(texts, 1_800, "{sizes:?}");
+    // A literal, not max_batch_inputs(): the guard must not read the rule it checks. A full call may stop 2 short:
+    // the next node's 3 texts would not fit.
+    let full = sizes.iter().filter(|&&n| n >= 62).count();
+    assert!(
+        sizes.len() <= 1_800 / 62 + 4 && full >= sizes.len() - 4,
+        "{} calls, {full} full: {sizes:?}",
+        sizes.len()
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// ws004: full calls keep the pace's 429 rule: the first 429 halves the instance's rate once, its batch comes back
+/// whole and is embedded, and no call ever goes over the provider's limit.
+#[test]
+fn a_429_on_a_full_call_still_halves_the_rate_and_its_batch_comes_back() {
+    let root = root("429-full");
+    let mut provider = Provider::new("aaa@4", 4, Duration::ZERO);
+    provider.max_batch = 64;
+    provider.limited = AtomicUsize::new(1);
+    let p = Arc::new(provider);
+    let pace = 1_000_000;
+    let d = daemon_paced(
+        &root,
+        &[("a", &p)],
+        [("a".to_string(), pace)].into_iter().collect(),
+    );
+    let aliases = graphs(&d, &root, 1, 200);
+    eventually("every vector", SETTLE, || pending(&d, &aliases[0]) == 0);
+    let stats = d.drain.stats();
+    let a = &stats["a"];
+    assert_eq!(a.rate_limited, 1);
+    assert_eq!(a.rate, Some(pace / 2), "one 429 halves the rate once");
+    let sizes = sizes(&p);
+    assert!(sizes.iter().all(|&n| n <= 64), "{sizes:?}");
+    assert!(sizes[0] > 16, "the refused call was a full one: {sizes:?}");
+    // The refused call counts in `sizes` too: its texts came back and were sent again.
+    assert_eq!(sizes.iter().sum::<usize>(), 600 + sizes[0], "{sizes:?}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// ws004: one bad input in a full call costs a few calls, not one per node: the batch is halved down to the bad node,
+/// which alone is dropped. 300 nodes at 256 texts a call: about 4 calls, plus 2 per halving (8 levels), where trying
+/// each node alone made about 85 more.
+#[test]
+fn a_bad_input_in_a_full_call_is_found_by_halving() {
+    let root = root("halving");
+    let mut provider = Provider::new("aaa@4", 4, Duration::ZERO);
+    provider.max_batch = 256;
+    provider.poison = Some("concept 7 of r0");
+    let p = Arc::new(provider);
+    let d = daemon(&root, &[("a", &p)]);
+    let aliases = graphs(&d, &root, 1, 300);
+    // Once only the bad node is left, at most its own last try is still to come.
+    eventually("every vector but the bad node's", SETTLE, || {
+        pending(&d, &aliases[0]) == 1
+    });
+    let calls = sizes(&p).len() + 1;
+    assert!(calls <= 4 + 2 + 2 * 8, "{calls} calls: {:?}", sizes(&p));
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// ws004: an Apply of a full call holds many nodes, but a writer's unit still holds at most [`MERGED_UNIT_MAX`] of
+/// one shard file's, in order, so the longest lock hold stays bounded.
+#[test]
+fn an_applys_units_hold_at_most_the_merged_unit_max_of_one_shard() {
+    let one_shard: Vec<u128> = (0..40u128).map(|n| n << 10).collect();
+    let shard = umx_core::vectors::shard_of(umx_core::Id(one_shard[0]));
+    assert!(
+        one_shard
+            .iter()
+            .all(|&n| umx_core::vectors::shard_of(umx_core::Id(n)) == shard),
+        "the nodes share a shard"
+    );
+    let vectors = tagged("g", &shard, &one_shard, 1, 0.0).vectors;
+    let got = units(vectors, 1);
+    let lens: Vec<usize> = got.iter().map(|u| u.vectors.len()).collect();
+    assert_eq!(lens, [16, 16, 8]);
+    let order: Vec<u128> = got
+        .iter()
+        .flat_map(|u| u.vectors.iter().map(|v| v.job.node.0))
+        .collect();
+    assert_eq!(order, one_shard);
+}
+
+/// The batching bench (run alone: `--ignored --exact --nocapture`), small on purpose: 3 graphs of 200 nodes (three
+/// texts each), a fake provider of ceiling 32 at 400 ms a call (about Azure's) taking 2,048 texts a call, paced at
+/// 1.5M tokens a minute, each note 3,000 bytes and the provider counting bytes / 4, as Azure does. A search every 2 s
+/// meanwhile shows the query lane is still served.
+#[test]
+#[ignore = "timing bench: run alone with --ignored --exact --nocapture (ws004 evidence)"]
+fn ws004_batching_bench() {
+    let (graphs_n, nodes, delay, limit, pace, note) = (3, 200, 400, 2048, 1_500_000u64, 3000usize);
+    let root = root("ws004-bench");
+    let mut provider = Provider::new("aaa@4", 32, Duration::from_millis(delay));
+    provider.max_batch = limit;
+    provider.count_tokens = true;
+    let p = Arc::new(provider);
+    let d = daemon_paced(
+        &root,
+        &[("a", &p)],
+        [("a".to_string(), pace)].into_iter().collect(),
+    );
+    let filler = "word ".repeat(note / 5);
+    let aliases: Vec<String> = (0..graphs_n).map(|i| format!("r{i}")).collect();
+    for a in &aliases {
+        ok(d.handle(&op(Op::GraphNew {
+            path: root.join(a).display().to_string(),
+            alias: a.clone(),
+            title: None,
+            empty: false,
+            embedding_model: Some("aaa@4".into()),
+            secured: false,
+            no_graphfile: false,
+            graphfile: false,
+            no_std: false,
+        })));
+    }
+    let started = Instant::now();
+    for a in &aliases {
+        let mut req = op(Op::Batch {
+            related: None,
+            raised_in: None,
+            echo_sentences: false,
+            lines: (0..nodes)
+                .map(|i| BatchLine {
+                    line: i as u32 + 1,
+                    op: BatchOp::NodeAdd {
+                        on_key: None,
+                        raised_in: None,
+                        id: None,
+                        created: None,
+                        ref_name: None,
+                        kind: "problem".into(),
+                        title: format!("concept {i} of {a}"),
+                        status: None,
+                        note: Some(format!("note {i} {filler}")),
+                        sets: Vec::new(),
+                        parent: None,
+                        parent_ref: None,
+                        evidence: Vec::new(),
+                        evidence_kind: None,
+                    },
+                })
+                .collect(),
+            dry_run: false,
+            refs: Default::default(),
+            refs_graph: None,
+            reason: None,
+            idempotency_key: None,
+        });
+        req.graph = Some(a.clone());
+        ok(d.handle(&req));
+    }
+    // A search every 2 s meanwhile: its query embed must not wait behind the background calls.
+    let mut searches = Vec::new();
+    let mut next = Instant::now();
+    while !aliases.iter().all(|a| pending(&d, a) == 0) {
+        if Instant::now() >= next {
+            let mut search = op(Op::Search {
+                text: "concept".into(),
+                within: None,
+                limit: None,
+                along: None,
+            });
+            search.graph = Some(aliases[0].clone());
+            let t = Instant::now();
+            ok(d.handle(&search));
+            searches.push(t.elapsed().as_millis());
+            next = Instant::now() + Duration::from_secs(2);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(started.elapsed() < Duration::from_secs(900));
+    }
+    let secs = started.elapsed().as_secs_f64();
+    let sizes = sizes(&p);
+    let texts: usize = sizes.iter().sum();
+    let stats = d.drain.stats();
+    let counted = stats["a"].tokens_counted;
+    eprintln!(
+        "ws004 bench: {graphs_n} x {nodes} nodes, note {note} B, delay {delay} ms, limit {limit}, pace {pace}/min: \
+         {texts} texts in {} calls = {:.1} a call (largest {}), {secs:.1} s, {:.0} counted tokens/min, most in flight \
+         {}, search ms {searches:?}",
+        sizes.len(),
+        texts as f64 / sizes.len() as f64,
+        sizes.iter().max().unwrap_or(&0),
+        counted as f64 * 60.0 / secs,
+        p.most.load(Ordering::SeqCst),
+    );
+    let _ = fs::remove_dir_all(&root);
 }

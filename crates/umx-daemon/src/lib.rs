@@ -630,11 +630,12 @@ struct Unit {
     lasts: usize,
 }
 
-/// Nodes' vectors in one merged unit, at most (graph-storage-expert, s25 D2): the provider batch size, so the
-/// longest hold stays bounded.
-const MERGED_UNIT_MAX: usize = umx_services::embedding::MAX_BATCH_TEXTS;
+/// Nodes' vectors in one unit, at most (graph-storage-expert, s25 D2), so the longest hold stays bounded: 16, the
+/// provider batch size when s25 set it; a call now carries up to its instance's `max_batch_inputs` (ws004), so an
+/// Apply's nodes for one shard file are split at this too.
+const MERGED_UNIT_MAX: usize = 16;
 
-/// An Apply's vectors as units, one per shard file, in order; `apply` names the Apply.
+/// An Apply's vectors as units, one per shard file and [`MERGED_UNIT_MAX`] nodes, in order; `apply` names the Apply.
 fn units(vectors: Vec<umx_services::Vectors>, apply: u64) -> Vec<Unit> {
     let mut by_shard: std::collections::BTreeMap<(String, String), Vec<umx_services::Vectors>> =
         std::collections::BTreeMap::new();
@@ -642,15 +643,20 @@ fn units(vectors: Vec<umx_services::Vectors>, apply: u64) -> Vec<Unit> {
         let at = (v.job.alias.clone(), umx_core::vectors::shard_of(v.job.node));
         by_shard.entry(at).or_default().push(v);
     }
-    by_shard
-        .into_iter()
-        .map(|(at, vectors)| Unit {
-            at,
-            vectors,
-            applies: vec![apply],
-            lasts: 0,
-        })
-        .collect()
+    let mut out = Vec::new();
+    for (at, mut vectors) in by_shard {
+        while !vectors.is_empty() {
+            let rest = vectors.split_off(vectors.len().min(MERGED_UNIT_MAX));
+            out.push(Unit {
+                at: at.clone(),
+                vectors,
+                applies: vec![apply],
+                lasts: 0,
+            });
+            vectors = rest;
+        }
+    }
+    out
 }
 
 /// The first waiting unit, with the later waiting units for the same graph and shard file merged into it, in queue
