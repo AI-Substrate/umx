@@ -12,7 +12,7 @@ const SKILL_DEPTH: usize = 8;
 /// The skill's fingerprint: FNV-1a 64 over each file under `root` (sorted by `/`-joined relative path; names
 /// starting with `.` skipped) as path, a zero byte, the length as 8 little-endian bytes, then the bytes. Must stay
 /// equal to umx-daemon's doctor `skill_fingerprint`, file selection and caps included: below the root only plain
-/// folders and regular files, checked without following links. crates/umx/tests/cli.rs proves the two agree.
+/// folders and regular files, checked without following links. crates/umx/tests/cli/daemon.rs proves the two agree.
 fn skill_fingerprint(root: &Path) -> Option<String> {
     use std::io::Read;
     fn walk(

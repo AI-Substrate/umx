@@ -378,7 +378,7 @@ const SKILL_DEPTH: usize = 8;
 
 /// The skill's fingerprint: FNV-1a 64 over each file under `root` (sorted by `/`-joined relative path; names
 /// starting with `.` skipped, such as .DS_Store) as path, a zero byte, the length as 8 little-endian bytes, then
-/// the bytes. Must stay equal to crates/umx/build.rs `skill_fingerprint`; crates/umx/tests/cli.rs proves the two
+/// the bytes. Must stay equal to crates/umx/build.rs `skill_fingerprint`; crates/umx/tests/cli/daemon.rs proves the two
 /// agree. `root` itself may be a link (just skill-link); below it only plain folders and regular files are
 /// allowed, checked without following links before anything is opened, so the walk never leaves the skill and
 /// never blocks on a FIFO. None when anything else is there, a read fails, or a cap is passed.

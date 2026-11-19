@@ -5,7 +5,7 @@
 //!
 //! The umx binary cannot compose a working fake embedder (the config takes only https endpoints and the Azure adapter
 //! trusts only the platform's roots; the stub build fakes the graph files too), so this runs in the daemon's crate.
-//! The CLI's parsing of these verbs is covered in crates/umx/tests/cli.rs.
+//! The CLI's parsing of these verbs is covered in crates/umx/tests/cli/config.rs (the cli tests).
 
 use super::*;
 use std::collections::BTreeSet;
