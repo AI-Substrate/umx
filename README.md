@@ -445,13 +445,16 @@ settings live in `~/.umx/config.toml`; secrets never go in config files.
 ## Pushing to this repository
 
 Maintainers who push run `scripts/install-pre-push-hook` once in their clone. The hook runs
-`scripts/seed-gate --pre-push` on the commits each push adds: names, private hosts, home paths, emails, secrets,
-binaries and file sizes in the files they change, and the names, email addresses and messages of the commits
-themselves. It refuses the push when a check fails, with a hint for the fix. It reads two lists kept outside the
-repository (`~/.config/unimatrix/customer-names` and `~/.config/unimatrix/private-hosts`) and fails closed without
-them. `scripts/seed-gate --range origin/main..HEAD` runs the same checks without pushing. A change under
-`.github/workflows`, or to the gate itself (its scripts, secret baseline and exceptions), always fails it: such a
-push goes out only after security has reviewed that exact commit, from whoever owns pushes. The hook
+`scripts/seed-gate --pre-push` on the commits each push adds: names, private hosts, home paths, emails, binaries
+and file sizes in the files they change, secrets in the lines they add, and the names, email addresses and messages
+of the commits themselves. It refuses the push when a check fails, with a hint for the fix. It reads two lists kept
+outside the repository (`~/.config/unimatrix/customer-names` and `~/.config/unimatrix/private-hosts`) and fails
+closed without them. `scripts/seed-gate --range origin/main..HEAD` runs the same checks without pushing. The secret
+baseline (`scripts/seed-gate-secret-baseline`) lists, per file and rule, how many lines the scan may flag; a file a
+push changes that flags more, or fewer, than its rows fails. A change to the baseline that only drops rows or lowers counts,
+against every parent of each commit that makes it, needs no verdict. Any other change to the gate (its scripts,
+baseline and exceptions, the hook installer) or under `.github/workflows` fails it: such a push goes out only after
+security has given a verdict on that exact commit, from whoever owns pushes. The hook
 runs the gate and secret scanner of the clone that installed it, and reads the lists from the pushing user's home
 folder; if that clone moves, run the installer again. A new branch is checked for every commit the remote you push
 to does not report having: the gate asks that remote (`git ls-remote`) rather than trusting the clone's

@@ -17,6 +17,10 @@ installer="$here/install-pre-push-hook"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+# config from the environment (a shell may set safe.bareRepository=explicit) would make the bare-remote checks below
+# fail to read the remote, and so pass without checking anything
+unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+for v in $(compgen -e); do case $v in GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) unset "$v" ;; esac; done
 export GIT_AUTHOR_NAME=builder GIT_AUTHOR_EMAIL=1+builder@users.noreply.github.com
 export GIT_COMMITTER_NAME=builder GIT_COMMITTER_EMAIL=1+builder@users.noreply.github.com
 
@@ -33,6 +37,11 @@ printf 'fn main() {}\n' >"$base/src/main.rs"
 printf '# a clean repository\n' >"$base/README.md"
 printf 'nothing to see\n' >"$base/notes/clean.txt"
 printf 'an old note about %s\n' "$name" >"$base/notes/old-dirty.txt" # already pushed: a range that leaves it alone passes
+# a fixture with two secret-shaped lines, baselined by path, rule and count (scripts/seed-gate-secret-baseline)
+mkdir -p "$base/scripts"
+aws() { printf '%s%s' AKIA "$1"; }
+printf 'fn fixture() {}\nlet a = "%s";\nlet b = "%s";\n' "$(aws IOSFODNN7EXAMPLE)" "$(aws IOSFODNN7EXAMPLF)" >"$base/src/fixture.rs"
+printf '# baseline\nsrc/fixture.rs\taws_access_key\t2\n' >"$base/scripts/seed-gate-secret-baseline"
 git init -q --initial-branch=main "$base"
 git -C "$base" add -A
 git -C "$base" commit -q -m base
@@ -138,6 +147,79 @@ mkdir -p "$dir/scripts"
     --list-secret-hits | grep -v '^#' >>"$dir/scripts/seed-gate-secret-baseline"
 (cd "$dir" && git add -A && git commit -q -m "baseline")
 check_range "a secret with its own baseline row" "$dir" origin/main..HEAD 1 gate-change
+
+# the baseline counts, not blobs: an edit elsewhere in a baselined file, or a rewrite of a baselined line, passes with no
+# baseline change; a third flagged line, a merge or a binary that adds one, and a row above what its file flags fail
+commit_on() { # <dir> <setup function>: one commit of the setup's change
+    (cd "$1" && "$2" && git add -A && git commit -q -m "a change")
+}
+e_elsewhere() { printf 'fn more() {}\n' >>src/fixture.rs; }
+e_rewrite() { sed -i.bak "s/$(aws IOSFODNN7EXAMPLF)/$(aws QQSFODNN7EXAMPLF)/" src/fixture.rs && rm src/fixture.rs.bak; }
+e_third() { printf 'let c = "%s";\n' "$(aws ZZSFODNN7EXAMPLE)" >>src/fixture.rs; }
+e_drop() { sed -i.bak '/let b/d' src/fixture.rs && rm src/fixture.rs.bak; }
+e_lower() { e_drop && sed -i.bak 's/\t2$/\t1/' scripts/seed-gate-secret-baseline && rm scripts/seed-gate-secret-baseline.bak; }
+e_raise() { e_third && sed -i.bak 's/\t2$/\t3/' scripts/seed-gate-secret-baseline && rm scripts/seed-gate-secret-baseline.bak; }
+e_lower_and_note() { e_lower && printf '# a note\n' >>scripts/seed-gate-secret-baseline; }
+for case_ in "an edit elsewhere in a baselined file:e_elsewhere:0:" "a rewrite of a baselined line:e_rewrite:0:" \
+    "a new secret in a baselined file:e_third:1:secret-scan" "a row above what its file flags:e_drop:1:secret-scan" \
+    "a lowered count, which tightens:e_lower:0:" "a raised count:e_raise:1:gate-change" \
+    "a lowered count beside another baseline edit:e_lower_and_note:1:gate-change"; do
+    IFS=: read -r label setup want check <<<"$case_"
+    dir=$(clone)
+    commit_on "$dir" "$setup"
+    check_range "$label" "$dir" origin/main..HEAD "$want" "$check"
+done
+dir=$(clone)
+commit_on "$dir" e_lower
+check_range "a lowered count passes gate-change" "$dir" origin/main..HEAD 0 ""
+grep -q '^seed-gate: PASS    gate-change' "$out" || { echo "FAIL: a lowered count tripped gate-change" >&2; fail=1; }
+# a raised count trips gate-change only: the secret check itself passes
+dir=$(clone)
+commit_on "$dir" e_raise
+check_range "a raised count passes the secret check" "$dir" origin/main..HEAD 1 gate-change
+grep -q '^seed-gate: PASS    secret-scan' "$out" || { echo "FAIL: a raised count failed the secret check" >&2; fail=1; }
+# what a merge adds against its first parent is read, even when a later commit takes it out again
+dir=$(clone)
+(cd "$dir" && git checkout -q -b side && echo side >>README.md && git commit -qam side && git checkout -q main &&
+    echo main >>notes/clean.txt && git commit -qam main && git merge -q --no-commit side &&
+    printf 'k = "%s"\n' "$(aws IOSFODNN7EXAMPLE)" >src/merged.txt && git add -A && git commit -q -m merge &&
+    git rm -q src/merged.txt && git commit -q -m "take it out")
+check_range "a secret only a merge adds" "$dir" origin/main..HEAD 1 secret-scan
+# a merge is judged against each parent, so what it takes from an already-pushed tip cannot slip by: a merge-only drop
+# of a baselined line leaves headroom; a merge that takes an older, looser baseline trips gate-change, and so does a
+# range whose later commit adds a secret that fits the reopened count
+e_loosen() { sed -i.bak 's/\t2$/\t3/' scripts/seed-gate-secret-baseline && rm scripts/seed-gate-secret-baseline.bak; }
+e_tighten() { sed -i.bak 's/\t3$/\t2/' scripts/seed-gate-secret-baseline && rm scripts/seed-gate-secret-baseline.bak; }
+dir=$(clone)
+(cd "$dir" && git checkout -q -b side && e_drop && git commit -qam side && git push -q origin side &&
+    git checkout -q main && echo main >>notes/clean.txt && git commit -qam main && git merge -q --no-edit side)
+check_range "a merge-only drop of a baselined line" "$dir" HEAD 1 secret-scan
+git -C "$base" branch -q -D side
+dir=$(clone) # the mirror: the merge keeps its first parent's file, which differs only from the second parent
+(cd "$dir" && git checkout -q -b side && echo side >>README.md && git commit -qam side && git push -q origin side &&
+    git checkout -q -b dropped main && e_drop && git commit -qam dropped && git push -q origin dropped &&
+    git merge -q --no-edit side)
+check_range "a merge that keeps a dropped line from its first parent" "$dir" HEAD 1 secret-scan
+git -C "$base" branch -q -D side dropped
+dir=$(clone)
+(cd "$dir" && git checkout -q -b loose && e_loosen && git commit -qam loose && git push -q origin loose &&
+    git checkout -q -b tight && e_tighten && git commit -qam tight && git push -q origin tight &&
+    git checkout -q loose -- scripts/seed-gate-secret-baseline && echo merge >>README.md && git add -A &&
+    git reset -q --soft "$(git commit-tree -p tight -p loose -m merge "$(git write-tree)")") # loose is tight's ancestor
+check_range "a merge that takes an older, looser baseline" "$dir" HEAD 1 gate-change
+(cd "$dir" && e_third && git commit -qam "a third key")
+check_range "a secret that fits a count a merge reopened" "$dir" HEAD 1 gate-change
+git -C "$base" branch -q -D loose tight
+# a binary that holds a secret, added and then removed: its whole blob is read
+dir=$(clone)
+(cd "$dir" && printf 'x\0y\nkey %s\n' "$(aws IOSFODNN7EXAMPLE)" >src/blob.bin && git add -A && git commit -q -m one &&
+    git rm -q src/blob.bin && git commit -q -m two)
+check_range "a secret in a binary" "$dir" origin/main..HEAD 1 secret-scan
+# a -diff attribute does not hide added text
+dir=$(clone)
+(cd "$dir" && printf '*.txt -diff\n' >.gitattributes && printf 'k = "%s"\n' "$(aws IOSFODNN7EXAMPLE)" >src/hid.txt &&
+    git add -A && git commit -q -m one && git rm -q src/hid.txt && git commit -q -m two)
+check_range "a secret behind a -diff attribute" "$dir" origin/main..HEAD 1 secret-scan
 
 # a plant in an earlier commit that a later commit removes is still published: every new commit is read
 dir=$(clone)

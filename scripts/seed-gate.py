@@ -20,6 +20,8 @@ EXCLUDED_TREES = ("docs/plans", "docs/project/workshops", "docs/project/workstre
 NOREPLY = "@users.noreply.github.com"
 OLD_SLUG = b"AI-Substrate/" + b"Unimatrix"  # the old repository's name; spelled in halves so this file does not hold it
 SECRET_BASELINE = "scripts/seed-gate-secret-baseline"
+BASELINE_HEADER = ("# path<TAB>rule<TAB>count: how many lines of each file umx's secret scan flags for the rule; a person "
+                   "reviews each before it is listed")
 NAMES_EXCEPTIONS = "scripts/customer-names-exceptions"
 # Binaries that may be in the seed, by exact path and sha256 (G5): the three stub model fixtures a test reads.
 BINARY_ALLOW = {
@@ -164,8 +166,10 @@ class RangeTree:
 
     `revs` are rev-list arguments: [head, "^base"] for <base>..<head>, or [head, "--not", "--remotes"] for a branch the
     remote does not have yet (the commits on no remote ref, never the whole history). Deleted files are not read. A
-    merge contributes only what differs from every parent (`diff-tree -c`): what it merges in is either old or another
-    new commit of the range, which is read on its own.
+    merge's blobs are only what differs from every parent (`diff-tree -c`): what it merges in is either old or another
+    new commit of the range, which is read on its own. Its touched paths are every path that differs from any parent,
+    so the tripwires and the secret rows judge a merge that takes an older file (a looser baseline, an older gate) or
+    lowers a count against its first parent.
     """
 
     kind = "range"
@@ -180,9 +184,11 @@ class RangeTree:
         self.tree = git(repo, "rev-parse", self.head + "^{tree}").stdout.decode().strip()
         self.entries = []  # (mode, sha, path) of each added or changed entry, possibly the same path more than once
         self.touched = set()  # every path a new commit adds, changes or deletes
+        self.by_commit = []  # (commit, parents, paths it adds, changes or deletes)
         seen = set()
         for commit in self.commit_list:
             parents = git(repo, "rev-list", "--parents", "-n", "1", commit).stdout.decode().split()[1:]
+            self.by_commit.append((commit, parents, set()))
             args = ["diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", "--no-commit-id", "--root"]
             if len(parents) > 1:
                 args.append("-c")
@@ -199,10 +205,16 @@ class RangeTree:
                 parts = head.lstrip(":").split()
                 mode, sha = parts[n], parts[2 * n + 1]
                 self.touched.add(path)
+                self.by_commit[-1][2].add(path)
                 if sha == ZERO or (path, sha) in seen:
                     continue
                 seen.add((path, sha))
                 self.entries.append((mode, sha, path))
+            for parent in parents if len(parents) > 1 else []:
+                names = git(repo, "diff-tree", "-r", "-z", "--no-renames", "--name-only", parent, commit).stdout
+                paths = {p for p in names.split(b"\0") if p}
+                self.touched |= paths
+                self.by_commit[-1][2].update(paths)
         self._files = None
         self._whole = None
 
@@ -226,6 +238,105 @@ class RangeTree:
             return None
         sha = git(self.stage, "rev-parse", self.head + ":" + path.decode("utf-8", "surrogateescape")).stdout.decode().strip()
         return (sha, out.stdout)
+
+    def at(self, rev, path):
+        """The bytes of `path` in commit `rev`, or None when it has no such file."""
+        out = git(self.stage, "cat-file", "blob", rev + ":" + path, check=False)
+        return out.stdout if out.returncode == 0 else None
+
+    def head_files(self, paths):
+        """[(path, bytes)] of those `paths` that are regular files in the head commit."""
+        listing = git(self.stage, "ls-tree", "-r", "-z", "--full-tree", self.head).stdout
+        want = []
+        for rec in listing.split(b"\0"):
+            if rec:
+                meta, path = rec.split(b"\t", 1)
+                mode, _kind, sha = meta.decode().split()
+                if path in paths and mode in ("100644", "100755"):
+                    want.append((path, sha))
+        return [(path, body) for (path, _), body in zip(want, cat_blobs(self.stage, [s for _, s in want]))]
+
+    def added(self):
+        """[(path, piece)] to scan for what each new commit adds against its first parent (a merge too): every added line
+        on its own, each run of added lines (one -U0 hunk) whole, and the whole blob of an added or changed binary."""
+        pieces, seen = [], set()
+        for commit, parents, _paths in self.by_commit:
+            pair = [parents[0], commit] if parents else ["--root", commit]
+            raw = git(self.stage, "diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", "--no-commit-id",
+                      *pair).stdout.split(b"\0")
+            entries = []  # (old sha, new sha, path) of each regular file the commit adds or changes
+            for i in range(0, len(raw) - 1, 2):
+                old_mode, new_mode, old, new, _status = raw[i].decode().lstrip(":").split()
+                if new_mode in ("100644", "100755") and new != ZERO and (raw[i + 1], old, new) not in seen:
+                    seen.add((raw[i + 1], old, new))
+                    entries.append((old if old_mode in ("100644", "100755") else ZERO, new, raw[i + 1]))
+            if not entries:
+                continue
+            patch = git(self.stage, "diff-tree", "-r", "-p", "-U0", "--text", "--full-index", "--no-renames", "--no-color",
+                        "--no-ext-diff", "--no-textconv", "--no-commit-id", *pair).stdout
+            hunks, current, in_hunk = {}, None, False  # (old sha, new sha) -> [[added line, ...], ...]
+            for line in patch.split(b"\n"):
+                if line.startswith(b"diff --git "):
+                    current, in_hunk = None, False
+                elif not in_hunk and line.startswith(b"index "):
+                    found = re.match(rb"index ([0-9a-f]{40,64})\.\.([0-9a-f]{40,64})", line)
+                    key = (found.group(1).decode(), found.group(2).decode()) if found else None
+                    current = [] if key and key not in hunks else None
+                    if current is not None:
+                        hunks[key] = current
+                elif line.startswith(b"@@") and current is not None:
+                    in_hunk = True
+                    current.append([])
+                elif in_hunk and line.startswith(b"+") and current is not None:
+                    current[-1].append(line[1:])
+            for (old, new, path), body in zip(entries, cat_blobs(self.stage, [new for _, new, _ in entries])):
+                if b"\0" in body:
+                    pieces.append((path, body))
+                    continue
+                runs = hunks.get((old, new))
+                if runs is None:  # no patch section for this change: everything in it counts as added
+                    runs = [body.split(b"\n")]
+                for run in runs:
+                    pieces.extend((path, piece) for piece in run if piece.strip())
+                    pieces.append((path, b"\n".join(run)))
+        return pieces
+
+
+def parse_baseline(body):
+    """({(path, rule): count}, [comment and blank lines], malformed rows) of a secret baseline's text."""
+    rows, other, bad = {}, [], 0
+    for line in body.decode("utf-8", "replace").splitlines():
+        if not line.strip() or line.startswith("#"):
+            other.append(line)
+            continue
+        fields = line.split("\t")
+        if len(fields) != 3 or not re.fullmatch(r"[1-9][0-9]{0,8}", fields[2]) or tuple(fields[:2]) in rows:
+            bad += 1
+            continue
+        rows[tuple(fields[:2])] = int(fields[2])
+    return rows, other, bad
+
+
+def tightens(old, new):
+    """Whether baseline text `new` only drops rows of `old` or lowers their counts, and changes nothing else."""
+    if old is None or new is None:
+        return False
+    old_rows, old_other, old_bad = parse_baseline(old)
+    new_rows, new_other, new_bad = parse_baseline(new)
+    return (not old_bad and not new_bad and old_other == new_other
+            and all(key in old_rows and n <= old_rows[key] for key, n in new_rows.items()))
+
+
+def cat_blobs(repo, shas):
+    """The bytes of each blob in `shas`, in order, read through one `git cat-file --batch`."""
+    raw = git(repo, "cat-file", "--batch", input=b"".join(s.encode() + b"\n" for s in shas)).stdout
+    at, found = 0, []
+    for _sha in shas:
+        end = raw.index(b"\n", at)
+        size = int(raw[at:end].split()[2])
+        found.append(raw[end + 1:end + 1 + size])
+        at = end + 1 + size + 1
+    return found
 
 
 # An absolute home path whose account is not one of the synthetic examples (me, jo, Jo, j, u), as scripts/home-paths.
@@ -636,57 +747,101 @@ class Gate:
                  "remove the email address, key file or registry credential from the source repository; only noreply and "
                  "example addresses may appear")
 
-    # check 2: umx's own secret scan, over the blobs; hits are baselined by path, blob and rule
-    def secret_rows(self):
-        """[(path, blob sha, rule)] flagged by umx's scan, or None when the scan could not run."""
+    # check 2: umx's own secret scan. A baseline row is path, rule and how many lines of that file flag the rule. The
+    # seed mode judges the whole tree against it; the range mode judges what each new commit adds (its added lines,
+    # and the whole blob of a binary) and the head's copy of every path the range touches.
+    def scan(self, pieces):
+        """The rule umx's scan names for each of `pieces` (None: clean), or None when the scan could not run."""
         scanner = SCANNER
         if self.opts["control"] and os.environ.get("SEED_GATE_SECRET_SCAN"):
             scanner = os.environ["SEED_GATE_SECRET_SCAN"]
-        files = self.tree.files()
-        # Each record is named by its index, so two versions of one path (two commits of a range) stay apart.
-        stream = b"".join(str(i).encode() + b"\0" + str(len(b)).encode() + b"\0" + b for i, (_p, (_s, b)) in enumerate(files))
+        # Each record is named by its index: the scanner never sees a path, and prints only the index and the rule.
+        stream = b"".join(str(i).encode() + b"\0" + str(len(b)).encode() + b"\0" + b for i, b in enumerate(pieces))
         out = subprocess.run([scanner], input=stream, capture_output=True)
         if out.returncode != 0:
-            return None, 0
-        rows, scanned = [], 0
+            return None
+        rules, scanned = [None] * len(pieces), -1
         for row in out.stdout.decode("utf-8", "replace").splitlines():
             fields = row.split("\t")
             if fields[0] == "#scanned":
                 scanned = int(fields[1])
             else:
-                path, (sha, _body) = files[int(fields[0])]
-                rows.append((path.decode("utf-8", "surrogateescape"), sha, fields[1]))
-        return rows, scanned
+                rules[int(fields[0])] = fields[1]
+        return rules if scanned == len(pieces) else None
+
+    def secret_counts(self, files):
+        """{(path, rule): count} over `files` [(path, bytes)], or None when the scan failed. Each line is scanned on its
+        own and counts once for the rule it trips; a rule that only the whole file trips (a secret over several lines)
+        counts 1."""
+        pieces, owners = [], []
+        for path, body in files:
+            name = path.decode("utf-8", "surrogateescape")
+            for line in body.split(b"\n"):
+                if line.strip():
+                    pieces.append(line)
+                    owners.append((name, False))
+            pieces.append(body)
+            owners.append((name, True))
+        rules = self.scan(pieces)
+        if rules is None:
+            return None
+        counts, whole = {}, []
+        for (name, is_whole), rule in zip(owners, rules):
+            if rule and is_whole:
+                whole.append((name, rule))
+            elif rule:
+                counts[(name, rule)] = counts.get((name, rule), 0) + 1
+        for key in whole:
+            counts.setdefault(key, 1)
+        return counts
+
+    def secret_rows(self, extra=()):
+        """{(path, rule): count} the baseline must cover: the whole tree, or the head's copy of each path a range
+        touches (and of `extra` paths)."""
+        if self.tree.kind == "range":
+            return self.secret_counts(self.tree.head_files(self.tree.touched | set(extra)))
+        return self.secret_counts([(p, b) for p, (_s, b) in self.tree.files()])
 
     def secrets(self):
-        rows, scanned = self.secret_rows()
-        if rows is None:
-            self.add("secret-scan", False, 0, "the secret scan failed to run; rebuild it with scripts/cargo-slot build -p umx-core --example secret-scan-stream")
+        added, actual = set(), None
+        if self.tree.kind == "range":
+            pieces = self.tree.added()
+            rules = self.scan([b for _, b in pieces])
+            if rules is not None:
+                added = {(p.decode("utf-8", "surrogateescape"), r) for (p, _), r in zip(pieces, rules) if r}
+                actual = self.secret_rows({p.encode("utf-8", "surrogateescape") for p, _ in added})
+        else:
+            actual = self.secret_rows()
+        if actual is None:
+            self.add("secret-scan", False, 1, "the secret scan failed to run; rebuild it with scripts/cargo-slot build -p umx-core --example secret-scan-stream")
             return
-        baseline = set()
         blob = self.tree.file(SECRET_BASELINE.encode())
-        if blob:
-            for line in blob[1].decode().splitlines():
-                if line.strip() and not line.startswith("#"):
-                    baseline.add(tuple(line.split("\t")))
-        hits = 0
-        for row in rows:
-            if row not in baseline:
-                hits += 1
-                self.locate(row[0].encode())
-        stale_rows = baseline - set(rows)
-        if self.tree.kind == "range":  # a range judges only the rows of the files it changes
-            changed = {p.decode("utf-8", "surrogateescape") for p, _ in self.tree.files()}
-            stale_rows = {r for r in stale_rows if r and r[0] in changed}
-        for stale in sorted(stale_rows):  # a row for a file that changed or is no longer flagged
-            hits += 1
-            self.locate(stale[0].encode())
-        self.add("secret-scan", hits == 0 and scanned == len(self.tree.files()), hits,
-                 "umx's secret scan flags a file that is not in scripts/seed-gate-secret-baseline: remove the secret, or if "
-                 "it is test or code text that only looks like one, a person reviews it and adds the line that "
-                 "`scripts/seed-gate --range origin/main..HEAD --list-secret-hits` (or `scripts/seed-gate STAGE "
-                 "--list-secret-hits`) prints for it (path, blob, rule). A row whose file changed or is no longer flagged "
-                 "fails too: refresh or drop it")
+        baseline, _other, bad = parse_baseline(blob[1] if blob else b"")
+        failed = set()
+        for key, n in actual.items():  # flagged more often than its row allows, or not listed at all
+            if baseline.get(key, 0) < n:
+                failed.add(key)
+        for key in added:  # what a new commit adds may only rewrite text its row already covers
+            if key not in baseline or actual.get(key, 0) > baseline[key]:
+                failed.add(key)
+        judged = None
+        if self.tree.kind == "range":  # a range judges only the rows of the paths it touches
+            judged = {p.decode("utf-8", "surrogateescape") for p in self.tree.touched}
+        for key, n in baseline.items():  # headroom: a row above what its file flags (a file gone or clean: 0)
+            if (judged is None or key[0] in judged) and actual.get(key, 0) < n:
+                failed.add(key)
+        for path in sorted({k[0] for k in failed}):
+            self.locate(path.encode("utf-8", "surrogateescape"))
+        if bad:
+            self.locate(SECRET_BASELINE.encode())
+        self.add("secret-scan", not failed and not bad, len(failed) + bad,
+                 "umx's secret scan flags text that scripts/seed-gate-secret-baseline (rows path<TAB>rule<TAB>count) does "
+                 "not cover: remove the secret, or if it is test or code text that only looks like one, a person reviews "
+                 "it and sets that path's rows to what `scripts/seed-gate --range origin/main..HEAD --list-secret-hits` "
+                 "(or `scripts/seed-gate STAGE --list-secret-hits`) prints for it; a new row or a higher count needs "
+                 "security's verdict (gate-change). A row above what its file now flags fails too: lower or drop it (a "
+                 "decrease needs no verdict). A range reads only the lines each new commit adds, so flagged text already "
+                 "in a file passes while its count holds. A malformed or repeated row fails")
 
     # G5 and check 4: raster and opaque files denied by magic bytes; other binaries only by path and sha256
     def binaries(self):
@@ -880,9 +1035,16 @@ class Gate:
                  "head first (`git rev-parse HEAD` names it); push it only after that verdict")
 
     # range mode: the gate cannot approve its own change. Its code, its baseline and exceptions, and the hook installer
-    # are read from the pushed head, so a change to any of them needs security's verdict on that exact head.
+    # are read from the pushed head, so a change to any of them needs security's verdict on that exact head. The one
+    # exception: commits that change the secret baseline only by dropping rows or lowering counts (each against every
+    # parent) tighten it, so they need no verdict; a new row, a higher count or any other edit trips the wire.
     def gate_tripwire(self):
+        baseline = SECRET_BASELINE.encode()
         changed = sorted(p for p in self.tree.touched if p.decode("utf-8", "surrogateescape") in GATE_FILES)
+        if baseline in changed and all(
+                parents and all(tightens(self.tree.at(p, SECRET_BASELINE), self.tree.at(c, SECRET_BASELINE)) for p in parents)
+                for c, parents, paths in self.tree.by_commit if baseline in paths):
+            changed.remove(baseline)
         for path in changed:
             self.locate(path)
         self.add("gate-change", not changed, len(changed),
@@ -1022,13 +1184,14 @@ def check_range(opts, repo, revs, label):
 
 
 def list_secret_hits(gate):
-    """Prints the baseline rows for what the scan flags (the whole tree, or a range's changed files) and exits."""
-    rows, _ = gate.secret_rows()
+    """Prints the baseline rows for what the scan flags (the whole tree, or the head's copy of each path a range
+    touches) and exits."""
+    rows = gate.secret_rows()
     if rows is None:
         sys.exit("seed-gate: the secret scan failed to run")
-    print("# path<TAB>blob<TAB>rule: files umx's secret scan flags; a person reviews each before it is listed")
-    for row in sorted(rows):
-        print("\t".join(row))
+    print(BASELINE_HEADER)
+    for (path, rule), count in sorted(rows.items()):
+        print(f"{path}\t{rule}\t{count}")
     sys.exit(0)
 
 

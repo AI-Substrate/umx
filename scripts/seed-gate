@@ -11,15 +11,23 @@
 # Range mode reads git objects, never the working folder: every new commit's author name, committer name, message and
 # identity (author and committer each a noreply address), and every blob a new commit adds or changes, with its path
 # name. A file nobody touched is not read, so an old file is judged when it next changes. It runs the content checks
-# of the seed mode (names, private infrastructure, home paths, personal data, umx's secret scan with the baseline,
-# binaries, rasters and opaque files, size) plus two tripwires that fail until security has given a verdict on the
+# of the seed mode (names, private infrastructure, home paths, personal data, binaries, rasters and opaque files, size)
+# plus umx's secret scan on the lines each new commit adds against its first parent (a merge too; the whole blob of a
+# binary), and two tripwires that fail until security has given a verdict on the
 # exact head: any change under .github/workflows, and any change to the gate itself (its scripts, its secret baseline,
 # the names exceptions, scripts/home-paths, the hook installer, the scan example, the lock check), because the range
-# reads those from the pushed head and a push must not approve itself. A range with no new commits passes ("nothing to
+# reads those from the pushed head and a push must not approve itself. A baseline edit that only drops rows or lowers
+# counts tightens it and needs no verdict. A range with no new commits passes ("nothing to
 # push"). --pre-push is what the hook from scripts/install-pre-push-hook runs: one range per pushed ref (a new branch:
 # its commits the remote being pushed to lacks, by asking that remote (`git ls-remote`; this clone's tracking refs
 # are not trusted, and when the remote cannot be asked the check fails); a deleted ref: nothing; a line
 # that is not four fields: fail).
+#
+# The secret baseline (scripts/seed-gate-secret-baseline) holds `path<TAB>rule<TAB>count` rows: how many lines of each
+# file umx's scan flags for the rule (each line scanned on its own; a rule only the whole file trips counts 1). The seed
+# mode needs every row equal to what its file flags. A range fails an added line that flags a path and rule with no
+# row or whose head count is above its row, and a touched path whose head count differs from its rows either way.
+# `--list-secret-hits` prints the rows (the whole tree, or the head's copy of each path a range touches).
 #
 # STAGE is a seed folder (scripts/seed-export makes one): staged but not yet committed, or already committed with
 # one parentless commit. It is read through git (the staged index or HEAD's tree), never the working folder, and it

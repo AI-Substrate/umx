@@ -89,7 +89,14 @@ p_harness() { printf 'see %s/%s\n' .harness notes >src/doc2.md; }
 p_secret() { printf 'aws_key = "%s%s"\n' AKIA IOSFODNN7EXAMPLE >src/config.txt; }
 p_png() { printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89' >picture.txt; }
 p_nonutf8() { printf '\xff\xfe\xfd stream \x80\x81' >stream.dat; }
-p_stale() { printf '# baseline\nsrc/main.rs\tabc\tapi_key\n' >scripts-baseline-stale; mkdir -p scripts && mv scripts-baseline-stale scripts/seed-gate-secret-baseline; }
+# the baseline rows are path, rule and how many lines of the file flag the rule
+baseline() { mkdir -p scripts && printf '# baseline\n%b' "$1" >scripts/seed-gate-secret-baseline; }
+p_stale() { baseline 'src/main.rs\tapi_key\t1\n'; }
+p_secret_listed() { p_secret && baseline 'src/config.txt\taws_access_key\t1\n'; }
+p_secret_raised() { p_secret_listed && printf 'aws_key2 = "%s%s"\n' AKIA IOSFODNN7EXAMPLF >>src/config.txt; }
+p_secret_headroom() { p_secret && baseline 'src/config.txt\taws_access_key\t2\n'; }
+p_secret_blob_row() { p_secret && baseline 'src/config.txt\tabc\taws_access_key\n'; }
+p_secret_repeated_row() { p_secret && baseline 'src/config.txt\taws_access_key\t1\nsrc/config.txt\taws_access_key\t1\n'; }
 p_zip() { printf 'PK\x03\x04\x14\x00\x00\x00\x08\x00' >data.dat; }
 p_binary() { printf 'abc\x00def\x00\x01\x02' >blob.bin; }
 p_big() { head -c 4000 /dev/zero | tr '\0' 'a' >big.txt; }
@@ -160,6 +167,10 @@ plant "a 1x1 png named .txt" rasters p_png
 plant "a zip named .dat" opaque-and-binary p_zip
 plant "a non-UTF-8 file with no NUL byte" opaque-and-binary p_nonutf8
 plant "a stale secret baseline row" secret-scan p_stale
+plant "a second flagged line beside a row for one" secret-scan p_secret_raised
+plant "a row above what its file flags" secret-scan p_secret_headroom
+plant "a row in the old path, blob, rule shape" secret-scan p_secret_blob_row
+plant "a repeated row" secret-scan p_secret_repeated_row
 plant "an unlisted binary" opaque-and-binary p_binary
 plant "a file over the size cap" size-cap p_big SEED_GATE_MAX_BYTES=2048
 plant "a file under docs/plans" excluded-trees p_plans
@@ -287,6 +298,12 @@ for ref in refs/tags/v1 refs/notes/ai; do
     git -C "$dir" update-ref "$ref" HEAD
     run "an extra ref $ref" "$dir" 1 shape
 done
+
+# a flagged file whose row matches its count passes the secret check
+cp -R "$base" "$work/copy-listed"
+(cd "$work/copy-listed" && p_secret_listed)
+run "a secret-shaped line with its row" "$work/copy-listed" 3 ""
+grep -q '^seed-gate: PASS    secret-scan' "$out" || { echo "FAIL: a baselined line failed the secret check" >&2; fail=1; }
 
 # the clean tree: pending without a commit (exit 3), a CONTROL pass with a noreply commit (exit 0)
 cp -R "$base" "$work/copy-clean"
