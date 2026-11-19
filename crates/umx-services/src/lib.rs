@@ -1413,6 +1413,9 @@ impl Services {
             && within.is_none()
             && req.along.is_none()
             && self.graph.loaded_count() > 1;
+        let several = all_unnamed
+            || ctx.scope.is_some()
+            || ctx.graph.as_deref().is_some_and(|g| g.contains(','));
         let mut done = self.graph.scoped_page(
             ctx,
             &[within.as_deref()],
@@ -1426,11 +1429,22 @@ impl Services {
                     NodeListRequest {
                         limit,
                         offset,
+                        several,
                         ..req.clone()
                     },
                 )
             },
         )?;
+        // ws008 t2b: one warning counting every graph a tag filter skipped because it does not use std.
+        let skipped = done
+            .notes
+            .iter()
+            .filter(|n| n.code == "tag_filter_not_std")
+            .count();
+        if skipped > 0 {
+            done.notes.retain(|n| n.code != "tag_filter_not_std");
+            done.notes.push(problems::tag_filter_not_std(skipped));
+        }
         let aliases: Vec<&str> = done.value.alias.split(',').collect();
         for key in &keys {
             if let Some(w) = self
@@ -2310,6 +2324,11 @@ impl Services {
         description: Option<&str>,
     ) -> Outcome<OntologyAdded> {
         self.graph.ontology_add_status(ctx, name, description)
+    }
+
+    /// `umx ontology add tag` (ws008 t2b, req-117).
+    pub fn ontology_add_tag(&mut self, ctx: &Ctx, tag: &str) -> Outcome<OntologyAdded> {
+        self.graph.ontology_add_tag(ctx, tag)
     }
 
     pub fn ontology_set_type(

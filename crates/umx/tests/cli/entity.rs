@@ -756,14 +756,15 @@ fn an_entity_key_is_found_across_graphs_in_stored_form() {
         "--title",
         "t",
         "--set-json",
-        r#"tags=["red","blue"]"#,
+        r#"labels=["red","blue"]"#,
     ]);
     let tagged = tagged.data["node"]["id"].as_str().unwrap().to_owned();
+    // A custom list field (a std graph's `tags` is the sorted std tag list, req-117).
     for (w, hit) in [
-        ("tags=red,blue", true),
-        ("tags=red", true),
-        ("tags=blue,red", false),
-        ("tags=green", false),
+        ("labels=red,blue", true),
+        ("labels=red", true),
+        ("labels=blue,red", false),
+        ("labels=green", false),
     ] {
         let found = ids(&["node", "list", "--graph", "notes", "--where", w]);
         assert_eq!(found == [tagged.clone()], hit, "{w}: {found:?}");

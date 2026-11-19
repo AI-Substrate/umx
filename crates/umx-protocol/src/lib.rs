@@ -197,12 +197,17 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// [--dry-run]`); new codes `adopt_field_kind_clash`, `adopt_reserved_relation`, `adopt_map_unknown`,
 /// `adopt_map_ambiguous`, `adopt_map_merge`, `adopt_map_symmetry`, `adopt_map_duplicate_edge` (errors),
 /// `adopt_value_kind` and `std_field_conflict_stored` (warnings), `already_std` and `adopt_rename_suggested` (hints).
+/// 95: std tags (ws008 t2b, req-117): `Op::NodeAdd`'s `tags` (`--tag`), `Op::NodeEdit`'s `tag` and `untag`
+/// (`--tag`/`--untag`), batch `node add` lines' `tags` and `node edit` lines' `tag` and `untag`, `Op::NodeList`'s
+/// `tags` and `no_tags` (`--tag`/`--no-tag`), `Op::OntologyAddTag` (`umx ontology add tag`), the ontology's `tags`;
+/// new codes `tag_invalid`, `tag_limit` and `tag_needs_std` (errors), `tag_off_vocabulary`, `tag_not_canonical`,
+/// `tag_unusable` and `tag_filter_not_std` (warnings).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 94;
+pub const PROTOCOL: u32 = 95;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -211,7 +216,7 @@ pub const PROTOCOL: u32 = 94;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (94, 0x122d_0fb7_f039_a5e0);
+const WIRE_FINGERPRINT: (u32, u64) = (95, 0x2de9_acb6_8afa_7163);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -639,6 +644,9 @@ pub enum BatchOp {
         /// What the line does when a node of its type already holds one of its entity keys (ws003 s08).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         on_key: Option<OnKey>,
+        /// Std tags, as `node add --tag` (ws008 t2b).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
     },
     #[serde(rename = "edge add")]
     EdgeAdd {
@@ -678,6 +686,11 @@ pub enum BatchOp {
         sets: Vec<SetArg>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         unsets: Vec<String>,
+        /// Std tags added and removed, as `node edit --tag` and `--untag` (ws008 t2b).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tag: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        untag: Vec<String>,
     },
     #[serde(rename = "node note")]
     NodeNote {
@@ -1374,6 +1387,9 @@ pub enum Op {
         /// the machine's `related` setting; None leaves it to them.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         related: Option<bool>,
+        /// `--tag <tag>` (ws008 t2b, req-117), repeatable: std tags, stored lowercased, sorted and deduplicated.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
     },
     NodeGet {
         node: String,
@@ -1390,6 +1406,13 @@ pub enum Op {
         offset: Option<usize>,
         #[serde(default)]
         along: Option<Along>,
+        /// `--tag <a>[,<b>]` (ws008 t2b, req-117), repeatable: each flag is a group, the groups AND, a group's
+        /// comma-separated tags OR; `<facet>:*` matches a facet. Answered from the tag index.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+        /// `--no-tag <a>[,<b>]`, repeatable: nodes holding any of these are left out.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        no_tags: Vec<String>,
     },
     NodeFind {
         text: String,
@@ -1489,6 +1512,11 @@ pub enum Op {
         relation: String,
         field: String,
     },
+    /// `ontology add tag <facet>:<value>|<facet>:*` (ws008 t2b, req-117): declares a std tag, or every value of a
+    /// facet. Once a facet has a declared tag, an undeclared one in it warns `tag_off_vocabulary`.
+    OntologyAddTag {
+        tag: String,
+    },
     /// F96: `ontology set type <name> --columns a,b` sets the type's default `node list --type` columns;
     /// `--reset` (columns `None`) removes them.
     OntologySetType {
@@ -1541,6 +1569,11 @@ pub enum Op {
         /// `unsets`) makes it plain again.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         locator: Option<String>,
+        /// `--tag <tag>` and `--untag <tag>` (ws008 t2b, req-117), each repeatable: std tags added and removed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tag: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        untag: Vec<String>,
     },
     NodeNote {
         node: String,
@@ -2195,7 +2228,8 @@ impl Op {
             | Op::OntologyAddStatus { .. }
             | Op::OntologyAddRelation { .. }
             | Op::OntologyAddField { .. }
-            | Op::OntologyAddRelationField { .. } => 10,
+            | Op::OntologyAddRelationField { .. }
+            | Op::OntologyAddTag { .. } => 10,
             Op::GraphUnload { .. } => 11,
             Op::NodeEdit { .. } => 12,
             Op::NodeNote { .. } => 13,
@@ -2323,6 +2357,7 @@ impl Op {
                 | Op::OntologySetType { .. }
                 | Op::OntologySetField { .. }
                 | Op::OntologyAddRelationField { .. }
+                | Op::OntologyAddTag { .. }
                 | Op::GraphUnload { .. }
                 | Op::NodeEdit { .. }
                 | Op::NodeNote { .. }
@@ -2461,6 +2496,35 @@ catalogue! {
         "a std graph's edges.jsonl holds an edge of a relation umx derives, or keeps for provenance, between nodes that are not provenance records (as an older umx could write); it is kept and loaded",
         "Edge <id> is a stored <relation> edge; umx derives or keeps that relation itself. It is kept as written.",
         "<fix>";
+    // ws008 t2b (req-117): std tags.
+    TagInvalid => "tag_invalid", Error, 1,
+        "a std tag is not value or facet:value with each part snake_case (lowercase is applied first); nothing is written",
+        "A tag was refused: <reason>. Nothing changed.",
+        "<fix>";
+    TagLimit => "tag_limit", Error, 1,
+        "a node would hold more than 64 std tags; nothing is written",
+        "Node tags are capped at 64; this write gives <count>. Nothing changed.",
+        "<fix>";
+    TagNeedsStd => "tag_needs_std", Error, 1,
+        "--tag, --untag, --no-tag or ontology add tag in a graph that does not use std; there tags is an ordinary custom field. Nothing is written",
+        "Graph <graph> does not use std, so it has no std tags. Nothing changed; to move it onto std, see what adopting std does.",
+        "<fix>";
+    TagOffVocabulary => "tag_off_vocabulary", Warning, 0,
+        "a node is given a tag in a facet that has declared tags (ontology add tag) while neither the tag nor facet:* is declared; it is written",
+        "A tag in facet <facet> of <graph> is not declared; it is written all the same. Declare it if it belongs.",
+        "<fix>";
+    TagNotCanonical => "tag_not_canonical", Warning, 0,
+        "a loaded node's tags are not in stored form (case, order, repeats or spaces), as after a hand edit; they are found as their stored form and the node's next write stores them so",
+        "Node <node> in <graph> holds tags that are not in stored form; they are found as stored and the node's next write stores them so.",
+        "<fix>";
+    TagUnusable => "tag_unusable", Warning, 0,
+        "a loaded node's tags value holds an entry that is not a tag (not a string, not snake_case, past 64), or is not a list; it is kept as written and never matched",
+        "Node <node> in <graph> holds a tags entry umx cannot use; it is kept as written and never matched by a tag filter.",
+        "<fix>";
+    TagFilterNotStd => "tag_filter_not_std", Warning, 0,
+        "a tag filter over several graphs left out the graphs that do not use std (they have no std tags)",
+        "The tag filter skipped <count> of the graphs read: they do not use std, so they have no std tags.",
+        "umx docs get ontology";
     StdFieldConflict => "std_field_conflict", Error, 1,
         "a std graph declares a field std v1 has with another kind than std's; nothing changed",
         "<field> is a std field of kind <kind>; a std graph cannot declare it as another kind. Nothing changed.",
@@ -4108,6 +4172,17 @@ impl Fill {
             .then(|| Fill(parts.join(",")))
     }
 
+    /// Std tags (ws008 t2b): 1 to 64 comma-separated `<name>`, `<facet>:<name>` or `<facet>:*`, each part a
+    /// [`Fill::name`]. In a command a list holding `*` is single-quoted ([`Fill::checked_command`]).
+    pub fn tags(parts: &[&str]) -> Option<Fill> {
+        let tag = |t: &str| match t.split_once(':') {
+            Some((f, v)) => Fill::name(f).is_some() && (v == "*" || Fill::name(v).is_some()),
+            None => Fill::name(t).is_some(),
+        };
+        ((1..=64).contains(&parts.len()) && parts.iter().all(|p| tag(p)))
+            .then(|| Fill(parts.join(",")))
+    }
+
     /// `umx <label>`, the label being one of [`commands`] or `unknown` (see [`command_name`]).
     pub fn command(command: &str) -> Fill {
         Fill(format!("umx {}", command_name(command)))
@@ -4210,31 +4285,39 @@ impl Fill {
         Fill(clean(text, " ._/+~:=<>()_-", 300))
     }
 
-    /// A checked command from services. Only balanced single quotes around safe absolute paths survive, whole
-    /// space-separated tokens that are a [`Fill::names`] list keep their commas (F73), and a whole `&&` token
-    /// followed by `umx` chains a second umx command (F144's unload then load); every other value keeps the
-    /// ordinary text sanitizer.
+    /// The longest command [`Fill::checked_command`] keeps as written; a longer one is cleaned as text.
+    pub const COMMAND_MAX: usize = 300;
+
+    /// A checked command from services. Only balanced single quotes around safe absolute paths or a [`Fill::tags`]
+    /// list holding `*` survive, whole space-separated tokens that are a [`Fill::names`] or [`Fill::tags`] list keep
+    /// their commas and colons (F73, ws008 t2b), and a whole `&&` token followed by `umx` chains a second umx command
+    /// (F144's unload then load); every other value keeps the ordinary text sanitizer.
     pub fn checked_command(text: &str) -> Fill {
         let parts: Vec<&str> = text.split('\'').collect();
         let plain = |part: &str| {
             let tokens: Vec<&str> = part.split(' ').collect();
             tokens.iter().enumerate().all(|(i, &token)| {
+                let parts: Vec<&str> = token.split(',').collect();
                 Self::text(token).0 == token
-                    || Self::names(&token.split(',').collect::<Vec<_>>()).is_some()
+                    || Self::names(&parts).is_some()
+                    || (!token.contains('*') && Self::tags(&parts).is_some())
                     || (token == "&&" && tokens.get(i + 1) == Some(&"umx"))
             })
         };
-        let safe = text.len() <= 300
+        let safe = text.len() <= Self::COMMAND_MAX
             && parts.len() % 2 == 1
             && parts.iter().enumerate().all(|(i, part)| {
                 if i % 2 == 0 {
                     plain(part)
                 } else {
-                    part.len() <= 256
-                        && part.starts_with('/')
-                        && part
-                            .chars()
-                            .all(|c| c.is_ascii_alphanumeric() || " ._/+~:-".contains(c))
+                    let quoted_tags = part.contains('*')
+                        && Self::tags(&part.split(',').collect::<Vec<_>>()).is_some();
+                    (quoted_tags
+                        || (part.len() <= 256
+                            && part.starts_with('/')
+                            && part
+                                .chars()
+                                .all(|c| c.is_ascii_alphanumeric() || " ._/+~:-".contains(c))))
                         && parts[i - 1].ends_with(' ')
                         && (parts[i + 1].is_empty() || parts[i + 1].starts_with(' '))
                 }
@@ -4802,6 +4885,37 @@ mod tests {
         }
     }
 
+    /// ws008 t2b: a std tag list keeps its colons and commas in a command, and one holding `*` only single-quoted (a
+    /// shell would expand it bare); anything else in such a token is cleaned as before.
+    #[test]
+    fn a_checked_command_keeps_tag_lists_and_quotes_a_wildcard() {
+        for ok in [
+            "umx node list --graph demo --tag a --tag x:y_z,c --no-tag 'origin:*'",
+            "umx node add --type risk --title <title> --tag origin:double_diamond",
+            "umx ontology add tag --graph demo 'phase:*'",
+        ] {
+            assert_eq!(Fill::checked_command(ok).0, ok);
+        }
+        for bad in [
+            "umx node list --tag origin:*",
+            "umx node list --tag 'a:B'",
+            "umx node list --tag 'a b:*'",
+            "umx node list --tag a::b",
+            "umx node list --tag 'a:*;rm'",
+        ] {
+            let got = Fill::checked_command(bad).0;
+            assert!(
+                !got.contains('*') && !got.contains('\''),
+                "{bad:?} -> {got:?}"
+            );
+        }
+        assert_eq!(
+            Fill::tags(&["a:*", "b"]).map(|f| f.0),
+            Some("a:*,b".to_owned())
+        );
+        assert_eq!(Fill::tags(&["*"]), None);
+    }
+
     #[test]
     fn a_model_key_fill_takes_only_model_keys() {
         for good in [
@@ -5297,6 +5411,7 @@ mod tests {
             },
             Op::GraphForget { alias: "g".into() },
             Op::NodeAdd {
+                tags: list(),
                 related: Some(false),
                 raised_in: s("01JC8XA4H7"),
                 on_key: Some(OnKey::Resolve),
@@ -5315,6 +5430,8 @@ mod tests {
                 columns: Some(list()),
             },
             Op::NodeList {
+                tags: list(),
+                no_tags: vec!["n".into()],
                 kind: s("k"),
                 status: s("open"),
                 wheres: list(),
@@ -5407,6 +5524,8 @@ mod tests {
             },
             Op::GraphUnload { alias: "g".into() },
             Op::NodeEdit {
+                tag: list(),
+                untag: vec!["u".into()],
                 node: "n".into(),
                 title: s("t"),
                 kind: s("k"),
@@ -5529,6 +5648,7 @@ mod tests {
                     BatchLine {
                         line: 1,
                         op: BatchOp::NodeAdd {
+                            tags: list(),
                             raised_in: s("01JC8XB2K9"),
                             on_key: Some(OnKey::Resolve),
                             id: s("01JC8XA4H7B3KT9M2NZ5QW6RDE"),
@@ -5575,6 +5695,8 @@ mod tests {
                     BatchLine {
                         line: 3,
                         op: BatchOp::NodeEdit {
+                            tag: list(),
+                            untag: vec!["u".into()],
                             node: s("n"),
                             node_ref: s("q1"),
                             title: s("t"),
@@ -5820,6 +5942,9 @@ mod tests {
                 map: vec!["individual=person".into()],
                 dry_run: true,
             },
+            Op::OntologyAddTag {
+                tag: "origin:*".into(),
+            },
             Op::EntityLink {
                 a: "a".into(),
                 b: "umx:g/b".into(),
@@ -5944,6 +6069,7 @@ mod tests {
             Op::GraphRename { .. } => 87,
             Op::GraphMove { .. } => 88,
             Op::OntologyAdoptStd { .. } => 89,
+            Op::OntologyAddTag { .. } => 90,
         }
     }
 
@@ -6087,7 +6213,7 @@ mod tests {
         let seen: std::collections::BTreeSet<usize> = ops.iter().map(variant).collect();
         assert_eq!(
             (seen.len(), ops.len()),
-            (90, 90),
+            (91, 91),
             "one sample per Op variant"
         );
         let now = (PROTOCOL, fnv1a(wire_samples().as_bytes()));

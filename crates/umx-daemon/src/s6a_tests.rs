@@ -83,6 +83,7 @@ fn a_write_and_a_read_land_while_a_wait_sleeps_and_an_event_wakes_it() {
         std::thread::sleep(Duration::from_millis(300));
         let add = op(
             Op::NodeAdd {
+                tags: Default::default(),
                 on_key: None,
                 related: None,
                 raised_in: None,

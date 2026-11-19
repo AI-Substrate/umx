@@ -16,6 +16,7 @@ use umx_core::ontology::{DEFAULT_STATUS, FieldKind, PART_OF, nearest};
 use umx_core::ports::GraphDir;
 use umx_core::problem::Candidate;
 use umx_core::standard::RAISED_IN;
+use umx_core::tags::TAGS;
 use umx_core::time::normalise_date;
 use umx_core::value::{SetValue, kind_of, typed_value, where_value};
 use umx_core::{Command, Id, Node, Ontology, Problem, ValidName, Value};
@@ -50,6 +51,8 @@ pub struct NodeAddRequest {
     /// `--on-key resolve` (ws003 s08): when a node of this type in the written graph holds one of the add's entity
     /// keys, the add resolves to that node and only appends or fills ([`key_holder`], [`enrich`]).
     pub on_key_resolve: bool,
+    /// `--tag` (ws008 t2b): std tags, each value one tag or a comma list. Refused in a graph without std.
+    pub tags: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,6 +78,12 @@ pub struct NodeListRequest {
     pub offset: usize,
     /// `--along` (D71 step 12): keep only the rows a spine places in range, before paging.
     pub along: Option<super::AlongRequest>,
+    /// `--tag` and `--no-tag` (ws008 t2b): each `--tag` a group (comma OR, groups AND), every `--no-tag` left out.
+    pub tags: Vec<String>,
+    pub no_tags: Vec<String>,
+    /// The list covers several graphs: one that does not use std is skipped with `tag_filter_not_std` instead of
+    /// refusing the read.
+    pub several: bool,
 }
 
 impl Default for NodeListRequest {
@@ -87,6 +96,9 @@ impl Default for NodeListRequest {
             limit: 100,
             offset: 0,
             along: None,
+            tags: Vec::new(),
+            no_tags: Vec::new(),
+            several: false,
         }
     }
 }
@@ -408,6 +420,10 @@ pub(crate) fn draft_node<'g>(
             problems::names(near),
         ));
     }
+    let std_tags = super::tags::is_std(o);
+    if !req.tags.is_empty() && !std_tags {
+        return Err(problems::tag_needs_std(graph));
+    }
     let mut fields = BTreeMap::new();
     for (name, value) in &req.sets {
         if let Some(refused) = problems::locator_name(name) {
@@ -424,6 +440,18 @@ pub(crate) fn draft_node<'g>(
         })?;
         if name == ENTITY_KEY {
             if let Some(v) = entity_key_value(value)? {
+                fields.insert(name.clone(), v);
+            }
+            continue;
+        }
+        if name == TAGS && std_tags {
+            if !req.tags.is_empty() {
+                return Err(problems::usage_invalid(
+                    "give tags with --tag or --set tags, not both",
+                    "node",
+                ));
+            }
+            if let Some(v) = super::tags::stored(super::tags::set_value(value)?) {
                 fields.insert(name.clone(), v);
             }
             continue;
@@ -458,6 +486,30 @@ pub(crate) fn draft_node<'g>(
             ));
         }
         fields.insert(name.clone(), v);
+    }
+    if !req.tags.is_empty() {
+        let retry = ctx.same_graph(
+            Command::new("node add")
+                .word("--type")
+                .name(&kind)
+                .word("--title")
+                .word("<title>"),
+        );
+        let retry = super::tags::TagRetry {
+            base: retry,
+            flags: alloc::vec![("--tag", &req.tags[..], super::tags::Reads::Tags)],
+        };
+        let given = super::tags::given(&req.tags, &retry)?;
+        if let Some(v) = super::tags::stored(given) {
+            fields.insert(TAGS.to_string(), v);
+        }
+    }
+    if std_tags && let Some(v) = fields.get(TAGS) {
+        warnings.extend(super::tags::off_vocabulary(
+            graph,
+            o,
+            &umx_core::tags::stored_tags(v),
+        ));
     }
     let locator = req
         .locator
@@ -678,6 +730,7 @@ pub(crate) fn enrich(
     before: &Node,
     draft: NodeDraft,
     status_given: bool,
+    std_tags: bool,
 ) -> Result<(Node, Vec<String>, Vec<problems::Held>), Problem> {
     use problems::Held;
     let mut n = before.clone();
@@ -709,6 +762,7 @@ pub(crate) fn enrich(
                 changed.push(name);
             }
             Some(v) if *v == value => {}
+            Some(_) if std_tags && name == TAGS => held.push(Held::Tags),
             Some(_) => held.extend(ValidName::new(&name).map(Held::Field)),
         }
     }
@@ -1015,7 +1069,12 @@ impl GraphStore {
         let l = self.get(alias);
         let before = l.graph.node(id).expect("a key holder").to_node();
         let parent = draft.parent;
-        let (mut n, changed, mut held) = enrich(&before, draft, status_given)?;
+        let (mut n, changed, mut held) = enrich(
+            &before,
+            draft,
+            status_given,
+            super::tags::is_std(l.ontology()),
+        )?;
         let live = |e: Id| l.graph.edge(e).map(|e| e.to_edge());
         let parent = parent.filter(|p| {
             let ends = ends_out(&l.graph, id, PART_OF, live);
@@ -1030,7 +1089,7 @@ impl GraphStore {
         }
         let node_changed = !changed.is_empty();
         let mut value = if node_changed || parent.is_some() || anchor.is_some() {
-            canonical_keys(&mut n);
+            canonical_keys(&mut n, super::tags::is_std(l.ontology()));
             let evidence_start = before.evidence.len();
             let allows = self.secret_allows();
             let done = self.attributed_write(ctx, alias, |batch, session, next, now, meta| {
@@ -1144,7 +1203,35 @@ impl GraphStore {
             None => None,
         };
         let scope = within.map(|root| ctx.read_scope(&l.graph).within(root));
+        let tags = if req.tags.is_empty() && req.no_tags.is_empty() {
+            umx_graph::TagFilter::default()
+        } else if !super::tags::is_std(l.ontology()) {
+            if req.several {
+                let empty = page(&alias, Vec::<NodeRef<'_>>::new(), req.limit, req.offset);
+                return Ok(Done {
+                    value: empty.map(ListedNode),
+                    notes: alloc::vec![problems::tag_filter_not_std(1)],
+                });
+            }
+            return Err(problems::tag_needs_std(&alias_name(&alias)));
+        } else {
+            use super::tags::{Reads, TagRetry};
+            let base = ctx.same_graph(Command::new("node list"));
+            let base = match req.kind.as_deref().and_then(ValidName::new) {
+                Some(k) => base.word("--type").name(&k),
+                None => base,
+            };
+            let retry = TagRetry {
+                base,
+                flags: alloc::vec![
+                    ("--tag", &req.tags[..], Reads::Patterns),
+                    ("--no-tag", &req.no_tags[..], Reads::Patterns),
+                ],
+            };
+            super::tags::filter(&req.tags, &req.no_tags, &retry)?
+        };
         let filter = NodeFilter {
+            tags,
             kind: req.kind,
             status: req.status,
             wheres,

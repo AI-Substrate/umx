@@ -45,6 +45,8 @@ pub(crate) struct HotNode<'a> {
     pub locator: Option<Locator>,
     /// The `entity_key` value when it is a list (ws008 E1); read for the entity key index.
     pub entity_key: Option<Cow<'a, Value>>,
+    /// The `tags` value when it is a list (ws008 t2b); read for the tag index.
+    pub tags: Option<Cow<'a, Value>>,
     /// The evidence, for the evidence kinds column (ws003 s22): its array's text in the line.
     pub evidence: EvidenceSrc<'a>,
 }
@@ -146,6 +148,7 @@ pub(crate) fn node_hot<'a>(
         invalid_provenance: 0,
         locator: None,
         entity_key: None,
+        tags: None,
         evidence: EvidenceSrc::Record(&[]),
     };
     json::object(line, |s, k, v| {
@@ -165,6 +168,9 @@ pub(crate) fn node_hot<'a>(
             }
             if key == umx_core::entity::ENTITY_KEY && v.kind == Kind::Arr {
                 n.entity_key = Some(Cow::Owned(json::value(s, v)));
+            }
+            if key == umx_core::tags::TAGS && v.kind == Kind::Arr {
+                n.tags = Some(Cow::Owned(json::value(s, v)));
             }
             let val = field_val(s, v);
             fields.push((key, val));

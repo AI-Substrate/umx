@@ -132,19 +132,22 @@ fn decode_meta(dir: &GraphDir, bytes: &[u8]) -> Result<GraphMeta, Problem> {
 }
 
 /// nodes.jsonl, then edges.jsonl, each loaded in full before the next is read: the first bad line wins. A reversed
-/// pair of a relation in `symmetric` is one edge (D49; `Graph::load_edges_symmetric`).
+/// pair of a relation in `symmetric` is one edge (D49; `Graph::load_edges_symmetric`). `std_tags`: the graph is std,
+/// so the nodes pass builds its tag index too (ws008 t2b).
 pub(super) fn load_files(
     read: impl Fn(GraphFile) -> Result<Option<Vec<u8>>, Problem>,
     text_fields: TextFields,
     symmetric: &[&str],
     owner: Id,
+    std_tags: bool,
 ) -> Result<(Graph, NodesLoad, EdgesLoad, OwnEnds), Problem> {
     let node_bytes = read(GraphFile::Nodes)?.unwrap_or_default();
     // What the image holds: the file, and the last newline if it has none.
     let size =
         node_bytes.len() as u64 + u64::from(!node_bytes.is_empty() && !node_bytes.ends_with(b"\n"));
-    let (mut graph, nodes) = Graph::load_nodes_indexing_for_graph(node_bytes, text_fields, owner)
-        .map_err(|e| problems::decode_failed(&e, size))?;
+    let (mut graph, nodes) =
+        Graph::load_nodes_indexing_for_graph(node_bytes, text_fields, owner, std_tags)
+            .map_err(|e| problems::decode_failed(&e, size))?;
     let edge_bytes = read(GraphFile::Edges)?.unwrap_or_default();
     // B3 (s20): the edges load as read, and the columns and kept lines say whether any end names this graph. Only
     // then, or when the load fails, is the file scanned: the old order (normalize, then load) runs from the mark,
@@ -555,6 +558,7 @@ impl GraphStore {
             ontology.text_fields(),
             &ontology.symmetric_kinds(),
             meta.id,
+            ontology.std_version().is_some(),
         )?;
         let fix = |good: &ValidName| {
             Command::new("graph load")
@@ -720,6 +724,16 @@ impl GraphStore {
             }
             if f.unusable {
                 rules.push(problems::entity_key_unusable(&alias, node));
+            }
+        }
+        // ws008 t2b: std tags a hand edit left out of stored form, or that cannot be used (the index is on only in a
+        // std graph, so a graph without std has none).
+        for (node, f) in graph.tag_findings() {
+            if f.not_canonical {
+                rules.push(problems::tag_not_canonical(&alias, node));
+            }
+            if f.unusable {
+                rules.push(problems::tag_unusable(&alias, node));
             }
         }
         // ws008 E1: a key two nodes of one type hold; the lower id is the one a key lookup finds.
@@ -960,6 +974,7 @@ impl GraphStore {
             TextFields::default(),
             &meta.ontology.symmetric_kinds(),
             meta.id,
+            false,
         )?;
         rows.extend(
             nodes

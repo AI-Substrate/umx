@@ -37,6 +37,7 @@ mod similar;
 mod sources;
 mod spine;
 mod spine_decl;
+mod tags;
 mod time_check;
 mod ui;
 mod unload;
@@ -272,10 +273,13 @@ impl Loaded {
         &self.ontology
     }
 
-    /// Builds the effective ontology again from `meta.ontology`, and the word index's fields from it (req-68).
+    /// Builds the effective ontology again from `meta.ontology`, and the word index's fields from it (req-68), and
+    /// turns the tag index on or off with std (ws008 t2b): a graph that adopts std builds it here, once.
     fn refresh_ontology(&mut self) {
         self.ontology = self.meta.ontology.effective();
         self.graph.set_text_fields(self.ontology.text_fields());
+        self.graph
+            .set_std_tags(self.ontology.std_version().is_some());
     }
 
     /// Pending vectors not held by the secret hold (None: the graph has no model space).
@@ -320,6 +324,7 @@ impl Loaded {
     ) -> Loaded {
         debug_assert!(ontology == meta.ontology.effective());
         graph.set_text_fields(ontology.text_fields());
+        graph.set_std_tags(ontology.std_version().is_some());
         Loaded {
             dir,
             policy: PolicyView::file_only(meta.file_policy()),

@@ -487,6 +487,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
                 umx_protocol::BatchLine {
                     line: 4,
                     op: umx_protocol::BatchOp::NodeAdd {
+                        tags: Default::default(),
                         on_key: None,
                         raised_in: None,
                         id: None,
@@ -507,6 +508,7 @@ fn a_batch_reads_stdin_and_the_daemon_rechecks_every_line() {
                 umx_protocol::BatchLine {
                     line: 9,
                     op: umx_protocol::BatchOp::NodeAdd {
+                        tags: Default::default(),
                         on_key: None,
                         raised_in: None,
                         id: None,
@@ -596,6 +598,7 @@ fn the_daemon_refuses_a_raw_batch_over_the_caps_and_writes_nothing() {
     let note = |line: u32, n: usize| umx_protocol::BatchLine {
         line,
         op: umx_protocol::BatchOp::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             raised_in: None,
             id: None,

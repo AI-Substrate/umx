@@ -166,6 +166,10 @@ pub struct Ontology {
     /// One line per relation, by name. A name not in `relations` may have one (soft vocabulary).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub relation_descriptions: BTreeMap<String, String>,
+    /// The declared std tags (ws008 t2b, req-117), `umx ontology add tag <facet>:<value>` or `<facet>:*`, in stored
+    /// form, sorted (see [`crate::tags`]). Not written when empty, so older graph.json files are unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     /// Keys this build does not know, kept through load and save.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -431,6 +435,7 @@ impl Ontology {
             conventions: None,
             status_descriptions: BTreeMap::new(),
             relation_descriptions: BTreeMap::new(),
+            tags: Vec::new(),
             extra: BTreeMap::new(),
         }
     }
@@ -717,6 +722,7 @@ impl Ontology {
             conventions: self.conventions.clone(),
             status_descriptions,
             relation_descriptions: self.relation_descriptions.clone(),
+            tags: self.tags.clone(),
             extra: self.extra.clone(),
         }
     }

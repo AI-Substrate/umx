@@ -204,7 +204,8 @@ fn old_load(
 ) -> Result<(Graph, NodesLoad, EdgesLoad, OwnEnds), Problem> {
     let node_bytes = read(GraphFile::Nodes)?.unwrap_or_default();
     let (mut graph, nodes) =
-        Graph::load_nodes_indexing_for_graph(node_bytes, TextFields::default(), owner).unwrap();
+        Graph::load_nodes_indexing_for_graph(node_bytes, TextFields::default(), owner, false)
+            .unwrap();
     let edge_bytes = read(GraphFile::Edges)?.unwrap_or_default();
     let (edge_bytes, own_ends) = normalize_own_ends(edge_bytes, owner)?;
     let mut edges = graph
@@ -229,6 +230,7 @@ fn load(
         TextFields::default(),
         SYMMETRIC,
         owner,
+        false,
     )
 }
 

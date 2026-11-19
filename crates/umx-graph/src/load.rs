@@ -122,13 +122,15 @@ impl Graph {
         Graph::load_nodes_within(bytes, LIMIT, text_fields)
     }
 
-    /// Graph-aware load: keep the graph's reserved id aside, without indexing it as a node.
+    /// Graph-aware load: keep the graph's reserved id aside, without indexing it as a node. `std_tags`: the graph
+    /// is std, so its tag index is built in this same pass (ws008 t2b).
     pub fn load_nodes_indexing_for_graph(
         bytes: Vec<u8>,
         text_fields: TextFields,
         graph_id: Id,
+        std_tags: bool,
     ) -> Result<(Graph, NodesLoad), DecodeError> {
-        Graph::load_nodes_excluding(bytes, LIMIT, text_fields, Some(graph_id))
+        Graph::load_nodes_excluding(bytes, LIMIT, text_fields, Some(graph_id), std_tags)
     }
 
     /// `load_nodes` with the image size limit given (tests use a small one).
@@ -137,7 +139,7 @@ impl Graph {
         limit: usize,
         text_fields: TextFields,
     ) -> Result<(Graph, NodesLoad), DecodeError> {
-        Graph::load_nodes_excluding(bytes, limit, text_fields, None)
+        Graph::load_nodes_excluding(bytes, limit, text_fields, None, false)
     }
 
     fn load_nodes_excluding(
@@ -145,6 +147,7 @@ impl Graph {
         limit: usize,
         text_fields: TextFields,
         graph_id: Option<Id>,
+        std_tags: bool,
     ) -> Result<(Graph, NodesLoad), DecodeError> {
         let tail = bytes.iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
         if !json::blank(&bytes[tail..]) {
@@ -156,6 +159,7 @@ impl Graph {
         let mut g = Graph {
             image: bytes,
             text_fields,
+            tags: crate::tags::Tags::new(std_tags),
             ..Graph::default()
         };
         let mut invalid_provenance = Vec::new();
@@ -224,6 +228,7 @@ impl Graph {
             image,
             kept_nodes: kept,
             text_fields,
+            tags: crate::tags::Tags::new(std_tags),
             ..Graph::default()
         };
         g.derive_rows(Walk::Image, None)?;
@@ -670,7 +675,8 @@ mod tests {
                 "the input is valid without the graph reservation"
             );
             let (mut graph, report) =
-                Graph::load_nodes_indexing_for_graph(bytes, TextFields::default(), Id(5)).unwrap();
+                Graph::load_nodes_indexing_for_graph(bytes, TextFields::default(), Id(5), false)
+                    .unwrap();
             let kept = report.graph_id_node.unwrap();
             let lines: Vec<_> = ids
                 .iter()
@@ -723,9 +729,13 @@ mod tests {
             );
             assert!(graph.node(Id(5)).is_none());
             assert_eq!(graph.encode_edges(), edge.as_bytes());
-            let (mut fresh, _) =
-                Graph::load_nodes_indexing_for_graph(written.clone(), TextFields::default(), Id(5))
-                    .unwrap();
+            let (mut fresh, _) = Graph::load_nodes_indexing_for_graph(
+                written.clone(),
+                TextFields::default(),
+                Id(5),
+                false,
+            )
+            .unwrap();
             assert_eq!(
                 fresh
                     .load_edges(&graph.encode_edges())

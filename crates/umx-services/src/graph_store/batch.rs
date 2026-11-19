@@ -1119,7 +1119,8 @@ impl Run<'_, '_> {
     ) -> LineResult {
         let before = self.b.graph().node(id).expect("a key holder").to_node();
         let parent = draft.parent;
-        let (mut n, changed, mut held) = enrich(&before, draft, status_given)?;
+        let (mut n, changed, mut held) =
+            enrich(&before, draft, status_given, super::tags::is_std(self.o))?;
         let parent = parent.filter(|p| {
             let ends = self.ends_out(id, PART_OF);
             if !ends.is_empty() && !ends.contains(&StoredEnd::local(*p)) {
@@ -1366,7 +1367,7 @@ impl Run<'_, '_> {
         evidence_start: usize,
         warnings: &mut Vec<Problem>,
     ) -> Result<(), Problem> {
-        super::node_more::canonical_keys(&mut node);
+        super::node_more::canonical_keys(&mut node, super::tags::is_std(self.o));
         self.check_node_secrets(line, &node)?;
         let before = self.b.graph().node(node.id).map(|old| old.to_node());
         warnings.extend(super::node::title_key_warnings(before.as_ref(), &node));

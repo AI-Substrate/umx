@@ -733,6 +733,7 @@ fn raw(socket: &Path, request: &Request) -> (Envelope, u8) {
 fn provenance_write(seat: &str, session: &str, title: &str) -> Request {
     let mut request = Request::op(
         umx_protocol::Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,
@@ -1246,6 +1247,13 @@ fn trigger(code: Code) -> (Envelope, u8) {
         | Code::StdFieldConflictStored
         | Code::AlreadyStd
         | Code::AdoptRenameSuggested => adopt_std::adopt_trigger(&mut home, code),
+        Code::TagInvalid
+        | Code::TagLimit
+        | Code::TagNeedsStd
+        | Code::TagOffVocabulary
+        | Code::TagNotCanonical
+        | Code::TagUnusable
+        | Code::TagFilterNotStd => tags::tags_trigger(&mut home, code),
         Code::ReservedRelationStored => {
             let path = home.graph();
             let a = home.add("problem", "First");
@@ -5439,5 +5447,7 @@ mod provenance;
 mod search_query;
 #[path = "cli/secrets.rs"]
 mod secrets;
+#[path = "cli/tags.rs"]
+mod tags;
 #[path = "cli/ui.rs"]
 mod ui;

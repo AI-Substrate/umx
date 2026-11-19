@@ -114,6 +114,7 @@ fn ok(env: Envelope) -> Envelope {
 
 fn add(d: &Daemon, title: &str, related: Option<bool>) -> Envelope {
     ok(d.handle(&op(Op::NodeAdd {
+        tags: Default::default(),
         related,
         on_key: None,
         raised_in: None,
@@ -309,6 +310,7 @@ fn an_add_resolved_by_its_entity_key_is_not_checked() {
     let (d, e) = demo("on-key");
     let keyed = |title: &str, on_key: Option<umx_protocol::OnKey>| {
         ok(d.handle(&op(Op::NodeAdd {
+            tags: Default::default(),
             related: None,
             on_key,
             raised_in: None,

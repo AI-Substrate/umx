@@ -501,6 +501,7 @@ fn a_request_from_another_protocol_writes_nothing_and_stop_still_works() {
     home.graph();
     let mut add = Request::op(
         umx_protocol::Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,

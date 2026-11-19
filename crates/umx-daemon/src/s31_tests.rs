@@ -85,6 +85,7 @@ fn pairs_rows(graphs: Option<&str>, rows: PairRows) -> Request {
 fn node_add(graph: &str, title: &str) -> Request {
     Request::op(
         Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,
@@ -634,6 +635,7 @@ fn bench_daemon(graphs: usize, nodes: usize) -> (Daemon, std::path::PathBuf, Vec
                 .map(|i| umx_protocol::BatchLine {
                     line: (i - from) as u32 + 1,
                     op: umx_protocol::BatchOp::NodeAdd {
+                        tags: Default::default(),
                         on_key: None,
                         raised_in: None,
                         id: None,

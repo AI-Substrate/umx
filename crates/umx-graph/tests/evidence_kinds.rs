@@ -156,6 +156,7 @@ fn verify_reads(g: &Graph) {
                     value: json!(kind),
                 };
                 let filter = NodeFilter {
+                    tags: Default::default(),
                     kind: type_.map(Into::into),
                     status: status.map(Into::into),
                     wheres: vec![w.clone()],

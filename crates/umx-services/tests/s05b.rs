@@ -477,6 +477,8 @@ fn edit_changes_title_type_note_and_fields_and_reports_what_changed() {
             &ctx(),
             &text(id),
             NodeEditRequest {
+                tag: Default::default(),
+                untag: Default::default(),
                 title: Some("Approval delays in Q4".into()),
                 kind: Some("question".into()),
                 note: Some("Rewritten.".into()),

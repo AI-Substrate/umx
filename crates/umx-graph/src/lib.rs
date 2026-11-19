@@ -30,6 +30,9 @@ mod nodes;
 mod provenance;
 mod similar;
 mod stem;
+mod tags;
+#[cfg(test)]
+mod tags_difftest;
 mod terms;
 mod unique;
 mod vectors;
@@ -63,6 +66,7 @@ pub use load::{
 pub use locators::DuplicateLocator;
 pub use provenance::{DuplicateProvKey, ProvenanceEdge, ProvenanceStats};
 pub use similar::{SimilarEdge, SimilarLists, SimilarLoad, SimilarSnapshot};
+pub use tags::TagFilter;
 pub use unique::{IndexFull, UniqueIndex};
 pub use vectors::{FieldBlock, Put, VectorLoad, WholeBlock};
 pub use view::{EdgeEnd, EdgeIx, EdgeRef, Kind, NodeIx, NodeRef, NodeSet, Step};
@@ -162,6 +166,8 @@ pub struct Graph {
     entities: entity::EntityKeys,
     /// Each evidence kind's rows, in handle order (ws003 s22), and each row's kinds (s29).
     ev_kinds: evidence_kinds::EvidenceKinds,
+    /// Each std tag's rows and each row's tags, while the graph is std (ws008 t2b).
+    tags: tags::Tags,
     /// Tests only: a smaller image limit than `nodes::LIMIT`, to reach the refusal without 4 GiB of lines.
     #[cfg(test)]
     limit: Option<usize>,
@@ -221,6 +227,8 @@ pub struct NodeFilter {
     pub status: Option<String>,
     pub wheres: Vec<Where>,
     pub within: Option<Id>,
+    /// `--tag` and `--no-tag` (ws008 t2b): answered from the tag index.
+    pub tags: TagFilter,
 }
 
 /// s06's normalised title arena, rebuilt for the bench's comparison only (see [`Graph::scan_titles`]).
@@ -266,6 +274,8 @@ pub struct MemoryBytes {
     pub evidence_kinds_forward: usize,
     /// The typed time column: each date value's span and precision (D71 step 10).
     pub date_columns: usize,
+    /// The std tag index, both directions (ws008 t2b); 0 for a graph that is not std.
+    pub tags: usize,
 }
 
 impl MemoryBytes {
@@ -288,6 +298,7 @@ impl MemoryBytes {
             + self.evidence_kinds
             + self.evidence_kinds_forward
             + self.date_columns
+            + self.tags
     }
 }
 
@@ -876,6 +887,7 @@ impl Graph {
         self.locators.shrink();
         self.entities.shrink();
         self.ev_kinds.shrink();
+        self.tags.shrink();
     }
 
     #[inline]
@@ -1282,6 +1294,16 @@ impl Graph {
                 && status.is_none_or(|s| self.n_status.get(h) == s)
                 && within.as_ref().is_none_or(|w| w.has(h as u32))
         };
+        if !filter.tags.is_empty() {
+            // The tag index gives the candidates; every other filter is tested on them.
+            return self
+                .tagged_rows(&filter.tags)
+                .into_iter()
+                .filter(|&h| keep(h as usize))
+                .map(|h| NodeRef { g: self, h })
+                .filter(|n| filter.wheres.iter().all(|w| w.matches(*n)))
+                .collect();
+        }
         let Some(driver) = filter
             .wheres
             .iter()
@@ -1700,6 +1722,7 @@ impl Graph {
             evidence_kinds: self.ev_kinds.heap_bytes(),
             evidence_kinds_forward: self.ev_kinds.forward_bytes(),
             date_columns: self.f_cols.values().map(FieldCol::date_bytes).sum(),
+            tags: self.tags.heap_bytes(),
         }
     }
 }

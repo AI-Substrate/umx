@@ -539,6 +539,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             raised_in,
             on_key,
             related: _,
+            tags,
         } => {
             let req = NodeAddRequest {
                 kind: kind.clone(),
@@ -552,6 +553,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 locator: locator.clone(),
                 raised_in: raised_in.clone(),
                 on_key_resolve: on_key.is_some(),
+                tags: tags.clone(),
             };
             reply(command, services.node_add(&ctx, req), |v| {
                 // F234: a sentence holding a flagged title (the new node's, the parent's or the anchor's) is named.
@@ -644,6 +646,11 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
         Op::OntologyAddStatus { name, description } => reply(
             command,
             services.ontology_add_status(&ctx, name, description.as_deref()),
+            |v| json!({ "added": v.added, "name": v.name, "unchanged": v.unchanged }),
+        ),
+        Op::OntologyAddTag { tag } => reply(
+            command,
+            services.ontology_add_tag(&ctx, tag),
             |v| json!({ "added": v.added, "name": v.name, "unchanged": v.unchanged }),
         ),
         Op::OntologySetType { name, columns } => reply(
@@ -834,6 +841,8 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             sets,
             unsets,
             locator,
+            tag,
+            untag,
         } => {
             let req = NodeEditRequest {
                 title: title.clone(),
@@ -842,6 +851,8 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 sets: core_sets(sets),
                 unsets: unsets.clone(),
                 locator: locator.clone(),
+                tag: tag.clone(),
+                untag: untag.clone(),
             };
             reply(
                 command,
@@ -1089,6 +1100,7 @@ fn batch_op(op: &umx_protocol::BatchOp) -> BatchOp {
             evidence_kind,
             raised_in,
             on_key,
+            tags,
         } => BatchOp::NodeAdd {
             id,
             created,
@@ -1105,6 +1117,7 @@ fn batch_op(op: &umx_protocol::BatchOp) -> BatchOp {
                 locator: None,
                 raised_in,
                 on_key_resolve: on_key.is_some(),
+                tags,
             },
             parent_ref,
         },
@@ -1139,6 +1152,8 @@ fn batch_op(op: &umx_protocol::BatchOp) -> BatchOp {
             note,
             sets,
             unsets,
+            tag,
+            untag,
         } => BatchOp::NodeEdit {
             node,
             node_ref,
@@ -1149,6 +1164,8 @@ fn batch_op(op: &umx_protocol::BatchOp) -> BatchOp {
                 sets: core_sets(&sets),
                 unsets,
                 locator: None,
+                tag,
+                untag,
             },
         },
         umx_protocol::BatchOp::NodeNote {
@@ -2044,6 +2061,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             limit,
             offset,
             along,
+            tags,
+            no_tags,
         } => {
             let req = NodeListRequest {
                 kind: kind.clone(),
@@ -2053,6 +2072,9 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 limit: limit.unwrap_or(DEFAULT_LIMIT),
                 offset: offset.unwrap_or(0),
                 along: along_request(along),
+                tags: tags.clone(),
+                no_tags: no_tags.clone(),
+                several: false,
             };
             // F137: `--columns all` starts from the default columns, whatever the type's own (F96).
             let all = columns_all(columns.as_deref());
@@ -3002,6 +3024,23 @@ fn removed_json(v: &umx_services::OntologyRemoved) -> Value {
     json!({ "removed": v.removed, "name": v.name, "unchanged": v.unchanged })
 }
 
+/// A tag in stored form (one tag or `<facet>:*`) as itself, through [`Command::tags`]; any other (a comma list, a tag
+/// not yet normalised) as the placeholder `<tag>` (ws008 t2b).
+fn tag_word(c: Command, t: &str) -> Command {
+    match c.clone().tags(&[t.to_string()]) {
+        Some(c) => c,
+        None => c.word("<tag>"),
+    }
+}
+
+/// `flag <tag>` for each of `tags` ([`tag_word`]).
+fn tag_words(mut c: Command, flag: &'static str, tags: &[String]) -> Command {
+    for t in tags {
+        c = tag_word(c.word(flag), t);
+    }
+    c
+}
+
 fn retry(op: &Op) -> Command {
     let name = |c: Command, n: &str, placeholder: &'static str| match ValidName::new(n) {
         Some(v) => c.name(&v),
@@ -3182,6 +3221,7 @@ fn retry(op: &Op) -> Command {
             raised_in,
             on_key,
             related,
+            tags,
         } => {
             let c = name(Command::new("node add").word("--type"), kind, "<type>")
                 .word("--title")
@@ -3202,7 +3242,7 @@ fn retry(op: &Op) -> Command {
                 Some(umx_protocol::OnKey::Resolve) => c.word("--on-key").word("resolve"),
                 None => c,
             };
-            related_flag(c, *related)
+            related_flag(tag_words(c, "--tag", tags), *related)
         }
         Op::NodeGet {
             node: n,
@@ -3218,6 +3258,8 @@ fn retry(op: &Op) -> Command {
             limit,
             offset,
             along,
+            tags,
+            no_tags,
         } => {
             let mut c = opt(Command::new("node list"), "--type", kind, &|c, v| {
                 name(c, v, "<type>")
@@ -3227,6 +3269,7 @@ fn retry(op: &Op) -> Command {
                 c = c.word("--where").word("<expr>");
             }
             c = opt(c, "--within", within, &|c, v| node(c, v, "<node>"));
+            c = tag_words(tag_words(c, "--tag", tags), "--no-tag", no_tags);
             let c = along_words(c, along);
             number(
                 number(columns(c, cols), "--limit", limit),
@@ -3309,6 +3352,7 @@ fn retry(op: &Op) -> Command {
             description,
             "<text>",
         ),
+        Op::OntologyAddTag { tag } => tag_word(Command::new("ontology add tag"), tag),
         Op::OntologySetType {
             name: n,
             columns: cols,
@@ -3470,6 +3514,8 @@ fn retry(op: &Op) -> Command {
             sets: s,
             unsets,
             locator,
+            tag,
+            untag,
         } => {
             let c = node(Command::new("node edit"), n, "<node>");
             let c = text(c, "--locator", locator, "<locator>");
@@ -3479,7 +3525,7 @@ fn retry(op: &Op) -> Command {
             for u in unsets {
                 c = name(c.word("--unset"), u, "<field>");
             }
-            c
+            tag_words(tag_words(c, "--tag", tag), "--untag", untag)
         }
         // A key is the caller's text (an email, say): only a placeholder.
         Op::EntityKey {
@@ -6176,6 +6222,7 @@ mod label_tests {
             "umx ontology add type unforeseen --field <name>:<kind> --description <text> --graph alpha"
         );
         let op = Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,
@@ -6216,6 +6263,12 @@ mod retry_tests {
         }
     }
 
+    /// umx-core's command cap (a services next falls back to the docs past it) is the one the protocol keeps.
+    #[test]
+    fn the_core_command_cap_is_the_protocols() {
+        assert_eq!(Command::MAX, umx_protocol::Fill::COMMAND_MAX);
+    }
+
     #[test]
     fn retry_keeps_every_field_it_can_check() {
         // B2: edge add used to drop its --set fields.
@@ -6236,6 +6289,8 @@ mod retry_tests {
             "umx edge add 01JC8X blocks <to> --set weight=<value> --set-str why=<value> --set-json <field>=<value>"
         );
         let op = Op::NodeList {
+            no_tags: Default::default(),
+            tags: Default::default(),
             kind: Some("problem".into()),
             status: None,
             wheres: vec!["likelihood>=3".into()],

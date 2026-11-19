@@ -30,6 +30,8 @@ entries first, each marked (see std below).
     umx ontology add field doc file:string --role data
     umx ontology add field doc summary:string --role content   # prose: searched by meaning
     umx ontology add relation works_for --from person --to team   # expected end types (soft), see std below
+    umx ontology add tag origin:double_diamond   # a std tag (std graphs); see Tags below
+    umx ontology add tag phase:*                 # every value of a facet
 
 One field on several types (a comma list, or several types before the field) or on `--all-types` is one write,
 all or nothing: if any type is not declared (`type_unknown`) or already has the field with another kind
@@ -306,6 +308,41 @@ is stored, with the warning `relation_endpoint_unexpected` naming the end's type
 `umx ontology add relation works_for --from person --to team` widens them for this graph (repeat `--from` and
 `--to` for more): graph.json keeps the added types under `relation_endpoints`, written only once one is added.
 On a relation of the graph's own the same flags set its expected end types. `--symmetric` takes neither.
+
+### Tags
+
+In a std graph every node may carry std tags in its `tags` list: role data, never embedded or word-indexed. A tag
+is `<value>` or `<facet>:<value>`, each part snake_case (`[a-z][a-z0-9_]`, at most 64 characters), for example
+`origin:double_diamond` or `needs_review`. Tags are stored lowercased, deduplicated and sorted, so their order
+never makes a git diff; a node holds at most 64 (`tag_limit`). A tag that is not snake_case once lowercased is
+refused with `tag_invalid`; nothing is written. Its `next` repeats the node or the graph, the type and every tag
+given (for node add the title is a placeholder), the refused tag in snake_case form (`origin:Double-Diamond` becomes
+`origin:double_diamond`); other flags are not repeated, so add them back. With `--scope` or a graph list it names
+the first std graph read. A `--set tags=` value or a batch line has no command to repeat, so its `next` is
+`umx docs get ontology`, as it is for a tag with no snake_case form, one that looks like a secret, or a next too
+long to print as written.
+
+    umx node add --type risk --title "Launch slips" --tag origin:double_diamond --tag needs_review
+    umx node edit 01JC8XA4H7 --tag stage:review --untag needs_review   # --untag origin:* drops a facet
+    umx node list --tag origin:double_diamond --tag needs_review       # both (repeated flags are AND)
+    umx node list --tag needs_review,blocked                           # either (a comma is OR)
+    umx node list --tag 'origin:*' --no-tag blocked                    # a facet, leaving out blocked
+
+`--tag` on node add (repeat it, or give a comma list), `--tag` and `--untag` on node edit, and `--set tags=a,b`
+all write the same stored form; give tags one way per call. Batch lines take `tags` (node add) and `tag` and
+`untag` (node edit), see `umx docs get batch`. A hand-edited `tags` value loads with `tag_not_canonical` (or
+`tag_unusable` for an entry umx cannot read), is found as its stored form, and the node's next write stores it so.
+
+Tags are free-form until a facet has a declared tag: `umx ontology add tag <facet>:<value>` or
+`umx ontology add tag <facet>:*` (every value) adds it to graph.json's `tags`, shown by `umx ontology show`. Then a
+tag in that facet that is not declared warns `tag_off_vocabulary` (never refused), whose `next` declares it. A tag
+in another facet, or with no facet, never warns. A declared tag names its facet; adding one already declared is
+`unchanged`.
+
+`--tag` and `--no-tag` filter `umx node list` from one inverted tag index per graph, so they never scan nodes;
+with `--graph a,b` or `--scope` a graph without std is skipped and `tag_filter_not_std` counts it. In a graph
+without std `tags` stays an ordinary custom field: nothing normalises it, and `--tag`, `--untag`, `--no-tag` and
+`ontology add tag` are refused with `tag_needs_std`, whose `next` is `umx ontology adopt-std --dry-run`.
 
 `umx ontology show` on a std graph marks what std gives: top-level `std` (the version, null when not std), `std:
 true` on each std type, on each field std places and on each std relation field, and the std names among

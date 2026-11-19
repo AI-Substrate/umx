@@ -231,6 +231,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--on-key",
             "--related",
             "--no-related",
+            "--tag",
         ],
     ),
     ("node get", &["--columns", "--provenance"]),
@@ -248,6 +249,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--after",
             "--before",
             "--provenance",
+            "--tag",
+            "--no-tag",
         ],
     ),
     (
@@ -273,6 +276,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--set-json",
             "--unset",
             "--locator",
+            "--tag",
+            "--untag",
         ],
     ),
     ("resource show", &[]),
@@ -1299,6 +1304,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 }
             };
             Op::NodeAdd {
+                tags: a.all("--tag"),
                 kind,
                 title,
                 status: a.one("--status"),
@@ -1336,6 +1342,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             let a = args()?;
             a.positionals(0, "node list takes flags only")?;
             Op::NodeList {
+                tags: a.all("--tag"),
+                no_tags: a.all("--no-tag"),
                 kind: a.one("--type"),
                 status: a.one("--status"),
                 wheres: a.all("--where"),
@@ -1505,6 +1513,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 .positionals(1, "name one node by id, prefix or address")?
                 .remove(0);
             Op::NodeEdit {
+                tag: a.all("--tag"),
+                untag: a.all("--untag"),
                 node,
                 title: a.one("--title"),
                 kind: a.one("--type"),
@@ -1947,6 +1957,16 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                     name: (*name).to_owned(),
                     description,
                 },
+                // ws008 t2b (req-117): `tag <facet>:<value>` or `tag <facet>:*`.
+                ["tag", _] if description.is_some() => {
+                    return Err(Usage {
+                        command,
+                        what: "ontology add tag takes no --description",
+                    });
+                }
+                ["tag", tag] => Op::OntologyAddTag {
+                    tag: (*tag).to_owned(),
+                },
                 ["relation", name] => Op::OntologyAddRelation {
                     name: (*name).to_owned(),
                     symmetric: a.switches.iter().any(|s| s == "--symmetric"),
@@ -1979,7 +1999,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 _ => {
                     return Err(Usage {
                         command,
-                        what: "use ontology add type|status|relation <name>, or ontology add field <type>[,<type>...] <name>:<kind>, or ontology add field --all-types <name>:<kind>, or ontology add field --relation <relation> <name>:<kind>",
+                        what: "use ontology add type|status|relation <name>, or ontology add tag <facet>:<value>|<facet>:*, or ontology add field <type>[,<type>...] <name>:<kind>, or ontology add field --all-types <name>:<kind>, or ontology add field --relation <relation> <name>:<kind>",
                     });
                 }
             };

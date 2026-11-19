@@ -289,8 +289,13 @@ enum EdgeSpot<'e> {
 /// The scan of one custom field's value: a string as it is, a list by every string inside it (F226), and an object by
 /// each key as text, then its value (F229: a hand edit can put a credential in a key, `{"AKIA…": 1}`); the first hit.
 /// Numbers, booleans and null hold no text.
+///
+/// A `tags` string is scanned upper cased too (security B1): std tags are stored lowercased, which would hide a
+/// credential whose pattern needs capitals.
 fn value_suspect(field: &str, value: &Value) -> Option<Rule> {
     match value {
+        Value::String(text) if field == umx_core::tags::TAGS => secrets::field_suspect(field, text)
+            .or_else(|| secrets::field_suspect(field, &text.to_ascii_uppercase())),
         Value::String(text) => secrets::field_suspect(field, text),
         Value::Array(items) => items.iter().find_map(|v| value_suspect(field, v)),
         Value::Object(map) => map.iter().find_map(|(key, v)| {

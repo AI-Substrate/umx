@@ -263,6 +263,7 @@ fn add(d: &Daemon, alias: &str, from: usize, n: usize) {
             .map(|i| BatchLine {
                 line: (i - from) as u32 + 1,
                 op: BatchOp::NodeAdd {
+                    tags: Default::default(),
                     on_key: None,
                     raised_in: None,
                     id: None,
@@ -800,6 +801,7 @@ fn ws004_batching_bench() {
                 .map(|i| BatchLine {
                     line: i as u32 + 1,
                     op: BatchOp::NodeAdd {
+                        tags: Default::default(),
                         on_key: None,
                         raised_in: None,
                         id: None,

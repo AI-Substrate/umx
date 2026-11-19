@@ -208,6 +208,13 @@ pub const CODES: &[&str] = &[
     "on_key_field_held",
     "entity_key_not_canonical",
     "entity_key_unusable",
+    "tag_invalid",
+    "tag_limit",
+    "tag_needs_std",
+    "tag_off_vocabulary",
+    "tag_not_canonical",
+    "tag_unusable",
+    "tag_filter_not_std",
     "entity_link_invalid",
     "entity_type_mismatch",
     "entity_graph_twice",
@@ -1088,6 +1095,8 @@ pub enum Held {
     Note,
     Parent,
     Field(ValidName),
+    /// A std graph's tags (ws008 t2b): changed with `node edit --tag`, never `--set`.
+    Tags,
 }
 
 impl Held {
@@ -1097,6 +1106,7 @@ impl Held {
             Held::Status => "status",
             Held::Note => "note",
             Held::Parent => "parent",
+            Held::Tags => umx_core::tags::TAGS,
             Held::Field(field) => return field.clone(),
         };
         ValidName::alias(word).expect("snake_case")
@@ -1129,6 +1139,10 @@ pub fn on_key_field_held(graph: &ValidName, node: Id, held: &[Held]) -> Problem 
             .address(graph, node)
             .word("--set")
             .name_with(field, '=', "<value>"),
+        Some(Held::Tags) => Command::new("node edit")
+            .address(graph, node)
+            .word("--tag")
+            .word("<tag>"),
         None => Command::new("node get").address(graph, node),
     };
     Problem::new("on_key_field_held")
@@ -1161,6 +1175,74 @@ pub fn entity_key_unusable(graph: &ValidName, node: Id) -> Problem {
             Slot::Command(Command::new("node get").address(graph, node)),
         )
         .subject(node.to_text())
+}
+
+/// A std tag refused (ws008 t2b, req-117): `reason` says why, `fix` is the command again with the tag in snake_case
+/// (or the tags docs when none can be made). Never shows the tag as given.
+pub fn tag_invalid(reason: &'static str, fix: Command) -> Problem {
+    Problem::new("tag_invalid")
+        .with("reason", Slot::Word(reason))
+        .with("fix", Slot::Command(fix))
+}
+
+/// A node would hold more than [`umx_core::tags::MAX_TAGS`] tags (ws008 t2b); nothing is written.
+pub fn tag_limit(count: usize, fix: Command) -> Problem {
+    Problem::new("tag_limit")
+        .with("count", Slot::Count(count as u64))
+        .with("fix", Slot::Command(fix))
+}
+
+/// A std tag verb or filter on a graph that does not use std (ws008 t2b): there `tags` is an ordinary custom field.
+pub fn tag_needs_std(graph: &ValidName) -> Problem {
+    Problem::new("tag_needs_std")
+        .with("graph", name(graph))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("ontology adopt-std")
+                    .word("--dry-run")
+                    .word("--graph")
+                    .name(graph),
+            ),
+        )
+}
+
+/// A tag in a facet with declared tags, while neither it nor `<facet>:*` is (ws008 t2b); written all the same.
+/// `fix` declares it.
+pub fn tag_off_vocabulary(graph: &ValidName, facet: &ValidName, fix: Command) -> Problem {
+    Problem::new("tag_off_vocabulary")
+        .with("facet", Slot::Name(facet.clone()))
+        .with("graph", name(graph))
+        .with("fix", Slot::Command(fix))
+}
+
+/// A loaded node's tags not in stored form (ws008 t2b); never shows them.
+pub fn tag_not_canonical(graph: &ValidName, node: Id) -> Problem {
+    Problem::new("tag_not_canonical")
+        .with("node", Slot::Id(node))
+        .with("graph", name(graph))
+        .with(
+            "fix",
+            Slot::Command(Command::new("node get").address(graph, node)),
+        )
+        .subject(node.to_text())
+}
+
+/// A loaded node's tags entry umx cannot use (ws008 t2b); never shows it.
+pub fn tag_unusable(graph: &ValidName, node: Id) -> Problem {
+    Problem::new("tag_unusable")
+        .with("node", Slot::Id(node))
+        .with("graph", name(graph))
+        .with(
+            "fix",
+            Slot::Command(Command::new("node get").address(graph, node)),
+        )
+        .subject(node.to_text())
+}
+
+/// A tag filter over several graphs read `count` that do not use std (ws008 t2b): nothing in them matched.
+pub fn tag_filter_not_std(count: usize) -> Problem {
+    Problem::new("tag_filter_not_std").with("count", Slot::Count(count as u64))
 }
 
 pub fn duplicate_id(graph: &ValidName, r: &Repeat) -> Problem {

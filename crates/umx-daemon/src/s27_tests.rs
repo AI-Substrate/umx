@@ -76,6 +76,7 @@ fn add(d: &Daemon, alias: &str, title: &str, note: Option<String>) {
     ok(ask(
         d,
         Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,

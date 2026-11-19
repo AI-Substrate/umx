@@ -41,6 +41,13 @@ gets `std: 1` and drops its own copies of std's entries; lines change only for a
 keeps ids and addresses. Renames are only suggested, never made. A conflict (a std field of another kind, stored
 `authored_by` edges, a `--map` that cannot apply) writes nothing and names its fix; a std graph is `already_std`.
 
+**usage 215**: in a std graph tag nodes with `--tag origin:double_diamond` (node add, node edit; `--untag` removes,
+batch lines take `tags`, `tag`, `untag`). Tags are stored lowercased, deduplicated and sorted; one that is not
+snake_case is `tag_invalid` with the fixed form in next. `umx ontology add tag <facet>:<value>` (or `<facet>:*`)
+makes a facet's other tags warn `tag_off_vocabulary`. `node list --tag a --tag b` is AND, `--tag a,b` OR,
+`--tag 'origin:*'` a facet, `--no-tag x` leaves out; all from the tag index. Not in a `--no-std` graph
+(`tag_needs_std`).
+
 An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
 ## Vocabulary and settings

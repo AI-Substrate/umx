@@ -144,6 +144,7 @@ fn add(d: &Daemon, graph: &str, title: &str, note: &str) -> String {
     let env = ok(ask(
         d,
         Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,

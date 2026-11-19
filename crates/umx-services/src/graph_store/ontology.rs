@@ -593,6 +593,30 @@ impl GraphStore {
         warn_secret(done, text.as_deref(), Described::Status, &name, None)
     }
 
+    /// `ontology add tag <facet>:<value>|<facet>:*` (ws008 t2b, req-117): declares a std tag, or every value of a
+    /// facet, in stored form. A std graph only (`tag_needs_std`); one declared already is `unchanged`.
+    pub fn ontology_add_tag(&mut self, ctx: &Ctx, tag: &str) -> Outcome<OntologyAdded> {
+        let alias = self.select_write(ctx, &[])?;
+        if !super::tags::is_std(self.get(&alias).ontology()) {
+            return Err(problems::tag_needs_std(&alias_name(&alias)));
+        }
+        let given = [tag.to_string()];
+        let retry = super::tags::TagRetry {
+            base: ctx.same_graph(Command::new("ontology add tag")),
+            flags: alloc::vec![("", &given[..], super::tags::Reads::Patterns)],
+        };
+        let decl = umx_core::tags::parse_declaration(tag).map_err(|r| retry.refused(&r))?;
+        let name = decl.clone();
+        self.change_ontology_named(ctx, "tag", &name, |o, _| {
+            if o.tags.contains(&decl) {
+                return Ok(false);
+            }
+            o.tags.push(decl);
+            o.tags.sort_unstable();
+            Ok(true)
+        })
+    }
+
     /// Declares a relation. With `symmetric` (D49) it marks the relation symmetric, declaring it first if it is new;
     /// `part_of`, `similar_to` and `instance_of`, which are directed by what they mean, are refused (`symmetric_refused`). A relation
     /// declared already with the same symmetric flag is unchanged (F71); a plain add of a symmetric relation (one of
@@ -1491,6 +1515,17 @@ impl GraphStore {
         name: &ValidName,
         change: impl FnOnce(&mut Ontology, &ValidName) -> Result<bool, Problem>,
     ) -> Outcome<OntologyAdded> {
+        self.change_ontology_named(ctx, added, name.as_str(), change)
+    }
+
+    /// [`Self::change_ontology`] for an entry whose name is not a plain name (a tag, `origin:*`).
+    fn change_ontology_named(
+        &mut self,
+        ctx: &Ctx,
+        added: &'static str,
+        name: &str,
+        change: impl FnOnce(&mut Ontology, &ValidName) -> Result<bool, Problem>,
+    ) -> Outcome<OntologyAdded> {
         let alias = self.select_write(ctx, &[])?;
         let files = self.ports.files.clone();
         let l = self
@@ -1503,7 +1538,7 @@ impl GraphStore {
             return Ok(Done::ok(OntologyAdded {
                 alias,
                 added,
-                name: name.as_str().to_string(),
+                name: name.to_string(),
                 unchanged: true,
             }));
         }
@@ -1521,7 +1556,7 @@ impl GraphStore {
             value: OntologyAdded {
                 alias,
                 added,
-                name: name.as_str().to_string(),
+                name: name.to_string(),
                 unchanged: false,
             },
             notes: warnings,

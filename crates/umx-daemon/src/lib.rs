@@ -3355,6 +3355,7 @@ mod tests {
         );
         d.writer_ok.store(false, Ordering::SeqCst);
         let add = op(umx_protocol::Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,
@@ -3586,6 +3587,7 @@ mod tests {
         }
         let add = |alias: &str| {
             let mut add = op(umx_protocol::Op::NodeAdd {
+                tags: Default::default(),
                 on_key: None,
                 related: None,
                 raised_in: None,
@@ -3657,6 +3659,7 @@ mod tests {
         })));
         let add = |title: &str| {
             op(umx_protocol::Op::NodeAdd {
+                tags: Default::default(),
                 on_key: None,
                 related: None,
                 raised_in: None,

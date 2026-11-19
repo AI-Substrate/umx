@@ -17,6 +17,7 @@ use umx_core::ontology::{FieldKind, nearest};
 use umx_core::ports::GraphDir;
 use umx_core::standard::STARTS_ON;
 use umx_core::status::{LABELS, StatusMove, inferred_label};
+use umx_core::tags::{TAGS, stored_tags};
 use umx_core::value::{SetValue, kind_of, typed_value};
 use umx_core::{Command, Id, Node, Ontology, Problem, ValidName, Value};
 use umx_graph::Graph;
@@ -35,6 +36,10 @@ pub struct NodeEditRequest {
     /// Re-points the node at a new source, or makes a plain node a resource (ws006 S3b). `--unset locator` (in
     /// `unsets`) makes a resource node plain again.
     pub locator: Option<String>,
+    /// `--tag` and `--untag` (ws008 t2b): std tags to add, and tags (or `<facet>:*`) to remove. Refused in a graph
+    /// without std.
+    pub tag: Vec<String>,
+    pub untag: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -347,6 +352,11 @@ pub(crate) fn edit_node(
         )));
     }
     let edit = || Command::new("node edit").address(graph, id);
+    let std_tags = super::tags::is_std(o);
+    let tagging = !req.tag.is_empty() || !req.untag.is_empty();
+    if tagging && !std_tags {
+        return Err(problems::tag_needs_std(graph));
+    }
     let mut changed: Vec<String> = Vec::new();
     let mark = |field: &str, changed: &mut Vec<String>| {
         if !changed.iter().any(|c| c == field) {
@@ -414,6 +424,38 @@ pub(crate) fn edit_node(
             }
             continue;
         }
+        if field == TAGS && std_tags {
+            if tagging {
+                return Err(problems::usage_invalid(
+                    "give tags with --tag/--untag or --set tags, not both",
+                    "node",
+                ));
+            }
+            let given = super::tags::set_value(value)?;
+            let have = n.fields.get(TAGS).map(stored_tags).unwrap_or_default();
+            warnings.extend(super::tags::off_vocabulary(
+                graph,
+                o,
+                &given
+                    .iter()
+                    .filter(|t| !have.contains(t))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ));
+            match super::tags::stored(given) {
+                Some(v) if n.fields.get(field) != Some(&v) => {
+                    n.fields.insert(field.clone(), v);
+                    mark(field, &mut changed);
+                }
+                Some(_) => {}
+                None => {
+                    if n.fields.remove(field).is_some() {
+                        mark(field, &mut changed);
+                    }
+                }
+            }
+            continue;
+        }
         let declared = field_kind(o, g, Some(&n.kind), field);
         let (v, mismatch) = typed_value(value, declared);
         if mismatch {
@@ -460,6 +502,27 @@ pub(crate) fn edit_node(
             mark(field, &mut changed);
         }
     }
+    if tagging {
+        use super::tags::{Reads, TagRetry};
+        let retry = TagRetry {
+            base: edit(),
+            flags: alloc::vec![
+                ("--tag", &req.tag[..], Reads::Tags),
+                ("--untag", &req.untag[..], Reads::Patterns),
+            ],
+        };
+        let add = super::tags::given(&req.tag, &retry)?;
+        let remove = super::tags::patterns(&req.untag, &retry)?;
+        let (value, added) = super::tags::edited(n.fields.get(TAGS), &add, &remove)?;
+        warnings.extend(super::tags::off_vocabulary(graph, o, &added));
+        if n.fields.get(TAGS) != value.as_ref() {
+            match value {
+                Some(v) => n.fields.insert(TAGS.to_string(), v),
+                None => n.fields.remove(TAGS),
+            };
+            mark(TAGS, &mut changed);
+        }
+    }
     // TM3: an edit that makes the node an undated anchor (a new type, or starts_on removed) says so.
     if changed.iter().any(|c| c == "type" || c == STARTS_ON) {
         warnings.extend(super::time_check::anchor_warning(
@@ -473,10 +536,14 @@ pub(crate) fn edit_node(
 }
 
 /// A node's stored keys in stored form before any write of it (ws008 E1): a hand-edited key becomes canonical on the
-/// node's next write; entries umx cannot use are kept as they are.
-pub(crate) fn canonical_keys(node: &mut Node) {
+/// node's next write; entries umx cannot use are kept as they are. In a std graph (`std_tags`) its tags too (ws008
+/// t2b).
+pub(crate) fn canonical_keys(node: &mut Node, std_tags: bool) {
     if let Some(v) = node.fields.get_mut(ENTITY_KEY) {
         *v = umx_core::entity::canonical(v);
+    }
+    if std_tags && let Some(v) = node.fields.get_mut(TAGS) {
+        *v = umx_core::tags::canonical(v);
     }
 }
 
@@ -506,7 +573,7 @@ impl GraphStore {
         mut node: Node,
         evidence_start: usize,
     ) -> Outcome<Node> {
-        canonical_keys(&mut node);
+        canonical_keys(&mut node, super::tags::is_std(self.get(alias).ontology()));
         let id = node.id;
         let before = self.get(alias).graph.node(id).map(|old| old.to_node());
         let allows = self.secret_allows();

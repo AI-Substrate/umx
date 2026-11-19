@@ -153,6 +153,7 @@ fn run(ceiling: usize) {
                 .map(|i| BatchLine {
                     line: (i - from) as u32 + 1,
                     op: BatchOp::NodeAdd {
+                        tags: Default::default(),
                         on_key: None,
                         raised_in: None,
                         id: None,

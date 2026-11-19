@@ -216,6 +216,10 @@ impl fmt::Display for Receiver {
 pub struct Command(String);
 
 impl Command {
+    /// The longest command a `next` keeps as written: umx-protocol's `Fill::COMMAND_MAX`, which umx-core cannot
+    /// depend on (umx-daemon's test holds the two equal). A longer one would reach the caller cleaned.
+    pub const MAX: usize = 300;
+
     /// `path` is the verb path, for example `"node add"`.
     pub fn new(path: &'static str) -> Command {
         Command(format!("umx {path}"))
@@ -265,6 +269,21 @@ impl Command {
     pub fn names(self, names: &[ValidName], sep: &'static str) -> Command {
         let joined: Vec<&str> = names.iter().map(ValidName::as_str).collect();
         self.push(&joined.join(sep))
+    }
+
+    /// Std tags (or `<facet>:*`) in stored form, joined by commas (ws008 t2b): None when there are none or one is not
+    /// in stored form, so a typed tag never reaches a command. A list holding `*` is single-quoted, so a shell never
+    /// expands it.
+    pub fn tags(self, tags: &[String]) -> Option<Command> {
+        let stored = |t: &String| crate::tags::Pattern::parse(t).is_ok_and(|p| p.text() == *t);
+        if tags.is_empty() || tags.len() > 64 || !tags.iter().all(stored) {
+            return None;
+        }
+        let list = tags.join(",");
+        Some(match list.contains('*') {
+            true => self.push(&format!("'{list}'")),
+            false => self.push(&list),
+        })
     }
 
     /// A number umx parsed, such as a `--limit`.

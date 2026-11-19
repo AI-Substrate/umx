@@ -29,6 +29,8 @@ Id prefixes and suggestions use the same visibility, so an opt-in can make a pre
   value exactly.
 - `--evidence <pointer>` (repeatable) and `--evidence-kind <kind>` store evidence on the new node in the same
   write, checked as for `umx node note` (see `umx docs get evidence`). A refused pointer adds no node.
+- `--tag <tag>` (repeatable, or a comma list) gives a std graph's node std tags, stored lowercased, deduplicated
+  and sorted (see Tags in `umx docs get ontology`).
 - An undeclared type, status or field is accepted with an `off_vocabulary_*` warning whose `next` declares it.
 - A title close to an existing node's adds a `near_duplicate` hint naming it and its type. The node is still
   added; if it was a duplicate, use the existing one instead. A node of the same type is near from a title score of
@@ -100,6 +102,7 @@ into a message, log or another graph (`umx docs get safety`).
     umx node list --status open --limit 20
     umx node list --where 'likelihood>=3'
     umx node list --within 01JC8XA4H7          # everything under it by part_of
+    umx node list --tag needs_review --no-tag blocked   # std tags, from the tag index
 
 `--where '<field><op><value>'` (quote it: `<` and `>` mean redirection to a shell) with `= != < <= > >=`. A node without the field never matches, even for `!=`.
 Quotes around the value are optional: one matching pair, `'...'` or `"..."`, is dropped, so
@@ -123,6 +126,9 @@ the computed column wins.
 Each row carries `secret_suspected` as `umx node get` does, for the columns that row returns only; the column is
 added when some row on the page has it. Ask for it by name (`--columns id,note,secret_suspected`) and every row
 has it, `[]` when nothing is flagged.
+`--tag <a>[,<b>]` keeps nodes holding a tag of each `--tag` (repeated flags are AND, a comma is OR,
+`'origin:*'` is a facet) and `--no-tag` leaves out nodes holding any of its tags; both come from the graph's tag
+index, never a scan, and need a std graph (see Tags in `umx docs get ontology`).
 `--graph a,b` or `--scope both` lists across graphs, with graph/address provenance and one combined page.
 Without either, the single-graph behavior is unchanged. See `umx docs get scope`.
 `--along <spine>` with `--after <end>` and `--before <end>` keeps only the nodes a spine places in that range,
@@ -159,8 +165,12 @@ The result lists the fields that changed; an edit that changes nothing writes no
     umx node edit 01JC8XA4H7 --title "Approval delays at month end"
     umx node edit 01JC8XA4H7 --type risk --set likelihood=4 --unset owner
     umx node edit 01JC8XA4H7 --note "Replaces the whole note"
+    umx node edit 01JC8XA4H7 --tag stage:review --untag needs_review
 
 Status is not edited here: `--set status=...` is refused with `use_status_verb`, so every move is recorded.
+
+`--tag <tag>` adds std tags and `--untag <tag>` removes them (`--untag origin:*` removes a facet), each repeatable;
+removing the last drops `tags`. See Tags in `umx docs get ontology`.
 
 `--locator <x>` re-points a resource node at a new source (or makes a plain node a resource), and
 `--unset locator` makes it plain again; the node keeps its id and edges, and `locator_changed` counts what cited

@@ -40,6 +40,7 @@ pub mod similarity;
 pub mod spine;
 pub mod standard;
 pub mod status;
+pub mod tags;
 pub mod time;
 pub mod ui;
 pub mod value;

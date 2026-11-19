@@ -43,13 +43,15 @@ and Windows line ends are ignored.
 The ops and their fields (each as on the single verb, see `umx docs get node` and `umx docs get edge`):
 
 - `node add`: `type`, `title` (both needed), `status`, `note`, `sets`, `parent` or `parent_ref`, `evidence`,
-  `evidence_kind`, `ref`, `raised_in` (this node's anchor, instead of the batch's `--raised-in`), and optionally
+  `evidence_kind`, `ref`, `raised_in` (this node's anchor, instead of the batch's `--raised-in`), `tags` (std tags, as
+  `node add --tag`), and optionally
   `id` and `created`. Each `evidence` entry is a pointer string or a `node note` entry,
   `{"pointer":"notes.md#L1","kind":"analyst"}`, checked exactly as `node note` checks it (the pointer parser, the
   kinds, the secret scan). An entry without a kind takes the line's `evidence_kind`, else `document`. Giving a kind
   on an entry and `evidence_kind` on the same line is `batch_line_invalid`: pick one.
 - `edge add`: `from` or `from_ref`, exactly one of `relation` or `type`, `to` or `to_ref`, `sets`, and optionally `id`.
-- `node edit`: `node` or `node_ref`, then any of `title`, `type`, `note`, `sets`, `unsets` (a list of field
+- `node edit`: `node` or `node_ref`, then any of `title`, `type`, `note`, `tag` and `untag` (std tags added and
+  removed, as `node edit --tag` and `--untag`), `sets`, `unsets` (a list of field
   names). `note` replaces the whole note; it does not append. Use `node status` for status moves.
 - `node note`: `node` or `node_ref`, required nonblank `append`, and optional `evidence`. It appends a paragraph,
   keeping the existing note. Each evidence entry is `{"pointer":"notes.md#L1","kind":"document"}`.

@@ -126,6 +126,7 @@ fn new_graph(d: &Daemon, path: &std::path::Path, alias: &str, secured: bool) {
 fn add(d: &Daemon, graph: &str, title: &str) -> Envelope {
     d.handle(&op(
         Op::NodeAdd {
+            tags: Default::default(),
             on_key: None,
             related: None,
             raised_in: None,
@@ -146,6 +147,8 @@ fn add(d: &Daemon, graph: &str, title: &str) -> Envelope {
 fn list(d: &Daemon, graph: &str) -> Envelope {
     d.handle(&op(
         Op::NodeList {
+            no_tags: Default::default(),
+            tags: Default::default(),
             kind: None,
             status: None,
             wheres: Vec::new(),
@@ -293,6 +296,8 @@ fn a_miss_whose_graph_another_request_loaded_runs_again() {
     idle_out(&d);
     let request = op(
         Op::NodeList {
+            no_tags: Default::default(),
+            tags: Default::default(),
             kind: None,
             status: None,
             wheres: Vec::new(),
@@ -333,6 +338,8 @@ fn a_list_member_unloaded_on_purpose_after_the_miss_refuses_and_loads_nothing() 
     ok(list(&d, "beta"));
     let request = op(
         Op::NodeList {
+            no_tags: Default::default(),
+            tags: Default::default(),
             kind: None,
             status: None,
             wheres: Vec::new(),

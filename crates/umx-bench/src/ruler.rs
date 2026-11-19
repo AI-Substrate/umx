@@ -147,6 +147,7 @@ impl Folder<'_> {
             self.fx.nodes.clone(),
             self.meta.ontology.text_fields(),
             self.meta.id,
+            self.meta.ontology.std_version().is_some(),
         )
         .expect("the fixture loads");
         g.load_edges(&self.fx.edges).expect("the edges load");
@@ -352,9 +353,13 @@ fn load_rows(rows: &mut Rows, c: &mut Composer, f: &Folder) -> Result<(), String
     for k in 0..=runs {
         let bytes = f.fx.nodes.clone();
         let t = Instant::now();
-        let (mut g, _) =
-            Graph::load_nodes_indexing_for_graph(bytes, f.meta.ontology.text_fields(), f.meta.id)
-                .map_err(|e| format!("load nodes: {e:?}"))?;
+        let (mut g, _) = Graph::load_nodes_indexing_for_graph(
+            bytes,
+            f.meta.ontology.text_fields(),
+            f.meta.id,
+            f.meta.ontology.std_version().is_some(),
+        )
+        .map_err(|e| format!("load nodes: {e:?}"))?;
         let all = ms(t);
         let t = Instant::now();
         g.rebuild_words();
@@ -384,6 +389,7 @@ fn load_rows(rows: &mut Rows, c: &mut Composer, f: &Folder) -> Result<(), String
             f.fx.nodes.clone(),
             f.meta.ontology.text_fields(),
             f.meta.id,
+            f.meta.ontology.std_version().is_some(),
         )
         .map_err(|e| format!("load nodes: {e:?}"))?;
         let t = Instant::now();

@@ -7,6 +7,7 @@ use crate::cols::NameCol;
 use crate::evidence_kinds::EvidenceSrc;
 use crate::json::{self, Refused};
 use crate::line::{self, FieldVal, HotNode};
+use crate::tags::TagSrc;
 use crate::words::{self, Texts};
 use crate::{Graph, ImageFull, NodeIx};
 use alloc::borrow::Cow;
@@ -117,6 +118,7 @@ fn hot_of<'b>(d: &'b Derived<'_>) -> HotNode<'b> {
             invalid_provenance: h.invalid_provenance,
             locator: h.locator.clone(),
             entity_key: h.entity_key.as_deref().map(Cow::Borrowed),
+            tags: h.tags.as_deref().map(Cow::Borrowed),
             evidence: h.evidence,
         },
         Derived::Record(n) => HotNode {
@@ -140,6 +142,11 @@ fn hot_of<'b>(d: &'b Derived<'_>) -> HotNode<'b> {
             entity_key: n
                 .fields
                 .get(umx_core::entity::ENTITY_KEY)
+                .map(Cow::Borrowed),
+            tags: n
+                .fields
+                .get(umx_core::tags::TAGS)
+                .filter(|v| v.is_array())
                 .map(Cow::Borrowed),
             evidence: EvidenceSrc::Record(&n.evidence),
         },
@@ -314,6 +321,7 @@ impl Graph {
         self.entities
             .push(h, &n.kind, n.entity_key.as_deref(), building);
         self.ev_kinds.push(h, n.evidence);
+        self.tags.push(h, TagSrc(n.tags.as_deref()));
         self.n_kind.push(k);
         self.n_status.push(s);
         self.n_by.push(b);
@@ -455,6 +463,7 @@ impl Graph {
         self.entities
             .set(h as u32, &n.kind, n.entity_key.as_deref());
         self.ev_kinds.set(h as u32, n.evidence);
+        self.tags.set(h as u32, TagSrc(n.tags.as_deref()));
         self.words.reindex(h as u32, texts);
         self.names.node_use(self.n_kind.get(h), false);
         let k = self.names.intern(&n.kind);
@@ -532,6 +541,7 @@ impl Graph {
         self.locators.pop(h as u32);
         self.entities.pop(h as u32);
         self.ev_kinds.pop(h as u32);
+        self.tags.pop(h as u32);
         self.n_kind.remove(h);
         self.n_status.remove(h);
         self.n_by.remove(h);
@@ -562,6 +572,7 @@ impl Graph {
         self.locators.clear();
         self.entities.clear();
         self.ev_kinds.clear();
+        self.tags.clear();
         self.n_kind = Default::default();
         self.n_status = Default::default();
         self.n_by = Default::default();
@@ -1130,6 +1141,7 @@ impl Graph {
             ..Graph::default()
         };
         again.clear_rows();
+        again.set_std_tags(self.std_tags());
         again
             .derive_rows(Walk::Image, None)
             .expect("every line of the image decodes");
@@ -1190,6 +1202,7 @@ impl Graph {
             );
         }
         self.ev_kinds.check(&again.ev_kinds);
+        self.tags.check(&again.tags);
         assert_eq!(
             again.duplicate_locators().collect::<Vec<_>>(),
             self.duplicate_locators().collect::<Vec<_>>(),

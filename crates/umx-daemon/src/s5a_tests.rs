@@ -135,6 +135,7 @@ fn rev(d: &Daemon, alias: &str) -> u64 {
 
 fn node_add(title: &str) -> Op {
     Op::NodeAdd {
+        tags: Default::default(),
         on_key: None,
         related: None,
         raised_in: None,
@@ -207,6 +208,7 @@ fn writes(op: &Op) -> Writes {
         | Op::OntologyAddRelation { .. }
         | Op::OntologyAddField { .. }
         | Op::OntologyAddRelationField { .. }
+        | Op::OntologyAddTag { .. }
         | Op::OntologySetField { .. }
         | Op::OntologySetType { .. }
         | Op::OntologyRemoveType { .. }
@@ -341,6 +343,8 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
         (
             op(
                 Op::NodeEdit {
+                    tag: Default::default(),
+                    untag: Default::default(),
                     node: first.clone(),
                     title: Some("Approval delays (Q3)".into()),
                     kind: None,

@@ -83,6 +83,7 @@ fn where_on_a_list_matches_an_element_and_not_equal_is_its_complement() {
     g.insert_node(node(3, "person", None)).unwrap();
     let ids = |op: Op, value: &str| -> Vec<u128> {
         let filter = NodeFilter {
+            tags: Default::default(),
             kind: None,
             status: None,
             wheres: vec![Where {
