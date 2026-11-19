@@ -179,12 +179,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `existed`), and a keyed one `idempotency_key`, `replayed` and `recorded_at`. New codes `idempotency_key_reused`,
 /// `idempotency_receipt_stale` and `receipts_unreadable` (errors), `batch_replayed` and `idempotency_key_expired`
 /// (hints).
+/// 90: std graphs and the effective ontology (ws008 T2a, req-98): `GraphNew`'s `no_std` (`graph new --no-std`; a new
+/// graph's ontology says `std: 1` otherwise) and `OntologyShow`'s `std` (`ontology show --std`, std v1 alone); the
+/// warning `std_newer` and the hint `std_entries_shown`.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 89;
+pub const PROTOCOL: u32 = 90;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -193,7 +196,7 @@ pub const PROTOCOL: u32 = 89;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (89, 0x8bf0_ac63_009d_06e5);
+const WIRE_FINGERPRINT: (u32, u64) = (90, 0x74bc_bd28_a8c7_8497);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1249,6 +1252,9 @@ pub enum Op {
         /// `--graphfile`: the graph is added to the repo's Graphfile even when its policy is not open.
         #[serde(default)]
         graphfile: bool,
+        /// `--no-std` (req-98): the graph does not use std; without it its ontology says `std: 1`.
+        #[serde(default)]
+        no_std: bool,
     },
     GraphLoad {
         path: String,
@@ -1366,7 +1372,11 @@ pub enum Op {
         #[serde(default)]
         along: Option<Along>,
     },
-    OntologyShow,
+    /// `std` (`--std`, req-98): std v1 alone, whatever graph is selected or loaded.
+    OntologyShow {
+        #[serde(default)]
+        std: bool,
+    },
     OntologyAddType {
         name: String,
         fields: Vec<String>,
@@ -2111,7 +2121,7 @@ impl Op {
             Op::NodeFind { .. } => 6,
             Op::EdgeAdd { .. } => 7,
             Op::EdgeList { .. } => 8,
-            Op::OntologyShow => 9,
+            Op::OntologyShow { .. } => 9,
             Op::OntologyAddType { .. }
             | Op::OntologyAddStatus { .. }
             | Op::OntologyAddRelation { .. }
@@ -3213,6 +3223,16 @@ catalogue! {
         "a node of the std type segment was added or edited with no part_of edge out of it (D71 R5: segments nest, part_of their meeting, event or segment); it is stored as it is",
         "Segment <id> is part of nothing yet. Link it to its meeting, event or parent segment.",
         "<fix>";
+    // ws008 T2a (req-98): graph.json names a std newer than this build's; the graph loads on this build's std.
+    StdNewer => "std_newer", Warning, 0,
+        "a graph's ontology names a std version newer than this umx knows; it loads, with this umx's std as the base of its vocabulary, so a name only the newer std has is off-vocabulary until umx is updated",
+        "Graph <graph> uses std v<std>, newer than the std v<known> this umx knows: it is read with std v<known>'s names.",
+        "umx ontology show --std";
+    // ws008 T2a (req-98, D69): a vocabulary read of a std graph lists std's entries besides the graph's own.
+    StdEntriesShown => "std_entries_shown", Hint, 0,
+        "a read of a std graph's vocabulary (ontology show, graph guide) lists std entries the graph's graph.json does not hold; each is marked std: true",
+        "Graph <graph> uses std v<std>: entries marked std come from umx's standard vocabulary, not from graph.json.",
+        "umx ontology show --std";
     // ws008 TM4 (req-148): soft endpoint types of a std relation; the edge is stored.
     RelationEndpointUnexpected => "relation_endpoint_unexpected", Warning, 0,
         "an edge of a std relation ends at a node of a type the relation does not expect; it is stored (soft vocabulary)",
@@ -5120,6 +5140,7 @@ mod tests {
                 secured: true,
                 no_graphfile: true,
                 graphfile: true,
+                no_std: true,
             },
             Op::GraphLoad {
                 path: "/g".into(),
@@ -5205,7 +5226,7 @@ mod tests {
                     before: s("b"),
                 }),
             },
-            Op::OntologyShow,
+            Op::OntologyShow { std: true },
             Op::OntologyAddType {
                 name: "k".into(),
                 fields: list(),
@@ -5701,7 +5722,7 @@ mod tests {
             Op::NodeFind { .. } => 6,
             Op::EdgeAdd { .. } => 7,
             Op::EdgeList { .. } => 8,
-            Op::OntologyShow => 9,
+            Op::OntologyShow { .. } => 9,
             Op::OntologyAddType { .. } => 10,
             Op::OntologyAddStatus { .. } => 11,
             Op::OntologyAddRelation { .. } => 12,

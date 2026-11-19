@@ -160,6 +160,7 @@ fn a_batch_of_writes_returns_in_its_normal_time_during_a_full_embed_backlog() {
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     // similar_to lists on, so every embedded node moves lists: the costly case.
     ok(d.handle(&op(Op::SimilarityRebuild)));

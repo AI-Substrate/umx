@@ -769,7 +769,7 @@ impl GraphStore {
             ctx,
             &graph,
             l.meta.id,
-            &l.meta.ontology,
+            l.ontology(),
             &current,
             req,
             (now.as_str(), ctx.actor_display()),
@@ -855,7 +855,7 @@ impl GraphStore {
             )?
         };
         let l = self.get(&alias);
-        let o = &l.meta.ontology;
+        let o = l.ontology();
         let symmetric = o.is_symmetric(relation);
         let (from, to) = ordered_ends(l.meta.id, symmetric, from, to);
         let found = |a, b| whole_node_edge(find_edge(&l.graph, a, relation, b), l.graph.edges());

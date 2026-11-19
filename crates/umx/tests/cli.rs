@@ -3104,6 +3104,15 @@ fn trigger(code: Code) -> (Envelope, u8) {
             home.graph();
             home.umx(&["node", "add", "--type", "meeting", "--title", "x"])
         }
+        Code::StdNewer => {
+            let path = home.graph();
+            edit_graph_json(&path, |g| g["ontology"]["std"] = json!(2));
+            home.umx(&["graph", "load", &path])
+        }
+        Code::StdEntriesShown => {
+            home.graph();
+            home.umx(&["ontology", "show"])
+        }
         Code::RelationEndpointUnexpected => {
             home.graph();
             let anchor = home
@@ -6220,9 +6229,10 @@ fn edge_fields_have_a_vocabulary_like_node_fields() {
         );
     }
     let show = home.ok(&["ontology", "show"]);
+    // std's own relation fields (works_for and member_of spans) come with a std graph.
     assert_eq!(
-        show.data["relation_fields"],
-        umx_protocol::json!({ "supports": [{ "name": "confidence", "kind": "float" }] })
+        show.data["relation_fields"]["supports"],
+        umx_protocol::json!([{ "name": "confidence", "kind": "float", "std": false }])
     );
     let quiet = home.ok(&["edge", "add", &b, "supports", &c, "--set", "confidence=0.9"]);
     assert!(quiet.warnings.is_empty(), "{}", quiet.to_json());
@@ -7724,12 +7734,14 @@ fn graph_guide_orients_an_agent_and_its_nexts_fill_it_in() {
         widget["next"],
         "umx ontology add type widget --description <text> --graph demo"
     );
+    // risk is a std type: std's due_on first, which graph.json does not declare, so it asks for no description.
     let risk = guide_entry(&env, "types", "risk");
     assert_eq!(
         risk["fields"],
         json!([
-            { "name": "likelihood", "kind": "float", "description": "0 to 1", "next": null },
-            { "name": "owner", "kind": "string", "description": "Who watches it", "next": null },
+            { "name": "due_on", "kind": "date", "description": null, "next": null, "std": true },
+            { "name": "likelihood", "kind": "float", "description": "0 to 1", "next": null, "std": false },
+            { "name": "owner", "kind": "string", "description": "Who watches it", "next": null, "std": false },
         ])
     );
     let blocks = guide_entry(&env, "relations", "blocks");
@@ -22731,7 +22743,10 @@ fn a_batch_raised_in_an_anchor_links_every_node_it_adds() {
 #[test]
 fn raised_in_off_vocabulary_is_said_once_per_batch() {
     let mut home = Home::new("tm4-vocab");
-    e2b_graphs(&mut home, &["g1"]);
+    home.start();
+    // raised_in is a std relation (req-98): only a graph without std says it is off-vocabulary.
+    let path = home.path.join("g1").display().to_string();
+    home.ok(&["graph", "new", &path, "--alias", "g1", "--no-std"]);
     let segment = e2b_node(&home, "g1", "segment", "Morning", "");
     let person = e2b_node(&home, "g1", "person", "Ada", "");
     let said = |env: &Envelope| {
@@ -24814,11 +24829,12 @@ fn a_spine_range_reads_through_the_daemon_and_its_hints_list_what_it_left_out() 
         json!(4),
         "the afternoon and its three points"
     );
+    // The other spines: recorded, status and, on a std graph, std's date field starts_on the segments hold.
     assert_eq!(
         env.data["along"],
         json!({
             "spine": "day", "source": "declared", "clock": "calendar", "after": segs[1], "before": segs[1],
-            "ends": "inclusive", "not_placed": 1, "by_rule": 1, "coarse": 0, "spines": 2,
+            "ends": "inclusive", "not_placed": 1, "by_rule": 1, "coarse": 0, "spines": 3,
         })
     );
     let (listed, exit) = run_as_printed(&home, issue(&env, Code::AlongNotPlaced).next());
@@ -25475,13 +25491,17 @@ fn a_field_in_the_wrong_role_group_is_pointed_out_and_keeps_its_role_until_set()
 }
 
 /// The row of `env`'s search rows whose title is `title`.
+#[track_caller]
 fn hit<'a>(env: &'a Envelope, title: &str) -> &'a Value {
-    env.data["rows"]
+    match env.data["rows"]
         .as_array()
         .unwrap()
         .iter()
         .find(|r| r["title"] == title)
-        .unwrap_or_else(|| panic!("no hit {title} in {}", env.to_json()))
+    {
+        Some(row) => row,
+        None => panic!("no hit {title} in {}", env.to_json()),
+    }
 }
 
 #[test]
@@ -26152,4 +26172,355 @@ fn a_repeated_graph_or_scope_is_refused_never_read_as_its_last() {
             .collect();
         assert_eq!(graphs, ["alpha", "beta"], "{args:?}");
     }
+}
+
+/// ws008 T2a (req-98): `demo` (std, as `graph new` makes it) and `plain` (`--no-std`), both loaded; gives plain's
+/// folder.
+fn std_and_plain(home: &mut Home) -> String {
+    home.graph();
+    let plain = home.path.join("plain").display().to_string();
+    let env = home.ok(&["graph", "new", &plain, "--alias", "plain", "--no-std"]);
+    assert_eq!(
+        env.data["ontology"]["std"],
+        json!(null),
+        "{}",
+        env.to_json()
+    );
+    plain
+}
+
+fn named<'a>(list: &'a Value, name: &str) -> &'a Value {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == name)
+        .unwrap_or_else(|| panic!("no {name} in {list}"))
+}
+
+fn strings(list: &Value) -> Vec<&str> {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn graph_new_uses_std_v1_unless_no_std() {
+    let mut home = Home::new("std-new");
+    let plain = std_and_plain(&mut home);
+    let path = home.path.join("g").display().to_string();
+    assert_eq!(graph_json(&path)["ontology"]["std"], json!(1));
+    assert!(graph_json(&plain)["ontology"].get("std").is_none());
+    // --empty drops the starter vocabulary, not std.
+    let bare = home.path.join("bare").display().to_string();
+    let env = home.ok(&["graph", "new", &bare, "--alias", "bare", "--empty"]);
+    assert_eq!(env.data["ontology"]["std"], json!(1), "{}", env.to_json());
+    let o = graph_json(&bare)["ontology"].clone();
+    assert_eq!((&o["std"], &o["types"]), (&json!(1), &json!([])));
+}
+
+#[test]
+fn a_graph_without_std_keeps_graph_json_byte_for_byte_and_a_std_one_never_writes_std_entries() {
+    let mut home = Home::new("std-bytes");
+    let plain = std_and_plain(&mut home);
+    let file = Path::new(&plain).join("graph.json");
+    let before = fs::read_to_string(&file).unwrap();
+    home.ok(&["graph", "load", &plain]);
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        before,
+        "a load writes nothing"
+    );
+    home.ok(&["ontology", "add", "type", "widget", "--graph", "plain"]);
+    let o = graph_json(&plain)["ontology"].clone();
+    assert!(
+        o.get("std").is_none() && !o.to_string().contains("job_title"),
+        "{o}"
+    );
+    home.ok(&["ontology", "remove", "type", "widget", "--graph", "plain"]);
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        before,
+        "only the write's own change, undone"
+    );
+    // A std graph's write keeps `std: 1` and writes only its own declarations.
+    let path = home.path.join("g").display().to_string();
+    home.ok(&["ontology", "add", "status", "parked", "--graph", "demo"]);
+    let o = graph_json(&path)["ontology"].clone();
+    assert_eq!(o["std"], json!(1));
+    let types: Vec<&str> = o["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        types,
+        umx_core::ontology::STARTER_TYPES,
+        "no std type written"
+    );
+    assert!(!strings(&o["statuses"]).contains(&"stalled") && o.get("relation_fields").is_none());
+}
+
+#[test]
+fn ontology_show_marks_std_entries_and_std_prints_std_v1_alone() {
+    let mut home = Home::new("std-show");
+    std_and_plain(&mut home);
+    let env = home.ok(&["ontology", "show", "--graph", "demo"]);
+    let d = &env.data;
+    assert_eq!(d["std"], json!(1));
+    assert_eq!(d["types"][0]["name"], "person", "std first");
+    assert_eq!(named(&d["types"], "person")["std"], json!(true));
+    assert_eq!(named(&d["types"], "problem")["std"], json!(false));
+    // question is in both the starter vocabulary and std: merged into std's entry, once.
+    assert_eq!(named(&d["types"], "question")["std"], json!(true));
+    let job = named(&named(&d["types"], "person")["fields"], "job_title");
+    assert_eq!(
+        (&job["std"], &job["kind"], &job["role"]),
+        (&json!(true), &json!("string"), &json!("data"))
+    );
+    assert_eq!(
+        named(&d["relation_fields"]["works_for"], "starts_on")["std"],
+        json!(true)
+    );
+    let std_statuses = strings(&d["std_statuses"]);
+    assert!(
+        std_statuses.contains(&"stalled") && !std_statuses.contains(&"open"),
+        "{std_statuses:?}"
+    );
+    let std_relations = strings(&d["std_relations"]);
+    assert!(std_relations.contains(&"works_for") && std_relations.contains(&"answers"));
+    assert!(!std_relations.contains(&"supports"));
+    assert_eq!(named(&d["std_any_fields"], "tags")["on"], "node");
+    let hint = issue(&env, Code::StdEntriesShown);
+    assert_eq!(hint.next(), "umx ontology show --std");
+    // The graph's own field on a std type follows std's.
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "person",
+        "desk:string",
+        "--graph",
+        "demo",
+    ]);
+    let env = home.ok(&["ontology", "show", "--graph", "demo"]);
+    let fields = &named(&env.data["types"], "person")["fields"];
+    let names: Vec<&str> = fields
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["aliases", "job_title", "org", "desk"]);
+    assert_eq!(named(fields, "desk")["std"], json!(false));
+
+    // --std: std v1 alone, every entry std.
+    let env = home.ok(&["ontology", "show", "--std"]);
+    let d = &env.data;
+    assert_eq!(d["std"], json!(1));
+    let types: Vec<&str> = d["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    let std_types: Vec<&str> = umx_core::standard::types().map(|t| t.name).collect();
+    assert_eq!(types, std_types);
+    assert!(
+        d["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["std"] == json!(true))
+    );
+    let statuses: Vec<&str> = umx_core::standard::STATUSES
+        .iter()
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(
+        (strings(&d["statuses"]), strings(&d["std_statuses"])),
+        (statuses.clone(), statuses)
+    );
+    assert!(env.hints.is_empty(), "{}", env.to_json());
+
+    // A graph without std marks nothing, not even a std name it declares.
+    let env = home.ok(&["ontology", "show", "--graph", "plain"]);
+    let d = &env.data;
+    assert_eq!(d["std"], json!(null));
+    assert_eq!(named(&d["types"], "question")["std"], json!(false));
+    assert!(d.get("std_any_fields").is_none() && d["std_statuses"] == json!([]));
+    assert!(env.hints.is_empty(), "{}", env.to_json());
+}
+
+#[test]
+fn a_std_graph_knows_std_names_in_writes_word_search_and_cypher() {
+    let mut home = Home::new("std-reads");
+    std_and_plain(&mut home);
+    let add = |graph: &str| {
+        home.ok(&[
+            "node",
+            "add",
+            "--type",
+            "person",
+            "--title",
+            "Ada",
+            "--set",
+            "job_title=Quartermaster general",
+            "--graph",
+            graph,
+        ])
+    };
+    let env = add("demo");
+    assert!(
+        env.warnings.is_empty(),
+        "no off-vocabulary warning: {}",
+        env.to_json()
+    );
+    let plain = add("plain");
+    let codes: Vec<&str> = plain.warnings.iter().map(|w| w.code()).collect();
+    assert!(codes.contains(&"off_vocabulary_type"), "{codes:?}");
+    // Word search indexes std's string fields on a std graph only.
+    let env = home.ok(&["search", "quartermaster", "--graph", "demo"]);
+    assert_eq!(hit(&env, "Ada")["text_field"], "job_title");
+    let env = home.ok(&["search", "quartermaster", "--graph", "plain"]);
+    assert_eq!(env.data["rows"], json!([]), "{}", env.to_json());
+    // An ontology write builds the effective ontology again: std's fields stay indexed.
+    home.ok(&["ontology", "add", "type", "widget", "--graph", "demo"]);
+    let env = home.ok(&["search", "quartermaster", "--graph", "demo"]);
+    assert_eq!(hit(&env, "Ada")["text_field"], "job_title");
+    // A std type's label matches; one no node has yet is declared (unused), not unknown.
+    let env = home.ok(&[
+        "query",
+        "MATCH (p:person) RETURN p.title AS title",
+        "--graph",
+        "demo",
+    ]);
+    assert!(env.to_json().contains("\"Ada\""), "{}", env.to_json());
+    assert!(env.warnings.is_empty(), "{}", env.to_json());
+    let codes = |graph: &str| -> Vec<String> {
+        let (env, _) = home.umx(&["query", "MATCH (m:meeting) RETURN m", "--graph", graph]);
+        env.warnings.iter().map(|w| w.code().to_owned()).collect()
+    };
+    assert_eq!(codes("demo"), ["query_label_unused"]);
+    assert_eq!(codes("plain"), ["query_unknown_label"]);
+}
+
+#[test]
+fn a_newer_std_loads_with_std_newer_on_std_v1_names() {
+    let mut home = Home::new("std-newer");
+    let path = home.graph();
+    edit_graph_json(&path, |g| g["ontology"]["std"] = json!(2));
+    let (env, _) = home.umx(&["graph", "load", &path]);
+    let w = issue(&env, Code::StdNewer);
+    assert!(
+        w.message().contains("std v2") && w.message().contains("std v1"),
+        "{}",
+        w.message()
+    );
+    assert_eq!(w.next(), "umx ontology show --std");
+    let show = home.ok(&["ontology", "show"]);
+    assert_eq!(show.data["std"], json!(2));
+    assert_eq!(named(&show.data["types"], "person")["std"], json!(true));
+    // A write keeps the file's version.
+    home.ok(&["ontology", "add", "status", "parked"]);
+    assert_eq!(graph_json(&path)["ontology"]["std"], json!(2));
+}
+
+#[test]
+fn graph_guide_lists_std_entries_only_when_declared_or_used_and_never_asks_to_describe_them() {
+    let mut home = Home::new("std-guide");
+    home.graph();
+    let env = home.ok(&["graph", "guide", "demo"]);
+    let names: Vec<&str> = env.data["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        !names.contains(&"person") && !names.contains(&"meeting"),
+        "{names:?}"
+    );
+    // question is declared (the starter vocabulary) and std: listed, marked, and describable.
+    let question = named(&env.data["types"], "question");
+    assert_eq!(question["std"], json!(true));
+    assert!(question["next"].is_string());
+    issue(&env, Code::StdEntriesShown);
+    let missing =
+        |env: &Envelope| -> String { issue(env, Code::DescriptionsMissing).message().to_owned() };
+    let before = missing(&env);
+    home.add("person", "Ada");
+    let env = home.ok(&["graph", "guide", "demo"]);
+    let person = named(&env.data["types"], "person");
+    assert_eq!(
+        (&person["std"], &person["declared"], &person["next"]),
+        (&json!(true), &json!(true), &json!(null))
+    );
+    assert_eq!(named(&person["fields"], "job_title")["next"], json!(null));
+    assert_eq!(
+        missing(&env),
+        before,
+        "a std entry graph.json does not declare is never counted"
+    );
+}
+
+#[test]
+fn a_role_hint_on_a_std_field_runs_as_printed_and_writes_only_the_graph_s_own_declaration() {
+    // req-98, D69: role_hints read the effective ontology, so `ontology set field` must take a std field too.
+    let mut home = Home::new("std-role");
+    let path = home.graph();
+    for (title, job) in [
+        (
+            "Ada",
+            "Leads the quarterly planning of every regional warehouse team",
+        ),
+        (
+            "Bo",
+            "Writes the safety rules that each night shift follows on site",
+        ),
+        (
+            "Cy",
+            "Keeps the supplier contracts in order and answers their questions",
+        ),
+    ] {
+        let set = format!("job_title={job}");
+        home.ok(&[
+            "node", "add", "--type", "person", "--title", title, "--set", &set,
+        ]);
+    }
+    let env = home.ok(&["graph", "guide", "demo"]);
+    let hint = env
+        .hints
+        .iter()
+        .find(|h| h.code() == "field_looks_like_prose" && h.message().contains("job_title"))
+        .unwrap_or_else(|| panic!("no prose hint for job_title: {}", env.to_json()));
+    let (done, exit) = run_as_printed(&home, hint.next());
+    assert_eq!(exit, 0, "{}", done.to_json());
+    let show = home.ok(&["ontology", "show"]);
+    let person = named(&show.data["types"], "person");
+    assert_eq!(named(&person["fields"], "job_title")["role"], "content");
+    assert_eq!(named(&person["fields"], "aliases")["std"], json!(true));
+    assert_eq!(
+        type_in_file(&path, "person")["fields"],
+        json!([{ "name": "job_title", "kind": "string", "role": "content" }]),
+        "graph.json holds the graph's own declaration, never std's other entries"
+    );
+}
+
+#[test]
+fn a_batch_of_std_types_and_a_works_for_edge_warns_nothing() {
+    let mut home = Home::new("std-batch");
+    home.graph();
+    let lines = [
+        json!({"op":"node add","ref":"ada","type":"person","title":"Ada",
+            "sets":[{"field":"job_title","value":"Engineer"}]}),
+        json!({"op":"node add","ref":"acme","type":"organisation","title":"Acme"}),
+        json!({"op":"edge add","from_ref":"ada","relation":"works_for","to_ref":"acme"}),
+    ];
+    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    let ops = home.ops_file(&text);
+    let done = home.ok(&["batch", "--file", ops.as_str()]);
+    assert!(done.warnings.is_empty(), "{}", done.to_json());
 }

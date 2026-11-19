@@ -214,6 +214,7 @@ fn daemon_paced(
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         })));
     }
     d

@@ -344,7 +344,14 @@ pub fn ui_preflight(
     } else {
         graphs
             .iter()
-            .map(|alias| Request::op(Op::OntologyShow, Some(alias.clone()), None, build.clone()))
+            .map(|alias| {
+                Request::op(
+                    Op::OntologyShow { std: false },
+                    Some(alias.clone()),
+                    None,
+                    build.clone(),
+                )
+            })
             .collect()
     };
     let mut notes: Vec<Issue> = Vec::new();

@@ -576,10 +576,7 @@ impl GraphStore {
     pub fn node_values(&self, alias: &str, id: Id) -> Option<Vec<(String, String)>> {
         let loaded = self.graphs.get(alias)?;
         let node = loaded.graph.node(id)?;
-        Some(vectors::field_values(
-            &node.to_node(),
-            &loaded.meta.ontology,
-        ))
+        Some(vectors::field_values(&node.to_node(), loaded.ontology()))
     }
 
     /// The node's whole-node text now, and the same text rebuilt with every field `drop(field, value)` picks left out
@@ -592,7 +589,7 @@ impl GraphStore {
     ) -> Option<(String, String)> {
         let loaded = self.graphs.get(alias)?;
         let node = loaded.graph.node(id)?.to_node();
-        let ontology = &loaded.meta.ontology;
+        let ontology = loaded.ontology();
         let whole = |n: &umx_core::Node| {
             let field = vectors::whole_node_field();
             vectors::node_texts(n, ontology)
@@ -653,7 +650,7 @@ impl GraphStore {
                 };
                 // R324-5: as on a write, but only for a field the node still embeds with this exact text.
                 let allowed = |field: &str, text: &str| {
-                    vectors::field_values(node, &loaded.meta.ontology)
+                    vectors::field_values(node, loaded.ontology())
                         .iter()
                         .any(|(f, t)| f == field && t == text)
                         && allows.get_or_init(|| self.secret_allows()).allows(
@@ -672,7 +669,7 @@ impl GraphStore {
                     Spot::RemovalReason(_) | Spot::RemovalPointer(_) => shown(EVIDENCE_REMOVED),
                 };
                 let mut names: Vec<String> = Vec::new();
-                for s in node_suspects(node, &loaded.meta.ontology, &allowed, &look) {
+                for s in node_suspects(node, loaded.ontology(), &allowed, &look) {
                     let spot_names = match s.spot {
                         Spot::Field(field) => alloc::vec![named_place(field)],
                         Spot::Locator => locator_names.iter().map(|c| named_place(c)).collect(),
@@ -850,7 +847,7 @@ impl GraphStore {
             let values = loaded
                 .graph
                 .node(*id)
-                .map(|n| vectors::text_values(&n.to_node(), &loaded.meta.ontology))
+                .map(|n| vectors::text_values(&n.to_node(), loaded.ontology()))
                 .unwrap_or_default();
             for (field, value) in values {
                 let Some(rule) = secrets::field_suspect(&field, &value) else {
@@ -885,7 +882,7 @@ impl GraphStore {
         let Some((_, value)) = values.iter().find(|(f, _)| f == field) else {
             let node = self.get(&alias).graph.node(id).map(|n| n.to_node());
             let written = node.is_some_and(|n| {
-                vectors::text_values(&n, &self.get(&alias).meta.ontology)
+                vectors::text_values(&n, self.get(&alias).ontology())
                     .iter()
                     .any(|(f, _)| f == field)
             });

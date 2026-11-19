@@ -173,6 +173,7 @@ fn new_graph(d: &Daemon, path: &Path, alias: &str, key: &str) {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         },
         None,
     ));

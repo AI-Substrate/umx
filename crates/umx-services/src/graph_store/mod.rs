@@ -157,6 +157,10 @@ pub struct Ports {
 pub struct Loaded {
     pub dir: GraphDir,
     pub meta: GraphMeta,
+    /// The ontology umx acts on (ws008 T2, req-98): `meta.ontology` with std v1 first for a std graph
+    /// ([`umx_core::Ontology::effective`]). Built at load and again by every graph.json write that stands
+    /// ([`persist`]); every reader uses it ([`Loaded::ontology`]), while writes change and write `meta.ontology`.
+    ontology: umx_core::Ontology,
     pub graph: Graph,
     /// Own-graph endpoint keys were normalized on load; the next write also flushes the edge file.
     edges_normalized: bool,
@@ -260,6 +264,18 @@ impl Loaded {
         ReadScope::new(&self.graph)
     }
 
+    /// The ontology umx acts on: the stored one with std v1 first for a std graph. Read it, never `meta.ontology`,
+    /// except to change what graph.json holds.
+    pub fn ontology(&self) -> &umx_core::Ontology {
+        &self.ontology
+    }
+
+    /// Builds the effective ontology again from `meta.ontology`, and the word index's fields from it (req-68).
+    fn refresh_ontology(&mut self) {
+        self.ontology = self.meta.ontology.effective();
+        self.graph.set_text_fields(self.ontology.text_fields());
+    }
+
     /// Pending vectors not held by the secret hold (None: the graph has no model space).
     pub fn pending_count(&self) -> Option<usize> {
         self.vectors_pending.as_ref().map(|p| {
@@ -290,16 +306,22 @@ impl Loaded {
         }
     }
 
+    /// `ontology` is `meta.ontology.effective()`, built once by the caller, whose load indexes words with it; a
+    /// graph indexed otherwise (a new one) gets its fields here.
     pub fn new(
         dir: GraphDir,
         meta: GraphMeta,
-        graph: Graph,
+        ontology: umx_core::Ontology,
+        mut graph: Graph,
         now_ms: u64,
         stamps: GraphStamps,
     ) -> Loaded {
+        debug_assert!(ontology == meta.ontology.effective());
+        graph.set_text_fields(ontology.text_fields());
         Loaded {
             dir,
             policy: PolicyView::file_only(meta.file_policy()),
+            ontology,
             meta,
             graph,
             edges_normalized: false,
@@ -939,6 +961,9 @@ fn persist(
     )?;
     loaded.meta.umx = written.umx;
     loaded.edges_normalized = false;
+    if which.contains(&GraphFile::Graph) {
+        loaded.refresh_ontology();
+    }
     Ok(written.warnings)
 }
 
@@ -1128,7 +1153,7 @@ fn named(which: &[GraphFile], e: &FilesError) -> GraphFile {
 
 /// Off-vocabulary count for `graph load`: nodes whose type, status or a field is not declared.
 fn off_vocabulary(loaded: &Loaded) -> usize {
-    let o = &loaded.meta.ontology;
+    let o = loaded.ontology();
     let on_vocab = |n: NodeRef| {
         o.type_decl(n.kind()).is_some_and(|t| {
             n.custom_field_names()
@@ -1302,6 +1327,7 @@ mod tests {
         let loaded = Loaded::new(
             GraphDir::parse("/g").unwrap(),
             meta,
+            Ontology::default(),
             Graph::new(),
             0,
             GraphStamps::ABSENT,

@@ -39,6 +39,7 @@ pub const HINTS: &[&str] = &[
     "graph_loaded_on_demand",
     "graphfile_no_repo",
     "segment_without_parent",
+    "std_entries_shown",
     "edge_direction_normalised",
     "lint_orphans",
     "lint_proposed_keys",
@@ -260,6 +261,8 @@ pub const CODES: &[&str] = &[
     "edge_direction_normalised",
     "date_not_a_date",
     "relation_endpoint_unexpected",
+    "std_newer",
+    "std_entries_shown",
     "lint_orphans",
     "lint_proposed_keys",
     "lint_terms",
@@ -2656,6 +2659,21 @@ pub fn segment_without_parent(id: Id, fix: Command) -> Problem {
         .with("id", Slot::Id(id))
         .with("fix", Slot::Command(fix))
         .subject(id.to_text())
+}
+
+/// ws008 T2a (req-98): graph.json's `std` is `std`, newer than this build's `known`; the graph loads on std v`known`.
+pub fn std_newer(graph: &ValidName, std: u32, known: u32) -> Problem {
+    Problem::new("std_newer")
+        .with("graph", name(graph))
+        .with("std", Slot::Count(u64::from(std)))
+        .with("known", Slot::Count(u64::from(known)))
+}
+
+/// ws008 T2a (D69, a hint): a vocabulary read of a std graph shows std's entries besides the graph's own.
+pub fn std_entries_shown(graph: &ValidName, std: u32) -> Problem {
+    Problem::new("std_entries_shown")
+        .with("graph", name(graph))
+        .with("std", Slot::Count(u64::from(std)))
 }
 
 /// A std relation's end is of a type it does not expect (ws008 TM4 for raised_in; soft, never refused): names the

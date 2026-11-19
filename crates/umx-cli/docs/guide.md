@@ -20,6 +20,10 @@ are read-only and have no stored edge example or address. This is a per-read fla
   `next` (null once described). An edge end in another graph reads as its address `umx:<graph>/<node>` in the
   sentence, never as a title: the guide reads only the graph it was asked about.
   Types list their `fields`, each with its kind and description; relations say whether they are `symmetric`.
+  On a std graph (`umx docs get ontology`, section std) a std type, status or relation is listed only when
+  graph.json declares it or a record uses it, and every entry and field says whether std gives it (`std`). A std
+  entry or field graph.json does not declare has no `next` and is not counted in `descriptions_missing`; the hint
+  `std_entries_shown` says the std entries come from umx.
 - `graph`: alias, title, and the graph's node and edge counts.
 
 A graph with nothing described still succeeds (exit 0, status ok). The hint `purpose_missing` says the purpose is not
@@ -68,7 +72,7 @@ re-embedded.
 
 ## Errors and warnings
 
-`purpose_missing`, `descriptions_missing`, `field_looks_like_labels` and `field_looks_like_prose` (hints, from the guide), `setting_secret_suspected` (a warning,
+`purpose_missing`, `descriptions_missing`, `std_entries_shown`, `field_looks_like_labels` and `field_looks_like_prose` (hints, from the guide), `setting_secret_suspected` (a warning,
 from `graph set` and `ontology add ... --description`), `description_too_long`,
 `description_undeclared`, `already_declared` (from `ontology add ... --description`; its next is the
 `graph set --description` that describes the name), `graph_not_loaded`, `usage_invalid` (a `--description` that

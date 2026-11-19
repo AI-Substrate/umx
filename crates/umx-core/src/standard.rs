@@ -1,7 +1,8 @@
 //! std v1, the standard vocabulary built into umx (ws008 T1, D57; D71's time rows; the lifecycle statuses). Pure
 //! data, no I/O. Names are stored plain (`person`, never `std:person`); `std:` is a qualifier the CLI accepts and
 //! shows ([`qualified`]). A graph opts in with `"std": 1` in its ontology, and what that changes (the effective
-//! ontology, the reserved names, the soft endpoint warnings) is T2's: this module is only the table they read.
+//! ontology, [`crate::ontology::Ontology::effective`]; the reserved names, the soft endpoint warnings) is T2's: this
+//! module is only the table they read.
 //!
 //! One source (architect, ws-008-placement): names other modules already own are referenced, never restated. The
 //! provenance types, keys and relations come from [`crate::ontology`], the derived relations from

@@ -19,6 +19,11 @@ model and vectors are never mixed (usage 017). **usage 073**: dims are 1 to 8192
 pulled graph.json recording one fails `graph load` with `graph_invalid`. **usage 082**: never add a `similar_to`
 edge or relation by hand (`name_invalid`); umx keeps them, read with `umx neighbours <node> --relation similar_to`.
 
+**usage 201**: a new graph uses std v1 (`"std": 1` in graph.json): write the std names (`person` with `job_title`,
+`meeting` with `starts_on`, `works_for`, the lifecycle statuses) with no `ontology add`, and declare only what the
+graph adds. `umx ontology show` marks std's entries `std: true` (hint `std_entries_shown`) and `--std` prints std
+v1 alone; `--no-std` makes a graph without std. On `std_newer`, keep working: the graph loads on this umx's std.
+
 An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
 ## Vocabulary and settings
@@ -46,7 +51,7 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
   are the one span pair (never `valid_from`/`valid_to`). Date the meeting (and its `segment` nodes, with a
   `step`), link points to it with `raised_in`, and never put a time in a string field (`umx docs get time`).
 - **usage 176**: use the std v1 names (`umx docs get organise`). Work that moves takes the lifecycle statuses
-  `active`, `stalled`, `delivered` and `withdrawn` on any type: declare them, then `umx node status <node> stalled
+  `active`, `stalled`, `delivered` and `withdrawn` on any type (declare them only on a graph without std), then `umx node status <node> stalled
   --reason "<why>"` (say why for `stalled` and `withdrawn`); no synonyms, and `delivered` is not `done`. A part of a
   meeting is a `segment` `part_of` its parent, with a `step` from 1 among its siblings; `precedes` orders things
   of one type with no clock; `raised_in` links a point to the finest anchor it came up in.

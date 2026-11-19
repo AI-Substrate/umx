@@ -3116,6 +3116,7 @@ mod tests {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         });
         std::thread::scope(|s| {
             let probe =
@@ -3553,6 +3554,7 @@ mod tests {
                 secured: false,
                 no_graphfile: false,
                 graphfile: false,
+                no_std: false,
             }));
             assert!(new.errors.is_empty(), "{}", new.to_json());
         }
@@ -3625,6 +3627,7 @@ mod tests {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         })));
         let add = |title: &str| {
             op(umx_protocol::Op::NodeAdd {
@@ -3706,6 +3709,7 @@ mod tests {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         });
         add.umx = PROTOCOL + 1;
         let env = d.answer(add.to_json().as_bytes());
@@ -3748,6 +3752,7 @@ mod tests {
                 secured: false,
                 no_graphfile: false,
                 graphfile: false,
+                no_std: false,
             });
             sneaky.command = label.into();
             sneaky.umx = PROTOCOL - 1;

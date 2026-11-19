@@ -91,7 +91,7 @@ fn new_graph(
     alias: &str,
     mode: GraphfileMode,
 ) -> umx_services::Done<umx_services::GraphNew> {
-    svc.graph_new_with(&ctx(), path, alias, None, true, None, mode)
+    svc.graph_new_with(&ctx(), path, alias, None, true, None, mode, false)
         .unwrap()
 }
 
@@ -157,6 +157,7 @@ fn a_secured_graph_leaves_the_graphfile_untouched_unless_asked() {
             true,
             secured(),
             GraphfileMode::Add,
+            false,
         )
         .unwrap();
     assert_eq!(codes(&made.notes), ["graphfile_skipped_secured"]);
@@ -171,6 +172,7 @@ fn a_secured_graph_leaves_the_graphfile_untouched_unless_asked() {
             true,
             secured(),
             GraphfileMode::Include,
+            false,
         )
         .unwrap();
     assert!(asked.notes.is_empty(), "{:?}", asked.notes);
@@ -212,6 +214,7 @@ fn no_graphfile_outside_a_repo_or_when_told_and_none_unwired() {
             true,
             None,
             GraphfileMode::Add,
+            false,
         )
         .unwrap_err();
     assert_eq!(refused.code, "internal");
@@ -250,6 +253,7 @@ fn scan_reports_each_state_and_add_writes_new_and_moved_only() {
         true,
         secured(),
         GraphfileMode::Skip,
+        false,
     )
     .unwrap();
     m.files.add_repo_for_tests(dir("/work/repo/sub"));

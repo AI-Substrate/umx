@@ -1299,7 +1299,7 @@ impl GraphStore {
             .store(self.ports.clock.now_ms(), AtomicOrdering::Relaxed);
         let graph = alias_name(alias);
         let g = &l.graph;
-        let p = propose(g, &l.meta.ontology, &graph);
+        let p = propose(g, l.ontology(), &graph);
         let listing = |name: &str, how: How| -> Result<Unplaced, umx_core::Problem> {
             {
                 let Some((c, placed)) = p.candidates.iter().find(|(c, _)| c.name == name) else {

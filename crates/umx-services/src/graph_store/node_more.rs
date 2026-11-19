@@ -510,7 +510,7 @@ impl GraphStore {
                 super::secrets::node_write_secrets(
                     before.as_ref(),
                     &node,
-                    &meta.ontology,
+                    meta.ontology,
                     meta.id,
                     &allows,
                 )
@@ -568,14 +568,7 @@ impl GraphStore {
         let unset_locator = req.unsets.len() < unsets;
         let l = self.get(&alias);
         let mut warnings = Vec::new();
-        let mut changed = edit_node(
-            &graph,
-            &l.meta.ontology,
-            &l.graph,
-            &mut n,
-            req,
-            &mut warnings,
-        )?;
+        let mut changed = edit_node(&graph, l.ontology(), &l.graph, &mut n, req, &mut warnings)?;
         if new_locator.is_some() || unset_locator {
             let (moved, more) =
                 self.edit_locator(&alias, &mut n, new_locator.as_deref(), unset_locator)?;
@@ -738,7 +731,7 @@ impl GraphStore {
         let mut change = status_node(
             ctx,
             &graph,
-            &self.get(&alias).meta.ontology,
+            self.get(&alias).ontology(),
             &mut n,
             req,
             (place, evidence),

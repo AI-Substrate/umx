@@ -31,7 +31,7 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 26] = [
+const SWITCHES: [&str; 28] = [
     "--same-graph",
     "--raise",
     "--add",
@@ -58,6 +58,8 @@ const SWITCHES: [&str; 26] = [
     "--lint",
     "--related",
     "--no-related",
+    "--std",
+    "--no-std",
 ];
 
 /// Every command's own flags: the one list. The parser accepts a flag only when its command's row names it (the
@@ -150,6 +152,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--secured",
             "--no-graphfile",
             "--graphfile",
+            "--no-std",
         ],
     ),
     ("graph load", &["--as", "--graphfile", "--set"]),
@@ -332,7 +335,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--provenance",
         ],
     ),
-    ("ontology show", &[]),
+    ("ontology show", &["--std"]),
     ("ontology remove", &["--relation"]),
     (
         "ontology add",
@@ -1109,6 +1112,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 secured: a.has("--secured"),
                 no_graphfile: a.has("--no-graphfile"),
                 graphfile: a.has("--graphfile"),
+                no_std: a.has("--no-std"),
             }
             .with(a)
         }
@@ -1605,7 +1609,10 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
         "ontology show" => {
             let a = args()?;
             a.positionals(0, "this command takes no arguments")?;
-            Op::OntologyShow.with(a)
+            Op::OntologyShow {
+                std: a.has("--std"),
+            }
+            .with(a)
         }
         "embeddings probe" => {
             let a = args()?;

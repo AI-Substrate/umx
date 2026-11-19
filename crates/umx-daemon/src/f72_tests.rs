@@ -117,6 +117,7 @@ fn new_graph(d: &Daemon, path: &std::path::Path, alias: &str, secured: bool) {
             secured,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         },
         None,
     )));

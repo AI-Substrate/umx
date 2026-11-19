@@ -145,7 +145,7 @@ impl<'s, 'a> Handles<'s, 'a> {
                         &space.refs,
                         loaded.meta.id,
                     ),
-                    symmetric: loaded.meta.ontology.symmetric_kinds(),
+                    symmetric: loaded.ontology().symmetric_kinds(),
                     provenance_in: None,
                     stores_external: space.store.has_external_edges(alias),
                     pointed_into: false,

@@ -842,7 +842,7 @@ impl GraphStore {
             Some(text) => {
                 let (anchor, anchor_warnings) = self.raised_in_anchor(&alias, text)?;
                 warnings.extend(anchor_warnings);
-                warnings.extend(super::raised_in::vocabulary(&l.meta.ontology, &graph));
+                warnings.extend(super::raised_in::vocabulary(l.ontology(), &graph));
                 Some(anchor)
             }
             None => None,
@@ -851,7 +851,7 @@ impl GraphStore {
         let draft = draft_node(
             ctx,
             &graph,
-            &l.meta.ontology,
+            l.ontology(),
             &l.graph,
             &l.dir,
             &sources,
@@ -916,13 +916,13 @@ impl GraphStore {
 
         let parent = draft.parent;
         if parent.is_some() {
-            warnings.extend(part_of_warning(&l.meta.ontology, &graph));
+            warnings.extend(part_of_warning(l.ontology(), &graph));
         }
         let allows = self.secret_allows();
         let done = self.attributed_write(ctx, &alias, |batch, session, next, now, meta| {
             let mut node = draft.into_node(next(batch.graph()), now, &ctx.by);
             warnings.extend(
-                super::secrets::node_write_secrets(None, &node, &meta.ontology, meta.id, &allows)
+                super::secrets::node_write_secrets(None, &node, meta.ontology, meta.id, &allows)
                     .into_iter()
                     .map(|hit| hit.warning(&graph, node.id, "Node")),
             );
@@ -1020,7 +1020,7 @@ impl GraphStore {
         });
         let anchor = anchor.filter(|a| !ends_out(&l.graph, id, RAISED_IN, live).contains(&a.end));
         if parent.is_some() {
-            warnings.extend(part_of_warning(&l.meta.ontology, &graph));
+            warnings.extend(part_of_warning(l.ontology(), &graph));
         }
         let node_changed = !changed.is_empty();
         let mut value = if node_changed || parent.is_some() || anchor.is_some() {
@@ -1033,7 +1033,7 @@ impl GraphStore {
                         super::secrets::node_write_secrets(
                             Some(&before),
                             &n,
-                            &meta.ontology,
+                            meta.ontology,
                             meta.id,
                             &allows,
                         )
@@ -1126,7 +1126,7 @@ impl GraphStore {
         let mut wheres = Vec::new();
         for expr in &req.wheres {
             let (field, op, raw) = where_parts(expr)?;
-            let kind = field_kind(&l.meta.ontology, &l.graph, req.kind.as_deref(), &field);
+            let kind = field_kind(l.ontology(), &l.graph, req.kind.as_deref(), &field);
             wheres.push(Where {
                 value: list_where_value(&field, op, &raw, kind)?,
                 field,

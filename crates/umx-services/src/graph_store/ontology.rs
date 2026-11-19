@@ -209,11 +209,18 @@ fn warn_secret(
 }
 
 impl GraphStore {
+    /// The ontology umx acts on ([`super::Loaded::ontology`]): a std graph's shows std v1 first, with the hint
+    /// `std_entries_shown` (D69). `umx ontology show --std` is [`Ontology::std_base`], no graph needed.
     pub fn ontology_show(&self, ctx: &Ctx) -> Outcome<(String, Ontology)> {
         let alias = self.select(ctx, &[])?;
+        let ontology = self.get(&alias).ontology();
+        let mut notes: Vec<Problem> = self.stale_note(&alias).into_iter().collect();
+        if let Some(std) = ontology.std_version() {
+            notes.push(problems::std_entries_shown(&alias_name(&alias), std));
+        }
         Ok(Done {
-            notes: self.stale_note(&alias).into_iter().collect(),
-            value: (alias.clone(), self.get(&alias).meta.ontology.clone()),
+            notes,
+            value: (alias.clone(), ontology.clone()),
         })
     }
 
@@ -354,7 +361,7 @@ impl GraphStore {
                 self.graphs_in_scope(ctx, None, "node").ok()?.aliases
             };
         let mut lists = aliases.iter().filter_map(|a| {
-            let t = self.graphs.get(a)?.meta.ontology.type_decl(kind)?;
+            let t = self.graphs.get(a)?.ontology().type_decl(kind)?;
             Some(
                 t.columns
                     .iter()
@@ -834,8 +841,6 @@ impl GraphStore {
             field.description.as_deref(),
             fix,
         ));
-        let text_fields = l.meta.ontology.text_fields();
-        l.graph.set_text_fields(text_fields);
         Ok(Done {
             value: FieldsAdded {
                 alias,
@@ -884,14 +889,16 @@ impl GraphStore {
             .graphs
             .get_mut(&alias)
             .expect("selected graph is loaded");
+        // A std graph's fields count (req-98): a std field graph.json does not declare gets the graph's own
+        // declaration of it here, with std's kind; std's entries are never written.
         let Some(decl) = l
-            .meta
-            .ontology
+            .ontology()
             .field_decl(type_name.as_str(), field.as_str())
+            .cloned()
         else {
             return Err(problems::field_not_declared(&graph, &type_name, &field));
         };
-        check_role(decl, role)?;
+        check_role(&decl, role)?;
         let mut out = RoleSet {
             alias: alias.clone(),
             type_name: type_name.as_str().to_string(),
@@ -905,14 +912,22 @@ impl GraphStore {
         }
         let was = decl.effective_role();
         let before = l.meta.ontology.clone();
-        let decl = l
-            .meta
-            .ontology
-            .types
+        let types = &mut l.meta.ontology.types;
+        if !types.iter().any(|t| t.name == type_name.as_str()) {
+            types.push(TypeDecl::new(type_name.as_str(), Vec::new()));
+        }
+        let t = types
             .iter_mut()
             .find(|t| t.name == type_name.as_str())
-            .and_then(|t| t.fields.iter_mut().find(|f| f.name == field.as_str()))
-            .expect("found above");
+            .expect("declared above");
+        if !t.fields.iter().any(|f| f.name == field.as_str()) {
+            t.fields.push(decl);
+        }
+        let decl = t
+            .fields
+            .iter_mut()
+            .find(|f| f.name == field.as_str())
+            .expect("declared above");
         decl.role = Some(role);
         let now = decl.effective_role();
         let warnings = persist(
@@ -1156,8 +1171,6 @@ impl GraphStore {
         .inspect_err(|_| {
             l.meta.ontology = before;
         })?;
-        let text_fields = l.meta.ontology.text_fields();
-        l.graph.set_text_fields(text_fields);
         Ok(Done {
             value: value(false),
             notes: warnings,
@@ -1197,9 +1210,6 @@ impl GraphStore {
         .inspect_err(|_| {
             l.meta.ontology = before;
         })?;
-        // A field declared (or re-declared) as text is searchable from this write on (req-68).
-        let text_fields = l.meta.ontology.text_fields();
-        l.graph.set_text_fields(text_fields);
         Ok(Done {
             value: OntologyAdded {
                 alias,

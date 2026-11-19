@@ -192,7 +192,7 @@ impl GraphStore {
         self.spine_graph(alias)?;
         let graph = alias_name(alias);
         let l = &self.graphs[alias];
-        let proposed = propose(&l.graph, &l.meta.ontology, &graph);
+        let proposed = propose(&l.graph, l.ontology(), &graph);
         let Some((c, _)) = proposed
             .candidates
             .iter()
@@ -227,7 +227,7 @@ impl GraphStore {
             return Err(problems::spine_name_reserved(&graph, &decl.name));
         }
         let before = self.graphs[alias].meta.clone();
-        if let Some((at, name)) = unknown_name(&before.ontology, &decl) {
+        if let Some((at, name)) = unknown_name(self.graphs[alias].ontology(), &decl) {
             let edges_use = self.graphs[alias]
                 .graph
                 .relation_kinds()

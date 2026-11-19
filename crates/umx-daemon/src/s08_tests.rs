@@ -236,6 +236,7 @@ fn a_fake_api_key_warns_and_never_reaches_the_hosted_embedder_across_a_restart()
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     let one = add(
         &d,
@@ -323,6 +324,7 @@ fn a_query_embed_past_five_seconds_falls_back_to_words_at_the_bound() {
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     add(&d, "Approval delays", "invoices wait for sign off");
     eventually("the node's vectors", || shards(&g) > 0);
@@ -377,6 +379,7 @@ fn a_query_during_ingest_finishes_inside_the_bound() {
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     for i in 0..100 {
         add(
@@ -454,6 +457,7 @@ fn a_query_in_flight_on_one_instance_never_holds_another_instances_batches() {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         })));
     }
     let add_to = |alias: &str, title: &str| {
@@ -530,6 +534,7 @@ fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     add(&d, "Approval delays", "invoices wait for sign off");
     eventually("the first node's vectors", || {
@@ -597,6 +602,7 @@ fn many_graphs_with_no_vectors_never_crowd_out_the_secured_count_or_the_cut() {
             secured,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         })));
     };
     for i in 0..9 {

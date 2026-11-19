@@ -842,7 +842,7 @@ impl Services {
                 continue;
             };
             let scope = narrow(scope, kept.as_ref(), a, &l.graph);
-            let text_fields = l.meta.ontology.text_fields();
+            let text_fields = l.ontology().text_fields();
             for n in ctx.read_scope(&l.graph).nodes() {
                 if scope.as_ref().is_some_and(|s| !s.contains_ix(n.ix())) {
                     continue;

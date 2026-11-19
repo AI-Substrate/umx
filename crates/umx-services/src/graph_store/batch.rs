@@ -2059,7 +2059,7 @@ impl GraphStore {
                     .map_err(|p| alloc::vec![p])?;
                 anchor_warnings.extend(warnings);
                 anchor_warnings.extend(super::raised_in::vocabulary(
-                    &self.graphs[&alias].meta.ontology,
+                    self.graphs[&alias].ontology(),
                     &alias_name(&alias),
                 ));
                 Some(anchor)
@@ -2241,6 +2241,7 @@ impl GraphStore {
         let Loaded {
             dir,
             meta,
+            ontology,
             graph: g,
             edges_normalized,
             instance,
@@ -2297,7 +2298,7 @@ impl GraphStore {
                 ctx,
                 alias: &alias,
                 graph: alias_name(&alias),
-                o: &meta.ontology,
+                o: ontology,
                 dir,
                 owner,
                 owner_title: &meta.title,

@@ -335,6 +335,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             secured,
             no_graphfile,
             graphfile,
+            no_std,
         } => {
             let mode = if *no_graphfile {
                 GraphfileMode::Skip
@@ -374,6 +375,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                     *empty,
                     embedding,
                     mode,
+                    !*no_std,
                 ),
                 |v| {
                     json!({
@@ -386,7 +388,9 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                             "downgraded": v.graph.policy.downgraded_at,
                             "vectors_pending": v.graph.vectors_pending, "vectors_held": v.graph.vectors_held,
                         },
-                        "ontology": { "types": v.types, "statuses": v.statuses, "relations": v.relations },
+                        "ontology": {
+                            "types": v.types, "statuses": v.statuses, "relations": v.relations, "std": v.std,
+                        },
                         "next": v.next.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
                         // The line added and its undo (security, s17); null when none was added.
                         "graphfile": v.graphfile.as_ref().map(|g| json!({
@@ -2235,22 +2239,14 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             ),
             spines_shown_json,
         ),
-        Op::OntologyShow => reply(command, services.ontology_show(&ctx), |(_, o)| {
-            let mut v = serde_json::to_value(o).expect("an ontology serialises");
-            // Each field's role as umx acts on it (D56), and whether it is the kind's default (not stated).
-            for (t, decl) in o.types.iter().enumerate() {
-                for (f, field) in decl.fields.iter().enumerate() {
-                    let at = &mut v["types"][t]["fields"][f];
-                    at["role"] = json!(field.effective_role().as_str());
-                    at["role_default"] = json!(field.role.is_none());
-                }
-            }
-            // Every symmetric relation of the graph (D49), the built-in ones included, not only the marked ones.
-            v["symmetric"] = json!(o.symmetric_kinds());
-            // F92: always present (graph.json leaves it out when empty), so an agent sees where edge fields go.
-            v["relation_fields"] = json!(o.relation_fields);
-            v
-        }),
+        Op::OntologyShow { std: true } => {
+            Envelope::ok(command, ontology_json(&umx_core::Ontology::std_base()))
+        }
+        Op::OntologyShow { std: false } => {
+            reply(command, services.ontology_show(&ctx), |(_, o)| {
+                ontology_json(o)
+            })
+        }
         Op::Search {
             text,
             within,
@@ -2971,11 +2967,13 @@ fn retry(op: &Op) -> Command {
             secured,
             no_graphfile,
             graphfile,
+            no_std,
         } => {
             let c = alias(Command::new("graph new").word("<path>").word("--alias"), a);
             let c = text(c, "--title", title, "<title>");
             let c = if *empty { c.word("--empty") } else { c };
             let c = if *secured { c.word("--secured") } else { c };
+            let c = if *no_std { c.word("--no-std") } else { c };
             let c = if *no_graphfile {
                 c.word("--no-graphfile")
             } else if *graphfile {
@@ -3135,7 +3133,10 @@ fn retry(op: &Op) -> Command {
                 offset,
             )
         }
-        Op::OntologyShow => Command::new("ontology show"),
+        Op::OntologyShow { std } => {
+            let c = Command::new("ontology show");
+            if *std { c.word("--std") } else { c }
+        }
         Op::OntologyAddType {
             name: n,
             fields,
@@ -4084,6 +4085,68 @@ fn pairs_rows_json(v: &umx_services::PairsResult) -> String {
     out
 }
 
+/// `ontology show`'s data: the ontology umx acts on, with each field's role as umx acts on it (D56) and whether it
+/// is the kind's default, every symmetric relation, `relation_fields` always present, and what std gives (req-98):
+/// `std` (the version, or null), `std: true|false` on each type, field and relation field, the std names among
+/// `statuses` and `relations` (`std_statuses`, `std_relations`; those two stay lists of names), and for a std
+/// graph `std_any_fields`, the std fields any node (or edge) has without a declaration.
+fn ontology_json(o: &umx_core::Ontology) -> Value {
+    use umx_core::standard::{self, Scope};
+    let is_std = o.std_version().is_some();
+    let mut v = serde_json::to_value(o).expect("an ontology serialises");
+    for (t, decl) in o.types.iter().enumerate() {
+        v["types"][t]["std"] = json!(is_std && standard::std_type(&decl.name).is_some());
+        for (f, field) in decl.fields.iter().enumerate() {
+            let at = &mut v["types"][t]["fields"][f];
+            at["role"] = json!(field.effective_role().as_str());
+            at["role_default"] = json!(field.role.is_none());
+            at["std"] = json!(
+                is_std
+                    && standard::std_field(&field.name)
+                        .is_some_and(|s| s.types.contains(&decl.name.as_str()))
+            );
+        }
+    }
+    // Every symmetric relation of the graph (D49), the built-in ones included, not only the marked ones.
+    v["symmetric"] = json!(o.symmetric_kinds());
+    // F92: always present (graph.json leaves it out when empty), so an agent sees where edge fields go.
+    let mut relation_fields = json!(o.relation_fields);
+    for (relation, fields) in &o.relation_fields {
+        for (f, field) in fields.iter().enumerate() {
+            relation_fields[relation][f]["std"] = json!(
+                is_std
+                    && standard::std_field(&field.name)
+                        .is_some_and(|s| s.relations.contains(&relation.as_str()))
+            );
+        }
+    }
+    v["relation_fields"] = relation_fields;
+    v["std"] = json!(o.std);
+    let std_names = |names: &[String], known: &dyn Fn(&str) -> bool| -> Vec<String> {
+        names
+            .iter()
+            .filter(|n| is_std && known(n))
+            .cloned()
+            .collect()
+    };
+    v["std_statuses"] = json!(std_names(&o.statuses, &|n| standard::std_status(n).is_some()));
+    v["std_relations"] = json!(std_names(&o.relations, &|n| standard::std_relation(n).is_some()));
+    if is_std {
+        v["std_any_fields"] = standard::fields()
+            .filter(|f| f.scope != Scope::Placed && !f.flags.provenance)
+            .map(|f| {
+                json!({
+                    "name": f.name,
+                    "kind": f.kind.as_str(),
+                    "role": f.role.as_str(),
+                    "on": if f.scope == Scope::AnyNode { "node" } else { "node_or_edge" },
+                })
+            })
+            .collect();
+    }
+    v
+}
+
 pub(crate) fn reply<T>(
     command: &str,
     outcome: Result<Done<T>, Problem>,
@@ -4620,7 +4683,7 @@ fn guide_json(g: &Guide) -> Value {
     let entry = |e: &GuideEntry| {
         json!({
             "name": e.name, "declared": e.declared, "description": e.description, "count": e.count,
-            "example": example(&e.example), "next": cmd(&e.next),
+            "example": example(&e.example), "next": cmd(&e.next), "std": e.std,
         })
     };
     let types: Vec<Value> = g
@@ -4634,6 +4697,7 @@ fn guide_json(g: &Guide) -> Value {
                 .map(|f| {
                     json!({
                         "name": f.name, "kind": f.kind, "description": f.description, "next": cmd(&f.next),
+                        "std": f.std,
                     })
                 })
                 .collect();
@@ -6031,6 +6095,7 @@ mod retry_tests {
             secured: true,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         };
         assert_eq!(
             retry(&op).as_str(),

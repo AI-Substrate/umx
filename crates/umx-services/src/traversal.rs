@@ -473,7 +473,7 @@ impl<'a> ReadSpace<'a> {
             if !self.visible(from) || !self.visible(to) {
                 continue;
             }
-            let symmetric = follow_symmetric && loaded.meta.ontology.is_symmetric(edge.kind());
+            let symmetric = follow_symmetric && loaded.ontology().is_symmetric(edge.kind());
             for (here, other, way, take) in [
                 (
                     from,
@@ -533,7 +533,7 @@ impl<'a> ReadSpace<'a> {
                         ix,
                         direction,
                         relation,
-                        &loaded.meta.ontology.symmetric_kinds(),
+                        &loaded.ontology().symmetric_kinds(),
                         self.access.include_provenance,
                     )
                     .into_iter()

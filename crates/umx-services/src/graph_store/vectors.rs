@@ -202,7 +202,7 @@ impl GraphStore {
         if loaded.graph.is_provenance(node.ix()) {
             return None;
         }
-        Some(vectors::node_texts(&node.to_node(), &loaded.meta.ontology))
+        Some(vectors::node_texts(&node.to_node(), loaded.ontology()))
     }
 
     /// Every node id of a loaded graph, in id order.
@@ -270,11 +270,12 @@ impl GraphStore {
         let failed = |e: FilesError| problems::shard_read_failed(&e);
         let spaces = files.list_vector_spaces(&dir).map_err(failed)?;
         let whole = vectors::whole_node_field();
-        let Loaded { graph, meta, .. } = self
+        let Loaded {
+            graph, ontology, ..
+        } = self
             .graphs
             .get_mut(alias)
             .expect("the graph was loaded above");
-        let ontology = &meta.ontology;
         let mut access = match blocks {
             Some(key) => Access::Load(graph.load_vectors(&key.to_string(), key.dims())),
             None => Access::Read(graph),

@@ -48,6 +48,7 @@ fn new_graph(d: &Daemon, root: &std::path::Path, alias: &str) {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         },
         None,
     )));
@@ -263,7 +264,7 @@ fn writes(op: &Op) -> Writes {
         | Op::NodeList { .. }
         | Op::NodeFind { .. }
         | Op::EdgeList { .. }
-        | Op::OntologyShow
+        | Op::OntologyShow { .. }
         | Op::NodeHistory { .. }
         | Op::Check { .. }
         | Op::ConfigShow { .. }
@@ -980,6 +981,7 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         },
         None,
     );

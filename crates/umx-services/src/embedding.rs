@@ -964,7 +964,7 @@ impl EmbeddingService {
             {
                 let h = node.ix().index();
                 if planned[h / 64] & (1 << (h % 64)) == 0 {
-                    let texts = vectors::node_texts(&node.to_node(), &loaded.meta.ontology);
+                    let texts = vectors::node_texts(&node.to_node(), loaded.ontology());
                     plan_into(
                         &mut scan,
                         alias,

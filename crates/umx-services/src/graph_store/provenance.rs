@@ -205,6 +205,13 @@ pub(super) fn stamp_status_evidence(history: &mut [Value], session: Id) {
     }
 }
 
+/// What an attributed write's closure reads of its graph: the graph's id and the ontology umx acts on
+/// ([`Loaded::ontology`], std v1 first for a std graph).
+pub(super) struct WriteGraph<'a> {
+    pub id: Id,
+    pub ontology: &'a umx_core::Ontology,
+}
+
 impl GraphStore {
     pub(super) fn attributed_write<T>(
         &mut self,
@@ -215,7 +222,7 @@ impl GraphStore {
             Id,
             &mut dyn FnMut(&Graph) -> Id,
             &str,
-            &umx_core::GraphMeta,
+            &WriteGraph<'_>,
         ) -> Result<T, Problem>,
     ) -> Outcome<T> {
         self.attributed_write_with(ctx, alias, &[], write)
@@ -233,7 +240,7 @@ impl GraphStore {
             Id,
             &mut dyn FnMut(&Graph) -> Id,
             &str,
-            &umx_core::GraphMeta,
+            &WriteGraph<'_>,
         ) -> Result<T, Problem>,
     ) -> Outcome<T> {
         let now = self.now();
@@ -250,6 +257,7 @@ impl GraphStore {
             let Loaded {
                 dir,
                 meta,
+                ontology,
                 graph,
                 edges_normalized,
                 feed,
@@ -261,7 +269,11 @@ impl GraphStore {
                 .expect("selected graph is loaded");
             let mut batch = graph.batch();
             let (session, mut warnings) = upsert_session(&mut batch, &ctx.actor, &mut next, &now)?;
-            let value = write(&mut batch, session, &mut next, &now, meta)?;
+            let at = WriteGraph {
+                id: meta.id,
+                ontology,
+            };
+            let value = write(&mut batch, session, &mut next, &now, &at)?;
             batch
                 .prepare()
                 .map_err(|_| problems::internal("provenance_edge_ends"))?;

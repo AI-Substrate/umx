@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 use umx_core::codec::{self, DecodeReason, GraphFile};
 use umx_core::ontology::TextFields;
 use umx_core::ports::{Change, FileRef, FilesError, GraphDir, GraphStamps, Written};
+use umx_core::standard::STD_VERSION;
 use umx_core::{Command, GraphEmbedding, GraphMeta, Id, Ontology, Problem, ValidName};
 use umx_graph::{EdgesLoad, Graph, NodesLoad};
 
@@ -49,6 +50,8 @@ pub struct GraphNew {
     pub types: usize,
     pub statuses: usize,
     pub relations: usize,
+    /// The std version the new graph uses (req-98); None for `--no-std`.
+    pub std: Option<u32>,
     /// Commands that change the new graph's vocabulary and settings (req-71).
     pub next: Vec<Command>,
     /// The repo Graphfile line this create added (ws002 s17), with its undo; None when it added none.
@@ -326,8 +329,23 @@ pub(crate) fn second(alias: &ValidName) -> ValidName {
 
 impl GraphStore {
     /// Creates a graph's files with the starter ontology (unless `empty`) and loads it. `embedding` is the graph's
-    /// model key and policy (D32), written only when given.
+    /// model key and policy (D32), written only when given. Not a std graph: [`Self::graph_new_std`].
     pub fn graph_new(
+        &mut self,
+        ctx: &Ctx,
+        path: &str,
+        alias: &str,
+        title: Option<&str>,
+        empty: bool,
+        embedding: Option<GraphEmbedding>,
+    ) -> Outcome<GraphNew> {
+        self.graph_new_std(ctx, path, alias, title, empty, embedding, false)
+    }
+
+    /// [`Self::graph_new`]; with `std` the ontology says `std: 1` (req-98: `umx graph new` makes a std graph
+    /// unless `--no-std`), with or without the starter vocabulary.
+    #[allow(clippy::too_many_arguments)]
+    pub fn graph_new_std(
         &mut self,
         _ctx: &Ctx,
         path: &str,
@@ -335,6 +353,7 @@ impl GraphStore {
         title: Option<&str>,
         empty: bool,
         embedding: Option<GraphEmbedding>,
+        std: bool,
     ) -> Outcome<GraphNew> {
         let dir = self.identity(path)?;
         let fix = |good: &ValidName| {
@@ -384,10 +403,13 @@ impl GraphStore {
             title: title.unwrap_or(alias.as_str()).to_string(),
             created: self.now(),
             embedding,
-            ontology: if empty {
-                Ontology::default()
-            } else {
-                Ontology::starter()
+            ontology: Ontology {
+                std: std.then_some(STD_VERSION),
+                ..if empty {
+                    Ontology::default()
+                } else {
+                    Ontology::starter()
+                }
             },
         };
         meta.umx = meta.needed_format();
@@ -439,9 +461,11 @@ impl GraphStore {
             }
         };
         let o = &meta.ontology;
-        let (types, statuses, relations) = (o.types.len(), o.statuses.len(), o.relations.len());
+        let (types, statuses, relations, std) =
+            (o.types.len(), o.statuses.len(), o.relations.len(), o.std);
         let now_ms = self.ports.clock.now_ms();
-        let loaded = Loaded::new(dir, meta, Graph::new(), now_ms, stamps);
+        let ontology = meta.ontology.effective();
+        let loaded = Loaded::new(dir, meta, ontology, Graph::new(), now_ms, stamps);
         if let Some(old) = self.graphs.get(alias.as_str()) {
             self.incoming.remove_source(old.instance);
         }
@@ -462,6 +486,7 @@ impl GraphStore {
                 types,
                 statuses,
                 relations,
+                std,
                 next,
                 graphfile: None,
             },
@@ -521,11 +546,13 @@ impl GraphStore {
             ));
         }
         // Nodes then edges, each checked in full before the next file is read: the first bad line wins. The word
-        // index is built in the same pass over the nodes, over the fields the ontology declares as text (req-68).
+        // index is built in the same pass over the nodes, over the fields the effective ontology declares as text
+        // (req-68; std's string fields too, req-98).
+        let ontology = meta.ontology.effective();
         let (graph, nodes, edges, own_ends) = load_files(
             read,
-            meta.ontology.text_fields(),
-            &meta.ontology.symmetric_kinds(),
+            ontology.text_fields(),
+            &ontology.symmetric_kinds(),
             meta.id,
         )?;
         let fix = |good: &ValidName| {
@@ -633,6 +660,10 @@ impl GraphStore {
                 .iter()
                 .map(|path| problems::unknown_key(&alias, GraphFile::Graph, path)),
         );
+        // req-98: a newer std loads, read with this build's std names (`Ontology::effective`).
+        if let Some(std) = meta.ontology.std_version().filter(|&v| v > STD_VERSION) {
+            rules.push(problems::std_newer(&alias, std, STD_VERSION));
+        }
         // ws008 E1: stored keys a hand edit left out of stored form, or that cannot be used at all.
         for (node, f) in graph.entity_key_findings() {
             if f.not_canonical {
@@ -691,7 +722,7 @@ impl GraphStore {
         });
         self.resets.insert(alias.as_str().to_string());
         let now_ms = self.ports.clock.now_ms();
-        let mut loaded = Loaded::new(dir, meta, graph, now_ms, stamps.get());
+        let mut loaded = Loaded::new(dir, meta, ontology, graph, now_ms, stamps.get());
         loaded.edges_normalized = !own_ends.is_empty();
         if let Some(order) = order {
             loaded.order = order;
@@ -818,7 +849,7 @@ impl GraphStore {
     /// are what they were.
     fn spine_of(&self, alias: &str) -> super::SpineLine {
         let l = self.get(alias);
-        super::spine::spine_line(&l.graph, &l.meta.ontology, &alias_name(alias))
+        super::spine::spine_line(&l.graph, l.ontology(), &alias_name(alias))
     }
 
     /// D71 step 12 (pm-001): a declared spine under a built-in's name, stored before umx reserved them. It still
@@ -1018,7 +1049,8 @@ impl GraphStore {
         }));
         // F211: a date field's stored value that is not a date (it loads as written and compares as text).
         let graph_name = alias_name(alias);
-        for (id, edge, field) in super::time_check::stored_not_dates(&graph, &meta.ontology) {
+        let ontology = meta.ontology.effective();
+        for (id, edge, field) in super::time_check::stored_not_dates(&graph, &ontology) {
             rows.push(CheckRow {
                 kind: "date_not_a_date",
                 file: if edge {

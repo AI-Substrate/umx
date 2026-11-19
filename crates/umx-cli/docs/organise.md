@@ -53,8 +53,9 @@ purpose and conventions. `graph new` prints the commands.
 ## Common names
 
 People, organisations and other common things use the same names in every graph, so graphs line up. These are
-std v1, the standard vocabulary built into umx. Until graphs opt in to it, declare these names exactly with
-`umx ontology add` and invent no synonyms:
+std v1, the standard vocabulary built into umx. A std graph (any `umx graph new` without `--no-std`) knows them
+with no declaration (`umx docs get ontology`, section std); on a graph without std, declare these names exactly
+with `umx ontology add`. Either way, invent no synonyms:
 
 - Types: `person`, `organisation`, `team`, `role`, `project`, `meeting`, `event`, `segment`, `decision`, `action`,
   `question`, `risk`, `topic`, `document`, `transcript`, `place`, `system`.

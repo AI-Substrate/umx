@@ -196,6 +196,7 @@ fn demo(name: &str) -> (Daemon, Arc<Concepts>) {
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     add(&d, "Cat food", Some(false));
     add(&d, "Dog walking", Some(false));

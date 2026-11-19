@@ -468,8 +468,7 @@ pub(crate) fn query(
                 alias: alias.as_str(),
                 graph: &l.graph,
                 symmetric: l
-                    .meta
-                    .ontology
+                    .ontology()
                     .symmetric_kinds()
                     .into_iter()
                     .map(ToString::to_string)
@@ -712,7 +711,7 @@ fn declared_vocabulary_warning(
         return warning;
     }
     if selected().any(|l| {
-        let o = &l.meta.ontology;
+        let o = l.ontology();
         match warning.code {
             check::UNKNOWN_LABEL => o.type_decl(name.as_str()).is_some(),
             check::UNKNOWN_RELATION => o.has_relation(name.as_str()),

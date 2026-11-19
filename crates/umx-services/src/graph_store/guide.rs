@@ -7,6 +7,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::Ordering;
 use umx_core::ontology::Described;
+use umx_core::standard;
 use umx_core::{Command, Id, ValidName};
 use umx_graph::{Graph, Tally};
 
@@ -43,6 +44,8 @@ pub struct GuideEntry {
     pub next: Option<Command>,
     /// Relations only: `a r b` means `b r a` (D49).
     pub symmetric: bool,
+    /// std gives the name (req-98): a std graph, and a std type, status or relation.
+    pub std: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +54,8 @@ pub struct GuideField {
     pub kind: &'static str,
     pub description: Option<String>,
     pub next: Option<Command>,
+    /// std places the field on the type (req-98).
+    pub std: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,6 +186,11 @@ impl GraphStore {
     /// One read of a loaded graph: graph.json's guide keys and one census of the graph (O(nodes + edges), never a
     /// pass per name). A graph with nothing described is not a failure: `purpose_missing` and
     /// `descriptions_missing` are warnings, and each entry's `next` fills it in.
+    ///
+    /// A std graph's guide reads its effective ontology (req-98) but lists a std entry only when graph.json declares
+    /// it or a record uses it, marked `std`, with the hint `std_entries_shown`. A std entry graph.json does not
+    /// declare has no `next` and is never counted in `descriptions_missing`: `graph set --description` takes only a
+    /// declared type or field.
     pub fn graph_guide(&self, ctx: &Ctx, alias: &str) -> Outcome<Guide> {
         let Some(l) = self.graphs.get(alias) else {
             return Err(problems::graph_not_loaded(alias));
@@ -188,7 +198,30 @@ impl GraphStore {
         l.last_used
             .store(self.ports.clock.now_ms(), Ordering::Relaxed);
         let graph = alias_name(alias);
-        let o = &l.meta.ontology;
+        let o = l.ontology();
+        let stored = &l.meta.ontology;
+        let is_std = o.std_version().is_some();
+        let std_name = |kind: Described, name: &str| {
+            is_std
+                && match kind {
+                    Described::Type => standard::std_type(name).is_some(),
+                    Described::Status => standard::std_status(name).is_some(),
+                    _ => standard::std_relation(name).is_some(),
+                }
+        };
+        // Only std has it: graph.json does not declare it.
+        let std_only = |kind: Described, name: &str| {
+            std_name(kind, name)
+                && match kind {
+                    Described::Type => stored.type_decl(name).is_none(),
+                    Described::Status => !stored.has_status(name),
+                    _ => !stored.has_relation(name),
+                }
+        };
+        // A std entry graph.json does not declare and no record uses is left out.
+        let listed = |kind: Described, (name, _, tally): &Named<'_>| {
+            tally.is_some() || !std_only(kind, name)
+        };
         let g = &l.graph;
         let read_ctx = Ctx {
             graph: Some(alias.into()),
@@ -209,6 +242,7 @@ impl GraphStore {
                          example: Option<GuideExample>| {
             let next = match description {
                 Some(_) => None,
+                None if std_only(kind, name) => None,
                 None => describe_next(&graph, kind, name, declared),
             };
             if let Some(c) = &next {
@@ -222,10 +256,14 @@ impl GraphStore {
                 example,
                 next,
                 symmetric: kind == Described::Relation && o.is_symmetric(name),
+                std: std_name(kind, name),
             }
         };
         let mut types = Vec::new();
-        for (name, declared, tally) in names(o.type_names(), &census.types) {
+        for (name, declared, tally) in names(o.type_names(), &census.types)
+            .into_iter()
+            .filter(|n| listed(Described::Type, n))
+        {
             let decl = o.type_decl(name);
             let e = entry(
                 Described::Type,
@@ -240,6 +278,7 @@ impl GraphStore {
         let statuses: Vec<GuideEntry> =
             names(o.statuses.iter().map(String::as_str), &census.statuses)
                 .into_iter()
+                .filter(|n| listed(Described::Status, n))
                 .map(|(name, declared, tally)| {
                     entry(
                         Described::Status,
@@ -254,6 +293,7 @@ impl GraphStore {
         let mut relations: Vec<GuideEntry> =
             names(o.relations.iter().map(String::as_str), &census.relations)
                 .into_iter()
+                .filter(|n| listed(Described::Relation, n))
                 .filter(|(name, _, _)| {
                     !ctx.include_provenance || !matches!(*name, "authored_by" | "edited_by")
                 })
@@ -282,6 +322,7 @@ impl GraphStore {
                 example: None,
                 next: None,
                 symmetric: false,
+                std: is_std && standard::std_relation(name).is_some(),
             }));
         }
         let types: Vec<GuideType> = types
@@ -296,12 +337,17 @@ impl GraphStore {
                                 ValidName::new(&t.name),
                                 ValidName::new(&f.name),
                             ) {
-                                (None, Some(tn), Some(fname)) => Some(
-                                    Command::new("graph set")
-                                        .name(&graph)
-                                        .word("--description")
-                                        .described(Described::Field, &tn, Some(&fname)),
-                                ),
+                                // Only a field graph.json declares takes a description.
+                                (None, Some(tn), Some(fname))
+                                    if stored.field_decl(&t.name, &f.name).is_some() =>
+                                {
+                                    Some(
+                                        Command::new("graph set")
+                                            .name(&graph)
+                                            .word("--description")
+                                            .described(Described::Field, &tn, Some(&fname)),
+                                    )
+                                }
                                 _ => None,
                             };
                             if let Some(c) = &next {
@@ -312,6 +358,9 @@ impl GraphStore {
                                 kind: f.kind.as_str(),
                                 description: f.description.clone(),
                                 next,
+                                std: is_std
+                                    && standard::std_field(&f.name)
+                                        .is_some_and(|s| s.types.contains(&t.name.as_str())),
                             }
                         })
                         .collect()
@@ -329,6 +378,9 @@ impl GraphStore {
                 missing.len(),
                 first.clone(),
             ));
+        }
+        if let Some(std) = o.std_version() {
+            warnings.push(problems::std_entries_shown(&graph, std));
         }
         warnings.extend(self.role_hints(alias, None));
         Ok(Done {
@@ -364,7 +416,7 @@ impl GraphStore {
             return Vec::new();
         };
         let mut wanted: BTreeMap<&str, Vec<&umx_core::FieldDecl>> = BTreeMap::new();
-        for t in &l.meta.ontology.types {
+        for t in &l.ontology().types {
             for f in &t.fields {
                 let kept = only.is_none_or(|(ty, name)| ty == t.name && name == f.name);
                 if kept && f.kind == umx_core::FieldKind::String {

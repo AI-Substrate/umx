@@ -16,6 +16,13 @@ you name the graph in commands and addresses (`umx:<alias>/<id>`).
     umx graph new /Users/me/work/launch-graph --alias launch
     umx graph new /Users/me/work/blank --alias blank --empty      # no starter vocabulary
     umx graph new /Users/me/work/launch-graph --alias launch --title "Launch planning"
+    umx graph new /Users/me/work/plain --alias plain --no-std     # not a std graph
+
+A new graph uses std v1, umx's standard vocabulary (`person`, `meeting`, `works_for`, `starts_on`...): its
+graph.json's ontology says `"std": 1`, and every read and write knows the std names without declaring them
+(`umx docs get ontology`, section std). `--no-std` makes a graph without it, whose vocabulary is only what it
+declares; `--empty` and `--no-std` are separate (an `--empty` graph still uses std unless `--no-std`). The reply's
+`data.ontology.std` is the std version, or null.
 
 The starter vocabulary: types `problem, actor, option, mechanism, criterion, question, decision, tension,
 precedent, capability`; statuses `open, proposed, leaning, agreed, acknowledged, contested, ruled_out,

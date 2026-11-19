@@ -137,6 +137,7 @@ fn run(ceiling: usize) {
         secured: false,
         no_graphfile: false,
         graphfile: false,
+        no_std: false,
     })));
     ok(d.handle(&op(Op::SimilarityRebuild)));
     HOLDS.lock().unwrap().clear();

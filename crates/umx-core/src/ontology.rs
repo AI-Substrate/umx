@@ -131,6 +131,11 @@ pub struct TypeDecl {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ontology {
+    /// The std version the graph uses (ws008 T2, req-98): `umx graph new` writes `std: 1` unless `--no-std`. Absent
+    /// (or 0) means not a std graph. Written only when set, so a graph without it is written byte for byte as before;
+    /// an older umx keeps it among its unknown keys. See [`Ontology::effective`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub std: Option<u32>,
     pub types: Vec<TypeDecl>,
     pub statuses: Vec<String>,
     pub relations: Vec<String>,
@@ -386,6 +391,7 @@ impl TypeDecl {
 impl Ontology {
     pub fn starter() -> Ontology {
         Ontology {
+            std: None,
             types: STARTER_TYPES
                 .iter()
                 .map(|t| TypeDecl::new(*t, Vec::new()))
@@ -539,6 +545,136 @@ impl Ontology {
     pub fn type_names(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(|t| t.name.as_str())
     }
+
+    /// The std version this graph uses: `std` when it is 1 or more.
+    pub fn std_version(&self) -> Option<u32> {
+        self.std.filter(|&v| v > 0)
+    }
+
+    /// std v1 alone, as an ontology (`umx ontology show --std`): every std type with the std fields placed on it,
+    /// every std status with its description, every std relation and the std fields placed on relations. The std
+    /// fields allowed on any node or edge and placed on no type (tags, entity_key, the provenance keys) have no slot
+    /// in an ontology; [`crate::standard::fields`] lists them.
+    pub fn std_base() -> Ontology {
+        use crate::standard;
+        let mut relation_fields: BTreeMap<String, Vec<FieldDecl>> = BTreeMap::new();
+        for f in standard::fields() {
+            for r in f.relations {
+                relation_fields
+                    .entry(r.to_string())
+                    .or_default()
+                    .push(std_field_decl(&f));
+            }
+        }
+        Ontology {
+            std: Some(standard::STD_VERSION),
+            types: standard::types()
+                .map(|t| TypeDecl::new(t.name, std_fields_on(t.name)))
+                .collect(),
+            statuses: standard::STATUSES
+                .iter()
+                .map(|s| s.name.to_string())
+                .collect(),
+            relations: standard::relations().map(|r| r.name.to_string()).collect(),
+            relation_fields,
+            status_descriptions: standard::STATUSES
+                .iter()
+                .map(|s| (s.name.to_string(), s.description.to_string()))
+                .collect(),
+            ..Ontology::default()
+        }
+    }
+
+    /// The ontology umx acts on (ws008 T2, req-98). A graph without `std` is itself. A std graph is std v1 first
+    /// ([`Ontology::std_base`]), then its own: a type, status or relation std has is merged into std's entry, and
+    /// every other entry follows in the graph's order. A merged type keeps std's fields first, then the graph's
+    /// others, with the graph's description, columns and unknown keys; a field both declare keeps std's kind (the
+    /// graph adds, never removes or narrows std) and, when the kinds agree, the graph's role and description. A std
+    /// newer than this build's ([`crate::standard::STD_VERSION`], `std_newer`) gets std v1's names. Pure and never
+    /// written: graph.json keeps the stored ontology.
+    pub fn effective(&self) -> Ontology {
+        if self.std_version().is_none() {
+            return self.clone();
+        }
+        let base = Ontology::std_base();
+        let mut types = base.types;
+        for own in &self.types {
+            match types.iter_mut().find(|t| t.name == own.name) {
+                Some(t) => merge_type(t, own),
+                None => {
+                    // std places fields on types a graph declares itself (step on phase and method, D71).
+                    let mut t = TypeDecl::new(own.name.clone(), std_fields_on(&own.name));
+                    merge_type(&mut t, own);
+                    types.push(t);
+                }
+            }
+        }
+        let mut relation_fields = base.relation_fields;
+        for (relation, own) in &self.relation_fields {
+            merge_fields(relation_fields.entry(relation.clone()).or_default(), own);
+        }
+        let mut status_descriptions = base.status_descriptions;
+        status_descriptions.extend(self.status_descriptions.clone());
+        Ontology {
+            std: self.std,
+            types,
+            statuses: merged_names(base.statuses, &self.statuses),
+            relations: merged_names(base.relations, &self.relations),
+            symmetric: self.symmetric.clone(),
+            relation_fields,
+            purpose: self.purpose.clone(),
+            conventions: self.conventions.clone(),
+            status_descriptions,
+            relation_descriptions: self.relation_descriptions.clone(),
+            extra: self.extra.clone(),
+        }
+    }
+}
+
+/// A std field as a declaration: its role is stated only where it is not its kind's default.
+fn std_field_decl(f: &crate::standard::StdField) -> FieldDecl {
+    let mut decl = FieldDecl::new(f.name, f.kind);
+    if f.role != f.kind.default_role() {
+        decl.role = Some(f.role);
+    }
+    decl
+}
+
+/// The std fields placed on node type `name`, in std's order.
+fn std_fields_on(name: &str) -> Vec<FieldDecl> {
+    crate::standard::fields()
+        .filter(|f| f.types.contains(&name))
+        .map(|f| std_field_decl(&f))
+        .collect()
+}
+
+/// The graph's own declaration of a type std has, merged into std's.
+fn merge_type(t: &mut TypeDecl, own: &TypeDecl) {
+    merge_fields(&mut t.fields, &own.fields);
+    t.columns = own.columns.clone();
+    t.description = own.description.clone();
+    t.extra = own.extra.clone();
+}
+
+/// `own` after std's `fields`: a field std has keeps std's kind, and the graph's declaration when the kinds agree.
+fn merge_fields(fields: &mut Vec<FieldDecl>, own: &[FieldDecl]) {
+    for f in own {
+        match fields.iter_mut().find(|have| have.name == f.name) {
+            Some(have) if have.kind == f.kind => *have = f.clone(),
+            Some(_) => {}
+            None => fields.push(f.clone()),
+        }
+    }
+}
+
+/// std's names, then the graph's own that std does not have, in the graph's order.
+fn merged_names(mut names: Vec<String>, own: &[String]) -> Vec<String> {
+    for n in own {
+        if !names.contains(n) {
+            names.push(n.clone());
+        }
+    }
+    names
 }
 
 /// Up to three declared names closest to `name`, closest first (for off-vocabulary candidates).
@@ -610,5 +746,165 @@ mod tests {
             Some("problem")
         );
         assert!(nearest("zzzzzzzzzz", o.type_names()).is_empty());
+    }
+
+    fn std_graph() -> Ontology {
+        let mut o = Ontology::starter();
+        o.std = Some(1);
+        o.types.push(TypeDecl::new(
+            "widget",
+            alloc::vec![FieldDecl::new("colour", FieldKind::String)],
+        ));
+        o.types.push(TypeDecl::new("phase", Vec::new()));
+        o.statuses.push("parked".into());
+        o.relations.push("mitigates".into());
+        o
+    }
+
+    #[test]
+    fn effective_is_the_graph_itself_without_std() {
+        let mut o = std_graph();
+        o.std = None;
+        assert_eq!(o.effective(), o);
+        // std: 0 is no std version.
+        o.std = Some(0);
+        assert_eq!(o.effective(), o);
+        assert_eq!(Ontology::default().effective(), Ontology::default());
+    }
+
+    #[test]
+    fn effective_holds_every_std_name_first_then_the_graph_s_own() {
+        use crate::standard;
+        let o = std_graph();
+        let e = o.effective();
+        let std_types: Vec<&str> = standard::types().map(|t| t.name).collect();
+        let types: Vec<&str> = e.type_names().collect();
+        assert_eq!(types[..std_types.len()], std_types[..], "std types first");
+        // The graph's own that std lacks follow in its order; question and decision merged into std's.
+        let own: Vec<&str> = o
+            .type_names()
+            .filter(|t| standard::std_type(t).is_none())
+            .collect();
+        assert_eq!(types[std_types.len()..], own[..]);
+        assert!(own.contains(&"widget") && own.contains(&"problem"));
+        let std_statuses: Vec<&str> = standard::STATUSES.iter().map(|s| s.name).collect();
+        assert_eq!(e.statuses[..std_statuses.len()], std_statuses[..]);
+        for s in &o.statuses {
+            assert!(e.has_status(s), "{s}");
+        }
+        let std_relations: Vec<String> = standard::relations().map(|r| r.name.into()).collect();
+        assert_eq!(e.relations[..std_relations.len()], std_relations[..]);
+        for r in &o.relations {
+            assert!(e.has_relation(r), "{r}");
+        }
+        assert_eq!(
+            e.relations.len(),
+            std_relations.len()
+                + o.relations
+                    .iter()
+                    .filter(|r| !std_relations.contains(r))
+                    .count(),
+            "each name once"
+        );
+        // Every std field placed on a type or relation is declared there with std's kind.
+        for f in standard::fields() {
+            for t in f.types {
+                let have = e.field_kind(t, f.name);
+                // phase and method are not std types: only a graph that declares them gets their std fields.
+                if standard::std_type(t).is_some() || o.type_decl(t).is_some() {
+                    assert_eq!(have, Some(f.kind), "{t}.{}", f.name);
+                } else {
+                    assert_eq!(have, None, "{t}.{}", f.name);
+                }
+            }
+            for r in f.relations {
+                assert_eq!(
+                    e.relation_field_kind(r, f.name),
+                    Some(f.kind),
+                    "{r}.{}",
+                    f.name
+                );
+            }
+        }
+        assert_eq!(e.field_kind("phase", standard::STEP), Some(FieldKind::Int));
+        assert_eq!(e.field_kind("widget", "colour"), Some(FieldKind::String));
+        assert_eq!(e.std, Some(1));
+        assert_eq!(
+            e.status_descriptions.get("stalled").map(String::as_str),
+            standard::std_status("stalled").map(|s| s.description)
+        );
+    }
+
+    #[test]
+    fn a_merged_type_keeps_std_s_fields_and_kinds_and_adds_the_graph_s() {
+        let mut o = std_graph();
+        let mut person = TypeDecl::new(
+            "person",
+            alloc::vec![
+                FieldDecl::new("job_title", FieldKind::Int),
+                FieldDecl::new("desk", FieldKind::String),
+                FieldDecl {
+                    role: Some(Role::Data),
+                    ..FieldDecl::new("org", FieldKind::String)
+                },
+            ],
+        );
+        person.description = Some("someone".into());
+        o.types.push(person);
+        let e = o.effective();
+        let p = e.type_decl("person").unwrap();
+        let names: Vec<&str> = p.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["aliases", "job_title", "org", "desk"]);
+        // std's kind wins; with the same kind the graph's declaration (its role) is kept.
+        assert_eq!(e.field_kind("person", "job_title"), Some(FieldKind::String));
+        assert_eq!(
+            e.field_decl("person", "org").unwrap().effective_role(),
+            Role::Data
+        );
+        assert_eq!(p.description.as_deref(), Some("someone"));
+        // Merged in place: person stays where std puts it, once.
+        assert_eq!(e.type_names().filter(|t| *t == "person").count(), 1);
+        assert_eq!(e.types[0].name, "person");
+    }
+
+    #[test]
+    fn a_newer_std_gets_std_v1_s_names() {
+        let mut o = std_graph();
+        let v1 = o.effective();
+        o.std = Some(crate::standard::STD_VERSION + 1);
+        let newer = o.effective();
+        assert_eq!(newer.std, o.std);
+        assert_eq!(
+            Ontology {
+                std: v1.std,
+                ..newer
+            },
+            v1
+        );
+    }
+
+    #[test]
+    fn the_effective_word_fields_see_std_string_fields() {
+        let o = std_graph();
+        assert!(!o.text_fields().is_text("person", "job_title"));
+        let e = o.effective();
+        assert!(e.text_fields().is_text("person", "job_title"));
+        assert!(!e.text_fields().is_text("person", "aliases"));
+    }
+
+    #[test]
+    fn std_is_written_only_when_set() {
+        let o = Ontology::starter();
+        let text = serde_json::to_string(&o).unwrap();
+        assert!(!text.contains("\"std\""), "{text}");
+        let std = Ontology {
+            std: Some(1),
+            ..Ontology::starter()
+        };
+        let text = serde_json::to_string(&std).unwrap();
+        assert!(text.starts_with("{\"std\":1,"), "{text}");
+        let back: Ontology = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, std);
+        assert!(back.extra.is_empty());
     }
 }

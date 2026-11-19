@@ -306,7 +306,7 @@ impl QueryService {
         let g = &l.graph;
         let at = handle(g, ids[0]);
         let relation = req.relation.as_deref();
-        let symmetric = l.meta.ontology.symmetric_kinds();
+        let symmetric = l.ontology().symmetric_kinds();
         let hops = hops(
             g,
             at,
@@ -365,7 +365,7 @@ impl QueryService {
                 continue;
             }
             let source = store.loaded(&owner).expect("edge owner loaded");
-            let symmetric = source.meta.ontology.is_symmetric(&row.edge.kind);
+            let symmetric = source.ontology().is_symmetric(&row.edge.kind);
             let here = (l.meta.id, ids[0].expect("start"));
             let outgoing = (row.from_graph, row.edge.from) == here;
             let incoming = (row.to_graph, row.edge.to) == here;
@@ -480,7 +480,7 @@ impl QueryService {
             start,
             &req,
             ids[1],
-            l.meta.ontology.symmetric_kinds(),
+            l.ontology().symmetric_kinds(),
             ctx.include_provenance,
         );
         let value = lazy_page(&alias, &mut walk, req.limit, req.offset);
@@ -520,7 +520,7 @@ impl QueryService {
         let (alias, l, ids) = store.resolve_nodes(ctx, &[Some(&req.from), Some(&req.to)])?;
         let g = &l.graph;
         let (from, to) = (handle(g, ids[0]), handle(g, ids[1]));
-        let symmetric = l.meta.ontology.symmetric_kinds();
+        let symmetric = l.ontology().symmetric_kinds();
         // How each node was first reached: the node before it, the edge and the way.
         let mut prev: Vec<Option<(NodeIx, EdgeCell)>> = vec![None; g.node_bound()];
         let mut seen = vec![false; g.node_bound()];
@@ -838,7 +838,7 @@ pub(crate) fn hit_links(store: &GraphStore, alias: &str, id: Id) -> Option<HitLi
     let l = store.loaded(alias)?;
     let g = &l.graph;
     let at = g.node_ix(id)?;
-    let symmetric = l.meta.ontology.symmetric_kinds();
+    let symmetric = l.ontology().symmetric_kinds();
     let mut links: Vec<(bool, String, Way, Id, NodeIx)> =
         hops(g, at, Direction::Both, None, &symmetric, false)
             .into_iter()

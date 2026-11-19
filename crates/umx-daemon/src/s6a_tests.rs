@@ -59,6 +59,7 @@ fn daemon(name: &str) -> (Arc<Daemon>, std::path::PathBuf, String) {
             secured: false,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         },
         None,
     ));
@@ -336,6 +337,7 @@ fn a_raw_ui_open_naming_a_secured_graph_is_refused_and_never_kept() {
             secured: true,
             no_graphfile: false,
             graphfile: false,
+            no_std: false,
         },
         None,
     ));

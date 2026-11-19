@@ -252,7 +252,7 @@ fn names(l: &Loaded) -> Vec<String> {
             out.push(b.to_string());
         }
     }
-    for f in date_fields(&l.graph, &l.meta.ontology) {
+    for f in date_fields(&l.graph, l.ontology()) {
         let name = alloc::format!("{DATE_FIELD_PREFIX}{f}");
         if !out.contains(&name) {
             out.push(name);

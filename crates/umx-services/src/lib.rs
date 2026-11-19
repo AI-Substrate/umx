@@ -549,9 +549,24 @@ impl Services {
         empty: bool,
         embedding: Option<GraphEmbedding>,
     ) -> Outcome<GraphNew> {
+        self.graph_new_std(ctx, path, alias, title, empty, embedding, false)
+    }
+
+    /// [`Services::graph_new`], a std graph when `std` (req-98).
+    #[allow(clippy::too_many_arguments)]
+    fn graph_new_std(
+        &mut self,
+        ctx: &Ctx,
+        path: &str,
+        alias: &str,
+        title: Option<&str>,
+        empty: bool,
+        embedding: Option<GraphEmbedding>,
+        std: bool,
+    ) -> Outcome<GraphNew> {
         let mut done = self
             .graph
-            .graph_new(ctx, path, alias, title, empty, embedding)?;
+            .graph_new_std(ctx, path, alias, title, empty, embedding, std)?;
         let alias = done.value.graph.alias.clone();
         self.pending_from(&alias, None);
         self.load_similarity(&alias, &mut done.notes);
@@ -566,7 +581,7 @@ impl Services {
 
     /// `graph new` with the repo Graphfile (ws002 s17): as [`Services::graph_new`] (which adds nothing to a
     /// Graphfile), then the new graph's line added per `mode`. With no config files port wired it refuses before
-    /// making anything (architect, s17).
+    /// making anything (architect, s17). `std` makes a std graph (req-98), as `umx graph new` does unless `--no-std`.
     #[allow(clippy::too_many_arguments)]
     pub fn graph_new_with(
         &mut self,
@@ -577,11 +592,12 @@ impl Services {
         empty: bool,
         embedding: Option<GraphEmbedding>,
         mode: GraphfileMode,
+        std: bool,
     ) -> Outcome<GraphNew> {
         if mode != GraphfileMode::Skip {
             self.graph.graphfile_wired()?;
         }
-        let mut done = self.graph_new(ctx, path, alias, title, empty, embedding)?;
+        let mut done = self.graph_new_std(ctx, path, alias, title, empty, embedding, std)?;
         let (added, warnings) = self.graph.graphfile_add_new(&done.value.graph.alias, mode);
         done.value.graphfile = added;
         done.notes.extend(warnings);

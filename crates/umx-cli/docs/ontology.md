@@ -9,10 +9,12 @@ that would declare the name. Change the vocabulary as the work needs.
 Lists types (with their fields, kinds and roles, and default list `columns` when set), statuses, relations, the symmetric relations and
 `relation_fields` (the fields declared on each relation's edges), with the purpose, conventions and descriptions
 that `umx graph guide` shows. Each field shows `role` (`content` or `data`, as umx acts on it) and `role_default`
-(true when no role is stated, so the field is data).
+(true when no role is stated, so the field is data). For a std graph it is the vocabulary umx acts on, std v1's
+entries first, each marked (see std below).
 
     umx ontology show
     umx ontology show --graph launch
+    umx ontology show --std        # std v1 alone, whatever graph
 
 ## umx ontology add ...
 
@@ -173,3 +175,30 @@ This includes external ends: declaration and reload give the same facts, without
 incoming index changes only after the declaration commits, and the retained reverse line keeps its unknown
 fields and any own-graph normalization. A failed write changes none of them.
 `part_of` and `similar_to` are directed by what they mean and cannot be marked (`symmetric_refused`).
+
+## std: the standard vocabulary
+
+A graph whose ontology says `"std": 1` uses std v1, the vocabulary built into umx (`umx docs get organise` lists
+it): `umx graph new` writes it unless `--no-std`. Its vocabulary is std v1's types, statuses and relations, with
+the fields std places on them (`job_title` and `org` on `person`, `starts_on`, `ends_on` and `due_on` on the dated
+types, `step` on `segment`, `starts_on` and `ends_on` on `works_for` and `member_of` edges), then the graph's own
+declarations. So on a std graph `umx node add --type person --set job_title=...` warns nothing, word search finds
+`job_title` text, and a Cypher `MATCH (p:person)` knows the label, all with no `ontology add`.
+
+The graph adds to std and never removes or narrows it: declaring a std name again merges into std's entry (a
+field std places keeps std's kind). graph.json holds only the graph's own declarations and `"std": 1`; std's
+entries are never written into it, and a graph without `std` is written byte for byte as before.
+
+`umx ontology show` on a std graph marks what std gives: top-level `std` (the version, null when not std), `std:
+true` on each std type, on each field std places and on each std relation field, and the std names among
+`statuses` and `relations` in `std_statuses` and `std_relations`. `std_any_fields` lists the std fields any node
+(or edge) has with no declaration (`tags`, `entity_key`, `starts_on`, `ends_on`). The hint `std_entries_shown`
+says the std entries come from umx, not graph.json. Entries with `std: false` are the graph's own.
+`umx ontology show --std` prints std v1 alone in the same shape, for any graph or none.
+
+A graph.json whose `std` is newer than this umx knows (`"std": 2` read by a std v1 umx) still loads, with the
+warning `std_newer` naming both versions: it is read with std v1's names, and names only the newer std has are
+off-vocabulary until umx is updated. `umx ontology set field <type> <field> --role ...` takes a std field the graph has not declared (`person`
+`job_title`): it writes the graph's own declaration of that one field, with std's kind. `umx graph guide` lists a std entry only when the graph declares or uses it,
+marked `std`, and never asks for a description of a std entry graph.json does not declare.
+
