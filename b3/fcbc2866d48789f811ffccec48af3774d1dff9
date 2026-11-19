@@ -1,0 +1,195 @@
+crates/umx-protocol/fixtures/envelope/bad-error-without-errors.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-services/src/graph_store/node_more.rs
+  s_6726e130948b19::t_720b91b50ea4ff 511-512
+  s_6726e130948b19::t_8e142b193089cc 39-42,355-359,427-458,505-510,513-525,539-541,545-547
+  s_6726e130948b19::t_91d2085ea40cd1 20
+  s_6726e130948b19::t_5a7ac823d0c05d 576
+crates/umx-services/src/graph_store/external_ends_tests.rs
+  s_6726e130948b19::t_e718da23521e98 233
+  s_6726e130948b19::t_720b91b50ea4ff 207-208
+crates/umx-daemon/src/s25_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 266,804
+crates/umx-protocol/fixtures/envelope/bad-ok-with-warning.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+skills/umx/references/routes/build.md
+  s_6726e130948b19::t_824d297afd43a0 44-50
+crates/umx-cli/docs/ontology.md
+  s_6726e130948b19::t_270c980af032c3 33-34,312-341
+  s_6726e130948b19::t_5b14bb8d95fce6 342
+crates/umx-protocol/fixtures/envelope/bad-issue-next-not-a-command.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-daemon/src/s27_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 79
+crates/umx-graph/src/line.rs
+  s_6726e130948b19::t_7b49f70388e140 48-49,151,172-173
+  s_6726e130948b19::t_26afffe55820f4 174
+crates/umx-services/src/graph_store/mod.rs
+  s_6726e130948b19::t_86af691beb1933 40
+  s_6726e130948b19::t_88a2e56fe5f8c9 276-277,281-282,327
+crates/umx-bench/src/ruler.rs
+  s_6726e130948b19::t_dd1d9664c66f0c 392
+  s_6726e130948b19::t_8b91ded1286263 150
+  s_6726e130948b19::t_720b91b50ea4ff 356-362
+crates/umx-services/src/graph_store/batch.rs
+  s_6726e130948b19::t_5a7ac823d0c05d 1369
+crates/umx-services/tests/s05b.rs
+  s_6726e130948b19::t_720b91b50ea4ff 480-481
+crates/umx-services/src/graph_store/graph.rs
+  s_6726e130948b19::t_720b91b50ea4ff 148-150
+  s_6726e130948b19::t_b306230e8513d7 729-738
+  s_6726e130948b19::t_e718da23521e98 135-136,142,561,977
+crates/umx-services/src/problems.rs
+  s_6726e130948b19::t_9e58a9bb142a14 211-217,1173-1239
+  s_6726e130948b19::t_0a42484905e542 1240
+crates/umx-daemon/src/s6a_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 86
+crates/umx-protocol/fixtures/envelope/bad-hint-in-warnings.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-cli/docs/node.md
+  s_6726e130948b19::t_270c980af032c3 32-33,105,129-131,168,172-173
+  s_6726e130948b19::t_6234109a589501 174
+crates/umx/tests/cli.rs
+  s_6726e130948b19::t_720b91b50ea4ff 736
+  s_6726e130948b19::t_6ec80eba83f8d7 1250-1256,5450-5451
+crates/umx-protocol/fixtures/envelope/ok.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-core/src/ontology.rs
+  s_6726e130948b19::t_acb58700f6c466 169-172,725
+  s_6726e130948b19::t_1b919a93c0a648 438
+crates/umx-graph/src/tags_difftest.rs
+  s_6726e130948b19::t_92fe54a9260382 157-158,295
+  s_6726e130948b19::t_720b91b50ea4ff 154-156,175-179
+  s_6726e130948b19::t_fde592a142ec17 1-153,159-174,180-294,296-313
+crates/umx/tests/cli/daemon.rs
+  s_6726e130948b19::t_720b91b50ea4ff 504
+crates/umx-services/src/graph_store/ontology.rs
+  s_6726e130948b19::t_88a2e56fe5f8c9 596-616,1514-1524,1538,1556
+crates/umx-protocol/fixtures/envelope/bad-untrusted-changed.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-daemon/src/s28_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 117,313
+crates/umx-graph/tests/evidence_kinds.rs
+  s_6726e130948b19::t_00bf110d9118f3 159
+crates/umx-daemon/src/hold_bench.rs
+  s_6726e130948b19::t_720b91b50ea4ff 156
+crates/umx-daemon/src/verbs.rs
+  s_6726e130948b19::t_f49eff853ad932 2077
+  s_6726e130948b19::t_34080b4f0ac39f 542,556,844-845,854-855,1103,1120,1155-1156,1167-1168
+  s_6726e130948b19::t_b6c192698abee4 3027-3042,3045,3361
+  s_6726e130948b19::t_720b91b50ea4ff 6231,6292-6293
+  s_6726e130948b19::t_dbf853656cea04 2064-2065,2075-2076,3043-3044,3046-3049,3230,3251,3267-3268,3278,3523-3524,3534
+  s_6726e130948b19::t_88a2e56fe5f8c9 651-655
+crates/umx-daemon/src/f72_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 129,150-151,299-300,341-342
+apps/ui/lib/umx/index.ts
+  s_6726e130948b19::t_ede761bc55d52a 11
+crates/umx-protocol/fixtures/envelope/bad-error-with-data.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-protocol/fixtures/envelope/ok-with-hints.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx/tests/cli/tags.rs
+  s_6726e130948b19::t_6ec80eba83f8d7 7-8,410-411,450-453
+  s_6726e130948b19::t_b306230e8513d7 218
+  s_6726e130948b19::t_cef01d4386250b 1-6,9-66,75-80,89-94,98-101,112-169,178-186,191-204,212-217,219-241,251-256,261-271,287-289,304,309-321,337-354,368-396,401-409,412,422-427,434,438-449,454-455,460-493
+  s_6726e130948b19::t_720b91b50ea4ff 67-74,81-88,95-97,102-111,170-177,187-190,205-211,243-250,257-260,272-286,290-303,305-308,322-336,355-367,413-421,428-433,435-437,456-459
+  s_6726e130948b19::t_d7dd6432612ead 242,397-400
+  s_6726e130948b19::t_9cf8ef655cb2d7 494-520
+crates/umx-daemon/src/req75_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 147
+crates/umx-protocol/fixtures/envelope/error-with-hints.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-protocol/fixtures/envelope/bad-hint-changes-status.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-cli/src/parse.rs
+  s_6726e130948b19::t_64ccf59d3a3fb3 234,252-253,279-280,1307,1345-1346,1516-1517,1960-1969,2002
+crates/umx-core/src/lib.rs
+  s_6726e130948b19::t_acb58700f6c466 43
+crates/umx-daemon/src/s5a_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 138,346-347
+  s_6726e130948b19::t_e603b66c511c5d 211
+crates/umx-services/tests/locators.rs
+  s_6726e130948b19::t_720b91b50ea4ff 86,295
+crates/umx-graph/src/nodes.rs
+  s_6726e130948b19::t_7b49f70388e140 121,146-150,324,466,544,575,1144,1205
+  s_6726e130948b19::t_720b91b50ea4ff 10
+crates/umx-graph/src/load.rs
+  s_6726e130948b19::t_a637116e0c6aab 125-126,131,133,142,150,162,231
+  s_6726e130948b19::t_720b91b50ea4ff 678-679,732-738
+crates/umx-protocol/fixtures/envelope/bad-warning-with-errors.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-graph/src/lib.rs
+  s_6726e130948b19::t_720b91b50ea4ff 69
+  s_6726e130948b19::t_6d4d6cd6f62ce4 34-35
+  s_6726e130948b19::t_7b49f70388e140 33,169-170,230-231,277-278,301,890,1297-1306,1725
+crates/umx-graph/tests/entity.rs
+  s_6726e130948b19::t_720b91b50ea4ff 86
+docs/project/usage/215-std-tags.md
+  s_6726e130948b19::t_de28ed08173064 1-25
+crates/umx-daemon/src/s31_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 88,638
+crates/umx-services/src/graph_store/tags.rs
+  s_6726e130948b19::t_720b91b50ea4ff 52,55-58,143-146
+  s_6726e130948b19::t_86af691beb1933 6-7,10,130,133
+  s_6726e130948b19::t_fd33229763ca73 1-5,8-9,11-51,53-54,59-129,131-132,134-142,147
+crates/umx-cli/docs/batch.md
+  s_6726e130948b19::t_7ad00e2ef05d25 46-47,53-54
+crates/umx-protocol/fixtures/envelope/warning.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx/tests/cli/batch.rs
+  s_6726e130948b19::t_720b91b50ea4ff 490,511,601
+crates/umx-protocol/fixtures/envelope/error.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-protocol/fixtures/envelope/bad-warning-without-warnings.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-services/src/lib.rs
+  s_6726e130948b19::t_88a2e56fe5f8c9 2329-2333
+  s_6726e130948b19::t_e50bd9807e7cd1 1416-1418,1432,1438-1447
+crates/umx-services/src/graph_store/node.rs
+  s_6726e130948b19::t_5a7ac823d0c05d 1081
+  s_6726e130948b19::t_e50bd9807e7cd1 81-86,99-101,1195-1209,1211
+  s_6726e130948b19::t_8e142b193089cc 19,54-55,423-426,447-458,490-509
+crates/umx-daemon/src/lib.rs
+  s_6726e130948b19::t_720b91b50ea4ff 3358,3590,3662
+crates/umx-daemon/src/s08_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 242,541,694
+crates/umx-graph/src/tags.rs
+  s_6726e130948b19::t_04e8424ecc8d7a 314-360
+  s_6726e130948b19::t_11927dcaf47c27 1-39,48-97,104-148,150-192,214-232,249-308,310-313,361-378
+  s_6726e130948b19::t_720b91b50ea4ff 98-103
+  s_6726e130948b19::t_beaac4a147cb42 149
+  s_6726e130948b19::t_a637116e0c6aab 40-47
+  s_6726e130948b19::t_115ee637871fa9 309
+  s_6726e130948b19::t_7b49f70388e140 233-248
+  s_6726e130948b19::t_9e58a9bb142a14 193-213
+crates/umx-protocol/src/lib.rs
+  s_6726e130948b19::t_135dae1f2b7b6f 2501,2513-2514
+  s_6726e130948b19::t_720b91b50ea4ff 5364,5383-5384,5477-5478,5601,5648-5649
+  s_6726e130948b19::t_abb40750b3934d 5895-5897
+  s_6726e130948b19::t_f6ef95bc23b8c8 200-204,210,647-649,689-693,1390-1392,1409-1415,1515-1519,1572-1576,2231-2232,2360,2499-2500,2502-2512,2515-2527,6022,6166
+  s_6726e130948b19::t_fdff54e9cd2427 219
+crates/umx-core/src/tags.rs
+  s_6726e130948b19::t_f274f7ddcfb71e 42,56,242,249,283,286,289
+  s_6726e130948b19::t_720b91b50ea4ff 210,306-313,318-321,324-332,342-345,356-359,362-365,373-376
+  s_6726e130948b19::t_59ab3945e8375d 1-41,43-55,57-209,211-241,243-248,250-282,284-285,287-288,290-305,314-317,322-323,333-341,346-355,360-361,366-372,377-391
+crates/umx-protocol/fixtures/envelope/graph-new.json
+  s_6726e130948b19::t_ede761bc55d52a 2
+crates/umx-daemon/src/s25a_tests.rs
+  s_6726e130948b19::t_720b91b50ea4ff 86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b3fcbc2866d48789f811ffccec48af3774d1dff9",
+  "prompts": {},
+  "sessions": {
+    "s_6726e130948b19": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "263912dc-41a0-4602-b878-544bd530ecc7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "Jordan Knight <jakkaj@gmail.com>"
+    }
+  }
+}
