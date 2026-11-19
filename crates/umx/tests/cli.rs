@@ -17,6 +17,10 @@ use umx_protocol::{Build, Code, Envelope, Fill, Issue, Kind, Request, Status, Va
 #[path = "../../umx-cypher/tests/rows/mod.rs"]
 mod rows;
 
+/// Security s3b N1: the [`Capture`] test, in its own file so this one stays under the seed gate's size cap.
+#[path = "cli/capture.rs"]
+mod capture;
+
 /// A private UMX_HOME under /tmp (short, for the 104-byte socket path limit) and maybe a daemon in it.
 struct Home {
     path: PathBuf,
@@ -204,8 +208,20 @@ impl Capture {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let path = std::env::temp_dir().join(format!("umx-t-out-{}-{n}", std::process::id()));
-        let file = fs::File::create(&path).unwrap();
+        let file = Capture::create(&path)
+            .unwrap_or_else(|e| panic!("cannot create {} new: {e}", path.display()));
         (Capture(path), Stdio::from(file))
+    }
+
+    /// Creates `path` new, readable by this user only, and fails if anything is there: a link planted in a shared
+    /// temp folder is never followed, so its target is never truncated (security s3b N1).
+    fn create(path: &Path) -> std::io::Result<fs::File> {
+        use std::os::unix::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
     }
 
     fn read(self) -> Vec<u8> {
