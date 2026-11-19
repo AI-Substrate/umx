@@ -10,9 +10,13 @@ me before installing again. When you are done, tell me which umx version is inst
 the /umx skill are set up, and every command you ran or skipped, and why.
 ```
 
-One line installs it on macOS (Apple silicon) and Linux (x86_64 or arm64), and on Windows inside WSL 2:
+One line installs it on macOS (Apple silicon) and Linux (x86_64 or arm64):
 
     curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
+
+On Windows, one PowerShell line installs it inside WSL 2 (umx runs there, as Linux):
+
+    irm https://github.com/AI-Substrate/umx/releases/latest/download/install.ps1 | iex
 
 More, including building from source: [Install](#install).
 
@@ -59,8 +63,10 @@ skill and the daemon service):
 
     curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
 
-Releases are for macOS on Apple silicon and Linux on x86_64 or arm64 with glibc 2.35 or newer; on Windows, run it
-inside WSL 2. Pinned versions, checking a download, upgrading and uninstalling: [docs/install.md](docs/install.md).
+Releases are for macOS on Apple silicon and Linux on x86_64 or arm64 with glibc 2.35 or newer. On Windows, umx runs
+only inside WSL 2: in PowerShell, `irm https://github.com/AI-Substrate/umx/releases/latest/download/install.ps1 | iex`
+runs this line in your default WSL 2 distro. Pinned versions, Windows, checking a download, upgrading and
+uninstalling: [docs/install.md](docs/install.md).
 A release has no graph view: [The UI](#the-ui).
 
 ### Build from source

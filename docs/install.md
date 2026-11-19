@@ -7,7 +7,7 @@ first: installing again restarts the running umx daemon, which other agents may 
 
 ## Install
 
-One line installs the latest release:
+One line installs the latest release (on Windows, use the PowerShell line in Windows (WSL 2), below):
 
     curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
 
@@ -35,15 +35,78 @@ It never uses sudo, never edits a shell startup file, and never installs the /um
 those commands for you or your agent to run.
 
 Supported: macOS on Apple silicon, and Linux on x86_64 or arm64 with glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or
-newer). Refused, with nothing changed: macOS on Intel, musl Linux (Alpine), older glibc, WSL 1, other systems and
-other processors. On those, build from source: [Install in the README](../README.md#install).
+newer), including Linux inside WSL 2 on Windows (below). Refused, with nothing changed: macOS on Intel, musl Linux
+(Alpine), older glibc, WSL 1, other systems and other processors. On those, build from source:
+[Install in the README](../README.md#install).
 
-## Windows
+## Windows (WSL 2)
 
-umx runs on Windows only inside WSL 2, as Linux. In a WSL 2 terminal (Ubuntu 22.04 or newer), run the install line
-above. The script refuses WSL 1; convert a distro with `wsl --set-version <distro> 2` in PowerShell. The daemon
-service (`umx daemon install`) needs systemd in WSL: if it fails, set `systemd=true` under `[boot]` in
-`/etc/wsl.conf`, run `wsl --shutdown` in PowerShell, and open the terminal again.
+umx runs on Windows only inside WSL 2, as Linux: there is no Windows build. In PowerShell (Windows PowerShell 5.1 or
+PowerShell 7, not as administrator), one line installs the latest release into your default WSL distro:
+
+    irm https://github.com/AI-Substrate/umx/releases/latest/download/install.ps1 | iex
+
+A pinned version (a leading `v` is optional; `$env:UMX_VERSION = '0.1.0'` before the line above also works, and stays
+set in that window):
+
+    & ([scriptblock]::Create((irm https://github.com/AI-Substrate/umx/releases/latest/download/install.ps1))) -Version 0.1.0
+
+If umx may already be installed, check first, and ask the person before installing again (Install, above):
+`wsl ~/.local/bin/umx version --human`.
+
+What `install.ps1` does, in order:
+
+1. Checks a named version as install.sh does, before anything runs.
+2. Finds the default WSL distro with `wsl -l -v`, and refuses, with nothing changed, when WSL is not installed, there
+   is no distro, or the default distro is WSL 1.
+3. In that distro, has WSL's own `curl` download `install.sh` (https only) into a temporary file and runs it, with
+   `--version` when you named one: the same as running the Install line in a WSL terminal, so everything under Install
+   happens inside WSL. Windows itself downloads and runs nothing else, and the version reaches install.sh as an
+   argument, never as shell text.
+4. Shows install.sh's output as it runs, and ends with install.sh's exit code. Run with `irm ... | iex`, it leaves the
+   PowerShell window open, sets `$LASTEXITCODE` and nothing else in that session, and ends with an error when the
+   install failed.
+
+It needs no administrator rights, changes no execution policy, and installs nothing on Windows.
+
+Set up WSL 2 first if `wsl -l -v` lists no distro marked `*` with VERSION 2: in PowerShell run as administrator,
+`wsl --install` installs WSL 2 and Ubuntu (restart Windows if it asks, then open Ubuntu once to make your Linux user).
+Convert a WSL 1 distro with `wsl --set-version <distro> 2`, or make a WSL 2 distro the default with
+`wsl --set-default <distro>`. The distro needs glibc 2.35 or newer: Ubuntu 22.04 or newer.
+
+Then use umx inside WSL: open a WSL terminal (`wsl`, or Ubuntu from the Start menu) and run `umx` there, starting
+with each line install.sh printed under `Run these next` (After install). umx is not on Windows' `PATH`. If a new
+WSL terminal says `umx` is not found, add the `PATH` line install.sh printed. The daemon service
+(`umx daemon install`) needs systemd in WSL: if it fails, set `systemd=true` under `[boot]` in `/etc/wsl.conf`, run
+`wsl --shutdown` in PowerShell, and open the terminal again. WSL can stop a distro, and a daemon started in it,
+after its last terminal closes: when `umx version` says the daemon is down, run what `umx doctor` names.
+
+To upgrade, run the PowerShell line again; Upgrade and Uninstall below apply inside WSL. To check provenance, do
+Verify and install by hand inside WSL, with target `x86_64-unknown-linux-gnu` (or `aarch64-unknown-linux-gnu` on an
+Arm PC). In a WSL terminal you can also run the curl Install line directly; `install.ps1` only runs it for you.
+
+`irm ... | iex` runs `install.ps1` as it downloads it, before anything is checked: it rests on https and on the
+release's files being immutable once published. To check `install.ps1` first, download it and the release's
+`SHA256SUMS` into a new folder, then check `SHA256SUMS`' build attestation with the GitHub CLI (`gh`, signed in), as
+Verify and install by hand does for the archive. In PowerShell:
+
+    $version = '0.1.0'
+    $base = "https://github.com/AI-Substrate/umx/releases/download/v$version"
+    Set-Location (New-Item -ItemType Directory (Join-Path $env:TEMP "umx-$(Get-Random)"))
+    Invoke-WebRequest -UseBasicParsing "$base/install.ps1" -OutFile install.ps1
+    Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS" -OutFile SHA256SUMS
+    gh attestation verify SHA256SUMS --repo AI-Substrate/umx
+    (Get-FileHash install.ps1).Hash; Select-String '  install\.ps1$' SHA256SUMS
+
+Go on only if `gh` says the attestation verified and the two hashes printed last are the same (letter case aside);
+`gh release verify-asset v$version install.ps1 --repo AI-Substrate/umx` is another check. Then run the file you
+checked, which needs no change to the execution policy:
+
+    & ([scriptblock]::Create((Get-Content -Raw .\install.ps1))) -Version $version
+
+That proves the `install.ps1` you ran is the one this repository's release workflow published. What it runs inside
+WSL (install.sh, then the archive) is checked as the one line checks (below); to know who built the umx you run,
+Verify and install by hand inside WSL.
 
 ## What the one line checks
 

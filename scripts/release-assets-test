@@ -110,10 +110,11 @@ EXPECT_SAYS="is missing" expect 1 "verify refuses a missing leg" \
     "$script" verify "$work/tampered" aarch64-apple-darwin
 
 printf '#!/bin/sh\n' >"$work/dist/install.sh"
-sums_out=$("$script" sums "$work/dist" install.sh umx-x86_64-unknown-linux-gnu.tar.gz \
+printf 'param([string]$Version)\n' >"$work/dist/install.ps1"
+sums_out=$("$script" sums "$work/dist" install.ps1 install.sh umx-x86_64-unknown-linux-gnu.tar.gz \
     umx-aarch64-unknown-linux-gnu.tar.gz umx-aarch64-apple-darwin.tar.gz)
 names=$(cut -c67- <<<"$sums_out" | tr '\n' ' ')
-if [ "$names" != "install.sh umx-aarch64-apple-darwin.tar.gz umx-aarch64-unknown-linux-gnu.tar.gz umx-x86_64-unknown-linux-gnu.tar.gz " ]; then
+if [ "$names" != "install.ps1 install.sh umx-aarch64-apple-darwin.tar.gz umx-aarch64-unknown-linux-gnu.tar.gz umx-x86_64-unknown-linux-gnu.tar.gz " ]; then
     echo "FAIL: SHA256SUMS names not sorted: $names" >&2
     fail=1
 else
@@ -123,7 +124,7 @@ printf '%s\n' "$sums_out" >"$work/dist/SHA256SUMS"
 EXPECT_SAYS='' expect 0 "SHA256SUMS passes sha256sum -c" sh -c "cd '$work/dist' && $(declare -f sha); sha -c SHA256SUMS"
 EXPECT_SAYS="cannot be listed" expect 1 "sums refuses SHA256SUMS itself" "$script" sums "$work/dist" SHA256SUMS
 EXPECT_SAYS="cannot be listed" expect 1 "sums refuses a path" "$script" sums "$work/dist" ../umx
-EXPECT_SAYS="is missing" expect 1 "sums refuses a file that is not there" "$script" sums "$work/dist" install.ps1
+EXPECT_SAYS="is missing" expect 1 "sums refuses a file that is not there" "$script" sums "$work/dist" install.bat
 
 EXPECT_SAYS="not 40 hex" expect 1 "smoke refuses a short commit" "$script" smoke "$work/umx" 0.1.0 abc1234
 EXPECT_SAYS='' expect 2 "an unknown command is a usage error" "$script" publish

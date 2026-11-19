@@ -94,7 +94,7 @@ Each release holds these files. The names carry no version, so `releases/latest/
 | `umx-aarch64-apple-darwin.tar.gz` | macOS on Apple silicon |
 | `umx-x86_64-unknown-linux-gnu.tar.gz` | Linux x86-64 (glibc 2.35 or later) |
 | `umx-aarch64-unknown-linux-gnu.tar.gz` | Linux arm64 (glibc 2.35 or later) |
-| `install.sh`, `install.ps1` | the install scripts, once the repository has them |
+| `install.sh`, `install.ps1` | the install scripts: `install.ps1` runs `install.sh` inside WSL 2 on Windows |
 | `SHA256SUMS` | the sha256 of every other file, in `sha256sum` format |
 
 Each archive holds one folder, `umx-<target>/`, with `umx`, `LICENSE` and `THIRD_PARTY_NOTICES`. The binaries are not

@@ -2,11 +2,15 @@
 
 ## Install a release
 
-One line installs the latest release on macOS (Apple silicon) and Linux (x86_64 or arm64, glibc 2.35 or newer); on
-Windows, run it inside WSL 2:
+One line installs the latest release on macOS (Apple silicon) and Linux (x86_64 or arm64, glibc 2.35 or newer):
 
     curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh
     curl -fsSL https://github.com/AI-Substrate/umx/releases/latest/download/install.sh | sh -s -- --version 0.1.0
+
+On Windows, umx runs only inside WSL 2. One PowerShell line runs the line above in the default WSL 2 distro (it
+refuses WSL 1 and changes nothing on Windows); then run `umx` in a WSL terminal (`wsl`):
+
+    irm https://github.com/AI-Substrate/umx/releases/latest/download/install.ps1 | iex
 
 It checks the download against the release's `SHA256SUMS`, puts `umx` in `~/.local/bin` (never with sudo), and
 restarts a running daemon on the new build, or starts it. Then it runs `umx doctor` and prints what to run next:

@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # the bad versions and the PowerShell commands are literal text
+# Proves install.ps1 (ws012 s13) with PowerShell 7 (`pwsh`) and a stub `wsl.exe` on PATH: no Windows, no WSL, no
+# network. The stub answers `wsl.exe -l -v` as WSL does (UTF-16LE, or UTF-8 when it honours WSL_UTF8=1) from a planted
+# list, and runs `wsl.exe -d <distro> -e sh -c <script> sh <url> <args>` for real here, with a fake curl that serves a
+# fake install.sh: so the sh script install.ps1 sends into WSL, its download and exit code, run as they would there.
+# Each case runs install.ps1 as a file; three more run it the ways docs/install.md gives: `irm ... | iex` and
+# `& ([scriptblock]::Create((irm ...))) -Version`; four more check those leave the caller's session as it was. Windows
+# PowerShell 5.1, the real wsl.exe and its command-line parsing are untested here (ws012 s15 checks them on a Windows
+# machine).
+set -euo pipefail
+unset UMX_VERSION WSL_UTF8
+
+repo=$(cd "$(dirname "$0")/.." && pwd)
+pwsh=$(command -v pwsh) || { echo "install-ps1-test: pwsh is not installed" >&2; exit 2; }
+work=$(mktemp -d "${TMPDIR:-/tmp}/install-ps1-test.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+url=https://github.com/AI-Substrate/umx/releases/latest/download/install.sh
+fails=0
+
+# The tools the sh script needs inside "WSL", with and without curl; and wsl.exe on a PATH of its own.
+mkdir -p "$work/linux" "$work/linux-nocurl" "$work/win"
+for tool in sh mktemp rm cat; do
+    ln -s "$(command -v "$tool")" "$work/linux/$tool"
+    ln -s "$(command -v "$tool")" "$work/linux-nocurl/$tool"
+done
+
+cat >"$work/linux/curl" <<'SH'
+#!/bin/sh
+# fake curl: install.ps1's flags, then install.sh's URL; serves the fake install.sh or fails.
+printf 'curl %s\n' "$*" >>"$STUB_LOG"
+[ "$1 $2 $3 $4 $5 $6" = "--proto =https --proto-redir =https --tlsv1.2 -fsSL" ] || { echo "fake curl: flags $*" >&2; exit 90; }
+[ "$7" = -o ] || { echo "fake curl: no -o" >&2; exit 90; }
+[ "${STUB_CURL-}" != fail ] || { echo "curl: (6) Could not resolve host: github.com" >&2; exit 6; }
+cat "$STUB_INSTALL_SH" >"$8"
+SH
+chmod +x "$work/linux/curl"
+
+cat >"$work/install.sh" <<'SH'
+#!/bin/sh
+printf 'install.sh ran with %s arguments:' "$#" >>"$STUB_LOG"
+for a in "$@"; do printf ' [%s]' "$a" >>"$STUB_LOG"; done
+printf '\n' >>"$STUB_LOG"
+echo "Downloading umx..."
+echo "Run these next (agents: run them; they are not run for you):"
+echo "  umx agents-start-here"
+exit "${STUB_RC:-0}"
+SH
+
+# The stub wsl.exe. STUB_LIST: none (no distro), or lines `<default *> <name> <state> <version>` joined by `;`.
+# STUB_UTF8=honour answers in UTF-8 when WSL_UTF8=1, as newer WSL does; otherwise always UTF-16LE.
+cat >"$work/win/wsl.exe" <<'SH'
+#!/usr/bin/env bash
+set -eu
+{ printf 'wsl.exe'; for a in "$@"; do printf ' <%s>' "$a"; done; printf '\n'; } >>"$STUB_LOG"
+out() {
+    if [ "${STUB_UTF8-}" = honour ] && [ "${WSL_UTF8-}" = 1 ]; then cat; else iconv -f UTF-8 -t UTF-16LE; fi
+}
+if [ "$*" = "-l -v" ]; then
+    if [ "$STUB_LIST" = none ]; then
+        printf 'Windows Subsystem for Linux has no installed distributions.\r\nYou can resolve this by installing a distribution with the instructions below:\r\n\r\nUse '"'"'wsl.exe --list --online'"'"' to list available distributions\r\n' | out
+        exit 1
+    fi
+    { printf '  NAME                   STATE           VERSION\r\n'
+      IFS=';'; for row in $STUB_LIST; do printf '%s\r\n' "$row"; done; } | out
+    exit 0
+fi
+[ "$1" = -d ] && [ "$3" = -e ] && [ "$4" = sh ] && [ "$5" = -c ] || { echo "stub wsl.exe: unexpected $*" >&2; exit 91; }
+case "$6" in *'"'* | *\\*) echo "stub wsl.exe: the sh script holds a double quote or backslash" >&2; exit 92 ;; esac
+printf '%s\n' "$2" >"$STUB_DISTRO"
+shift 4
+exec env -i HOME="$HOME" PATH="$STUB_LINUX" STUB_LOG="$STUB_LOG" STUB_INSTALL_SH="$STUB_INSTALL_SH" \
+    STUB_CURL="${STUB_CURL-}" STUB_RC="${STUB_RC-}" sh "$@"
+SH
+chmod +x "$work/win/wsl.exe"
+
+# The caller's session for the iex and scriptblock guards, dot-sourced at global scope as a prompt is: names install.ps1
+# uses seeded first, then every global variable, every function and StrictMode compared before and after the run.
+# Only $LASTEXITCODE (and the error a failed install ends with) may change.
+cat >"$work/leak.ps1" <<'PS'
+$Version = 'caller-version'; $umxInstall = 'caller-install'; $umxFile = 'caller-file'; $code = 'caller-code'
+$umxLeakSkip = @('LASTEXITCODE', '?', '^', '$', '_', 'PSItem', 'input', 'MyInvocation', 'Error', 'StackTrace', 'args',
+    'umxLeakBefore', 'umxLeakAfter', 'umxLeakDiff')
+$umxLeakSnap = {
+    Get-Variable -Scope Global | Where-Object { $umxLeakSkip -notcontains $_.Name } |
+        ForEach-Object { "variable $($_.Name)=$(@($_.Value) -join ',')" }
+    Get-ChildItem function: | ForEach-Object { "function $($_.Name)" }
+    "strictmode $(try { $null = $umxLeakNoSuchVariable; 'off' } catch { 'on' })"
+}
+$umxLeakBefore = & $umxLeakSnap
+try {
+    if ($umxLeakMode -eq 'iex') { Get-Content -Raw $umxLeakPs1 | Invoke-Expression }
+    else { & ([scriptblock]::Create((Get-Content -Raw $umxLeakPs1))) -Version 0.1.0 }
+} catch { "caught: $_" }
+"after: LASTEXITCODE $LASTEXITCODE"
+$umxLeakAfter = & $umxLeakSnap
+$umxLeakDiff = @(Compare-Object $umxLeakBefore $umxLeakAfter)
+if ($umxLeakDiff.Count -eq 0) { 'caller session unchanged' }
+$umxLeakDiff | ForEach-Object { "LEAK $($_.SideIndicator) $($_.InputObject)" }
+PS
+
+wsl2='* Ubuntu-22.04    Running         2;  docker-desktop   Stopped         2'
+
+# run <name> <mode> [ps args...]: runs install.ps1 (mode file, iex, scriptblock, or leak-iex / leak-scriptblock) with the STUB_* and UMX_VERSION set by the
+# caller; sets rc, out (stdout and stderr) and log.
+run() {
+    local name="$1" mode="$2"
+    shift 2
+    case_dir="$work/$name"
+    mkdir -p "$case_dir"
+    : >"$case_dir/log"
+    local path="$work/win:/usr/bin:/bin"
+    if [ "${NO_WSL-}" = 1 ]; then path="/usr/bin:/bin"; fi
+    local cmd=("$pwsh" -NoProfile -NonInteractive -File "$repo/install.ps1" "$@")
+    if [ "$mode" = iex ]; then
+        cmd=("$pwsh" -NoProfile -NonInteractive -Command
+            "Get-Content -Raw '$repo/install.ps1' | Invoke-Expression; \"after iex: LASTEXITCODE \$LASTEXITCODE\"")
+    elif [ "$mode" = scriptblock ]; then
+        cmd=("$pwsh" -NoProfile -NonInteractive -Command
+            "& ([scriptblock]::Create((Get-Content -Raw '$repo/install.ps1'))) $*; \"after scriptblock: LASTEXITCODE \$LASTEXITCODE\"")
+    elif [ "${mode#leak-}" != "$mode" ]; then
+        cmd=("$pwsh" -NoProfile -NonInteractive -Command
+            "\$umxLeakMode='${mode#leak-}'; \$umxLeakPs1='$repo/install.ps1'; . '$work/leak.ps1'")
+    fi
+    rc=0
+    out=$(env PATH="$path" HOME="$case_dir" STUB_LOG="$case_dir/log" STUB_DISTRO="$case_dir/distro" \
+        STUB_INSTALL_SH="$work/install.sh" STUB_LINUX="${LINUX:-$work/linux}" STUB_LIST="${LIST:-$wsl2}" \
+        STUB_UTF8="${UTF8-}" STUB_CURL="${CURL-}" STUB_RC="${RC-}" ${UMX_VERSION+UMX_VERSION="$UMX_VERSION"} \
+        nice -n 20 "${cmd[@]}" 2>&1) || rc=$?
+    log=$(cat "$case_dir/log")
+}
+
+fail() {
+    echo "FAIL $1: $2" >&2
+    echo "--- output (rc $rc)" >&2
+    printf '%s\n' "$out" >&2
+    echo "--- stub log" >&2
+    printf '%s\n' "$log" >&2
+    fails=$((fails + 1))
+}
+ok() { echo "ok   $1"; }
+has() { [[ "$out" == *"$1"* ]]; }
+
+# Refused before anything runs in WSL: the exit code, the message, and no install.sh, no curl, no `-d` run.
+expect_refused() {
+    local name="$1" says="$2" hint="$3"
+    [ "$rc" = 1 ] || { fail "$name" "exit $rc, want 1"; return; }
+    has "$says" || { fail "$name" "no '$says'"; return; }
+    has "$hint" || { fail "$name" "no hint '$hint'"; return; }
+    [[ "$log" != *" <-d> "* && "$log" != *curl* ]] || { fail "$name" "ran something in WSL"; return; }
+    ok "$name"
+}
+
+# install.sh ran once in the default distro, fetched from the release URL, with exactly these arguments.
+expect_ran() {
+    local name="$1" want_rc="$2" want_args="$3"
+    [ "$rc" = "$want_rc" ] || { fail "$name" "exit $rc, want $want_rc"; return; }
+    [ "$(cat "$case_dir/distro" 2>/dev/null)" = Ubuntu-22.04 ] || { fail "$name" "not run in Ubuntu-22.04"; return; }
+    [[ "$log" == *"curl --proto =https --proto-redir =https --tlsv1.2 -fsSL -o /tmp/umx-install-sh."*" $url"* ]] ||
+        { fail "$name" "install.sh not fetched from $url"; return; }
+    [ "$(grep -c '^install.sh ran' <<<"$log")" = 1 ] || { fail "$name" "install.sh did not run once"; return; }
+    grep -qxF "install.sh ran with $want_args" <<<"$log" || { fail "$name" "install.sh args, want: $want_args"; return; }
+    has "Run these next" || { fail "$name" "install.sh's output is not shown"; return; }
+    ok "$name"
+}
+
+ascii=$(LC_ALL=C grep -c '[^[:print:][:space:]]' "$repo/install.ps1" || true)
+if [ "$ascii" = 0 ]; then ok "install.ps1 is ASCII (Windows PowerShell 5.1 reads a file without a BOM as ANSI)"; else
+    rc=-; out="$ascii lines"; log=; fail "ascii" "install.ps1 has non-ASCII bytes"; fi
+
+NO_WSL=1 run no-wsl file
+expect_refused "no wsl.exe" "WSL is not installed on this Windows" "wsl --install"
+
+LIST=none run no-distro file
+expect_refused "no distro" "WSL has no default Linux distro" "wsl --install"
+
+LIST='  Ubuntu Stopped 2' run no-default file
+expect_refused "no default distro" "WSL has no default Linux distro" "wsl --install"
+
+LIST='* Ubuntu-20.04    Stopped         1;  Debian Running 2' run wsl1 file
+expect_refused "default distro is WSL 1" "the default WSL distro Ubuntu-20.04 runs WSL 1, and umx needs WSL 2" \
+    "wsl --set-version Ubuntu-20.04 2"
+
+for bad in 1.0 latest '0.1.0; rm -rf ~' '0.1.0 --help' 0.1 '$(id)' "0.1.0
+" vv0.1.0 ' 0.1.0' 0.1.0/../x; do
+    run bad-version file -Version "$bad"
+    expect_refused "-Version '$bad' refused" "the -Version or UMX_VERSION given is not a version" "nothing changed"
+    [[ "$log" != *wsl.exe* ]] || fail "-Version '$bad'" "called wsl.exe before checking the version"
+done
+UMX_VERSION='0.1.0;x' run bad-env file
+expect_refused "UMX_VERSION '0.1.0;x' refused" "the -Version or UMX_VERSION given is not a version" "nothing changed"
+
+run latest file
+expect_ran "WSL 2, latest (UTF-16 list)" 0 "0 arguments:"
+has "umx is installed inside WSL (Ubuntu-22.04), not on Windows" || fail "latest" "no inside-WSL note"
+has "Open WSL with \`wsl\`" || fail "latest" "no hint to open WSL"
+
+UTF8=honour LIST='* Ubuntu-22.04    Wird ausgefuehrt    2' run pinned file -Version v0.1.0
+expect_ran "WSL 2, -Version v0.1.0 (UTF-8 list, a two-word state)" 0 "2 arguments: [--version] [0.1.0]"
+
+UMX_VERSION=0.2.0-rc.1 run env file
+expect_ran "UMX_VERSION=0.2.0-rc.1" 0 "2 arguments: [--version] [0.2.0-rc.1]"
+
+UMX_VERSION=0.2.0 run flag-wins file -Version 0.1.0
+expect_ran "-Version wins over UMX_VERSION" 0 "2 arguments: [--version] [0.1.0]"
+
+RC=3 run fails file
+expect_ran "install.sh's exit code 3 is install.ps1's" 3 "0 arguments:"
+has "install.sh failed inside WSL (Ubuntu-22.04) with exit code 3" || fail "exit 3" "no failure line"
+
+CURL=fail run no-download file
+if [ "$rc" = 1 ] && has "could not download $url inside WSL" && [[ "$log" != *"install.sh ran"* ]]; then
+    ok "a failed download inside WSL exits 1 and runs nothing"
+else fail "no-download" "want exit 1, the download message and no install.sh"; fi
+
+LINUX="$work/linux-nocurl" run no-curl file
+if [ "$rc" = 1 ] && has "curl is not installed in this WSL distro" && [[ "$log" != *"install.sh ran"* ]]; then
+    ok "no curl inside WSL exits 1 and runs nothing"
+else fail "no-curl" "want exit 1 and the curl message"; fi
+
+UMX_VERSION=0.1.0 run iex-ok iex
+if [ "$rc" = 0 ] && has "after iex: LASTEXITCODE 0" && grep -qxF "install.sh ran with 2 arguments: [--version] [0.1.0]" <<<"$log"; then
+    ok "irm | iex: installs, sets LASTEXITCODE 0 and leaves the session running"
+else fail "iex-ok" "want exit 0 and the line after iex"; fi
+
+run scriptblock scriptblock -Version 0.1.0
+if [ "$rc" = 0 ] && has "after scriptblock: LASTEXITCODE 0" && grep -qxF "install.sh ran with 2 arguments: [--version] [0.1.0]" <<<"$log"; then
+    ok "& ([scriptblock]::Create((irm ...))) -Version 0.1.0: installs that version and leaves the session running"
+else fail "scriptblock" "want exit 0, the version passed and the line after"; fi
+
+RC=4 run iex-fail iex
+if [ "$rc" != 0 ] && has "umx was not installed (exit code 4" && ! has "after iex"; then
+    ok "irm | iex: a failed install ends with an error (pwsh -Command exits $rc)"
+else fail "iex-fail" "want a non-zero exit and the error"; fi
+
+# The caller's session is untouched (reviewer B1): an iex or scriptblock run, installed or refused, sets no variable or
+# function and no StrictMode in it, and leaves its $Version and $umxInstall as they were.
+expect_session_kept() {
+    local name="$1" want_rc="$2"
+    has "after: LASTEXITCODE $want_rc" || { fail "$name" "want LASTEXITCODE $want_rc after the run"; return; }
+    if ! has "caller session unchanged" || has "LEAK "; then fail "$name" "the caller's session changed"; return; fi
+    ok "$name"
+}
+UMX_VERSION=0.1.0 run leak-iex-ok leak-iex
+expect_session_kept "irm | iex, installed: the caller's session is unchanged" 0
+grep -qxF "install.sh ran with 2 arguments: [--version] [0.1.0]" <<<"$log" || fail "leak-iex-ok" "install.sh did not run"
+NO_WSL=1 run leak-iex-refused leak-iex
+expect_session_kept "irm | iex, refused: the caller's session is unchanged" 1
+has "caught: install.ps1: umx was not installed (exit code 1" || fail "leak-iex-refused" "no error after the refusal"
+run leak-sb-ok leak-scriptblock
+expect_session_kept "scriptblock -Version 0.1.0, installed: the caller's session is unchanged" 0
+grep -qxF "install.sh ran with 2 arguments: [--version] [0.1.0]" <<<"$log" || fail "leak-sb-ok" "-Version did not reach install.sh"
+NO_WSL=1 run leak-sb-refused leak-scriptblock
+expect_session_kept "scriptblock -Version 0.1.0, refused: the caller's session is unchanged" 1
+
+if [ "$fails" -gt 0 ]; then
+    echo "install-ps1-test: $fails failed" >&2
+    exit 1
+fi
+echo "install-ps1-test: all passed"

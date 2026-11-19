@@ -13,7 +13,7 @@
 # template's `Docs:` line lists what was touched.
 
 # Build, lint, test and prove the architecture rules.
-check: slots home-paths customer-names private-refs install-sh release-assets fmt build clippy test arch walkthrough bakeoff
+check: slots home-paths customer-names private-refs install-sh install-ps1 release-assets fmt build clippy test arch walkthrough bakeoff
 
 # scripts/cargo-slot's guarantees (two slots, TERM and INT stop the build before the slot frees, exit codes), with a
 # fake cargo in a private slot folder.
@@ -43,6 +43,13 @@ private-refs:
 install-sh:
     scripts/install-sh-test
     if command -v shellcheck >/dev/null; then shellcheck install.sh scripts/install-sh-test; else echo "install-sh: shellcheck is not installed; skipped"; fi
+
+# install.ps1 with a stub wsl.exe: no WSL, no distro, WSL 1, a bad version, WSL 2 installs passing the version and
+# install.sh's exit code, run as a file and the `irm ... | iex` way; then shellcheck over the test. Skipped with a note
+# when PowerShell 7 (pwsh) is not installed; GitHub's ubuntu and macOS runners have it.
+install-ps1:
+    if command -v pwsh >/dev/null; then scripts/install-ps1-test; else echo "install-ps1: pwsh is not installed; skipped"; fi
+    if command -v shellcheck >/dev/null; then shellcheck scripts/install-ps1-test; else echo "install-ps1: shellcheck is not installed; skipped"; fi
 
 # The release archives, SHA256SUMS and smoke run's argument checks (ws012 s7, s8), on a stand-in binary: no build.
 release-assets:
