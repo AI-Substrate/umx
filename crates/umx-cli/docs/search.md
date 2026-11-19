@@ -99,10 +99,9 @@ Search never fails for want of vectors: it returns word and exact matches and sa
 
 - `similarity_no_embedder`: a graph's embedder setting admits none of this machine's embedder instances (a
   secured or `local` graph where every instance is hosted). Its query is never sent; it is searched by words only,
-  named, with its setting. An empty result then means no word matched, not that nothing is similar. The fix is not
-  yours to make: tell the user, who may add a local instance (`umx docs get embeddings`) or, as the graph's owner,
-  allow hosted ones with the printed `umx graph set <graph> --embedder trusted` (a person confirms it at their own
-  terminal). Never run it for them.
+  named, with its setting. An empty result then means no word matched, not that nothing is similar. No fix is
+  printed: tell the user, who may add a local instance (`umx docs get embeddings`). Allowing hosted ones is the
+  graph owner's decision (`umx docs get graph`, Embedding policy), never a search's.
 - `similarity_unavailable`: no embedder is configured, it failed or is offline, the query has no direction for the
   model, a graph has no vectors yet, a graph records no model and no default embedder is set, its folder's config
   names another embedder (or none), a graph's model changed during the search, the query embed took over 5 s (a

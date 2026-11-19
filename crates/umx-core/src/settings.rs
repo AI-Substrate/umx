@@ -43,7 +43,7 @@ pub const SETTINGS: &[Setting] = &[
         flag: "--policy",
         placeholder: "<policy>",
         example: "secured",
-        summary: "who may embed the graph's text: open, or secured (only an embedder that keeps text on this machine); a lower policy takes effect only once a person confirms it",
+        summary: "who may embed the graph's text: open, or secured (only an embedder that keeps text on this machine); lowering it takes effect in the same call, recorded on this machine and warned (policy_lowered)",
         suggest: true,
         apply: set_policy,
     },
@@ -52,7 +52,7 @@ pub const SETTINGS: &[Setting] = &[
         flag: "--visibility",
         placeholder: "<visibility>",
         example: "named",
-        summary: "whether reads that do not name the graph show it: open, or named (left out of unscoped search and multi-graph reads); a looser value takes effect only once a person confirms it",
+        summary: "whether reads that do not name the graph show it: open, or named (left out of unscoped search and multi-graph reads); a looser value takes effect in the same call, recorded on this machine and warned (policy_lowered)",
         suggest: false,
         apply: set_visibility,
     },
@@ -61,7 +61,7 @@ pub const SETTINGS: &[Setting] = &[
         flag: "--embedder",
         placeholder: "<rule>",
         example: "trusted",
-        summary: "which embedder instances may get the graph's text: any, trusted (local instances, or hosted ones defined in the machine config), or local; a looser value takes effect only once a person confirms it",
+        summary: "which embedder instances may get the graph's text: any, trusted (local instances, or hosted ones defined in the machine config), or local; a looser value takes effect in the same call, recorded on this machine and warned (policy_lowered)",
         suggest: false,
         apply: set_embedder,
     },
@@ -127,8 +127,8 @@ fn set_title(
     Ok(Vec::new())
 }
 
-/// Writes the policy into graph.json. Raising it takes effect at once; lowering it is only the file's word until a
-/// person confirms it on this machine (ws004 s06 A2), which the graph store checks after every `graph set`.
+/// Writes the policy into graph.json. Raising it takes effect at once; the graph store records a lowering on this
+/// machine after the write (D83), so it takes effect in the same `graph set`.
 fn set_policy(
     meta: &mut GraphMeta,
     _graph: &ValidName,

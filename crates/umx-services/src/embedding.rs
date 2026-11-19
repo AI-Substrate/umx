@@ -248,6 +248,8 @@ pub struct Instance {
 pub struct EmbeddingService {
     /// Sorted by name.
     instances: Vec<Instance>,
+    /// Each hosted instance's endpoint host, by name (D83): only what a lowered policy's warning names.
+    hosts: BTreeMap<String, umx_core::problem::Host>,
     /// Index into `instances` of the default (`embedder.active`).
     default: Option<usize>,
     /// Each instance's background pace in tokens a minute (`tokens_per_minute`, ws004 s25); one not named is
@@ -272,6 +274,7 @@ impl EmbeddingService {
         let default = (!instances.is_empty()).then_some(0);
         EmbeddingService {
             instances,
+            hosts: BTreeMap::new(),
             default,
             pace: BTreeMap::new(),
             related_caps: BTreeMap::new(),
@@ -285,6 +288,7 @@ impl EmbeddingService {
         let default = default.and_then(|d| instances.iter().position(|i| i.name == d));
         EmbeddingService {
             instances,
+            hosts: BTreeMap::new(),
             default,
             pace: BTreeMap::new(),
             related_caps: BTreeMap::new(),
@@ -301,6 +305,40 @@ impl EmbeddingService {
     pub fn with_pace(mut self, pace: BTreeMap<String, u64>) -> EmbeddingService {
         self.pace = pace;
         self
+    }
+
+    /// Each hosted instance's endpoint host, by name (D83), parsed by compose to `host[:port]` only.
+    pub fn with_hosts(
+        mut self,
+        hosts: BTreeMap<String, umx_core::problem::Host>,
+    ) -> EmbeddingService {
+        self.hosts = hosts;
+        self
+    }
+
+    /// The instances `to` admits that `from` did not, among those `usable(name)` allows (the folder rule), by the
+    /// one routing rule ([`Self::admits`], D53, D62): who may now get a graph's text after its embedder rule
+    /// loosened from `from` to `to` (D83). Each with where it sends text; a host only as compose parsed it.
+    pub fn newly_admitted(
+        &self,
+        from: EmbedderRule,
+        to: EmbedderRule,
+        usable: &dyn Fn(&str) -> bool,
+    ) -> Vec<umx_core::problem::Receiver> {
+        use umx_core::problem::{Reach, Receiver};
+        self.instances
+            .iter()
+            .filter(|i| usable(&i.name) && self.admits(to, i) && !self.admits(from, i))
+            .filter_map(|i| {
+                Some(Receiver {
+                    name: ValidName::alias(&i.name)?,
+                    reach: match i.embedder.locality() {
+                        Locality::Local => Reach::Local,
+                        Locality::Hosted => Reach::Hosted(self.hosts.get(&i.name).cloned()),
+                    },
+                })
+            })
+            .collect()
     }
 
     /// Each instance's related-check cap, by name (req-123).

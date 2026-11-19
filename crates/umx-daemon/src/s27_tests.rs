@@ -124,6 +124,7 @@ fn instance(name: &str, e: &Arc<FakeEmbedder>) -> umx_compose::Instance {
         built: Ok(Arc::clone(e) as Arc<dyn Embedder>),
         local: None,
         tokens_per_minute: None,
+        host: None,
     }
 }
 

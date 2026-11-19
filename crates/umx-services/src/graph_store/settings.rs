@@ -74,8 +74,10 @@ impl GraphStore {
         for (setting, value) in &rows {
             warnings.extend((setting.apply)(&mut meta, &graph, value)?);
         }
-        // Loosening either setting in graph.json: the stricter pair must be on this machine's record first (review R1).
-        if before.file_policy().exceeds(meta.file_policy()) {
+        // Loosening either setting in graph.json: the stricter pair must be on this machine's record first (review R1),
+        // and only this call's own lowering lowers the record after the write (D83, security A1).
+        let lowers = before.file_policy().exceeds(meta.file_policy());
+        if lowers {
             warnings.extend(self.record_before_lowering(alias, before.file_policy())?);
         }
         let l = self.graphs.get_mut(alias).expect("checked above");
@@ -99,8 +101,12 @@ impl GraphStore {
             rows.iter().map(|(s, _)| s.name).collect(),
             l.meta.title.clone(),
         );
-        // `--policy` raises at once; a lower one stays the file's word until a person confirms it.
-        warnings.extend(self.settle_policy(alias));
+        // A raise takes effect at once; a lowering this call made is recorded now, in one step (D83).
+        if lowers {
+            warnings.extend(self.lower_after_set(alias));
+        } else {
+            warnings.extend(self.settle_policy(alias));
+        }
         Ok(Done {
             value: GraphSet {
                 alias: graph.as_str().into(),

@@ -1397,6 +1397,7 @@ impl Daemon {
                 .map(|(name, _)| name);
             composed.set_instances(built(&embedders), default.as_deref());
             composed.set_pace(embedders.pace());
+            composed.set_hosts(embedders.hosts());
             composed.set_related_caps(embedders.related_caps());
             // D62 (security): every hosted instance is trusted with named graphs' text, so each is named with its host
             // at start.
@@ -1436,6 +1437,7 @@ impl Daemon {
         embedders: umx_compose::Embedders,
     ) -> Daemon {
         composed.set_idle_unload_ms(config.idle_unload_ms);
+        composed.set_folder_rule(folder_allows(&config_services));
         let built_from = config_services.resolve(None);
         let embedders = Arc::new(embedders);
         let embeds = !composed.embedding().instances().is_empty();
@@ -3128,6 +3130,7 @@ mod tests {
                 built: Ok(Arc::new(stuck)),
                 local: None,
                 tokens_per_minute: None,
+                host: None,
             },
         ]));
         let write = op(umx_protocol::Op::GraphNew {

@@ -1,9 +1,11 @@
-//! A graph's embedding policy (ws004 s06 A2). graph.json states one (`open` when the section or key is missing);
-//! this machine's record (the LocalState port) holds the last one confirmed here, by graph id and by folder. umx
-//! acts on the stricter of the two, so an edit or a pull can raise a graph's policy at once but lowers it only when a
-//! person confirms it at their own terminal (`graph confirm-policy`). A record that cannot be trusted or read counts
-//! every graph as secured, and is never rewritten. A secured policy this daemon could not record yet is held in memory
-//! (and retried on every write), and umx refuses to lower graph.json's policy until the higher one is recorded.
+//! A graph's embedding policy (ws004 s06 A2, D83). graph.json states one (`open` when the section or key is missing);
+//! this machine's record (the LocalState port) holds the last one umx recorded here, by graph id and by folder. umx
+//! acts on the stricter of the two, so an edit or a pull can raise a graph's policy at once but never lowers it: a
+//! umx call does, in one step by any caller (`graph set` lowering it, or `graph confirm-policy` for a file lowered
+//! outside umx), and the reply warns `policy_lowered` with what loosened and who may now get the graph's text.
+//! Every downgrade is recorded with its time. A record that cannot be trusted or read counts every graph as secured,
+//! and is never rewritten. A secured policy this daemon could not record yet is held in memory (and retried on every
+//! write), and umx refuses to lower graph.json's policy until the higher one is recorded.
 
 use super::resolve::Evidence;
 use super::{Ctx, Done, GraphStore, Outcome, alias_name, problems};
@@ -22,7 +24,7 @@ pub struct PolicyView {
     pub file: Policy,
     /// What umx acts on: the stricter of the file and this machine's record; secured when the record is unusable.
     pub effective: Policy,
-    /// When a person last confirmed lowering it, shown while the graph is open.
+    /// When a umx call last lowered it on this machine, shown while the graph is open.
     pub downgraded_at: Option<String>,
 }
 
@@ -169,7 +171,7 @@ impl GraphStore {
         }
     }
 
-    /// Works out a loaded graph's policy, records a secured file policy for this copy (an upgrade needs no person),
+    /// Works out a loaded graph's policy, records a secured file policy for this copy (a raise needs no call),
     /// and returns the warnings: `policy_downgrade_unconfirmed`, `local_state_unreadable`, `local_state_not_saved`
     /// (held secured in memory until a later write lands) and `local_state_not_durable`.
     pub(crate) fn settle_policy(&mut self, alias: &str) -> Vec<Problem> {
@@ -281,64 +283,30 @@ impl GraphStore {
         alloc::vec![problems::secured_shards_remain(&graph, &shards)]
     }
 
-    /// `graph confirm-policy`: makes graph.json's policy (as loaded) this machine's record. Raising it or keeping
-    /// it needs nothing more. Lowering it needs `typed`, the alias a person typed at their own terminal (the CLI
-    /// asks on /dev/tty); without it, or if it differs, nothing changes and the answer is
-    /// `policy_confirm_needs_human`. A record that cannot be read or written is `policy_not_recorded`. The terminal
-    /// check is the CLI's: any process of this user that can write to the owner-only socket can send `typed`.
-    pub fn confirm_policy(
-        &mut self,
-        _ctx: &Ctx,
-        alias: &str,
-        typed: Option<&str>,
-    ) -> Outcome<PolicyConfirmed> {
-        let Some(l) = self.graphs.get(alias) else {
-            return Err(self.not_loaded(alias));
-        };
+    /// Makes graph.json's policy (as loaded) this machine's record for the graph: every record of it (by id or folder)
+    /// stricter on either setting is lowered to the file's pair, with the time (D83), or the file's policy is raised
+    /// into it. Then every loaded graph is settled again, since another copy of it may have changed. The one path that
+    /// lowers the record: `graph set` lowering a policy and `graph confirm-policy` both call it. Err carries why the
+    /// record could not be read or written; then nothing changed.
+    fn record_file_policy(&mut self, alias: &str) -> Result<FileRecorded, String> {
+        let l = &self.graphs[alias];
         let (id, folder, file) = (l.meta.id, l.dir.as_str().to_string(), l.meta.file_policy());
         let path = self.ports.state.path();
-        let (mut state, merged) = self
-            .read_state()
-            .map_err(|why| problems::policy_not_recorded(&path, &why))?;
+        let (mut state, merged) = self.read_state()?;
         let recorded = state.recorded(id, &folder);
         let was = file.join(recorded.unwrap_or(file));
         let now = self.now();
         let changed = match recorded.filter(|r| r.exceeds(file)) {
-            Some(r) => {
-                let graph = alias_name(alias);
-                match typed {
-                    Some(t) if t == alias => {}
-                    Some(_) => {
-                        return Err(problems::policy_confirm_needs_human(
-                            &graph,
-                            r,
-                            file,
-                            "the alias typed did not match",
-                        ));
-                    }
-                    None => {
-                        return Err(problems::policy_confirm_needs_human(
-                            &graph,
-                            r,
-                            file,
-                            "no person confirmed it at a terminal",
-                        ));
-                    }
-                }
-                // Every record stricter on either setting becomes the file's pair; the rest are no stricter on any.
-                state.lower(id, &folder, file, &now) > 0
-            }
+            // Every record stricter on either setting becomes the file's pair; the rest are no stricter on any.
+            Some(_) => state.lower(id, &folder, file, &now) > 0,
             None => file != Policy::OPEN && state.raise(id, &folder, file, &now),
         };
         let mut warnings = Vec::new();
-        if changed || merged {
-            match self.write_state(&state) {
-                Ok(None) => {}
-                Ok(Some(why)) => warnings.push(problems::local_state_not_durable(&path, &why)),
-                Err(why) => return Err(problems::policy_not_recorded(&path, &why)),
-            }
+        if (changed || merged)
+            && let Some(why) = self.write_state(&state)?
+        {
+            warnings.push(problems::local_state_not_durable(&path, &why));
         }
-        // Every loaded copy of the graph may have changed; their warnings were given when they loaded.
         let aliases: Vec<String> = self.graphs.keys().cloned().collect();
         for a in &aliases {
             let w = self.settle_policy(a);
@@ -346,15 +314,62 @@ impl GraphStore {
                 warnings.extend(w);
             }
         }
+        Ok(FileRecorded {
+            was,
+            changed,
+            warnings,
+        })
+    }
+
+    /// After `graph set` wrote graph.json's lower policy (`before` was the file's): records it ([`Self::record_file_policy`]).
+    /// If the record cannot be written the graph stays at its recorded policy and the reply says so
+    /// (`policy_not_lowered`, with `policy_downgrade_unconfirmed`), so a failed record never becomes an unrecorded
+    /// downgrade and no new embedder gets the graph's text.
+    pub(super) fn lower_after_set(&mut self, alias: &str) -> Vec<Problem> {
+        match self.record_file_policy(alias) {
+            Ok(done) => done.warnings,
+            Err(why) => {
+                let path = self.ports.state.path();
+                let mut warnings = alloc::vec![problems::policy_not_lowered(
+                    &alias_name(alias),
+                    &path,
+                    &why
+                )];
+                warnings.extend(self.settle_policy(alias));
+                warnings
+            }
+        }
+    }
+
+    /// `graph confirm-policy`: makes graph.json's policy (as loaded) this machine's record. Raising it, keeping it or
+    /// lowering it needs nothing more (D83: any caller, one call); the services' reply warns `policy_lowered` for a
+    /// lowering. A record that cannot be read or written is `policy_not_recorded`, and nothing changed.
+    pub fn confirm_policy(&mut self, _ctx: &Ctx, alias: &str) -> Outcome<PolicyConfirmed> {
+        if !self.graphs.contains_key(alias) {
+            return Err(self.not_loaded(alias));
+        }
+        let path = self.ports.state.path();
+        let done = self
+            .record_file_policy(alias)
+            .map_err(|why| problems::policy_not_recorded(&path, &why))?;
         let policy = self.graphs[alias].policy.effective;
         Ok(Done {
             value: PolicyConfirmed {
                 alias: alias.to_string(),
-                was,
+                was: done.was,
                 policy,
-                changed,
+                changed: done.changed,
             },
-            notes: warnings,
+            notes: done.warnings,
         })
     }
+}
+
+/// What [`GraphStore::record_file_policy`] did.
+struct FileRecorded {
+    /// The policy umx acted on before.
+    was: Policy,
+    /// Whether this machine's record changed.
+    changed: bool,
+    warnings: Vec<Problem>,
 }

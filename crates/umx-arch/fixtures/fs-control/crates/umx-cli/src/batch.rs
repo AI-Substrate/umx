@@ -1,4 +1,5 @@
-pub fn read(file: &str) -> Vec<u8> {
+// std::fs::File in an excepted fn's signature is let through with the fn.
+pub fn read(file: &str, _held: Option<&std::fs::File>) -> Vec<u8> {
     use std::fs::OpenOptions;
     use std::io::Read;
     use std::os::unix::fs::OpenOptionsExt;

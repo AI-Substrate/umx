@@ -23,11 +23,6 @@ pub fn stdin_len() -> usize {
     s.len()
 }
 
-// std::fs is not used here outside open_tty.
-fn open_tty() -> Option<std::fs::File> {
-    std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").ok()
-}
-
 pub fn label() -> &'static str {
     "std::fs::File::open"
 }
@@ -39,6 +34,5 @@ mod tests {
     #[test]
     fn writes() {
         fs::write("/tmp/umx-fixture", b"x").unwrap();
-        let _ = super::open_tty();
     }
 }

@@ -560,7 +560,8 @@ fn hosted_only_no_default() -> World {
 
 /// s32 (field report): a secured graph recording no model, on a machine whose only instance is hosted and with no
 /// default, was left out of the vector leg with no warning, so a search with no word match came back empty and
-/// silent. It is searched by words and says why, with the owner's fix; the hosted instance is never asked.
+/// silent. It is searched by words and says why, printing no command that lowers the policy (D83); the hosted
+/// instance is never asked.
 #[test]
 fn a_graph_no_instance_admits_is_searched_by_words_and_says_why() {
     let mut w = hosted_only_no_default();
@@ -585,10 +586,9 @@ fn a_graph_no_instance_admits_is_searched_by_words_and_says_why() {
         shown.contains("vault") && shown.contains("local"),
         "{shown}"
     );
-    assert!(
-        shown.contains("graph set vault --embedder trusted"),
-        "{shown}"
-    );
+    // D83: no command that lowers the policy is handed out on a read path; allowing hosted ones is the owner's call.
+    assert!(done.notes[0].slot("fix").is_none(), "{shown}");
+    assert!(!shown.contains("graph set"), "{shown}");
     // --all with named graphs opted in reads it the same way; without, it is only counted (d-20).
     let all = |include_named| {
         let c = ctx().scope(umx_services::Scope::All { include_named });

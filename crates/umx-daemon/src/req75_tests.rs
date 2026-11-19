@@ -124,6 +124,7 @@ fn machine(home: &Path, instance: &str, embedder: &Arc<Recorder>) -> Daemon {
             built: Ok(embedder.clone()),
             local: None,
             tokens_per_minute: None,
+            host: None,
         }]),
     )
 }

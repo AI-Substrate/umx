@@ -113,15 +113,15 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 - **usage 008**: names are snake_case (`depends_on`), never hyphens or capitals; Cypher keywords are
   refused with a suggested `<name>_item`.
 - **usage 053**: graph settings change with `umx graph set <alias> --<setting> <value>` (`--title`, and
-  `--policy secured` for a graph that holds client or private text; lowering a policy is the human's, usage 059).
+  `--policy secured` for a graph that holds client or private text; lowering a policy is the graph owner's decision and warns `policy_lowered`, usage 208).
   **usage 051**: a secured graph's text never goes to a hosted model, whatever the config, env or flags say; give
   the machine a local embedder instance for it (`embedder_not_local_for_secured` until there is one).
   An unknown setting is refused with `setting_unknown`, whose message lists the settings.
 - **usage 128** (supersedes 112): a graph has two settings, `--visibility open|named` (named: read only when named)
   and `--embedder any|trusted|local` (which instances may get its text); secured is named + local. Trusted now means
   configured in the machine config: any instance there, hosted ones included, may embed a trusted graph with nothing
-  to confirm. Before `umx graph set <alias> --embedder trusted` (which stays local until the human runs
-  `umx graph confirm-policy <alias>`), tell the graph's owning seat. `embedder_route_changed` after a config set means
+  to confirm. Before `umx graph set <alias> --embedder trusted` (which lowers it in that call and warns `policy_lowered`), tell
+  the graph's owning seat. `embedder_route_changed` after a config set means
   named graphs will send text to the new endpoint after a restart: tell the human. Secret holds still apply.
 
 ## Nodes and edges

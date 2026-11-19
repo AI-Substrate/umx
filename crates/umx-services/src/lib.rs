@@ -340,7 +340,12 @@ pub struct Services {
     similarity_rebuilds: Vec<String>,
     /// At most [`QUERY_PERMITS`] Cypher queries at once (graph-storage-expert F2).
     query_permits: cypher::QueryPermits,
+    /// The daemon's folder rule (which instances a graph folder may use): who a lowered policy's warning names.
+    folder_rule: FolderRule,
 }
+
+/// Whether a graph folder may use the named embedder instance (the daemon's repo-layer narrowing, req-72).
+pub type FolderRule = Arc<dyn Fn(&GraphDir, &str) -> bool + Send + Sync>;
 
 /// What `umx similarity rebuild` did to one graph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -434,6 +439,7 @@ impl Services {
             pending: Vec::new(),
             similarity_rebuilds: Vec::new(),
             query_permits: cypher::QueryPermits::new(QUERY_PERMITS),
+            folder_rule: Arc::new(|_, _| true),
         }
     }
 
@@ -510,6 +516,22 @@ impl Services {
     pub fn set_pace(&mut self, pace: alloc::collections::BTreeMap<String, u64>) {
         let embedding = core::mem::replace(&mut self.embedding, EmbeddingService::new(None));
         self.embedding = embedding.with_pace(pace);
+    }
+
+    /// Each hosted instance's endpoint host by name (D83), fixed at start with the instances: set it again after
+    /// every [`Self::set_instances`], as the pace is.
+    pub fn set_hosts(
+        &mut self,
+        hosts: alloc::collections::BTreeMap<String, umx_core::problem::Host>,
+    ) {
+        let embedding = core::mem::replace(&mut self.embedding, EmbeddingService::new(None));
+        self.embedding = embedding.with_hosts(hosts);
+    }
+
+    /// The daemon's folder rule, so a lowered policy's warning names only instances the graph's folder may use (D83,
+    /// security W3). Until set, every folder may use every instance.
+    pub fn set_folder_rule(&mut self, rule: FolderRule) {
+        self.folder_rule = rule;
     }
 
     /// Each instance's related-check cap by name (req-123), fixed at start: [`related::RELATED_CAP_CPU`] for a local
@@ -1117,14 +1139,10 @@ impl Services {
         self.graph.effective_policy(alias)
     }
 
-    pub fn confirm_policy(
-        &mut self,
-        ctx: &Ctx,
-        alias: &str,
-        typed: Option<&str>,
-    ) -> Outcome<PolicyConfirmed> {
+    pub fn confirm_policy(&mut self, ctx: &Ctx, alias: &str) -> Outcome<PolicyConfirmed> {
         let before = self.policies();
-        let mut done = self.graph.confirm_policy(ctx, alias, typed)?;
+        let mut done = self.graph.confirm_policy(ctx, alias)?;
+        done.notes.extend(self.lowered(&before));
         done.notes.extend(self.recount_changed(&before));
         done.notes
             .extend(self.embedding.graph_warnings(&self.graph, alias));
@@ -1270,6 +1288,7 @@ impl Services {
     ) -> Outcome<GraphSet> {
         let before = self.policies();
         let mut done = self.graph.graph_set(ctx, alias, given)?;
+        done.notes.extend(self.lowered(&before));
         done.notes.extend(self.recount_changed(&before));
         done.notes
             .extend(self.embedding.graph_warnings(&self.graph, alias));
@@ -1827,6 +1846,38 @@ impl Services {
             .into_iter()
             .map(|g| (g.alias, g.policy.effective))
             .collect()
+    }
+
+    /// D83: one `policy_lowered` per loaded graph whose effective policy loosened since `before` (every copy the
+    /// record's change reached), naming its live alias, what loosened, the instances its folder may use that may now
+    /// get its text and did not before, and when it was recorded. Reply only: never logged.
+    fn lowered(
+        &self,
+        before: &alloc::collections::BTreeMap<String, umx_core::Policy>,
+    ) -> Vec<Problem> {
+        let mut out = Vec::new();
+        for g in self.graph.graph_list() {
+            let (Some(&was), Some(graph), Some(loaded)) = (
+                before.get(&g.alias),
+                ValidName::alias(&g.alias),
+                self.graph.loaded(&g.alias),
+            ) else {
+                continue;
+            };
+            let now = g.policy.effective;
+            let usable = |n: &str| (self.folder_rule)(&loaded.dir, n);
+            let receivers = self
+                .embedding
+                .newly_admitted(was.embedder, now.embedder, &usable);
+            out.extend(problems::policy_lowered(
+                &graph,
+                was,
+                now,
+                receivers,
+                g.policy.downgraded_at.as_deref(),
+            ));
+        }
+        out
     }
 
     /// Recounts pending vectors of each graph whose effective policy changed since `before`, and queues what the new

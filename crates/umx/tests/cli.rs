@@ -3792,8 +3792,23 @@ fn trigger(code: Code) -> (Envelope, u8) {
         Code::DocNotFound => home.umx(&["docs", "get", "no_such_topic"]),
         Code::HelpUnknown => home.umx(&["no_such_noun", "--help"]),
         Code::PolicyDowngradeUnconfirmed => {
+            let path = home.secured_graph();
+            home.umx(&["graph", "unload", "demo"]);
+            edit_graph_json(&path, |v| v["embedding"]["policy"] = json!("open"));
+            home.umx(&["graph", "load", &path])
+        }
+        Code::PolicyLowered => {
             home.secured_graph();
             home.umx(&["graph", "set", "demo", "--policy", "open"])
+        }
+        Code::PolicyNotLowered => {
+            // The secured graph is recorded; then the record's folder takes no writes, so recording the lower one fails.
+            home.secured_graph();
+            let state = home.path.join("state");
+            fs::set_permissions(&state, fs::Permissions::from_mode(0o500)).unwrap();
+            let result = home.umx(&["graph", "set", "demo", "--policy", "open"]);
+            fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
+            result
         }
         Code::LocalStateUnreadable => {
             home.state_file(b"not json");
@@ -3821,12 +3836,6 @@ fn trigger(code: Code) -> (Envelope, u8) {
             let result = home.umx(&["graph", "new", &path, "--alias", "demo", "--secured"]);
             fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
             result
-        }
-        Code::PolicyConfirmNeedsHuman => {
-            home.secured_graph();
-            home.umx(&["graph", "set", "demo", "--policy", "open"]);
-            home.no_tty = true;
-            home.umx(&["graph", "confirm-policy", "demo"])
         }
         Code::PolicyNotRecorded => {
             home.graph();
@@ -9614,9 +9623,10 @@ fn an_edited_graph_json_never_lowers_a_secured_graph() {
             "{name}: {}",
             found.message()
         );
-        assert!(
-            !found.next().contains("confirm-policy"),
-            "the next never names the confirm"
+        assert_eq!(
+            found.next(),
+            "umx graph confirm-policy demo",
+            "its owner's option, never run by umx"
         );
         assert_eq!(env.data["graph"]["effective_policy"], "secured", "{name}");
         assert_eq!(
@@ -9682,134 +9692,102 @@ fn an_unusable_state_file_counts_every_graph_as_secured_and_is_left_alone() {
     }
 }
 
+/// D83: an agent (no terminal, nothing typed) lowers a secured graph in one call. The effective policy changes at
+/// once, the record holds the downgrade with its time, and the reply warns what loosened; a raise needs nothing.
 #[test]
-fn a_downgrade_without_a_person_at_a_terminal_is_refused() {
-    let mut home = Home::new("confirm-refused");
+fn an_agent_lowers_a_graph_in_one_call_and_is_warned() {
+    let mut home = Home::new("agent-lowers");
     home.secured_graph();
-    home.umx(&["graph", "set", "demo", "--policy", "open"]);
     home.no_tty = true;
-    let (env, exit) = home.umx(&["graph", "confirm-policy", "demo"]);
-    assert_eq!(exit, 1);
+    let (env, exit) = home.umx(&["graph", "set", "demo", "--embedder", "trusted"]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    let found = issue(&env, Code::PolicyLowered);
     assert!(
-        has(&env, Code::PolicyConfirmNeedsHuman),
+        found.message().contains(
+            "is now named+trusted on this machine (it was secured): embedder rule local to trusted."
+        ),
         "{}",
-        env.to_json()
+        found.message()
     );
-    // A piped answer, the alias included, never reaches the confirm: it reads /dev/tty, not stdin.
-    let mut child = home
-        .command(&["graph", "confirm-policy", "demo"])
-        .stdin(Stdio::piped())
-        .spawn_captured()
-        .unwrap();
-    child
-        .child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"demo\ny\n")
-        .unwrap();
-    let out = child.finish(LIMIT);
-    let env = Envelope::from_json(&out.stdout).unwrap();
     assert!(
-        has(&env, Code::PolicyConfirmNeedsHuman),
+        found
+            .message()
+            .contains("The change is recorded on this machine at 20"),
         "{}",
-        env.to_json()
+        found.message()
     );
-    home.no_tty = false;
+    let row = listed(&home, "demo");
+    assert_eq!(row["effective_policy"], "named+trusted", "{row}");
+    assert!(
+        row["downgraded"].as_str().is_some_and(|d| d.ends_with('Z')),
+        "{row}"
+    );
+    let record = fs::read_to_string(home.path.join("state/graph-policies.json")).unwrap();
+    assert!(record.contains("secured to named+trusted"), "{record}");
+    // A raise needs nothing and warns nothing.
+    let (env, exit) = home.umx(&["graph", "set", "demo", "--policy", "secured"]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    assert!(!has(&env, Code::PolicyLowered), "{}", env.to_json());
     let row = listed(&home, "demo");
     assert_eq!(
         (row["effective_policy"].clone(), row["downgraded"].clone()),
         (json!("secured"), json!(null))
     );
-    // Raising or keeping a policy needs no terminal.
-    let (env, exit) = home.umx(&["graph", "set", "demo", "--policy", "secured"]);
-    assert_eq!(exit, 0, "{}", env.to_json());
+}
+
+/// D83, the prime's ruling (b): a graph.json lowered outside umx (a pull, an edit) never loosens the graph by itself;
+/// one explicit umx call by any caller does, and warns.
+#[test]
+fn a_pulled_lower_policy_waits_for_one_umx_call_by_any_caller() {
+    let mut home = Home::new("pulled-lower");
+    let path = home.secured_graph();
+    home.umx(&["graph", "unload", "demo"]);
+    edit_graph_json(&path, |v| v["embedding"]["policy"] = json!("open"));
+    let (env, _) = home.umx(&["graph", "load", &path]);
+    let found = issue(&env, Code::PolicyDowngradeUnconfirmed);
+    assert_eq!(found.next(), "umx graph confirm-policy demo");
+    assert_eq!(env.data["graph"]["effective_policy"], "secured");
+    // Another write that does not lower it (A1) leaves it as it is.
+    let (env, _) = home.umx(&["graph", "set", "demo", "--title", "Renamed"]);
+    assert!(
+        has(&env, Code::PolicyDowngradeUnconfirmed),
+        "{}",
+        env.to_json()
+    );
+    assert!(!has(&env, Code::PolicyLowered), "{}", env.to_json());
+    assert_eq!(listed(&home, "demo")["effective_policy"], "secured");
     home.no_tty = true;
+    let (env, exit) = home.umx(&["graph", "confirm-policy", "demo"]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    assert_eq!(
+        (env.data["was"].clone(), env.data["policy"].clone()),
+        (json!("secured"), json!("open"))
+    );
+    let found = issue(&env, Code::PolicyLowered);
+    assert!(
+        found
+            .message()
+            .contains("visibility named to open and embedder rule local to any")
+            && found
+                .message()
+                .contains("New vectors now go in the graph folder itself"),
+        "{}",
+        found.message()
+    );
+    let row = listed(&home, "demo");
+    assert_eq!(row["effective_policy"], "open");
+    let record = fs::read_to_string(home.path.join("state/graph-policies.json")).unwrap();
+    assert!(
+        record.contains("\"from\": \"secured\"") && record.contains("\"to\": \"open\""),
+        "{record}"
+    );
+    // Confirming a policy that does not lower needs nothing and changes nothing.
     let (env, exit) = home.umx(&["graph", "confirm-policy", "demo"]);
     assert_eq!(
         (exit, env.data["changed"].clone()),
         (0, json!(false)),
         "{}",
         env.to_json()
-    );
-}
-
-/// `umx graph confirm-policy demo` on a pty from `script`, with `typed` as what the person types there.
-fn confirm_on_a_pty(home: &Home, typed: &str) -> Envelope {
-    let umx = env!("CARGO_BIN_EXE_umx");
-    let mut cmd = Command::new("script");
-    if cfg!(target_os = "macos") {
-        cmd.args([
-            "-q",
-            "/dev/null",
-            umx,
-            "graph",
-            "confirm-policy",
-            "demo",
-            "--json",
-        ]);
-    } else {
-        cmd.args([
-            "-qec",
-            &format!("{umx} graph confirm-policy demo --json"),
-            "/dev/null",
-        ]);
-    }
-    let mut child = cmd
-        .env("UMX_HOME", &home.path)
-        .env("UMX_ROOTS", &home.path)
-        .env("TERM", "dumb")
-        .stdin(Stdio::piped())
-        .spawn_captured()
-        .unwrap();
-    // Held open until umx exits, so script never sees the end of its input first.
-    let mut stdin = child.child.stdin.take().unwrap();
-    std::thread::sleep(Duration::from_millis(500));
-    stdin.write_all(format!("{typed}\n").as_bytes()).unwrap();
-    child.what = "confirm on a pty".into();
-    let out = child.finish(Duration::from_secs(20));
-    drop(stdin);
-    let out = String::from_utf8_lossy(&out.stdout).into_owned();
-    let text = out.replace("\r\n", "\n");
-    assert!(text.contains("type the graph's alias (demo)"), "{text}");
-    Envelope::from_json(json_part(&text).as_bytes()).unwrap_or_else(|e| panic!("{e}: {text}"))
-}
-
-#[test]
-fn a_person_at_a_terminal_confirms_a_downgrade_and_graph_list_shows_it() {
-    let mut home = Home::new("confirm-pty");
-    home.secured_graph();
-    home.umx(&["graph", "set", "demo", "--policy", "open"]);
-    let env = confirm_on_a_pty(&home, "yes");
-    assert!(
-        has(&env, Code::PolicyConfirmNeedsHuman),
-        "y is not the alias: {}",
-        env.to_json()
-    );
-    assert_eq!(listed(&home, "demo")["effective_policy"], "secured");
-    let env = confirm_on_a_pty(&home, "demo");
-    assert_eq!(env.status, Status::Ok, "{}", env.to_json());
-    assert_eq!(
-        (env.data["was"].clone(), env.data["policy"].clone()),
-        (json!("secured"), json!("open"))
-    );
-    let row = listed(&home, "demo");
-    assert_eq!(row["effective_policy"], "open");
-    assert!(
-        row["downgraded"].as_str().is_some_and(|d| d.ends_with('Z')),
-        "{row}"
-    );
-    let record = fs::read_to_string(home.path.join("state/graph-policies.json")).unwrap();
-    assert!(
-        record.contains("\"from\": \"secured\"") && record.contains("\"to\": \"open\""),
-        "{record}"
-    );
-    // Raised again: no longer shown as downgraded; the history stays in the record.
-    home.umx(&["graph", "set", "demo", "--policy", "secured"]);
-    let row = listed(&home, "demo");
-    assert_eq!(
-        (row["effective_policy"].clone(), row["downgraded"].clone()),
-        (json!("secured"), json!(null))
     );
 }
 
@@ -9850,16 +9828,17 @@ fn a_secured_policy_that_could_not_be_recorded_is_never_lowered() {
     assert_eq!(listed(&home, "demo")["effective_policy"], "secured");
     let (env, _) = home.umx(&["graph", "load", &path]);
     assert_eq!(env.data["graph"]["effective_policy"], "secured");
-    // Writable again: the lowering goes to graph.json, and the recorded secured policy holds.
+    // Writable again: the held secured policy is recorded first, then this call lowers it, recorded and warned.
     fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
     let (env, exit) = home.umx(&["graph", "set", "demo", "--policy", "open"]);
     assert_eq!(exit, 0, "{}", env.to_json());
+    assert!(has(&env, Code::PolicyLowered), "{}", env.to_json());
+    let record = fs::read_to_string(state.join("graph-policies.json")).unwrap();
     assert!(
-        has(&env, Code::PolicyDowngradeUnconfirmed),
-        "{}",
-        env.to_json()
+        record.contains("\"from\": \"secured\"") && record.contains("\"to\": \"open\""),
+        "{record}"
     );
-    assert_eq!(listed(&home, "demo")["effective_policy"], "secured");
+    assert_eq!(listed(&home, "demo")["effective_policy"], "open");
 }
 
 /// A stand-in az that prints a token (logged in) or fails (logged out). It is the only az doctor can find.
@@ -10654,11 +10633,13 @@ fn the_graph_probe_uses_the_effective_policy_not_graph_json() {
         log
     };
 
-    // graph.json lowered to open without a person confirming it.
+    // graph.json lowered to open outside umx, with no umx call confirming it.
     let mut home = Home::new("probe-downgrade");
     let log = marker_az(&home.az_active(""));
-    home.secured_graph();
-    home.umx(&["graph", "set", "demo", "--policy", "open"]);
+    let path = home.secured_graph();
+    home.umx(&["graph", "unload", "demo"]);
+    edit_graph_json(&path, |v| v["embedding"]["policy"] = json!("open"));
+    home.umx(&["graph", "load", &path]);
     let listed = home.ok(&["graph", "list"]);
     assert_eq!(listed.data["rows"][0]["effective_policy"], "secured");
     probe_refused(&home, &log);
@@ -16966,7 +16947,7 @@ fn a_graph_without_a_primary_stays_so_across_a_restart() {
 }
 
 /// D62: there is nothing to trust by hand any more, so a trusted_endpoint is not a key, and a graph's two settings
-/// show in its rows; loosening one by graph set stays the file's word.
+/// show in its rows; loosening one by graph set takes effect in that call, warned (D83).
 #[test]
 fn trusted_endpoint_is_not_a_key_and_graph_rows_show_both_settings() {
     let mut home = Home::new("trust");
@@ -16993,12 +16974,11 @@ fn trusted_endpoint_is_not_a_key_and_graph_rows_show_both_settings() {
         (&json!("secured"), &json!("named"), &json!("local"))
     );
     let set = home.ok(&["graph", "set", "demo", "--embedder", "trusted"]);
+    let lowered = issue(&set, Code::PolicyLowered);
     assert!(
-        set.warnings
-            .iter()
-            .any(|w| w.code() == "policy_downgrade_unconfirmed"),
+        lowered.message().contains("az (hosted at "),
         "{}",
-        set.to_json()
+        lowered.message()
     );
     let after = row(&home);
     assert_eq!(after["embedding"]["embedder"], "trusted");
@@ -17007,8 +16987,8 @@ fn trusted_endpoint_is_not_a_key_and_graph_rows_show_both_settings() {
         "as the file says it"
     );
     assert_eq!(
-        after["effective_embedder"], "local",
-        "unconfirmed: still local"
+        after["effective_embedder"], "trusted",
+        "lowered in one call"
     );
     let file = fs::read_to_string(home.path.join("g/graph.json")).unwrap();
     assert!(
@@ -25558,23 +25538,25 @@ fn stale_pointers_are_matched_in_normal_form_and_listed_once() {
     );
 }
 
-/// ws006 S23 round 2 (review R14, security): confirming a downgrade by a former alias takes exactly the name shown;
-/// the live alias typed instead is refused as any other text is.
+/// D83, security A5: confirm-policy by a former alias confirms the graph that name is now, and the warning names its
+/// live alias.
 #[test]
-fn confirming_a_downgrade_by_a_former_alias_takes_the_name_shown() {
+fn confirming_a_downgrade_by_a_former_alias_names_the_live_alias() {
     let mut home = Home::new("s23-confirm");
-    home.secured_graph();
+    let path = home.secured_graph();
     home.ok(&["graph", "rename", "demo", "gamma"]);
-    home.umx(&["graph", "set", "gamma", "--policy", "open"]);
-    let env = confirm_on_a_pty(&home, "gamma");
-    assert!(
-        has(&env, Code::PolicyConfirmNeedsHuman),
-        "{}",
-        env.to_json()
-    );
-    let env = confirm_on_a_pty(&home, "demo");
-    assert!(env.errors.is_empty(), "{}", env.to_json());
+    home.umx(&["graph", "unload", "gamma"]);
+    edit_graph_json(&path, |v| v["embedding"]["policy"] = json!("open"));
+    home.umx(&["graph", "load", &path]);
+    let env = home.ok(&["graph", "confirm-policy", "demo"]);
     assert_eq!(env.data["policy"], "open", "{}", env.to_json());
+    issue(&env, Code::AliasRedirected);
+    let found = issue(&env, Code::PolicyLowered);
+    assert!(
+        found.message().starts_with("Graph gamma's"),
+        "{}",
+        found.message()
+    );
 }
 
 /// ws006 S23 round 2 (graph-addressing-expert N3): an `--along` end may name the graph by a former alias.

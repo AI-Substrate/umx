@@ -135,9 +135,11 @@ An open graph that may use this machine's hosted embedder but should be read onl
 Every instance in the machine config counts as trusted, so adding or repointing a hosted embedder there decides
 where `trusted` graphs' text goes; umx warns `embedder_route_changed` when a config change moves it.
 
-Raising either setting takes effect at once. Lowering either (named to open, local to trusted, trusted to any) does
-not: the machine remembers the stricter setting even if `graph.json` is edited or pulled, and only a person typing
-at a terminal can confirm the lower one (`umx graph confirm-policy <alias>`). Agents never run it.
+Raising either setting takes effect at once. Lowering either (named to open, local to trusted, trusted to any) is
+one `umx graph set` call, by anyone: the reply warns `policy_lowered`, naming what loosened and which embedders of
+this machine may now get the graph's text, and the machine records the change with its time. Lowering a graph is
+its owner's decision. The machine remembers the stricter setting even if `graph.json` is edited or pulled, so a
+pulled or edited lower setting waits until `umx graph confirm-policy <alias>` confirms it.
 
 Whatever the policy: no email addresses or phone numbers in graphs, and no credentials. umx warns
 `secret_suspected` when text looks like a key or token and holds that field back from hosted embedders.

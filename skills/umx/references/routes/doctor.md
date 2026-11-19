@@ -93,10 +93,11 @@ Job: get from an error to a working command, or settle what a merge left in a gr
    (`embedder_not_configured` means there is no embedder yet; nothing to do). `vector_orphan` is a line for a
    node the graph no longer has and `vector_line_kept` one umx cannot read (often a merge marker); both are
    kept, nothing is lost.
-9. **usage 059**: `policy_downgrade_unconfirmed` means graph.json now says a lower embedding policy than this
-   machine confirmed (an edit, a pull, a deleted key or section). The graph stays secured. Tell the human and ask
-   them to run `umx graph confirm-policy <alias>` in their own terminal, where it asks them to type the alias. Never
-   run it yourself, and never wrap it to reach a terminal. `local_state_unreadable`: every graph counts as secured
+9. **usage 208** (supersedes 059): `policy_downgrade_unconfirmed` means graph.json was lowered outside umx (an
+   edit, a pull, a deleted key or section). The graph stays at its recorded policy. Tell the graph's owner, who may
+   confirm it with the warning's next, `umx graph confirm-policy <alias>`. Lowering a policy (`graph set` or that
+   confirm) is one call, the owner's decision, and warns `policy_lowered`: read it back to them. `policy_not_lowered`
+   means the record could not take the lowering, so the graph stays where it was. `local_state_unreadable`: every graph counts as secured
    until the human fixes the file it names; umx never rewrites it. The same holds for either D53 setting
    (usage 128): local to trusted, trusted to any, named to open. `config_key_deprecated` on
    `embedders.<name>.trusted_endpoint` means a key left from before D62: run its fix, `umx config unset <key>`.

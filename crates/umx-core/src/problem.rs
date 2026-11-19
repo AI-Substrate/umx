@@ -141,6 +141,75 @@ pub fn repo_url_ok(url: &str) -> bool {
     }
 }
 
+/// An embedder endpoint's host, `host[:port]` only (D83, security W2): never its scheme, user info, path or query,
+/// where a credential or an `api-key=` may sit. Built only by [`Host::from_endpoint`], which shows nothing rather than
+/// guess when the URL is not plain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Host(String);
+
+impl Host {
+    /// The host and port of `url`: the scheme, `user:pass@` and everything from the first `/`, `?` or `#` dropped;
+    /// the host `[A-Za-z0-9.-]` not starting with `.` or `-`, the port 1 to 5 digits. None when an `@` sits after
+    /// the host (user info holding a `/`) or anything else is not plain, so no part of a credential is ever shown.
+    pub fn from_endpoint(url: &str) -> Option<Host> {
+        let rest = url.split_once("://").map_or(url, |(_, r)| r);
+        let before_query = rest.split(['?', '#']).next().unwrap_or("");
+        let authority = before_query.split('/').next().unwrap_or("");
+        if before_query[authority.len()..].contains('@') {
+            return None;
+        }
+        let shown = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        let (host, port) = match shown.split_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (shown, None),
+        };
+        let host_ok = !host.is_empty()
+            && host.len() <= 253
+            && !host.starts_with(['.', '-'])
+            && host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+        let port_ok = port
+            .is_none_or(|p| (1..=5).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()));
+        (host_ok && port_ok).then(|| Host(shown.to_ascii_lowercase()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Where an embedder instance sends a graph's text: kept on this machine, or to a hosted endpoint (its host when
+/// one could be shown).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Reach {
+    Local,
+    Hosted(Option<Host>),
+}
+
+/// An embedder instance that may now get a graph's text: its name (config instance names are snake_case) and reach.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Receiver {
+    pub name: ValidName,
+    pub reach: Reach,
+}
+
+impl fmt::Display for Receiver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.reach {
+            Reach::Local => write!(f, "{} (local)", self.name.as_str()),
+            Reach::Hosted(Some(h)) => {
+                write!(f, "{} (hosted at {})", self.name.as_str(), h.as_str())
+            }
+            Reach::Hosted(None) => write!(
+                f,
+                "{} (hosted at an endpoint not shown)",
+                self.name.as_str()
+            ),
+        }
+    }
+}
+
 /// A runnable `umx ...` command for a `next`, built from umx's own words (verb path, flags, placeholders such as
 /// `<title>`) and checked values only. Never a typed command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -290,6 +359,8 @@ pub enum Slot {
     /// An address's `?repo=` hint for graph_not_loaded's `<hint>`: Some when it passed [`SafeText::repo_url`]. The
     /// daemon renders it through umx-protocol's `Fill::repo_hint`, which checks it again.
     RepoHint(Option<SafeText>),
+    /// Embedder instances and where each sends text (D83), shown joined by ` and `; a host only as [`Host`].
+    Receivers(Vec<Receiver>),
 }
 
 impl Slot {
@@ -342,6 +413,15 @@ impl fmt::Display for Slot {
             Slot::Decode(r) => write!(f, "{r}"),
             Slot::ModelKey(k) => write!(f, "{k}"),
             Slot::File(file) => write!(f, "{file}"),
+            Slot::Receivers(rs) => {
+                for (i, r) in rs.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(" and ")?;
+                    }
+                    write!(f, "{r}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -412,6 +492,30 @@ impl Problem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_host_is_only_host_and_port_and_never_a_credential() {
+        let shown = |u: &str| Host::from_endpoint(u).map(|h| h.0);
+        assert_eq!(
+            shown("https://u:secret@h.example/p?api-key=x").as_deref(),
+            Some("h.example")
+        );
+        assert_eq!(
+            shown("https://H.Example:8443/x").as_deref(),
+            Some("h.example:8443")
+        );
+        assert_eq!(shown("h.example").as_deref(), Some("h.example"));
+        for hidden in [
+            "https://u:se/cret@h.example/p",
+            "https://[::1]/p",
+            "https://h.example:port/p",
+            "https://-h.example/",
+            "https:///p",
+            "https://h_x.example/",
+        ] {
+            assert_eq!(shown(hidden), None, "{hidden}");
+        }
+    }
 
     #[test]
     fn repo_urls_that_could_add_an_option_or_command_are_refused() {

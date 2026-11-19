@@ -1,7 +1,7 @@
 //! This machine's policy record (ws004 s06 A2): `$UMX_HOME/state/graph-policies.json`, read and written through the
-//! LocalState port. It holds the last embedding policy confirmed on this machine for each graph, keyed by graph id
-//! and by folder, so an edit of graph.json (by hand, by a pull, by an agent) can make a graph stricter at once but
-//! never less strict until a person confirms it at their own terminal.
+//! LocalState port. It holds the last embedding policy umx recorded on this machine for each graph, keyed by graph id
+//! and by folder, so an edit of graph.json (by hand, by a pull) can make a graph stricter at once but never less
+//! strict until a umx call lowers the record (D83), which records each downgrade with its time.
 //!
 //! Format: `{"umx_state": 1, "graphs": [...]}`, records sorted by graph id then folder, keys in a fixed order;
 //! unknown keys are kept and written back. A newer `umx_state` is refused, never rewritten.
@@ -31,7 +31,7 @@ pub struct PolicyState {
     pub extra: BTreeMap<String, Value>,
 }
 
-/// One copy of a graph on this machine: its id, its folder (the resolved path) and the policy last confirmed for it.
+/// One copy of a graph on this machine: its id, its folder (the resolved path) and the policy last recorded for it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PolicyRecord {
     pub graph: Id,
@@ -42,7 +42,7 @@ pub struct PolicyRecord {
     pub policy: Stated,
     /// When this policy was recorded (ISO 8601 UTC).
     pub confirmed_at: String,
-    /// Every downgrade a person confirmed, oldest first.
+    /// Every downgrade a umx call made, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub downgrades: Vec<Downgrade>,
     #[serde(flatten)]
@@ -180,7 +180,7 @@ impl PolicyState {
             .reduce(Policy::join)
     }
 
-    /// When a person last confirmed a downgrade of this graph, if any.
+    /// When a umx call last lowered this graph, if any.
     pub fn last_downgrade(&self, graph: Id, folder: &str) -> Option<String> {
         self.matching(graph, folder)
             .flat_map(|r| r.downgrades.iter().map(|d| d.confirmed_at.clone()))
@@ -215,7 +215,7 @@ impl PolicyState {
         }
     }
 
-    /// A downgrade a person confirmed: every record of the graph (by id or folder) stricter than `to` on either
+    /// A downgrade a umx call made: every record of the graph (by id or folder) stricter than `to` on either
     /// setting becomes `to`, and each records the change. Returns how many records changed.
     pub fn lower(&mut self, graph: Id, folder: &str, to: Policy, at: &str) -> usize {
         let mut changed = 0;

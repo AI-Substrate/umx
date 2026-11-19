@@ -1042,11 +1042,11 @@
 				{
 					"id": "req-91",
 					"title": "A secured graph may use our own tenant's embedder",
-					"statement": "A graph has two settings: visibility (open, or named: left out of unscoped search and multi-graph reads unless named) and embedder (any, trusted, or local). Secured means named plus local, as before. Every embedder instance defined in the machine config is trusted (D62); a repo layer, env, flag or graph file can never define an instance, mark one trusted or loosen a graph's settings. A graph whose embedder setting is trusted embeds through local or machine-configured instances only; secret holds (req-49) still apply to trusted instances. Changing a hosted instance's endpoint, deployment, kind or model warns when non-open graphs route to it. Any graph that is not fully open (open plus any) keeps its vectors and similar files in the local cache, never in tracked paths, as a secured graph does.",
+					"statement": "A graph has two settings: visibility (open, or named: left out of unscoped search and multi-graph reads unless named) and embedder (any, trusted, or local). Secured means named plus local, as before. Every embedder instance defined in the machine config is trusted (D62); a repo layer, env, flag or graph file can never define an instance or mark one trusted. Any caller may lower a graph's settings with one umx call and no person at a terminal; the reply warns what loosened and which instances of this machine may now get the graph's text, and the change is recorded with its time. A graph file lowered by a pull or an edit never loosens a graph by itself: it stays at the setting this machine recorded until a caller confirms it. A graph whose embedder setting is trusted embeds through local or machine-configured instances only; secret holds (req-49) still apply to trusted instances. Changing a hosted instance's endpoint, deployment, kind or model warns when non-open graphs route to it. Any graph that is not fully open (open plus any) keeps its vectors and similar files in the local cache, never in tracked paths, as a secured graph does.",
 					"actor": "a-operator",
 					"priority": "must",
 					"state": "shipped",
-					"done_when": "With a machine-configured hosted fake and an untrusted hosted fake that fails the test if called: a named+trusted graph embeds through the configured fake and its vectors stay out of tracked paths; a secured (named+local) graph never reaches a hosted fake; a repo layer, env or flag cannot define or trust an instance or widen a graph's embedder setting; a multi-graph search sends each graph's query only to an instance that graph admits; loosening either setting by pull or hand edit never takes effect without confirm-policy; unscoped search still skips named graphs, reporting a count only; a leftover trusted_endpoint warns config_key_deprecated.",
+					"done_when": "With a machine-configured hosted fake and an untrusted hosted fake that fails the test if called: a named+trusted graph embeds through the configured fake and its vectors stay out of tracked paths; a secured (named+local) graph never reaches a hosted fake; a repo layer, env or flag cannot define or trust an instance or widen a graph's embedder setting; a multi-graph search sends each graph's query only to an instance that graph admits; loosening either setting by pull or hand edit never takes effect without confirm-policy; an agent with no terminal lowers secured to named+trusted with one graph set, which records the downgrade and warns policy_lowered naming the loosening and each newly allowed instance (a hosted one by host only); unscoped search still skips named graphs, reporting a count only; a leftover trusted_endpoint warns config_key_deprecated.",
 					"source": "D53 (via a tester, 2026-11-11); design: plan 071 (not published) (security and architect agreed) D62 (2026-11-11): a machine-configured embedder is trusted; s20 shipped first, s20b removes the typed confirmation."
 				},
 				{
@@ -1992,6 +1992,11 @@
 					"date": "2026-11-17",
 					"by": "project manager",
 					"change": "req-158 added and shipped: a --where value compares as written (D82, PR D82-1)."
+				},
+				{
+					"date": "2026-11-19",
+					"by": "project manager",
+					"change": "req-91 rewritten: any caller lowers a graph's settings in one call, warned and recorded; a pulled or edited lower graph file still waits for a caller to confirm it."
 				}
 			]
 		}

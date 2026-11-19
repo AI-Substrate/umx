@@ -1,5 +1,5 @@
-# Allowed: an adapter crate; the excepted fns (umx-cli batch.rs read with its imports inside it, lib.rs open_tty with
-# std::fs::File in its signature, umx-fakes fetch); #[cfg(test)] code; tests/; std::fs as a word in a comment or string;
+# Allowed: an adapter crate; the excepted fns (umx-cli batch.rs read with its imports inside it and std::fs::File in
+# its signature, umx-fakes fetch); #[cfg(test)] code; tests/; std::fs as a word in a comment or string;
 # std uses that never reach fs, grouped and renamed (R251 B1), one rooted at a std alias (F117);
 # globs of std modules off the way to fs and a global path through the std alias that never reaches fs (R258);
 # paths.rs reaches the root's std alias from another file (crate::base, super::base) and never reaches fs (F119).

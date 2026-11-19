@@ -14,7 +14,7 @@ mod parse;
 /// each is reserved on nodes and edges.
 pub use human::PLAIN_KEYS as HUMAN_PLAIN_KEYS;
 
-use std::io::{BufRead, IsTerminal, Read, Write};
+use std::io::{IsTerminal, Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -520,60 +520,7 @@ fn send_op(p: parse::Parsed, ctx: &Context) -> Envelope {
     request.include_named = p.include_named;
     request.include_provenance = p.include_provenance;
     let command = request.command.clone();
-    let reply = call(ctx, &request).unwrap_or_else(|issue| Envelope::fail(&command, issue));
-    match confirmed_on_tty(&request, &reply) {
-        Some(again) => call(ctx, &again).unwrap_or_else(|issue| Envelope::fail(&command, issue)),
-        None => reply,
-    }
-}
-
-/// `graph confirm-policy` when the daemon says lowering the policy needs a person (ws004 s06 A2): asks on /dev/tty,
-/// never stdin, so a pipe, a flag or an env var cannot answer, and the person types the graph's alias, not y. The
-/// request again with what they typed, or None (no terminal) so the daemon's refusal stands. A pty wrapper can still
-/// reach a terminal: a speed bump, accepted as proportionate (C33); every downgrade is recorded and shown, so such a
-/// bypass is visible.
-fn confirmed_on_tty(request: &Request, reply: &Envelope) -> Option<Request> {
-    let (name, needs, what) = match &request.op {
-        Some(Op::GraphConfirmPolicy { alias, typed: None }) => (
-            alias,
-            Code::PolicyConfirmNeedsHuman,
-            "To lower it, type the graph's alias",
-        ),
-        _ => return None,
-    };
-    let issue = reply.errors.first()?;
-    if issue.code() != needs.spec().code {
-        return None;
-    }
-    let tty = open_tty()?;
-    // The name came from argv; show it only if it is a plain snake_case name.
-    let shown = Fill::name(name).map_or("<name>", |_| name.as_str());
-    write!(
-        &tty,
-        "{}\n{what} ({shown}); anything else cancels: ",
-        issue.message()
-    )
-    .ok()?;
-    let mut line = String::new();
-    std::io::BufReader::new(&tty).read_line(&mut line).ok()?;
-    let typed = Some(line.trim().to_owned());
-    let mut again = request.clone();
-    again.op = Some(match &request.op {
-        Some(Op::GraphConfirmPolicy { alias, .. }) => Op::GraphConfirmPolicy {
-            alias: alias.clone(),
-            typed,
-        },
-        _ => return None,
-    });
-    Some(again)
-}
-
-fn open_tty() -> Option<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-        .ok()
+    call(ctx, &request).unwrap_or_else(|issue| Envelope::fail(&command, issue))
 }
 
 fn internal(code: &'static str) -> Issue {

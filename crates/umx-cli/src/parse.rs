@@ -1448,11 +1448,10 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 .collect();
             Op::GraphSet { alias, settings }.with(a)
         }
-        // The CLI asks the person on /dev/tty when the daemon says a downgrade needs them (lib.rs); never a flag.
         "graph confirm-policy" => {
             let a = args()?;
             let alias = a.positionals(1, "name the graph's alias")?.remove(0);
-            Op::GraphConfirmPolicy { alias, typed: None }.with(a)
+            Op::GraphConfirmPolicy { alias }.with(a)
         }
         "graph unload" => {
             let a = args()?;

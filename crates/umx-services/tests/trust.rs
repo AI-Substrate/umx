@@ -9,8 +9,9 @@ use umx_core::codec::GraphFile;
 use umx_core::ports::{
     EmbedError, Embedded, Embedder, GraphDir, GraphFiles, Locality, ModelKey, TextKind,
 };
+use umx_core::problem::Host;
 use umx_core::setup::GraphFilesSetup;
-use umx_core::{EmbedderRule, GraphEmbedding, Policy, Visibility};
+use umx_core::{EmbedderRule, GraphEmbedding, Policy, Problem, Visibility};
 use umx_fakes::{FakeClock, FakeEmbedder, FakeGraphFiles, FakeIds, FakeLocalState};
 use umx_services::embedding::{Instance, embed};
 use umx_services::{Ctx, EmbedJob, NodeAddRequest, Ports, QueryFailed, Services};
@@ -170,6 +171,16 @@ impl World {
             });
         }
         svc.set_instances(instances, Some(default));
+        // The hosts compose parses from each hosted instance's endpoint (D83, security W2): host[:port] only.
+        svc.set_hosts(
+            [
+                ("az", "https://u:secret@az.example/p?api-key=x"),
+                ("rogue", "https://rogue.example:8443/openai"),
+            ]
+            .into_iter()
+            .map(|(n, e)| (n.to_string(), Host::from_endpoint(e).unwrap()))
+            .collect(),
+        );
         for (alias, path) in paths {
             svc.graph_load(&ctx(), &path, Some(&alias)).unwrap();
         }
@@ -424,7 +435,7 @@ fn held_secrets_never_reach_a_trusted_instance() {
 }
 
 #[test]
-fn a_loosening_by_pull_or_hand_edit_never_takes_effect_until_a_person_confirms_it() {
+fn a_loosening_by_pull_or_hand_edit_never_takes_effect_until_a_umx_call_confirms_it() {
     let mut w = World::new();
     // local to trusted
     w.graph("vault", HOSTED, Policy::SECURED);
@@ -454,20 +465,227 @@ fn a_loosening_by_pull_or_hand_edit_never_takes_effect_until_a_person_confirms_i
     );
     assert_eq!(w.svc.effective_policy("acme"), Some(NAMED_TRUSTED));
     assert!(!w.svc.graph().shown_unnamed("acme"), "still named");
-    // named to open, by graph set this time
-    let done = w
-        .svc
-        .graph_set(&ctx(), "vault", &[("visibility".into(), "open".into())])
-        .unwrap();
-    assert!(
-        done.notes
-            .iter()
-            .any(|p| p.code == "policy_downgrade_unconfirmed")
-    );
-    assert!(!w.svc.graph().shown_unnamed("vault"));
-    // A person confirms at their terminal: then the file's pair is what umx acts on.
-    w.svc.confirm_policy(&ctx(), "acme", Some("acme")).unwrap();
+    // One umx call by any caller confirms it, and warns: then the file's pair is what umx acts on.
+    let done = w.svc.confirm_policy(&ctx(), "acme").unwrap();
+    assert_eq!(codes(&done.notes), ["policy_lowered"]);
     assert_eq!(w.svc.effective_policy("acme"), Some(Policy::OPEN));
+}
+
+fn codes(notes: &[Problem]) -> Vec<&'static str> {
+    notes.iter().map(|p| p.code).collect()
+}
+
+fn lowered(notes: &[Problem]) -> Vec<&Problem> {
+    notes
+        .iter()
+        .filter(|p| p.code == "policy_lowered")
+        .collect()
+}
+
+fn set(w: &mut World, alias: &str, name: &str, value: &str) -> Vec<Problem> {
+    w.svc
+        .graph_set(&ctx(), alias, &[(name.into(), value.into())])
+        .unwrap()
+        .notes
+}
+
+/// D83: an agent (nothing typed, no terminal) lowers secured to named+trusted in one call. The record holds the
+/// downgrade with its time, the warning names what loosened and each newly admitted instance with its host, and the
+/// daemon then embeds the graph with the newly admitted instance by itself (today's behaviour, pinned here).
+#[test]
+fn an_agent_lowers_a_secured_graph_in_one_call_and_its_nodes_then_embed_by_themselves() {
+    let mut w = World::new();
+    w.graph("vault", HOSTED, Policy::SECURED);
+    w.add("vault", "Vendor onboarding", "slow");
+    w.run();
+    assert_eq!(
+        (w.az.count(), w.rogue.count()),
+        (0, 0),
+        "secured: nothing sent"
+    );
+    let notes = set(&mut w, "vault", "embedder", "trusted");
+    let warned = lowered(&notes);
+    assert_eq!(warned.len(), 1, "{notes:?}");
+    let p = warned[0];
+    assert_eq!(
+        (
+            p.slot("from").as_deref(),
+            p.slot("to").as_deref(),
+            p.slot("loosened").as_deref()
+        ),
+        (
+            Some("secured"),
+            Some("named+trusted"),
+            Some("embedder rule local to trusted")
+        )
+    );
+    let receivers = p.slot("receivers").unwrap();
+    assert_eq!(
+        receivers,
+        "az (hosted at az.example) and rogue (hosted at rogue.example:8443)"
+    );
+    assert!(!format!("{p:?}").contains("secret") && !format!("{p:?}").contains("api-key"));
+    assert_eq!(p.slot("at").as_deref(), Some("2026-11-09T00:00:00Z"));
+    assert_eq!(
+        p.slot("store").as_deref(),
+        Some(""),
+        "not open: the cache keeps its vectors"
+    );
+    assert_eq!(w.svc.effective_policy("vault"), Some(NAMED_TRUSTED));
+    let shown = &w.svc.graph().loaded("vault").unwrap().policy;
+    assert_eq!(shown.downgraded_at.as_deref(), Some("2026-11-09T00:00:00Z"));
+    let record = String::from_utf8(w.state.bytes().unwrap()).unwrap();
+    assert!(record.contains("secured to named+trusted"), "{record}");
+    // No further command: the queued node goes to the newly admitted instance the graph routes to.
+    w.run();
+    assert!(
+        w.rogue.saw("Vendor onboarding"),
+        "embedded after the one-call downgrade"
+    );
+    assert!(w.rogue.count() > 0);
+}
+
+/// Security A1: only a `graph set` that itself lowers graph.json lowers the record; a pulled downgrade stays pending
+/// through any other setting.
+#[test]
+fn a_graph_set_that_does_not_lower_leaves_a_pulled_downgrade_pending() {
+    let mut w = World::new();
+    w.graph("vault", HOSTED, Policy::SECURED);
+    w.edit_graph_json("vault", |e| e["policy"] = "open".into());
+    let notes = set(&mut w, "vault", "title", "Renamed");
+    assert!(
+        codes(&notes).contains(&"policy_downgrade_unconfirmed"),
+        "{notes:?}"
+    );
+    assert!(lowered(&notes).is_empty(), "{notes:?}");
+    assert_eq!(w.svc.effective_policy("vault"), Some(Policy::SECURED));
+    w.add("vault", "Still local", "x");
+    w.run();
+    assert_eq!((w.az.count(), w.rogue.count()), (0, 0));
+}
+
+/// Security A2: the warning compares effective policies, so a visibility a pull lowered is named too when this call
+/// lowers the embedder rule and the record drops on both.
+#[test]
+fn the_warning_names_every_loosening_of_the_effective_policy() {
+    let mut w = World::new();
+    w.graph("vault", HOSTED, Policy::SECURED);
+    w.edit_graph_json("vault", |e| {
+        e["visibility"] = "open".into();
+        e["embedder"] = "local".into();
+    });
+    assert_eq!(w.svc.effective_policy("vault"), Some(Policy::SECURED));
+    let notes = set(&mut w, "vault", "embedder", "trusted");
+    let warned = lowered(&notes);
+    assert_eq!(warned.len(), 1, "{notes:?}");
+    assert_eq!(
+        warned[0].slot("loosened").as_deref(),
+        Some("visibility named to open and embedder rule local to trusted")
+    );
+    assert_eq!(warned[0].slot("from").as_deref(), Some("secured"));
+    assert!(w.svc.graph().shown_unnamed("vault"));
+}
+
+/// Security A3: graph.json is written, but the record cannot take the lower policy: the graph stays at its recorded
+/// policy, the reply says so, and no instance it did not admit before gets its text.
+#[test]
+fn a_record_that_cannot_take_the_lowering_keeps_the_graph_where_it_was() {
+    let mut w = World::new();
+    w.graph("vault", HOSTED, Policy::SECURED);
+    w.add("vault", "Vendor onboarding", "slow");
+    w.state
+        .fail_writes(Some("write graph-policies.json: permission denied"));
+    let notes = set(&mut w, "vault", "embedder", "trusted");
+    assert_eq!(
+        codes(&notes),
+        [
+            "policy_not_lowered",
+            "policy_downgrade_unconfirmed",
+            "embedder_not_local_for_secured"
+        ]
+    );
+    assert_eq!(w.svc.effective_policy("vault"), Some(Policy::SECURED));
+    w.run();
+    assert_eq!((w.az.count(), w.rogue.count()), (0, 0));
+    // Once the record takes writes, one umx call lowers it.
+    w.state.fail_writes(None);
+    let done = w.svc.confirm_policy(&ctx(), "vault").unwrap();
+    assert_eq!(lowered(&done.notes).len(), 1, "{:?}", done.notes);
+    assert_eq!(w.svc.effective_policy("vault"), Some(NAMED_TRUSTED));
+}
+
+/// Security A4: the record is lowered by graph id, so another loaded copy whose graph.json is lower too drops in the
+/// same call; each copy that changed gets its own warning, by its own alias.
+#[test]
+fn every_loaded_copy_the_lowering_reaches_is_warned() {
+    let mut w = World::new();
+    w.graph("vault", HOSTED, Policy::SECURED);
+    let from = GraphDir::parse("/work/vault").unwrap();
+    let to = GraphDir::parse("/work/copy").unwrap();
+    for f in [GraphFile::Graph, GraphFile::Nodes, GraphFile::Edges] {
+        if let Some(bytes) = w.files.read(&from, f).unwrap() {
+            w.files.write(&to, f, &bytes).unwrap();
+        }
+    }
+    w.svc
+        .graph_load(&ctx(), "/work/copy", Some("copy"))
+        .unwrap();
+    w.edit_graph_json("copy", |e| {
+        e["visibility"] = "named".into();
+        e["embedder"] = "trusted".into();
+    });
+    assert_eq!(w.svc.effective_policy("copy"), Some(Policy::SECURED));
+    let notes = set(&mut w, "vault", "embedder", "trusted");
+    let graphs: Vec<String> = lowered(&notes)
+        .iter()
+        .map(|p| p.slot("graph").unwrap())
+        .collect();
+    assert_eq!(graphs, ["copy", "vault"]);
+    assert_eq!(w.svc.effective_policy("copy"), Some(NAMED_TRUSTED));
+}
+
+/// Security W3: the instances named are the ones the routing rule admits after the folder rule; one the folder
+/// narrows away is not named (the control, with no narrowing, names it).
+#[test]
+fn the_warning_names_only_instances_the_graphs_folder_may_use() {
+    for (narrowed, expected) in [
+        (
+            false,
+            "az (hosted at az.example) and rogue (hosted at rogue.example:8443)",
+        ),
+        (true, "rogue (hosted at rogue.example:8443)"),
+    ] {
+        let mut w = World::new();
+        if narrowed {
+            w.svc.set_folder_rule(Arc::new(|_, name| name != "az"));
+        }
+        w.graph("vault", HOSTED, Policy::SECURED);
+        let notes = set(&mut w, "vault", "embedder", "trusted");
+        assert_eq!(
+            lowered(&notes)[0].slot("receivers").as_deref(),
+            Some(expected),
+            "narrowed: {narrowed}"
+        );
+    }
+}
+
+/// Security W6: lowered to fully open, the warning says new vectors go in the graph folder itself; trusted to any
+/// admits no new instance here (every one is trusted), and says so.
+#[test]
+fn a_lowering_to_open_says_where_new_vectors_go() {
+    let mut w = World::new();
+    w.graph("acme", HOSTED, NAMED_TRUSTED);
+    let notes = set(&mut w, "acme", "policy", "open");
+    let p = lowered(&notes)[0];
+    assert_eq!(
+        p.slot("loosened").as_deref(),
+        Some("visibility named to open and embedder rule trusted to any")
+    );
+    assert_eq!(
+        p.slot("receivers").as_deref(),
+        Some("no embedder instance of this machine")
+    );
+    assert!(p.slot("store").unwrap().contains("graph folder itself"));
 }
 
 #[test]

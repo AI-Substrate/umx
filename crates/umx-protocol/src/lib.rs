@@ -186,12 +186,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// types kept in graph.json's `relation_endpoints`); `std:<name>` accepted on name-taking flags and stored plain;
 /// `ontology add relation` and `ontology add type` refuse umx's reserved names in every graph; new codes
 /// `std_field_conflict`, `reserved_relation_stored` and `query_std_qualifier`; `reserved_name` gains its `why`.
+/// 92: D83: `Op::GraphConfirmPolicy` loses `typed`: any caller lowers a graph's recorded policy in one call, and
+/// `graph set` lowering a policy lowers the record too. The error `policy_confirm_needs_human` is retired; new
+/// warnings `policy_lowered` and `policy_not_lowered`; `policy_downgrade_unconfirmed`'s next is `graph
+/// confirm-policy`; `similarity_no_embedder` loses its `<fix>` command.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 91;
+pub const PROTOCOL: u32 = 92;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -200,7 +204,7 @@ pub const PROTOCOL: u32 = 91;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (91, 0xfa45_e5f9_dbaf_bb98);
+const WIRE_FINGERPRINT: (u32, u64) = (92, 0xfcea_0552_0341_29dc);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1568,14 +1572,10 @@ pub enum Op {
     /// `umx similarity rebuild`: recompute every similar_to list of the graph from its committed vectors and write
     /// `similar/` (req-65); the files then equal what the kept-current lists wrote, byte for byte.
     SimilarityRebuild,
-    /// Makes graph.json's embedding policy this machine's record. Lowering it needs `typed`: the alias a person
-    /// typed at their own terminal, which the CLI reads from /dev/tty and never from a flag, env or stdin. That
-    /// check is the CLI's, not the daemon's: any process of this user can send `typed` over the owner-only socket,
-    /// as a pty wrapper can reach a terminal. It stops a careless or injected umx call, and every downgrade is
-    /// recorded and shown by `graph list` (C33).
+    /// Makes graph.json's embedding policy this machine's record, raising or lowering it, for any caller in one call
+    /// (D83). A lowering is recorded with its time, shown by `graph list`, and warned as `policy_lowered`.
     GraphConfirmPolicy {
         alias: String,
-        typed: Option<String>,
     },
     /// `umx neighbours <node>` (req-28): the edges at a node and the nodes at their other ends.
     Neighbours {
@@ -2733,8 +2733,8 @@ catalogue! {
         "Similarity was not used for <scope>: <cause>. Those results are word matches only.",
         "umx embeddings status";
     SimilarityNoEmbedder => "similarity_no_embedder", Hint, 0,
-        "a search reached a graph whose embedder setting admits none of this machine's embedder instances (a secured or local graph where every instance is hosted): its query was never sent and it was searched by words only. A local instance, or its owner's choice to allow hosted ones, gives it similarity",
-        "Similarity was not used for <graph>: its embedder setting is <setting>, which admits none of this machine's embedder instances. Those results are word matches only. Add a local instance (umx docs get embeddings), or its owner may allow hosted ones: <fix>.",
+        "a search reached a graph whose embedder setting admits none of this machine's embedder instances (a secured or local graph where every instance is hosted): its query was never sent and it was searched by words only. A local instance gives it similarity; allowing hosted ones is its owner's decision, so no command that lowers the policy is printed (D83)",
+        "Similarity was not used for <graph>: its embedder setting is <setting>, which admits none of this machine's embedder instances. Those results are word matches only. Add a local instance (umx docs get embeddings). Allowing hosted ones is its owner's decision (umx docs get graph).",
         "umx docs get embeddings";
     SecretSuspected => "secret_suspected", Warning, 0,
         "new tracked graph text looks like a credential; single writes warn and store it, while batches refuse it. Embedded fields retain the req-49 hold and allow; evidence, status reasons and edge fields have no allow yet",
@@ -2813,9 +2813,9 @@ catalogue! {
         "Graph <graph> is embedded with <graph key>; the configured embedder is <embedder key>. Its vectors stay as they are and are not mixed, and new ones wait (pending). Either configure an embedder for <graph key> (umx docs get config), or re-embed the graph with <embedder key>; the next command shows that cost first and changes nothing.",
         "umx embeddings reembed --graph <graph> --dry-run";
     PolicyDowngradeUnconfirmed => "policy_downgrade_unconfirmed", Warning, 0,
-        "graph.json says a lower embedding policy than this machine last confirmed for the graph (the value edited, or the policy key or embedding section removed, as by a pull); the graph keeps the recorded policy",
-        "Graph <graph>'s graph.json says embedding policy <file>, but this machine last confirmed <recorded>, so it stays <recorded>. Only a person at their own terminal can confirm the change: ask the human to do it in their own terminal, and never do it for them.",
-        "umx docs get graph";
+        "graph.json says a lower embedding policy than this machine's record for the graph, lowered outside umx (the value edited, or the policy key or embedding section removed, as by a pull); the graph keeps the recorded policy until a umx call confirms the change (D83)",
+        "Graph <graph>'s graph.json says embedding policy <file>, lowered outside umx (an edit or a pull), so it stays <recorded> on this machine. Its owner may confirm the change with the next command, which warns what loosens and which embedders may then get its text.",
+        "umx graph confirm-policy <graph>";
     LocalStateUnreadable => "local_state_unreadable", Warning, 0,
         "this machine's policy record is refused (a symlink, not yours, open to others), does not parse, or is missing while its folder exists; every graph counts as secured until it is fixed, and umx never rewrites it",
         "<file> cannot be used: <reason>. Every graph counts as secured for embedding until it is fixed.",
@@ -2828,12 +2828,16 @@ catalogue! {
         "this machine's policy record was replaced but the folder sync after it failed, so the change may not survive a crash; umx acts on it as written",
         "<file> was replaced but the folder sync after it failed: <reason>. The change may not survive a crash; umx graph list shows the policies in effect.",
         "umx graph list";
-    PolicyConfirmNeedsHuman => "policy_confirm_needs_human", Error, 1,
-        "graph confirm-policy would lower a graph's embedding policy and no person typed its alias at their own terminal (/dev/tty); nothing changed",
-        "Lowering graph <graph> from <recorded> to <file> needs a person to type its alias at their own terminal (<reason>). Nothing changed: ask the human to run it in their own terminal.",
-        "umx docs get graph";
+    PolicyLowered => "policy_lowered", Warning, 0,
+        "a umx call (graph set lowering it, or graph confirm-policy) lowered a graph's effective embedding policy on this machine: what loosened, the embedder instances of this machine that may now get its text and could not before (each local or hosted, with its endpoint host), and that the change is recorded. A warning, never a block (D83)",
+        "Graph <graph>'s embedding policy is now <to> on this machine (it was <from>): <loosened>. Newly allowed to get its text: <receivers>. The change is recorded on this machine at <at>.<store>",
+        "umx graph list";
+    PolicyNotLowered => "policy_not_lowered", Warning, 0,
+        "graph set wrote a lower embedding policy to graph.json but could not record it in this machine's policy record; the graph stays at its recorded policy, so no new embedder instance gets its text (D83)",
+        "Graph <graph>'s graph.json now says a lower embedding policy, but recording it in <file> failed: <reason>. The graph stays at its recorded policy until the change is recorded.",
+        "umx graph confirm-policy <graph>";
     PolicyNotRecorded => "policy_not_recorded", Error, 1,
-        "graph confirm-policy, or graph set lowering a policy, cannot read this machine's policy record or record the higher policy in it first; nothing changed",
+        "graph confirm-policy, or graph set about to lower a policy, cannot read or write this machine's policy record; nothing changed",
         "<file> cannot be used: <reason>. Nothing changed.",
         "umx docs get graph";
     AliasInvalid => "alias_invalid", Error, 1,
@@ -5350,10 +5354,7 @@ mod tests {
             },
             Op::ConfigCheck { cwd: s("/w") },
             Op::EmbeddingsRepair,
-            Op::GraphConfirmPolicy {
-                alias: "g".into(),
-                typed: s("g"),
-            },
+            Op::GraphConfirmPolicy { alias: "g".into() },
             Op::Neighbours {
                 node: "n".into(),
                 relation: s("r"),

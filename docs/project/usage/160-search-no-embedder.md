@@ -13,14 +13,13 @@ machine's embedder instances, because every instance is hosted. Its query was ne
 and exact matches only, so an empty result means no word matched, not that nothing is similar. Try other words or
 word forms, or `umx node find <words>` for titles, and keep working.
 
-Tell the user that meaning search is off for that graph and give both fixes: add a local embedder instance
-(`umx docs get embeddings`), or, if the graph's owner chooses, allow hosted instances with the command the hint
-prints, `umx graph set <graph> --embedder trusted`. Lowering a secured graph takes a person at their own terminal
-(`umx graph confirm-policy`).
+Tell the user that meaning search is off for that graph. Adding a local embedder instance
+(`umx docs get embeddings`) turns it on. Allowing hosted instances is the graph owner's decision
+(`umx docs get graph`, Embedding policy), so the hint prints no command for it.
 
 ## Don't
-Don't run `umx graph set <graph> --embedder trusted` yourself: whether a graph's text may go to a hosted instance is
-the owner's call. Don't read the empty reply of a graph that gave the hint `similarity_no_embedder` as "nothing about
+Don't lower the graph's embedder setting to get meaning search: whether a graph's text may go to a hosted instance
+is the owner's call, and a search is never the reason to change it. Don't read the empty reply of a graph that gave the hint `similarity_no_embedder` as "nothing about
 this". Don't retry with `--include-named` or `--all` to get meaning: visibility never widens which instances a
 graph may use.
 
@@ -29,8 +28,8 @@ graph may use.
 umx search "vendor onboarding" --graph notes --human
 # (no rows; status ok, exit 0)
 # hint: Similarity was not used for notes: its embedder setting is local, which admits none of this machine's
-#   embedder instances. Those results are word matches only. Add a local instance (umx docs get embeddings), or its
-#   owner may allow hosted ones: umx graph set notes --embedder trusted. (next: umx docs get embeddings)
+#   embedder instances. Those results are word matches only. Add a local instance (umx docs get embeddings).
+#   Allowing hosted ones is its owner's decision (umx docs get graph). (next: umx docs get embeddings)
 # In JSON it is in `hints` with code similarity_no_embedder.
 ```
 

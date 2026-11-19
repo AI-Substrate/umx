@@ -639,16 +639,7 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
             ),
             None,
         ),
-        (
-            op(
-                Op::GraphConfirmPolicy {
-                    alias: "g".into(),
-                    typed: Some("g".into()),
-                },
-                None,
-            ),
-            None,
-        ),
+        (op(Op::GraphConfirmPolicy { alias: "g".into() }, None), None),
         (op(Op::SimilarityRebuild, Some("g")), None),
         (
             op(

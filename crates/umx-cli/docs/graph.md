@@ -178,7 +178,7 @@ the rename itself stands.
   `UMX_GRAPH` default is read only when it is the graph used, so `--graph` or an address overrides such a default.
 - The hint's next is the command as given with each former alias read as the live one: the rest of a `--graph`
   list, a `--scope` and the author graph are kept.
-- `umx graph confirm-policy <old>` asks for the name it showed, `<old>`: the live alias typed instead is refused.
+- `umx graph confirm-policy <old>` confirms the graph that name is now; its `policy_lowered` names the live alias.
 - A secured graph reached by a former alias is read only where its live alias would be (named); in an open
   graph's evidence it reads as not loaded, as before.
 - graph.json format 7: an older umx refuses a renamed graph (`graph_format_newer`) rather than lose its
@@ -388,27 +388,30 @@ Tightening an open graph leaves the vector files it wrote while open in its fold
 `umx docs get embeddings`, Vectors left from when a graph was open).
 
 graph.json can change under you: a pull, a merge, a hand edit, an agent. So this machine also keeps a record,
-`$UMX_HOME/state/graph-policies.json`, of the last policy confirmed here for each graph, by graph id and by folder
+`$UMX_HOME/state/graph-policies.json`, of the last policy umx recorded here for each graph, by graph id and by folder
 (so every copy of a secured graph, such as a git worktree, stays secured). umx acts on the stricter of the two,
 shown as `effective_policy`. Each setting is compared on its own: loosening either (named to open, local to trusted,
 trusted to any) is a lowering.
 
 - Raising the policy takes effect at once and is recorded: `graph new --secured`, `graph set <alias> --policy
   secured`, or loading a graph whose graph.json says `secured`.
-- Lowering it does not. When graph.json says less than the record (the value changed to `open`, the `policy` key
-  deleted, or the whole `embedding` section deleted), the graph stays at the recorded policy and `graph load` and
-  `graph set` warn `policy_downgrade_unconfirmed`.
-- A person confirms a lower policy in their own terminal, after the graph is loaded with its new graph.json:
+- Lowering it is one umx call, by any caller, with no terminal step: `graph set <alias> --embedder trusted` (or
+  `--visibility open`, `--policy open`) writes graph.json and lowers this machine's record in the same call. The
+  reply warns `policy_lowered`: what loosened (from and to, the stricter of graph.json and the record before and
+  after), each embedder instance of this machine that may now get the graph's text and could not before (its
+  name, local or hosted, and a hosted one's endpoint host), and that the change is recorded, with when. Lowered to
+  `open`, it also says new vectors now go in the graph folder itself. It is a warning, never a block: lowering a
+  graph is its owner's decision, so lower one only when its owner asked for it. Once lowered, the daemon embeds the
+  graph's nodes with the newly allowed instance by itself.
+- A graph.json lowered outside umx (the value changed to `open`, the `policy` key deleted, or the whole
+  `embedding` section deleted, as by a pull) never loosens the graph by itself: it stays at the recorded policy
+  and `graph load` and `graph set` warn `policy_downgrade_unconfirmed`. Its owner may confirm it, after the graph
+  is loaded with its new graph.json, with one call that warns as above:
 
       umx graph confirm-policy client_x
 
-  It asks them, on the terminal itself (never stdin), to type the graph's alias. Piped input, a flag or an env
-  var cannot answer it, and without a terminal it is refused (`policy_confirm_needs_human`). Agents never run
-  it; they ask the human. This is a speed bump plus visibility, not a barrier: the check is the CLI's, so any
-  process of yours can confirm by writing to the daemon's owner-only socket, and a pty wrapper can reach a
-  terminal. It stops a careless or injected umx call; every downgrade is recorded and `graph list` and `graph
-  load` show `downgraded` (when) until the graph is raised again. Confirming a raise or an unchanged policy needs
-  no terminal.
+- Every downgrade is recorded, and `graph list` and `graph load` show `downgraded` (when) until the graph is
+  raised again. Confirming a raise or an unchanged policy changes nothing more.
 
 The record is checked like `config.toml`: a plain file owned by you with mode 600, in a folder with mode 700.
 If it is refused, does not parse, or is missing while its folder exists (deleted), every graph counts as secured
@@ -418,7 +421,9 @@ policy, remove the empty folder (`rmdir ~/.umx/state`, or under `$UMX_HOME`); ot
 
 If recording a secured policy fails (`local_state_not_saved`), the daemon keeps the graph secured, retries with
 every later write of the record, and refuses `graph set --policy open` (`policy_not_recorded`) until the secured
-policy is recorded. `local_state_not_durable` means the record was written but its folder sync failed. The record protects only this machine: a fresh clone
+policy is recorded. If graph.json took a lower policy but the record could not (`policy_not_lowered`), the graph
+stays at its recorded policy until `umx graph confirm-policy <alias>` records it. `local_state_not_durable` means
+the record was written but its folder sync failed. The record protects only this machine: a fresh clone
 elsewhere trusts its graph.json until its first secured load or confirm there.
 
 A secured graph with a configured embedder that sends text off the machine warns `embedder_not_local_for_secured`,
@@ -558,9 +563,9 @@ see `umx docs get guide`),
 vectors wait as pending, and its next, `umx embeddings reembed --graph <alias> --dry-run`, shows what re-embedding
 would cost),
 `recovery_conflict` (see below), `graph_files_changed` and the warning `stale_files` (see Files changed on disk),
-and for the embedding policy `policy_downgrade_unconfirmed`,
-`local_state_unreadable`, `local_state_not_saved`, `local_state_not_durable` (warnings),
-`policy_confirm_needs_human` and `policy_not_recorded` (see Embedding policy).
+and for the embedding policy `policy_lowered`, `policy_not_lowered`, `policy_downgrade_unconfirmed`,
+`local_state_unreadable`, `local_state_not_saved`, `local_state_not_durable` (warnings) and `policy_not_recorded`
+(see Embedding policy).
 
 ## Size limits
 

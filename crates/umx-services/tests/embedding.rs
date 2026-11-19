@@ -2504,7 +2504,7 @@ fn a_round_of_plans_reads_each_graphs_policy_once() {
 
 #[test]
 fn a_policy_change_recounts_pending_in_the_store_it_now_uses() {
-    // Review R85-2: open (graph folder) to secured (this machine's cache), and a confirmed lowering back.
+    // Review R85-2: open (graph folder) to secured (this machine's cache), and a lowering back.
     let mut w = world_with(umx_core::Policy::OPEN, Locality::Local);
     add(&mut w, "Slow builds", "Builds take an hour.", "Teams wait");
     run(&mut w);
@@ -2524,13 +2524,10 @@ fn a_policy_change_recounts_pending_in_the_store_it_now_uses() {
     );
     run(&mut w);
     assert_eq!(pending(&w), Some(0));
-    // Lowered in graph.json: still secured, same store, same count.
+    // Lowered in one call: open again, back to the graph folder, whose vectors are still current.
     w.svc
         .graph_set(&ctx(), "demo", &[("policy".into(), "open".into())])
         .unwrap();
-    assert_eq!(pending(&w), Some(0));
-    // Confirmed: open again, back to the graph folder, whose vectors are still current.
-    w.svc.confirm_policy(&ctx(), "demo", Some("demo")).unwrap();
     assert_eq!(w.svc.effective_policy("demo"), Some(umx_core::Policy::OPEN));
     let before_reload = pending(&w);
     assert_eq!(

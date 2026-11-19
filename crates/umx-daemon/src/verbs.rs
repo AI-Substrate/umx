@@ -273,15 +273,7 @@ fn with_live_alias(services: &Services, ctx: &Ctx, op: &Op) -> Result<Option<Op>
     if live == *alias {
         return Ok(None);
     }
-    let former = core::mem::replace(alias, live.clone());
-    // The person was shown the name the request gave and must type exactly that: it confirms the graph that name is
-    // now (review R14, security). Any other text, the live alias too, is refused as a mistyped name is.
-    if let Op::GraphConfirmPolicy {
-        typed: Some(typed), ..
-    } = &mut op
-    {
-        *typed = if *typed == former { live } else { former };
-    }
+    *alias = live;
     Ok(Some(op))
 }
 
@@ -756,15 +748,13 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 |v| json!({ "alias": v.alias, "changed": v.changed, "title": v.title }),
             )
         }
-        Op::GraphConfirmPolicy { alias, typed } => reply(
-            command,
-            services.confirm_policy(&ctx, alias, typed.as_deref()),
-            |v| {
+        Op::GraphConfirmPolicy { alias } => {
+            reply(command, services.confirm_policy(&ctx, alias), |v| {
                 json!({
                     "alias": v.alias, "was": v.was.name(), "policy": v.policy.name(), "changed": v.changed,
                 })
-            },
-        ),
+            })
+        }
         Op::GraphUnload { alias } => reply(
             command,
             services.graph_unload(&ctx, alias),
@@ -3674,9 +3664,7 @@ fn retry(op: &Op) -> Command {
             }
         }
         // Never shown: it names no node and no other graph, so it cannot be ambiguous. The typed alias is not kept.
-        Op::GraphConfirmPolicy { alias: a, typed: _ } => {
-            alias(Command::new("graph confirm-policy"), a)
-        }
+        Op::GraphConfirmPolicy { alias: a } => alias(Command::new("graph confirm-policy"), a),
         Op::UiCommand { command } => {
             let noted = |c: Command, note: &Option<String>| text(c, "--note", note, "<note>");
             let nodes = |mut c: Command, nodes: &[String]| {

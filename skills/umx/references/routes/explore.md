@@ -72,8 +72,8 @@ every named graph it lists; do not combine it or `--scope` with `--all`.
    (any string field with no stated role) is found by words and `--where` only (a data number or date also by exact
    match), so for a label or an id, search its words.
    **usage 160**: `similarity_no_embedder` means no instance here may serve that graph (a `local` graph, only
-   hosted instances): it was searched by words only, so empty means no word matched. Tell the user the fix it
-   prints (add a local instance, or the owner's `umx graph set <graph> --embedder trusted`); never run it yourself.
+   hosted instances): it was searched by words only, so empty means no word matched. Tell the user: a local instance
+   gives it meaning search; allowing hosted ones is the graph owner's decision, never a search's.
    **usage 111**: a word also matches its other forms (`vendor` finds `vendors`, `approv` finds `approval`) and,
    from 4 letters, words starting with it; each hit's `word_terms` says `exact`, `stem` or `prefix`. On
    `word_prefix_capped`, type more of the word.

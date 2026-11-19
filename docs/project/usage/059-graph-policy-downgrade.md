@@ -2,7 +2,8 @@
 id: 059
 title: A lowered embedding policy waits for a person; agents never confirm it
 route: doctor
-status: current
+status: superseded
+superseded_by: 208
 source: ws004 s06 part A2 (2026-11-10): architect, security and graph-storage-expert design; security ruling on the /dev/tty confirm
 reqs: [req-46]
 supersedes: none

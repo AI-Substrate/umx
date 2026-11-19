@@ -6501,8 +6501,20 @@ fn a_lowered_file_policy_keeps_the_graph_secured_and_a_hosted_embedder_is_never_
     let mut svc = world_on(&w).with_embedder(hosted.clone());
     let done = svc.graph_load(&ctx(), "/work/g", None).unwrap();
     assert_eq!(codes(&done.notes), ["embedder_not_local_for_secured"]);
-    let given = [("policy".to_string(), "open".to_string())];
-    let done = svc.graph_set(&ctx(), "demo", &given).unwrap();
+    // Lowered outside umx (a pull): graph.json says open, the record still says secured (D83 ruling (b)).
+    let mut meta = svc.loaded("demo").unwrap().meta.clone();
+    meta.embedding = Some(umx_core::GraphEmbedding::new(None, umx_core::Policy::OPEN));
+    let bytes = codec::encode_graph(&meta);
+    w.files
+        .write_set(
+            &dir("/work/g"),
+            &[umx_core::ports::Change {
+                file: umx_core::ports::FileRef::Graph(GraphFile::Graph),
+                bytes: Some(&bytes),
+            }],
+        )
+        .unwrap();
+    let done = svc.graph_load(&ctx(), "/work/g", None).unwrap();
     assert_eq!(
         codes(&done.notes),
         [
@@ -6620,25 +6632,20 @@ fn a_record_that_does_not_reach_the_disk_is_a_warning_and_the_graph_stays_secure
     assert_eq!(w.state.writes(), 1, "in place, though not synced");
 }
 
+/// D83: any caller lowers a graph in one call, nothing typed; the record holds every downgrade with its time.
 #[test]
-fn confirm_policy_lowers_only_with_the_typed_alias_and_records_every_downgrade() {
+fn graph_set_lowers_the_record_in_one_call_and_records_every_downgrade() {
     let mut w = world();
     secured(&mut w, "demo", "/work/g");
-    set_policy(&mut w, "demo", "open");
-    for typed in [None, Some("y"), Some("demo2")] {
-        let p = w.svc.confirm_policy(&ctx(), "demo", typed).unwrap_err();
-        assert_eq!(p.code, "policy_confirm_needs_human", "{typed:?}");
-    }
     let before = w.state.bytes();
-    let done = w.svc.confirm_policy(&ctx(), "demo", Some("demo")).unwrap();
+    let warnings = set_policy(&mut w, "demo", "open");
+    assert_eq!(codes(&warnings), ["policy_lowered"]);
     assert_ne!(w.state.bytes(), before);
-    let v = done.value;
+    let p = &w.svc.graph_list()[0].policy;
     assert_eq!(
-        (v.was, v.policy, v.changed),
-        (umx_core::Policy::SECURED, umx_core::Policy::OPEN, true)
+        (p.effective, p.downgraded_at.as_deref()),
+        (umx_core::Policy::OPEN, Some("2026-11-09T00:00:00Z"))
     );
-    let shown = w.svc.graph_list()[0].policy.downgraded_at.clone();
-    assert_eq!(shown.as_deref(), Some("2026-11-09T00:00:00Z"));
     // Raised again: effective at once, and the downgrade is no longer shown.
     assert!(set_policy(&mut w, "demo", "secured").is_empty());
     let p = &w.svc.graph_list()[0].policy;
@@ -6646,11 +6653,12 @@ fn confirm_policy_lowers_only_with_the_typed_alias_and_records_every_downgrade()
         (p.effective, p.downgraded_at.clone()),
         (umx_core::Policy::SECURED, None)
     );
-    // Confirming a policy that does not lower needs no alias.
-    let done = w.svc.confirm_policy(&ctx(), "demo", None).unwrap();
+    // Confirming a policy that does not lower changes nothing and warns nothing.
+    let done = w.svc.confirm_policy(&ctx(), "demo").unwrap();
     assert!(!done.value.changed);
+    assert!(done.notes.is_empty(), "{:?}", done.notes);
     assert_eq!(
-        w.svc.confirm_policy(&ctx(), "nope", None).unwrap_err().code,
+        w.svc.confirm_policy(&ctx(), "nope").unwrap_err().code,
         "graph_not_loaded"
     );
 }
@@ -6746,15 +6754,16 @@ fn a_removed_record_counts_every_graph_as_secured() {
 }
 
 #[test]
-fn a_confirmed_downgrade_that_did_not_sync_says_so_and_is_open() {
+fn a_downgrade_that_did_not_sync_says_so_and_is_open() {
     // Review R2.
     let mut w = world();
     secured(&mut w, "demo", "/work/g");
-    set_policy(&mut w, "demo", "open");
     w.state.set_not_synced(true);
-    let done = w.svc.confirm_policy(&ctx(), "demo", Some("demo")).unwrap();
-    assert_eq!(codes(&done.notes), ["local_state_not_durable"]);
-    assert_eq!(done.value.policy, umx_core::Policy::OPEN);
+    let warnings = set_policy(&mut w, "demo", "open");
+    assert_eq!(
+        codes(&warnings),
+        ["local_state_not_durable", "policy_lowered"]
+    );
     assert_eq!(w.svc.effective_policy("demo"), Some(umx_core::Policy::OPEN));
 }
 

@@ -817,6 +817,9 @@ pub struct Instance {
     /// the configured value, else [`AZURE_TOKENS_PER_MIN`] for azure_openai; None (unpaced) for a local instance
     /// that sets none.
     pub tokens_per_minute: Option<u64>,
+    /// A hosted instance's endpoint host, `host[:port]` only (D83, security W2), parsed here once; None for a local
+    /// instance or an endpoint that cannot be shown safely.
+    pub host: Option<umx_core::problem::Host>,
 }
 
 /// An azure_openai instance's default pace: umx shares the deployment's quota with other tools (Flowspace measured
@@ -953,6 +956,15 @@ impl Embedders {
             .filter_map(|i| Some((i.name.clone(), i.tokens_per_minute?)))
             .collect()
     }
+
+    /// Each built hosted instance's endpoint host (D83): what a lowered policy's warning names, never more.
+    pub fn hosts(&self) -> std::collections::BTreeMap<String, umx_core::problem::Host> {
+        self.instances
+            .iter()
+            .filter(|i| i.built.is_ok())
+            .filter_map(|i| Some((i.name.clone(), i.host.clone()?)))
+            .collect()
+    }
 }
 
 /// The first `program` in `dirs` that is an executable file, so `az` runs by absolute path and the path can be
@@ -1045,12 +1057,17 @@ fn build_instance(
             _ => None,
         })
         .or((kind == "azure_openai").then_some(AZURE_TOKENS_PER_MIN));
+    let host = (kind != "local")
+        .then(|| text(resolved, &name, "endpoint"))
+        .flatten()
+        .and_then(|e| umx_core::problem::Host::from_endpoint(&e));
     Instance {
         name,
         kind,
         built,
         local,
         tokens_per_minute,
+        host,
     }
 }
 

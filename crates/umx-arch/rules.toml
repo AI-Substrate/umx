@@ -90,11 +90,6 @@ fn = "read"
 reason = "the client reads its own --file input; it never reaches the daemon as a path"
 
 [[rule.except]]
-file = "umx-cli/src/lib.rs"
-fn = "open_tty"
-reason = "the person's terminal for the confirmation prompt (s06)"
-
-[[rule.except]]
 file = "umx-fakes/src/lib.rs"
 fn = "fetch"
 reason = "fake ModelFetcher writes the fetched file so the shared contract can check it on disk; stub builds only"

@@ -62,11 +62,13 @@ which only count it (`secured_graphs_skipped`). `embedder` says where its text m
 local or hosted) or `local` (never off the machine). `secured` is named
 plus local. Name a graph to read it, and never copy its text into a graph with a looser setting.
 
-Raising either setting is always fine. Lowering either (named to open, local to trusted, trusted to any) is the
-human's decision at their own terminal: when you see `policy_downgrade_unconfirmed`, keep treating the graph at its
-old setting and tell the human. Never run `umx graph confirm-policy`, never edit the policy record under
-`~/.umx/state/`, and never add or repoint an embedder in the machine config: that decides where `trusted` graphs'
-text goes.
+Raising either setting is always fine. Lowering either (named to open, local to trusted, trusted to any) is one umx
+call, and it is the graph owner's decision: lower a graph only when its owner asked for it, and read the
+`policy_lowered` warning back to them (what loosened, which embedder instances may now get its text, and that the
+change is recorded). When you see `policy_downgrade_unconfirmed`, graph.json was lowered outside umx: keep treating
+the graph at its old setting and tell its owner, who may confirm it (`umx graph confirm-policy <alias>`). Never edit
+the policy record under `~/.umx/state/`, and never add or repoint an embedder in the machine config: that decides
+where `trusted` graphs' text goes.
 
 ## Who wrote it is a record, not proof
 

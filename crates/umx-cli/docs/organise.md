@@ -129,8 +129,8 @@ can be named plus trusted:
     umx graph set client_x --embedder trusted
 
 Name a graph to read it. Never copy its text into a graph with a looser setting. Raising either setting is fine;
-lowering either needs the human at their own terminal (`umx graph confirm-policy`): never run that yourself, ask.
-See `umx docs get graph`, Embedding policy.
+lowering either is one call that warns `policy_lowered` and is the graph owner's decision: do it only when they
+asked. See `umx docs get graph`, Embedding policy.
 
 ### Copies
 

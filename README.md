@@ -268,8 +268,9 @@ A graph is one folder, so you decide what goes together the way you decide what 
   searches and queries skip it) and `embedder` (`any`, `trusted`: any instance in this machine's config, or
   `local`: text never leaves the machine). `umx graph new <folder> --alias client_x --secured` is named plus local;
   `umx graph set beta --visibility named --embedder trusted` makes an open graph named-only while still letting it
-  use this machine's hosted embedder. Lowering either setting needs a person at a terminal
-  (`umx graph confirm-policy`); agents cannot do it.
+  use this machine's hosted embedder. Lowering either setting is one call that warns what loosened and which
+  embedders may now get the graph's text, and records the change; a `graph.json` lowered by a pull or an edit
+  waits for `umx graph confirm-policy <alias>`.
 - **Link across graphs instead of copying.** An edge can point at a node in another graph by its address,
   `umx:<alias>/<id>`, when the thing already lives there:
   `umx edge add 01M7473C2V blocks umx:ops/01M7475710 --graph launch`. Neighbours and edge lists show these

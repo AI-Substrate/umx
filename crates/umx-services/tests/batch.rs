@@ -2674,9 +2674,6 @@ fn unnamed_secured_graphs_cannot_be_probed_by_explicit_ids() {
     held.svc
         .graph_set(&ctx(), "demo", &[("policy".into(), "open".into())])
         .unwrap();
-    held.svc
-        .confirm_policy(&ctx(), "demo", Some("demo"))
-        .unwrap();
     assert_eq!(
         held.svc.effective_policy("demo"),
         Some(umx_core::Policy::OPEN)

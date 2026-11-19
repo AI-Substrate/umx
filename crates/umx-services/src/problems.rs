@@ -318,8 +318,9 @@ pub const CODES: &[&str] = &[
     "local_state_unreadable",
     "local_state_not_saved",
     "local_state_not_durable",
-    "policy_confirm_needs_human",
     "policy_not_recorded",
+    "policy_lowered",
+    "policy_not_lowered",
     "search_results_cut",
     "secured_graphs_skipped",
     "secured_graphs_read",
@@ -1437,8 +1438,8 @@ fn reason_slot(reason: &str) -> Slot {
     ))
 }
 
-/// graph.json now says a lower policy than this machine last confirmed for the graph (an edit, a pull, a deleted
-/// key or section); the graph stays at the recorded policy until a person confirms the change.
+/// graph.json now says a lower policy than this machine's record for the graph, lowered outside umx (an edit, a
+/// pull, a deleted key or section); the graph stays at the recorded policy until a umx call confirms it (D83).
 pub fn policy_downgrade_unconfirmed(graph: &ValidName, recorded: Policy, file: Policy) -> Problem {
     Problem::new("policy_downgrade_unconfirmed")
         .with("graph", name(graph))
@@ -1469,21 +1470,76 @@ pub fn local_state_not_durable(file: &GraphDir, reason: &str) -> Problem {
         .with("reason", reason_slot(reason))
 }
 
-/// `graph confirm-policy` would lower the policy, and no person confirmed it at their own terminal.
-pub fn policy_confirm_needs_human(
-    graph: &ValidName,
-    recorded: Policy,
-    file: Policy,
-    reason: &'static str,
-) -> Problem {
-    Problem::new("policy_confirm_needs_human")
-        .with("graph", name(graph))
-        .with("recorded", Slot::Word(recorded.name()))
-        .with("file", Slot::Word(file.name()))
-        .with("reason", Slot::Word(reason))
+/// What loosened between two effective policies, in umx's words: the visibility, the embedder rule, or both.
+/// None when nothing did.
+fn loosened(from: Policy, to: Policy) -> Option<&'static str> {
+    use umx_core::{EmbedderRule as E, Visibility as V};
+    let visibility = (from.visibility, to.visibility) == (V::Named, V::Open);
+    Some(match ((from.embedder, to.embedder), visibility) {
+        ((E::Local, E::Trusted), false) => "embedder rule local to trusted",
+        ((E::Local, E::Any), false) => "embedder rule local to any",
+        ((E::Trusted, E::Any), false) => "embedder rule trusted to any",
+        ((E::Local, E::Trusted), true) => {
+            "visibility named to open and embedder rule local to trusted"
+        }
+        ((E::Local, E::Any), true) => "visibility named to open and embedder rule local to any",
+        ((E::Trusted, E::Any), true) => "visibility named to open and embedder rule trusted to any",
+        (_, true) => "visibility named to open",
+        (_, false) => return None,
+    })
 }
 
-/// `graph confirm-policy` could not read or write this machine's record; nothing changed.
+/// D83: a umx call lowered the effective policy of graph `graph` from `from` to `to` (both the stricter of graph.json
+/// and this machine's record), and the record now holds it. A warning, never a block: it names what loosened, the
+/// embedder instances of this machine that may now get the graph's text and did not before (`receivers`, after the
+/// folder rule; empty: none), when it was recorded, and, when `to` is open, that new vectors go in the graph's own
+/// folder. None when nothing loosened.
+pub fn policy_lowered(
+    graph: &ValidName,
+    from: Policy,
+    to: Policy,
+    receivers: Vec<umx_core::problem::Receiver>,
+    at: Option<&str>,
+) -> Option<Problem> {
+    let what = loosened(from, to)?;
+    let receivers = if receivers.is_empty() {
+        Slot::Word("no embedder instance of this machine")
+    } else {
+        Slot::Receivers(receivers)
+    };
+    let store = if to == Policy::OPEN {
+        " New vectors now go in the graph folder itself (git tracks them if that folder is in a repository)."
+    } else {
+        ""
+    };
+    Some(
+        Problem::new("policy_lowered")
+            .with("graph", name(graph))
+            .with("from", Slot::Word(from.name()))
+            .with("to", Slot::Word(to.name()))
+            .with("loosened", Slot::Word(what))
+            .with("receivers", receivers)
+            .with(
+                "at",
+                at.map_or(Slot::Word("the time of this call"), |t| {
+                    Slot::Os(SafeText::lossy(t))
+                }),
+            )
+            .with("store", Slot::Word(store)),
+    )
+}
+
+/// D83: `graph set` wrote graph.json's lower policy but could not record it on this machine, so the graph stays at
+/// its recorded policy (a failed record never turns into an unrecorded downgrade) and nothing new gets its text.
+pub fn policy_not_lowered(graph: &ValidName, file: &GraphDir, reason: &str) -> Problem {
+    Problem::new("policy_not_lowered")
+        .with("graph", name(graph))
+        .with("file", Slot::path(file))
+        .with("reason", reason_slot(reason))
+}
+
+/// `graph confirm-policy`, or `graph set` about to lower a policy, could not read or write this machine's record;
+/// nothing changed.
 pub fn policy_not_recorded(file: &GraphDir, reason: &str) -> Problem {
     Problem::new("policy_not_recorded")
         .with("file", Slot::path(file))
@@ -1558,21 +1614,16 @@ pub fn similarity_unavailable(graph: Option<&ValidName>, cause: &'static str) ->
 }
 
 /// A search reached `graph`, whose embedder `setting` admits none of this machine's instances: it was searched by
-/// words only and its query never sent. `fix` is the owner's command that allows hosted instances (lowering it needs
-/// a person to confirm), never run for them. With no showable name (None), the graph is never named: the warning
-/// says "a graph searched" and the fix keeps the `<alias>` placeholder, so the reply is never silent.
+/// words only and its query never sent. It points to adding a local instance; allowing hosted ones is the graph
+/// owner's decision, so no command that lowers the policy is printed (D83, security (c)). With no showable name
+/// (None), the graph is never named: the hint says "a graph searched", so the reply is never silent.
 pub fn similarity_no_embedder(
     graph: Option<&ValidName>,
     setting: umx_core::EmbedderRule,
 ) -> Problem {
-    let fix = match graph {
-        Some(g) => Command::new("graph set").name(g),
-        None => Command::new("graph set").word("<alias>"),
-    };
     Problem::new("similarity_no_embedder")
         .with("graph", graph.map_or(Slot::Word("a graph searched"), name))
         .with("setting", Slot::Word(setting.as_str()))
-        .with("fix", Slot::Command(fix.word("--embedder").word("trusted")))
 }
 
 /// `n` nodes searched have no whole-node vector yet (pending or failed), so only words can find them.

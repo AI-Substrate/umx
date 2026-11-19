@@ -35,7 +35,7 @@ pub struct GraphInfo {
     pub kept_lines: usize,
     /// graph.json's embedding section: the graph's model key and policy (D32), if it has one.
     pub embedding: Option<GraphEmbedding>,
-    /// The policy umx acts on, and when a person last lowered it (ws004 s06 A2).
+    /// The policy umx acts on, and when a umx call last lowered it on this machine (ws004 s06 A2, D83).
     pub policy: PolicyView,
     /// Nodes whose vectors in the graph's own model are missing or stale (req-75); None when the graph has no
     /// model yet and there is no embedder.
