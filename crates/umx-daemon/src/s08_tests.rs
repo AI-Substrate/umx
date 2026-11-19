@@ -46,7 +46,7 @@ fn fake_key(seed: &str) -> String {
 /// optional delays: `per_text` for each document text, `query` for each query call. A query call can also be held
 /// until the test releases it ([`Spy::hold_queries`]), so a query is in flight for as long as a test needs; and
 /// document batches can be let through a few at a time ([`Spy::limit_documents`]), the next one waiting with the
-/// session held.
+/// session held, or held before they take the session ([`Spy::hold_documents`]), so a query still runs meanwhile.
 struct Spy {
     key: &'static str,
     locality: Locality,
@@ -65,6 +65,8 @@ struct Spy {
     batch_permits: Mutex<Option<usize>>,
     /// [`Spy::batches`] when the first query call took the session.
     batches_before_query: Mutex<Option<usize>>,
+    /// Document calls wait, before they take the session, until [`Spy::release_documents`].
+    documents_held: Mutex<bool>,
 }
 
 impl Spy {
@@ -92,6 +94,7 @@ impl Spy {
             batches: AtomicUsize::new(0),
             batch_permits: Mutex::new(None),
             batches_before_query: Mutex::new(None),
+            documents_held: Mutex::new(false),
         })
     }
 
@@ -101,8 +104,14 @@ impl Spy {
         *self.batch_permits.lock().unwrap() = Some(n);
     }
 
+    /// From now on no document call finishes, and none takes the session, until [`Spy::release_documents`].
+    fn hold_documents(&self) {
+        *self.documents_held.lock().unwrap() = true;
+    }
+
     fn release_documents(&self) {
         *self.batch_permits.lock().unwrap() = None;
+        *self.documents_held.lock().unwrap() = false;
         self.released.notify_all();
     }
 
@@ -125,6 +134,13 @@ impl Embedder for Spy {
     fn embed(&self, texts: &[String], kind: TextKind) -> Result<Embedded, EmbedError> {
         if matches!(kind, TextKind::Query) {
             self.asked.fetch_add(1, Ordering::SeqCst);
+        } else {
+            // The same backstop as a held query's.
+            let held = self.documents_held.lock().unwrap();
+            let _ = self
+                .released
+                .wait_timeout_while(held, SETTLE * 2, |held| *held)
+                .unwrap();
         }
         let _session = self.session.lock().unwrap();
         self.seen.lock().unwrap().extend(texts.iter().cloned());
@@ -571,15 +587,13 @@ fn a_query_in_flight_on_one_instance_never_holds_another_instances_batches() {
 
 /// PRD 002 search-13 (b): nodes with no vector yet are a hint, with the command that shows the embedding queue; the
 /// reply stays ok. Once every node has its vectors, a search that nothing cut and every graph answered by meaning
-/// carries none of this step's hints (no noise).
+/// carries none of this step's hints (no noise). The second node's embed call is held (before it takes the session,
+/// so the query still runs) until the first search has returned: its vector cannot land first, whatever the
+/// machine's speed.
 #[test]
 fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
     let root = root("hints");
-    let spy = Spy::new(
-        Locality::Hosted,
-        Duration::from_millis(1500),
-        Duration::ZERO,
-    );
+    let spy = Spy::new(Locality::Hosted, Duration::ZERO, Duration::ZERO);
     let d = daemon(&root, &spy);
     let g = root.join("g");
     ok(d.handle(&op(Op::GraphNew {
@@ -597,6 +611,7 @@ fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
     eventually("the first node's vectors", || {
         pending(&d, "demo") == 0 && shards(&g) > 0
     });
+    spy.hold_documents();
     add(&d, "Approval queue", "a second node, still being embedded");
     let search = || {
         d.handle(&op(Op::Search {
@@ -620,6 +635,7 @@ fn nodes_with_no_vector_yet_are_a_hint_and_a_complete_search_has_none() {
             .any(|w| w.code() == "similarity_incomplete")
     );
 
+    spy.release_documents();
     eventually("every node's vectors", || pending(&d, "demo") == 0);
     let env = search();
     let ours = [
