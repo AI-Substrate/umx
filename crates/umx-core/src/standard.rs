@@ -18,6 +18,9 @@ use crate::ontology::{
 pub const STD_VERSION: u32 = 1;
 /// The qualifier the CLI accepts before a std name: `std:person` means `person`.
 pub const QUALIFIER: &str = "std:";
+/// The name reserved as a type, relation and field name in every graph, std or not (ws008 T2b, req-99), so the
+/// qualifier is never ambiguous.
+pub const STD: &str = "std";
 
 /// A gathering with attendees.
 pub const MEETING: &str = "meeting";
@@ -464,6 +467,12 @@ pub enum NameKind {
 pub struct NotStd<'a> {
     pub kind: NameKind,
     pub name: &'a str,
+}
+
+/// `text` as a name-taking CLI flag means it: `std:<name>` is `<name>` when that is a std name of `kind`; anything
+/// else is `text` as given, for the services to check (a `std:` that is not std fails their name rules).
+pub fn plain(kind: NameKind, text: &str) -> &str {
+    qualified(kind, text).unwrap_or(text)
 }
 
 /// The stored name `text` means: `std:<name>` is `<name>` when it is a std name of `kind`, else [`NotStd`]; a name

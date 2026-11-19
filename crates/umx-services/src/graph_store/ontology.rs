@@ -12,9 +12,10 @@ use umx_core::codec::GraphFile;
 use umx_core::name::{RESERVED_EDGE_FIELDS, RESERVED_NODE_FIELDS};
 use umx_core::ontology::{
     DEFAULT_STATUS, DERIVED_RELATIONS, Described, INSTANCE_OF, MAX_TYPE_COLUMNS, PART_OF,
-    PROVENANCE_RELATIONS, PROVENANCE_TYPES, SIMILAR_TO,
+    PROVENANCE_DERIVED, PROVENANCE_RELATIONS, PROVENANCE_TYPES, SIMILAR_TO,
 };
 use umx_core::settings::{self, check_description};
+use umx_core::standard;
 use umx_core::ui::Touched;
 use umx_core::{Command, FieldDecl, FieldKind, Id, Ontology, Problem, Role, TypeDecl, ValidName};
 use umx_graph::{Graph, Tally, edge_lines};
@@ -137,6 +138,9 @@ fn field_decl(
     if reserved.contains(&name) {
         return Err(problems::reserved_name(name));
     }
+    if name == umx_core::standard::STD {
+        return Err(problems::std_reserved());
+    }
     let name = check_name(name, "field name", fix)?;
     let kind = FieldKind::parse(kind).ok_or_else(|| problems::kind_invalid(kind))?;
     Ok(FieldDecl::new(name.as_str(), kind))
@@ -157,6 +161,95 @@ fn node_field_decl(spec: &str, fix: &dyn Fn(&ValidName) -> Command) -> Result<Fi
         return Err(problems::reserved_name(umx_core::entity::ENTITY_KEY));
     }
     field_decl(spec, RESERVED_NODE_FIELDS, fix)
+}
+
+/// ws008 T2b (req-99): in a std graph, a field std v1 has keeps std's kind (`std_field_conflict`); a graph may declare
+/// it on another type or relation only with that kind.
+fn std_kind(o: &Ontology, graph: &ValidName, field: &FieldDecl) -> Result<(), Problem> {
+    match standard::std_field(&field.name) {
+        Some(f) if o.std_version().is_some() && f.kind != field.kind => {
+            Err(problems::std_field_conflict(
+                graph,
+                &ValidName::new(&field.name).expect("checked by field_decl"),
+                f.kind,
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A type name umx keeps (ws008 T2b): `std` in every graph; in a std graph also the provenance types only umx writes
+/// (a graph without std may use `model` or `agent` as its own words, as before).
+fn reserved_type_name(o: &Ontology, name: &str) -> Result<(), Problem> {
+    if name == standard::STD {
+        return Err(problems::std_reserved());
+    }
+    if o.std_version().is_some() && PROVENANCE_TYPES.contains(&name) {
+        return Err(problems::provenance_type_reserved(name));
+    }
+    Ok(())
+}
+
+/// A relation name umx keeps in every graph (ws008 T2b, dogfood): `std`, the stored provenance relations
+/// (`reserved_relation`) and the derived ones (`derived_relation`; similar_to has its own refusal).
+fn reserved_relation_name(name: &ValidName) -> Result<(), Problem> {
+    if name.as_str() == standard::STD {
+        return Err(problems::std_reserved());
+    }
+    if PROVENANCE_RELATIONS.contains(&name.as_str()) {
+        return Err(problems::reserved_relation(name));
+    }
+    if PROVENANCE_DERIVED.contains(&name.as_str()) {
+        return Err(problems::derived_relation(name));
+    }
+    Ok(())
+}
+
+/// `--from` and `--to` types (ws008 T2b), checked as node type names; `std` is never one.
+fn end_types(
+    types: &[String],
+    fix: &dyn Fn(&ValidName) -> Command,
+) -> Result<Vec<String>, Problem> {
+    let mut out: Vec<String> = Vec::new();
+    for t in types {
+        check_name(t, "node type", fix)?;
+        if t == standard::STD {
+            return Err(problems::std_reserved());
+        }
+        if !out.contains(t) {
+            out.push(t.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// A symmetric relation has no from and to end (D49), so it takes no expected end types.
+fn symmetric_ends() -> Problem {
+    problems::usage_invalid(
+        "a symmetric relation takes no --from or --to (its ends have no direction)",
+        "ontology",
+    )
+}
+
+/// Adds `from` and `to` to the relation's expected end types; true when one was new.
+fn widen(o: &mut Ontology, relation: &str, from: &[String], to: &[String]) -> bool {
+    if from.is_empty() && to.is_empty() {
+        return false;
+    }
+    let ends = o
+        .relation_endpoints
+        .entry(relation.to_string())
+        .or_default();
+    let mut changed = false;
+    for (side, given) in [(&mut ends.from, from), (&mut ends.to, to)] {
+        for t in given {
+            if !side.contains(t) {
+                side.push(t.clone());
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 /// A `--description` as stored, checked before anything changes; an empty one is none.
@@ -235,6 +328,9 @@ impl GraphStore {
         let name = check_name(name, "node type", &|g| {
             ctx.same_graph(Command::new("ontology add type").name(g))
         })?;
+        if name.as_str() == standard::STD {
+            return Err(problems::std_reserved());
+        }
         let fix = |g: &ValidName| {
             ctx.same_graph(
                 Command::new("ontology add type")
@@ -250,6 +346,19 @@ impl GraphStore {
         let description = described(description)?;
         let text = description.clone();
         let done = self.change_ontology(ctx, "type", &name, |o, graph| {
+            reserved_type_name(o, name.as_str())?;
+            for f in &fields {
+                std_kind(o, graph, f)?;
+            }
+            // ws008 T2b: a std graph has std's types already; the name alone adds nothing.
+            if o.std_version().is_some()
+                && standard::std_type(name.as_str()).is_some()
+                && o.type_decl(name.as_str()).is_none()
+                && fields.is_empty()
+                && description.is_none()
+            {
+                return Ok(false);
+            }
             // Declared already: unchanged if it has every given field with the same kind (F71), else refused whole.
             if let Some(t) = o.type_decl(name.as_str()) {
                 for f in &fields {
@@ -324,10 +433,16 @@ impl GraphStore {
             ));
         }
         self.change_ontology(ctx, "columns", &name, |o, graph| {
-            let Some(t) = o.types.iter_mut().find(|t| t.name == name.as_str()) else {
+            // In a std graph a provenance type is umx's: never the graph's own declaration (ws008 T2b).
+            reserved_type_name(o, name.as_str())?;
+            // ws008 T2b: a std graph has std's types and the fields std places on them without graph.json declaring
+            // them (`ontology add type person` writes nothing there). A column is known by the effective declaration,
+            // as node list and the type_column_unknown load rule know it.
+            let effective = o.effective();
+            let Some(decl) = effective.type_decl(name.as_str()) else {
                 return Err(problems::type_unknown(graph, &name));
             };
-            if let Some(c) = wanted.iter().find(|c| !t.column_known(c.as_str())) {
+            if let Some(c) = wanted.iter().find(|c| !decl.column_known(c.as_str())) {
                 let fix = Command::new("ontology add field")
                     .name(&name)
                     .name_with(c, ':', "<kind>")
@@ -335,6 +450,17 @@ impl GraphStore {
                     .name(graph);
                 return Err(problems::field_missing(graph, &name, c, fix));
             }
+            if o.type_decl(name.as_str()).is_none() {
+                if wanted.is_empty() {
+                    return Ok(false);
+                }
+                o.types.push(TypeDecl::new(name.as_str(), Vec::new()));
+            }
+            let t = o
+                .types
+                .iter_mut()
+                .find(|t| t.name == name.as_str())
+                .expect("declared above");
             let columns: Vec<String> = wanted.iter().map(|c| c.as_str().to_string()).collect();
             if t.columns == columns {
                 return Ok(false);
@@ -418,13 +544,46 @@ impl GraphStore {
         symmetric: bool,
         description: Option<&str>,
     ) -> Outcome<OntologyAdded> {
+        self.ontology_add_relation_with_ends(ctx, name, symmetric, description, (&[], &[]))
+    }
+
+    /// [`Self::ontology_add_relation`] with `--from` and `--to` end types (ws008 T2b, req-99): soft expectations kept
+    /// in graph.json's `relation_endpoints`; on a std relation they widen std's. An add that only widens (the relation
+    /// declared, or std's in a std graph) writes the new types alone; all of them there already is unchanged.
+    /// The names umx keeps are refused in every graph: `std` (`reserved_name`), the stored provenance relations
+    /// (`reserved_relation`) and the derived ones (`derived_relation`).
+    pub fn ontology_add_relation_with_ends(
+        &mut self,
+        ctx: &Ctx,
+        name: &str,
+        symmetric: bool,
+        description: Option<&str>,
+        ends: (&[String], &[String]),
+    ) -> Outcome<OntologyAdded> {
         let name = check_name(name, "relation", &|g| {
             ctx.same_graph(Command::new("ontology add relation").name(g))
         })?;
+        reserved_relation_name(&name)?;
+        let relation = &name;
+        let end_fix = |flag: &'static str| {
+            move |g: &ValidName| {
+                ctx.same_graph(
+                    Command::new("ontology add relation")
+                        .name(relation)
+                        .word(flag)
+                        .name(g),
+                )
+            }
+        };
+        let from = end_types(ends.0, &end_fix("--from"))?;
+        let to = end_types(ends.1, &end_fix("--to"))?;
         let description = described(description)?;
         let text = description.clone();
         // `--symmetric` first: similar_to then gets `symmetric_refused`, which names what was asked.
         if symmetric {
+            if !from.is_empty() || !to.is_empty() {
+                return Err(symmetric_ends());
+            }
             let done = self.mark_symmetric(ctx, &name, description);
             return warn_secret(done, text.as_deref(), Described::Relation, &name, None);
         }
@@ -432,14 +591,24 @@ impl GraphStore {
             return Err(problems::similar_to_reserved());
         }
         let done = self.change_ontology(ctx, "relation", &name, |o, graph| {
-            if o.is_symmetric(name.as_str()) {
+            let symmetric = o.is_symmetric(name.as_str());
+            let widening = !from.is_empty() || !to.is_empty();
+            if symmetric && widening {
+                return Err(symmetric_ends());
+            }
+            if symmetric {
                 return Err(problems::already_declared(
                     graph,
                     "symmetric relation",
                     &name,
                 ));
             }
-            if o.has_relation(name.as_str()) {
+            // ws008 T2b (req-99): a std graph has std's relations already, so the name alone adds nothing.
+            let std_relation = o.std_version().is_some()
+                && standard::std_relation(name.as_str()).is_some()
+                && description.is_none();
+            let declared = symmetric || o.has_relation(name.as_str()) || std_relation;
+            if declared {
                 let stored = o.relation_descriptions.get(name.as_str());
                 redescribed(
                     graph,
@@ -449,7 +618,11 @@ impl GraphStore {
                     &description,
                     stored,
                 )?;
-                return Ok(false);
+            }
+            // `--from`/`--to` add expected end types (soft), widening a std relation's. Nothing above fails after this.
+            let widened = widen(o, name.as_str(), &from, &to);
+            if declared {
+                return Ok(widened);
             }
             o.relations.push(name.as_str().to_string());
             if let Some(d) = description {
@@ -500,6 +673,10 @@ impl GraphStore {
                 name: n.to_string(),
                 unchanged: true,
             }));
+        }
+        // Expected end types given earlier have a direction a symmetric relation has not.
+        if l.meta.ontology.relation_endpoints.contains_key(n) {
+            return Err(symmetric_ends());
         }
         let before = l.meta.ontology.clone();
         l.meta.ontology.symmetric.push(n.to_string());
@@ -579,6 +756,9 @@ impl GraphStore {
                     .word("<name>:<kind>"),
             )
         })?;
+        if type_name.as_str() == standard::STD {
+            return Err(problems::std_reserved());
+        }
         let fix = |g: &ValidName| {
             ctx.same_graph(
                 Command::new("ontology add field")
@@ -595,6 +775,7 @@ impl GraphStore {
         let text = field.description.clone();
         let name = ValidName::new(&field.name).expect("checked by field_decl");
         let done = self.change_ontology(ctx, "field", &name.clone(), |o, graph| {
+            std_kind(o, graph, &field)?;
             if o.type_decl(type_name.as_str()).is_none() {
                 o.types.push(TypeDecl::new(type_name.as_str(), Vec::new()));
             }
@@ -668,6 +849,7 @@ impl GraphStore {
         let field = field_decl(spec, RESERVED_EDGE_FIELDS, &fix)?;
         let name = ValidName::new(&field.name).expect("checked by field_decl");
         self.change_ontology(ctx, "relation field", &name.clone(), |o, graph| {
+            std_kind(o, graph, &field)?;
             let declared = o
                 .relation_fields
                 .get(rel.as_str())
@@ -776,6 +958,7 @@ impl GraphStore {
                 )]);
             }
         }
+        std_kind(o, &graph, &field).map_err(|p| vec![p])?;
         let (mut added, mut unchanged) = (Vec::new(), Vec::new());
         for n in &names {
             match o.type_decl(n.as_str()) {

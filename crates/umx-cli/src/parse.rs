@@ -346,6 +346,8 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--relation",
             "--description",
             "--role",
+            "--from",
+            "--to",
         ],
     ),
     ("ontology set", &["--columns", "--reset", "--role"]),
@@ -1925,6 +1927,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                     name: (*name).to_owned(),
                     symmetric: a.switches.iter().any(|s| s == "--symmetric"),
                     description,
+                    from: a.all("--from"),
+                    to: a.all("--to"),
                 },
                 // F71: `field <type>[,<type>...] [<type>...] <name>:<kind>`, or `field --all-types <name>:<kind>`.
                 ["field", rest @ .., f] if !rest.is_empty() != all_types => {

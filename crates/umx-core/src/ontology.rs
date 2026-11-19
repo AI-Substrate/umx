@@ -147,6 +147,11 @@ pub struct Ontology {
     /// when empty, so older graph.json files are unchanged; an older umx keeps the key as an unknown one.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub relation_fields: BTreeMap<String, Vec<FieldDecl>>,
+    /// The node types a relation's ends are expected to be (ws008 T2b, req-99), by relation, set with `umx ontology
+    /// add relation <r> --from <t> --to <t>`: soft, an edge outside them warns `relation_endpoint_unexpected` and is
+    /// stored. On a std relation they widen std's. Not written when empty, so older graph.json files are unchanged.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub relation_endpoints: BTreeMap<String, RelationEnds>,
     /// What the graph is for, set by `umx graph set --purpose`. The guide keys live here, not at graph.json's top
     /// level, because these objects keep unknown keys in older builds: no format bump (plan 079, graph-storage-expert).
     /// Each is skipped when absent or empty, so a graph without them is written byte for byte as before.
@@ -164,6 +169,27 @@ pub struct Ontology {
     /// Keys this build does not know, kept through load and save.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
+}
+
+/// A relation's expected end types (soft). An empty side is any type.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelationEnds {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to: Vec<String>,
+    /// Keys this build does not know, kept through load and save.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// An edge end outside the types its relation expects ([`Ontology::endpoint_miss`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EndpointMiss {
+    /// The end's type.
+    pub kind: String,
+    /// The types that end is expected to be.
+    pub expected: Vec<String>,
 }
 
 /// The longest description of a type, field, status or relation, in characters (plan 079).
@@ -400,6 +426,7 @@ impl Ontology {
             relations: STARTER_RELATIONS.iter().map(|s| s.to_string()).collect(),
             symmetric: Vec::new(),
             relation_fields: BTreeMap::new(),
+            relation_endpoints: BTreeMap::new(),
             purpose: None,
             conventions: None,
             status_descriptions: BTreeMap::new(),
@@ -546,6 +573,69 @@ impl Ontology {
         self.types.iter().map(|t| t.name.as_str())
     }
 
+    /// The types `relation`'s ends are expected to be (ws008 T2b, req-99): std v1's in a std graph (or with
+    /// `with_std`), widened by the graph's own `relation_endpoints`; `None` when nothing is expected. A side std
+    /// leaves open (any type) stays open. The third value: both ends are expected to be of one type ([`PRECEDES`]).
+    ///
+    /// [`PRECEDES`]: crate::standard::PRECEDES
+    pub fn expected_ends(
+        &self,
+        relation: &str,
+        with_std: bool,
+    ) -> Option<(Vec<String>, Vec<String>, bool)> {
+        let std = (with_std || self.std_version().is_some())
+            .then(|| crate::standard::std_relation(relation))
+            .flatten();
+        let own = self.relation_endpoints.get(relation);
+        if std.is_none() && own.is_none() {
+            return None;
+        }
+        let side = |std: Option<&[&str]>, own: Option<&Vec<String>>| -> Vec<String> {
+            match std {
+                // std expects any type here: a graph's widening cannot narrow it.
+                Some([]) => Vec::new(),
+                Some(types) => merged_names(
+                    types.iter().map(|t| t.to_string()).collect(),
+                    own.map_or(&[][..], |o| o),
+                ),
+                None => own.cloned().unwrap_or_default(),
+            }
+        };
+        let from = side(std.map(|r| r.from_types), own.map(|o| &o.from));
+        let to = side(std.map(|r| r.to_types), own.map(|o| &o.to));
+        let same = std.is_some_and(|r| r.same_type_ends);
+        (!from.is_empty() || !to.is_empty() || same).then_some((from, to, same))
+    }
+
+    /// The first end of a `relation` edge from a `from` node to a `to` node that is outside the types
+    /// [`Ontology::expected_ends`] gives: the from end, then the to end, then (for [`crate::standard::PRECEDES`])
+    /// a to end of another type than the from end. An unknown end type (`None`, a far end not read) is never a miss.
+    pub fn endpoint_miss(
+        &self,
+        relation: &str,
+        from: Option<&str>,
+        to: Option<&str>,
+        with_std: bool,
+    ) -> Option<EndpointMiss> {
+        let (from_types, to_types, same) = self.expected_ends(relation, with_std)?;
+        let miss = |types: &[String], kind: Option<&str>| {
+            let kind = kind?;
+            (!types.is_empty() && !types.iter().any(|t| t == kind)).then(|| EndpointMiss {
+                kind: kind.to_string(),
+                expected: types.to_vec(),
+            })
+        };
+        miss(&from_types, from)
+            .or_else(|| miss(&to_types, to))
+            .or_else(|| match (from, to) {
+                (Some(a), Some(b)) if same && a != b => Some(EndpointMiss {
+                    kind: b.to_string(),
+                    expected: alloc::vec![a.to_string()],
+                }),
+                _ => None,
+            })
+    }
+
     /// The std version this graph uses: `std` when it is 1 or more.
     pub fn std_version(&self) -> Option<u32> {
         self.std.filter(|&v| v > 0)
@@ -622,6 +712,7 @@ impl Ontology {
             relations: merged_names(base.relations, &self.relations),
             symmetric: self.symmetric.clone(),
             relation_fields,
+            relation_endpoints: self.relation_endpoints.clone(),
             purpose: self.purpose.clone(),
             conventions: self.conventions.clone(),
             status_descriptions,
@@ -906,5 +997,28 @@ mod tests {
         let back: Ontology = serde_json::from_str(&text).unwrap();
         assert_eq!(back, std);
         assert!(back.extra.is_empty());
+    }
+
+    #[test]
+    fn relation_endpoints_round_trip_and_are_absent_when_unused() {
+        // ws008 T2b (graph-storage-expert): an ontology without end types writes no key, so an older graph.json is
+        // unchanged; one with them reads back the same, an unknown key inside an entry included.
+        let plain = Ontology::starter();
+        assert!(
+            !serde_json::to_string(&plain)
+                .unwrap()
+                .contains("relation_endpoints")
+        );
+        let text = r#"{"types":[],"statuses":[],"relations":[],"relation_endpoints":{"works_for":{"to":["team"],"note":1},"pairs_with":{"from":["team"],"to":["team"]}}}"#;
+        let o: Ontology = serde_json::from_str(text).unwrap();
+        let works_for = &o.relation_endpoints["works_for"];
+        assert_eq!(
+            (works_for.from.len(), works_for.to.as_slice()),
+            (0, &["team".to_string()][..])
+        );
+        assert_eq!(works_for.extra["note"], serde_json::json!(1));
+        let again: Ontology = serde_json::from_str(&serde_json::to_string(&o).unwrap()).unwrap();
+        assert_eq!(again, o);
+        assert!(!serde_json::to_string(&o).unwrap().contains("\"from\":[]"));
     }
 }

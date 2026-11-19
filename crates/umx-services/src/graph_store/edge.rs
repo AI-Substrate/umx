@@ -228,6 +228,9 @@ pub(crate) fn check_relation_for(
     fix: &dyn Fn(&ValidName) -> Command,
 ) -> Result<ValidName, Problem> {
     let rel = check_name(relation, "relation", fix)?;
+    if relation == umx_core::standard::STD {
+        return Err(problems::std_reserved());
+    }
     // ws008 E2c (graph-addressing-expert): a denial is written only by `umx entity deny`, so none exists without a
     // reason.
     if relation == umx_core::ontology::NOT_SAME_AS {
@@ -265,6 +268,9 @@ pub(crate) fn plan_edge(
     warnings: &mut Vec<Problem>,
 ) -> Result<Option<BTreeMap<String, Value>>, Problem> {
     for (name, _) in sets {
+        if name == umx_core::standard::STD {
+            return Err(problems::std_reserved());
+        }
         if RESERVED_EDGE_FIELDS.contains(&name.as_str()) {
             return Err(problems::reserved_name(name));
         }
@@ -423,6 +429,29 @@ pub(crate) fn append_to_existing(
         warnings.push(problems::evidence_appended(e.id, added));
     }
     Ok(added)
+}
+
+/// `relation_endpoint_unexpected` when a new `rel` edge's end is outside the types the relation expects (ws008 T2b,
+/// req-99: std v1's in a std graph, widened by `ontology add relation --from/--to`; soft, the edge is stored). An end
+/// whose type is not read (`None`: a far node in a graph not open) is never warned about. Shared by edge add and a
+/// batch's edge add.
+pub(crate) fn endpoint_warning(
+    graph: &ValidName,
+    o: &Ontology,
+    rel: &ValidName,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Option<Problem> {
+    let miss = o.endpoint_miss(rel.as_str(), from, to, false)?;
+    Some(problems::relation_endpoint_unexpected(
+        graph,
+        rel,
+        &ValidName::new(&miss.kind)?,
+        miss.expected
+            .iter()
+            .filter_map(|t| ValidName::new(t))
+            .collect(),
+    ))
 }
 
 /// Warns `off_vocabulary_relation` when the ontology does not declare `rel` and it is not a std relation (`same_as`).
@@ -841,9 +870,15 @@ impl GraphStore {
         self.note_redirects(ctx, &[from, to]);
         let graph = alias_name(&alias);
         let rel = check_relation(ctx, relation)?;
+        let (from_text, to_text) = (from, to);
         let (from, mut warnings) = self.write_end(&alias, from)?;
         let (to, to_warnings) = self.write_end(&alias, to)?;
         warnings.extend(to_warnings);
+        // Read before a symmetric relation orders the ends.
+        let end_types = (
+            self.end_type(&alias, from, from_text),
+            self.end_type(&alias, to, to_text),
+        );
         let pointers = {
             let open = self.evidence_graphs(&alias);
             edge_evidence(
@@ -909,6 +944,13 @@ impl GraphStore {
             }
             Some(fields) => fields,
         };
+        warnings.extend(endpoint_warning(
+            &graph,
+            self.get(&alias).ontology(),
+            &rel,
+            end_types.0.as_deref(),
+            end_types.1.as_deref(),
+        ));
         let done = self.attributed_write(ctx, &alias, |batch, session, next, now, _| {
             let mut edge = set_ends(
                 new_edge(

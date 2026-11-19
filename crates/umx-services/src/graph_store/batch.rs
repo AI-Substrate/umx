@@ -458,6 +458,8 @@ struct Run<'a, 'g> {
     prepared: BTreeMap<String, Result<(StoredEnd, Vec<Problem>), Problem>>,
     /// Each prepared external end's loaded copy and its node's type (F180).
     end_kinds: BTreeMap<String, (String, String)>,
+    /// The prepared external ends whose graph is open (d-20): only their types are named in a warning (ws008 T2b).
+    open_ends: BTreeSet<String>,
     /// TM4: each line's own far raised_in anchor's type, from an open graph only.
     anchor_kinds: BTreeMap<String, String>,
     b: Batch<'g>,
@@ -870,7 +872,7 @@ impl Run<'_, '_> {
             None => self.b.graph().node(end.node).map(|n| n.kind().to_string()),
             Some(_) => self.anchor_kinds.get(text).cloned(),
         };
-        warnings.extend(kind.and_then(|k| super::raised_in::unexpected(&self.graph, &k)));
+        warnings.extend(kind.and_then(|k| super::raised_in::unexpected(&self.graph, self.o, &k)));
         let address = match end.graph {
             None => crate::address(self.alias, end.node),
             Some(g) => alloc::format!("umx:{}/{}", g.to_text(), end.node.to_text()),
@@ -1167,12 +1169,23 @@ impl Run<'_, '_> {
         let (from, mut warnings) =
             self.pair_end(line, from.as_deref(), from_ref.as_deref(), "from")?;
         let (to_end, to_warnings) = self.pair_end(line, to.as_deref(), to_ref.as_deref(), "to")?;
+        let end_kinds = (
+            self.end_kind(from_text.as_deref(), from),
+            self.end_kind(to.as_deref(), to_end),
+        );
+        // A far end's type is named in a warning only from an open graph (d-20).
+        let shown = |text: Option<&str>, end: StoredEnd, kind: &Option<(String, String)>| {
+            (end.graph.is_none() || text.is_some_and(|t| self.open_ends.contains(t)))
+                .then(|| kind.as_ref().map(|k| k.1.clone()))
+                .flatten()
+        };
+        let end_types = (
+            shown(from_text.as_deref(), from, &end_kinds.0),
+            shown(to.as_deref(), to_end, &end_kinds.1),
+        );
         // F180 (ws008 E2b): a same_as line between two types warns as `umx entity link` does.
         if relation == umx_core::ontology::SAME_AS
-            && let (Some(a), Some(b)) = (
-                self.end_kind(from_text.as_deref(), from),
-                self.end_kind(to.as_deref(), to_end),
-            )
+            && let (Some(a), Some(b)) = &end_kinds
             && a.1 != b.1
         {
             warnings.push(problems::entity_type_mismatch(
@@ -1264,6 +1277,13 @@ impl Run<'_, '_> {
                 if let Some(hit) = edge_write_secrets(&fields, &pointers).into_iter().next() {
                     return Err(hit.refusal(line));
                 }
+                warnings.extend(super::edge::endpoint_warning(
+                    &self.graph,
+                    self.o,
+                    &rel,
+                    end_types.0.as_deref(),
+                    end_types.1.as_deref(),
+                ));
                 let session = self.session(line, &mut warnings)?;
                 let id = explicit
                     .map(|s| s.parse().expect("explicit ids passed preflight"))
@@ -2098,6 +2118,7 @@ impl GraphStore {
         }
         let mut prepared = BTreeMap::new();
         let mut end_kinds = BTreeMap::new();
+        let mut open_ends = BTreeSet::new();
         // A line's own anchor (a node add's raised_in, a status move's in, TM6) in another graph is prepared as an edge
         // end is; its type is kept only from an open
         // graph (d-20).
@@ -2133,6 +2154,9 @@ impl GraphStore {
                             && let Some(n) =
                                 self.graphs.get(&copy).and_then(|l| l.graph.node(end.node))
                         {
+                            if self.shown_unnamed(&copy) {
+                                open_ends.insert(text.clone());
+                            }
                             end_kinds.insert(text.clone(), (copy, n.kind().to_string()));
                         }
                         prepared.insert(text.clone(), end);
@@ -2308,6 +2332,7 @@ impl GraphStore {
                 reason: req.reason.clone(),
                 prepared,
                 end_kinds,
+                open_ends,
                 b: g.batch(),
                 others,
                 own_former,

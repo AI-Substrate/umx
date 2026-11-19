@@ -24,6 +24,8 @@ pub const WRITE_NOT_SUPPORTED: &str = "query_write_not_supported";
 pub const CLAUSE_NOT_SUPPORTED: &str = "query_clause_not_supported";
 pub const FEATURE_NOT_SUPPORTED: &str = "query_feature_not_supported";
 pub const AMBIGUOUS_LABELS: &str = "query_ambiguous_labels";
+/// A label or relationship type spelled `std` or `std:<name>` (ws008 T2b, req-99): std names are plain in Cypher.
+pub const STD_QUALIFIER: &str = "query_std_qualifier";
 pub const UNKNOWN_FUNCTION: &str = "query_unknown_function";
 pub const ALIAS_SHADOWS_VARIABLE: &str = "query_alias_shadows_variable";
 pub const ORDER_BY_ENTITY: &str = "query_order_by_entity";
@@ -99,9 +101,29 @@ pub fn name_slot(name: &str) -> Slot {
     Slot::name_or(name, "a name")
 }
 
+/// `query_std_qualifier`, naming the plain name to write when the query gave one after the qualifier.
+fn std_qualifier(plain: Option<&str>) -> Problem {
+    Problem::new(STD_QUALIFIER).with("name", plain.map_or(Slot::Word("a name"), name_slot))
+}
+
+/// Whether a label or relationship type is the std qualifier: `std` itself or `std:<name>`.
+fn is_std(name: &str) -> bool {
+    name == umx_core::standard::STD || name.starts_with(umx_core::standard::QUALIFIER)
+}
+
 /// The lexer stopped at `position`: classified by the character there, never echoed.
 pub(crate) fn lex_failure(text: &str, position: usize, message: &str) -> Problem {
     let at = text.get(position..).and_then(|t| t.chars().next());
+    // n:`std:person`: a backticked label or type after its `:` (the lexer has no backticks, so this never parsed).
+    if at == Some('`')
+        && text[..position].trim_end().ends_with(':')
+        && let Some(quoted) = text[position + 1..].split('`').next()
+        && let Some(rest) = quoted
+            .strip_prefix(umx_core::standard::QUALIFIER)
+            .or_else(|| (quoted == umx_core::standard::STD).then_some(""))
+    {
+        return std_qualifier((!rest.is_empty()).then_some(rest));
+    }
     match at {
         Some('`') => syntax(position, BACKTICKS),
         Some('!') => syntax(position, NOT_EQUAL),
@@ -166,6 +188,9 @@ const KEYWORDS: [&str; 14] = [
 /// feature the grammar does not have. Run only on a parse failure, so a keyword used as a name is never refused.
 fn tokens(tokens: &[Token]) -> Option<Problem> {
     let at = |i: usize| tokens.get(i);
+    if let Some(p) = std_in_tokens(tokens) {
+        return Some(p);
+    }
     // Shortest path first: it is often written with a path variable too (`p = shortestPath(...)`).
     if tokens.iter().any(|t| {
         matches!(&t.kind, TokenKind::Ident(w)
@@ -304,6 +329,46 @@ fn tokens(tokens: &[Token]) -> Option<Problem> {
                 }
             }
             _ => {}
+        }
+    }
+    None
+}
+
+/// A query that did not parse, with `std` as a label or relationship type (cypher-expert, ws008 T2b): in a node
+/// pattern's label list (`(n:std:person)`), a relationship pattern's type list (`-[:std:member_of]-`), or a label
+/// predicate after WHERE, AND, OR or NOT (`WHERE n:std:person`). Only those places: `std` as a variable, a map key
+/// or value, or in a list comprehension is a name like any other. Run only on a parse failure.
+fn std_in_tokens(tokens: &[Token]) -> Option<Problem> {
+    let at = |i: usize| tokens.get(i);
+    for (i, t) in tokens.iter().enumerate() {
+        let opens = match &t.kind {
+            TokenKind::LParen | TokenKind::LBracket => true,
+            TokenKind::Ident(w) => ["WHERE", "AND", "OR", "NOT"]
+                .iter()
+                .any(|k| w.eq_ignore_ascii_case(k)),
+            _ => false,
+        };
+        if !opens {
+            continue;
+        }
+        // An optional variable, then `:` and names joined by `:` or `|`.
+        let mut j = i + 1;
+        if ident(at(j)).is_some() && matches!(kind(at(j + 1)), Some(TokenKind::Colon)) {
+            j += 1;
+        } else if !matches!(kind(at(j)), Some(TokenKind::Colon)) {
+            continue;
+        }
+        while matches!(kind(at(j)), Some(TokenKind::Colon | TokenKind::Pipe)) {
+            let Some(name) = ident(at(j + 1)) else {
+                break;
+            };
+            if name == umx_core::standard::STD {
+                let plain = matches!(kind(at(j + 2)), Some(TokenKind::Colon))
+                    .then(|| ident(at(j + 3)))
+                    .flatten();
+                return Some(std_qualifier(plain));
+            }
+            j += 2;
         }
     }
     None
@@ -722,6 +787,21 @@ pub(crate) fn query(
     tokens: &[Token],
     symmetric: &dyn Fn(&str) -> bool,
 ) -> Option<Problem> {
+    // std names are plain in Cypher (ws008 T2b): `(n:std|person)` would widen to every node. WHERE label predicates
+    // (`n:std`) are not in the subset; if they join it, check their labels here too.
+    for names in g
+        .nodes
+        .iter()
+        .map(|n| &n.labels)
+        .chain(g.rels.iter().map(|r| &r.types))
+    {
+        if let Some(i) = names.iter().position(|n| is_std(n)) {
+            let plain = names[i]
+                .strip_prefix(umx_core::standard::QUALIFIER)
+                .or_else(|| names.get(i + 1).map(String::as_str));
+            return Some(std_qualifier(plain));
+        }
+    }
     // Names of the graph's vocabulary are snake_case (workshop 007 rule 2).
     let vocabulary = g
         .nodes

@@ -1614,11 +1614,19 @@ fn vocabulary_warnings(view: &GraphView<'_>, g: &check::Gathered<'_>) -> Vec<Pro
         .iter()
         .flat_map(|n| n.labels.iter().map(String::as_str))
         .collect();
-    let hidden_label =
-        |name| !view.include_provenance && umx_core::ontology::PROVENANCE_TYPES.contains(&name);
+    // The name a provenance_hidden warning gives is umx's own, from the fixed list, never the query's text.
+    let hidden_label = |name: &str| {
+        (!view.include_provenance)
+            .then(|| {
+                umx_core::ontology::PROVENANCE_TYPES
+                    .iter()
+                    .find(|t| **t == name)
+            })
+            .flatten()
+    };
     for label in labels {
-        if hidden_label(label) {
-            out.push(Problem::new(check::PROVENANCE_HIDDEN).with("name", check::name_slot(label)));
+        if let Some(kind) = hidden_label(label) {
+            out.push(Problem::new(check::PROVENANCE_HIDDEN).with("name", check::name_slot(kind)));
         } else if !(label == "graph" && !view.targets.is_empty())
             && !view.parts.iter().enumerate().any(|(part, p)| {
                 p.graph
@@ -1637,13 +1645,15 @@ fn vocabulary_warnings(view: &GraphView<'_>, g: &check::Gathered<'_>) -> Vec<Pro
     for relation in relations {
         let derived = matches!(relation, "authored_by" | "edited_by");
         // The stored provenance relations (session_of, runs_on, uses_model, registered_in) join only provenance
-        // records, and user edges cannot carry them (reserved_relation): hidden, they warn by name, whatever the data
-        // (cypher N1).
-        let stored = umx_core::ontology::PROVENANCE_RELATIONS.contains(&relation);
-        if (derived || stored) && !view.include_provenance {
-            out.push(
-                Problem::new(check::PROVENANCE_HIDDEN).with("name", check::name_slot(relation)),
-            );
+        // records, and user edges cannot carry them (reserved_relation): hidden, a step's type naming one warns by
+        // name, whatever the data (cypher N1, security on ws008 T2b): decided from the relationship types of the
+        // parsed patterns, and the name is the fixed list's.
+        let hidden = umx_core::ontology::PROVENANCE_DERIVED
+            .iter()
+            .chain(umx_core::ontology::PROVENANCE_RELATIONS)
+            .find(|r| **r == relation);
+        if let Some(fixed) = hidden.filter(|_| !view.include_provenance) {
+            out.push(Problem::new(check::PROVENANCE_HIDDEN).with("name", check::name_slot(fixed)));
         } else if !derived
             && relation != SIMILAR_TO
             && !view.parts.iter().enumerate().any(|(part, p)| {

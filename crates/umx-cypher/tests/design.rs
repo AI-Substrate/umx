@@ -256,7 +256,7 @@ fn the_fixture_is_the_design_graph() {
     let g = Design::load(|v| v);
     assert_eq!((g.nodes.len(), g.edges.len()), (11, 19));
     let q = queries();
-    assert_eq!(q.len(), 73);
+    assert_eq!(q.len(), 83);
     assert_eq!(q.iter().filter(|q| q["conformance"] == true).count(), 53);
     for q in q.iter().filter(|q| q["conformance"] == true) {
         assert!(q["expected"].is_array(), "{} has no expected rows", q["id"]);

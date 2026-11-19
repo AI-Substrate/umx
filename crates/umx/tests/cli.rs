@@ -1804,6 +1804,7 @@ fn query_trigger(code: Code) -> (String, &'static [&'static str]) {
         Code::QueryClauseNotSupported => "CALL db.labels()".into(),
         Code::QueryFeatureNotSupported => "MATCH p = (a)-[:blocks]->(b) RETURN b.id AS id".into(),
         Code::QueryAmbiguousLabels => "MATCH (n:question:criterion) RETURN n.id AS id".into(),
+        Code::QueryStdQualifier => "MATCH (n:std:person) RETURN n.id AS id".into(),
         Code::QueryUnknownFunction => "MATCH (n) RETURN labels(n) AS l".into(),
         Code::QueryAliasShadowsVariable => "MATCH (q:question) RETURN q.id AS q".into(),
         Code::QueryOrderByEntity => "MATCH (n:question) RETURN n ORDER BY n".into(),
@@ -1954,6 +1955,24 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 "authored_by"
             };
             home.umx(&["edge", "add", &a, relation, &b])
+        }
+        Code::StdFieldConflict => {
+            home.graph();
+            home.umx(&["ontology", "add", "field", "person", "job_title:int"])
+        }
+        Code::ReservedRelationStored => {
+            let path = home.graph();
+            let a = home.add("problem", "First");
+            let b = home.add("problem", "Second");
+            let edge = home.ok(&["edge", "add", &a, "blocks", &b]);
+            let id = edge.data["edge"]["id"].as_str().unwrap().to_owned();
+            home.ok(&["graph", "unload", "demo"]);
+            let file = Path::new(&path).join("edges.jsonl");
+            let text = fs::read_to_string(&file).unwrap();
+            fs::write(&file, text.replace("\"blocks\"", "\"authored_by\"")).unwrap();
+            let loaded = home.umx(&["graph", "load", &path]);
+            assert!(loaded.0.to_json().contains(&id), "{}", loaded.0.to_json());
+            loaded
         }
         Code::SessionAgentConflict => {
             home.graph();
@@ -4404,6 +4423,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
         | Code::QueryClauseNotSupported
         | Code::QueryFeatureNotSupported
         | Code::QueryAmbiguousLabels
+        | Code::QueryStdQualifier
         | Code::QueryUnknownFunction
         | Code::QueryAliasShadowsVariable
         | Code::QueryOrderByEntity
@@ -7482,7 +7502,7 @@ fn graph_new_prints_how_to_change_the_graph_and_each_command_runs_as_printed() {
     assert_eq!(
         printed,
         [
-            "umx ontology add type risk --graph x",
+            "umx ontology add type experiment --graph x",
             "umx ontology add relation mitigates --graph x",
             "umx ontology add status parked --graph x",
             "umx graph set x --title \"Launch planning\"",
@@ -7505,7 +7525,7 @@ fn graph_new_prints_how_to_change_the_graph_and_each_command_runs_as_printed() {
     let meta = graph_json(&path);
     assert_eq!(meta["title"], "Launch planning");
     let ontology = meta["ontology"].to_string();
-    for name in ["\"risk\"", "\"mitigates\"", "\"parked\""] {
+    for name in ["\"experiment\"", "\"mitigates\"", "\"parked\""] {
         assert!(ontology.contains(name), "{name} not declared: {ontology}");
     }
     assert_eq!(
@@ -26806,4 +26826,642 @@ fn a_batch_of_std_types_and_a_works_for_edge_warns_nothing() {
     let ops = home.ops_file(&text);
     let done = home.ok(&["batch", "--file", ops.as_str()]);
     assert!(done.warnings.is_empty(), "{}", done.to_json());
+}
+
+/// ws008 T2b: `args` is refused with `code`, whose next is a umx command; nothing about the refusal is a warning.
+#[track_caller]
+fn refused_with(home: &Home, args: &[&str], code: Code) -> Envelope {
+    let (env, exit) = home.umx(args);
+    assert_eq!(exit, 1, "{args:?}: {}", env.to_json());
+    let found = issue(&env, code);
+    assert!(
+        found.next().starts_with("umx "),
+        "{args:?}: {}",
+        env.to_json()
+    );
+    env
+}
+
+/// A batch of `lines` (JSON objects, one per line) through `umx batch`, into graph `graph`.
+fn batch_of(home: &Home, graph: &str, lines: &[Value]) -> (Envelope, u8) {
+    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    let ops = home.ops_file(&text);
+    home.umx(&["batch", "--file", ops.as_str(), "--graph", graph])
+}
+
+#[test]
+fn umx_s_reserved_names_are_refused_in_every_graph_with_a_next() {
+    // ws008 T2b (req-99, the dogfood report): `std` as a type, relation or field name, the provenance types and the
+    // provenance and derived relations, in a std graph and in one without std; each refusal writes nothing.
+    let mut home = Home::new("t2b-reserved");
+    let plain = std_and_plain(&mut home);
+    let demo = home.path.join("g").display().to_string();
+    for (alias, path) in [("demo", &demo), ("plain", &plain)] {
+        let before = fs::read_to_string(Path::new(path).join("graph.json")).unwrap();
+        let g = ["--graph", alias];
+        let with = |args: &[&'static str]| -> Vec<&str> { args.iter().copied().chain(g).collect() };
+        for args in [
+            with(&["ontology", "add", "type", "std"]),
+            with(&["ontology", "add", "relation", "std"]),
+            with(&["ontology", "add", "field", "problem", "std:string"]),
+            with(&["ontology", "add", "field", "std", "note_text:string"]),
+            with(&[
+                "ontology",
+                "add",
+                "field",
+                "--relation",
+                "blocks",
+                "std:string",
+            ]),
+            with(&["node", "add", "--type", "std", "--title", "x"]),
+            with(&[
+                "node", "add", "--type", "problem", "--title", "x", "--set", "std=1",
+            ]),
+            with(&[
+                "node",
+                "add",
+                "--type",
+                "problem",
+                "--title",
+                "x",
+                "--set",
+                "prov_key=x",
+            ]),
+        ] {
+            refused_with(&home, &args, Code::ReservedName);
+        }
+        for relation in ["authored_by", "edited_by"] {
+            refused_with(
+                &home,
+                &with(&["ontology", "add", "relation", relation]),
+                Code::DerivedRelation,
+            );
+        }
+        for relation in ["session_of", "runs_on", "uses_model", "registered_in"] {
+            refused_with(
+                &home,
+                &with(&["ontology", "add", "relation", relation]),
+                Code::ReservedRelation,
+            );
+        }
+        refused_with(
+            &home,
+            &with(&["ontology", "add", "relation", "similar_to"]),
+            Code::NameInvalid,
+        );
+        assert_eq!(
+            fs::read_to_string(Path::new(path).join("graph.json")).unwrap(),
+            before,
+            "{alias}: a refusal writes nothing"
+        );
+        let (a, b) = (
+            home.ok(&with(&["node", "add", "--type", "problem", "--title", "A"])),
+            home.ok(&with(&["node", "add", "--type", "problem", "--title", "B"])),
+        );
+        let (a, b) = (
+            a.data["node"]["address"].as_str().unwrap().to_owned(),
+            b.data["node"]["address"].as_str().unwrap().to_owned(),
+        );
+        refused_with(
+            &home,
+            &["edge", "add", &a, "authored_by", &b],
+            Code::DerivedRelation,
+        );
+        refused_with(&home, &["edge", "add", &a, "std", &b], Code::ReservedName);
+        refused_with(
+            &home,
+            &["edge", "add", &a, "blocks", &b, "--set", "std=1"],
+            Code::ReservedName,
+        );
+    }
+    // A provenance type is umx's in a std graph; a graph without std keeps it as its own word.
+    for kind in ["session", "agent", "model"] {
+        refused_with(
+            &home,
+            &["ontology", "add", "type", kind, "--graph", "demo"],
+            Code::ReservedName,
+        );
+        let own = home.ok(&["ontology", "add", "type", kind, "--graph", "plain"]);
+        assert_eq!(own.data["unchanged"], json!(false), "{kind}");
+    }
+    // The same in a batch, line by line: one code path.
+    for line in [
+        json!({"op":"node add","type":"std","title":"x"}),
+        json!({"op":"node add","type":"problem","title":"x","sets":[{"field":"std","value":"1"}]}),
+    ] {
+        let (env, exit) = batch_of(&home, "demo", &[line]);
+        assert_eq!(exit, 1, "{}", env.to_json());
+        issue(&env, Code::ReservedName);
+    }
+    let a = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Batch end",
+        "--graph",
+        "demo",
+    ]);
+    let a = a.data["node"]["id"].as_str().unwrap().to_owned();
+    for (relation, code) in [
+        ("authored_by", Code::DerivedRelation),
+        ("session_of", Code::ReservedRelation),
+        ("std", Code::ReservedName),
+    ] {
+        let (env, exit) = batch_of(
+            &home,
+            "demo",
+            &[json!({"op":"edge add","from":a,"relation":relation,"to":a})],
+        );
+        assert_eq!(exit, 1, "{relation}: {}", env.to_json());
+        issue(&env, code);
+    }
+}
+
+#[test]
+fn a_std_graph_keeps_std_s_names_and_kinds_and_a_plain_one_takes_them_as_its_own() {
+    let mut home = Home::new("t2b-std-names");
+    let plain = std_and_plain(&mut home);
+    let demo = home.path.join("g").display().to_string();
+    let file = |path: &str| fs::read_to_string(Path::new(path).join("graph.json")).unwrap();
+    let before = file(&demo);
+    // A std type or relation by name alone is std's already: unchanged, nothing written.
+    for args in [
+        ["ontology", "add", "type", "person"],
+        ["ontology", "add", "type", "std:person"],
+        ["ontology", "add", "relation", "works_for"],
+        ["ontology", "add", "relation", "std:member_of"],
+    ] {
+        let env = home.ok(&[&args[..], &["--graph", "demo"][..]].concat());
+        assert_eq!(
+            env.data["unchanged"],
+            json!(true),
+            "{args:?}: {}",
+            env.to_json()
+        );
+    }
+    // A std field keeps std's kind, on its own type, another type or a relation.
+    for args in [
+        &["ontology", "add", "field", "person", "job_title:int"][..],
+        &["ontology", "add", "field", "topic", "due_on:string"][..],
+        &["ontology", "add", "field", "risk,topic", "due_on:string"][..],
+        &[
+            "ontology",
+            "add",
+            "type",
+            "gadget",
+            "--field",
+            "aliases:string",
+        ][..],
+        &[
+            "ontology",
+            "add",
+            "field",
+            "--relation",
+            "works_for",
+            "starts_on:string",
+        ][..],
+    ] {
+        let env = refused_with(
+            &home,
+            &[args, &["--graph", "demo"][..]].concat(),
+            Code::StdFieldConflict,
+        );
+        let found = issue(&env, Code::StdFieldConflict);
+        assert_eq!(found.next(), "umx ontology show --std");
+    }
+    assert_eq!(file(&demo), before, "nothing written");
+    // With std's kind it is the graph's own declaration, and `std:` names a std type.
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "std:topic",
+        "due_on:date",
+        "--graph",
+        "demo",
+    ]);
+    let person = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "std:person",
+        "--title",
+        "Ada",
+        "--graph",
+        "demo",
+    ]);
+    assert_eq!(person.data["node"]["type"], json!("person"));
+    assert!(!file(&demo).contains("std:"), "names are stored plain");
+    // A provenance type on a user node warns, as before; the node is stored.
+    let env = home.ok(&[
+        "node", "add", "--type", "session", "--title", "x", "--graph", "demo",
+    ]);
+    issue(&env, Code::ReservedType);
+    // The same names in a graph without std are its own: declared and written.
+    for args in [
+        &["ontology", "add", "type", "person"][..],
+        &["ontology", "add", "field", "person", "job_title:int"][..],
+        &["ontology", "add", "relation", "works_for"][..],
+    ] {
+        let env = home.ok(&[args, &["--graph", "plain"][..]].concat());
+        assert_eq!(env.data["unchanged"], json!(false), "{args:?}");
+    }
+    assert!(!file(&plain).contains("relation_endpoints"));
+}
+
+#[test]
+fn std_relations_expect_end_types_softly_and_a_graph_widens_them() {
+    let mut home = Home::new("t2b-ends");
+    std_and_plain(&mut home);
+    let demo = home.path.join("g").display().to_string();
+    let add = |g: &str, kind: &str, title: &str| -> String {
+        let env = home.ok(&[
+            "node", "add", "--type", kind, "--title", title, "--graph", g,
+        ]);
+        env.data["node"]["address"].as_str().unwrap().to_owned()
+    };
+    let (ada, bo, team, acme) = (
+        add("demo", "person", "Ada"),
+        add("demo", "person", "Bo"),
+        add("demo", "team", "Platform"),
+        add("demo", "organisation", "Acme"),
+    );
+    // Outside std's ends: stored, with the warning naming the expected types.
+    let env = home.ok(&["edge", "add", &ada, "works_for", &team]);
+    let w = issue(&env, Code::RelationEndpointUnexpected);
+    assert!(
+        w.message().contains("team") && w.message().contains("organisation"),
+        "{}",
+        w.message()
+    );
+    assert!(
+        env.data["edge"]["id"].is_string(),
+        "stored: {}",
+        env.to_json()
+    );
+    let quiet = home.ok(&["edge", "add", &ada, "works_for", &acme]);
+    assert!(quiet.warnings.is_empty(), "{}", quiet.to_json());
+    let (meeting, place, question) = (
+        add("demo", "meeting", "Kickoff"),
+        add("demo", "place", "Room 4"),
+        add("demo", "question", "Which vendor?"),
+    );
+    for (from, relation, to) in [
+        (&meeting, "held_at", &place),
+        (&question, "raised_by", &team),
+        (&ada, "member_of", &team),
+        (&team, "member_of", &acme),
+        (&ada, "owns", &question),
+    ] {
+        let env = home.ok(&["edge", "add", from, relation, to]);
+        assert!(env.warnings.is_empty(), "{relation}: {}", env.to_json());
+    }
+    let env = home.ok(&["edge", "add", &ada, "raised_by", &acme]);
+    issue(&env, Code::RelationEndpointUnexpected);
+    // A graph widens them, stored in graph.json; then the same call is quiet.
+    let widened = home.ok(&[
+        "ontology",
+        "add",
+        "relation",
+        "std:works_for",
+        "--from",
+        "std:person",
+        "--to",
+        "team",
+        "--graph",
+        "demo",
+    ]);
+    assert_eq!(
+        widened.data["unchanged"],
+        json!(false),
+        "{}",
+        widened.to_json()
+    );
+    assert_eq!(
+        graph_json(&demo)["ontology"]["relation_endpoints"],
+        json!({ "works_for": { "from": ["person"], "to": ["team"] } })
+    );
+    let again = home.ok(&[
+        "ontology",
+        "add",
+        "relation",
+        "works_for",
+        "--to",
+        "team",
+        "--graph",
+        "demo",
+    ]);
+    assert_eq!(again.data["unchanged"], json!(true));
+    let quiet = home.ok(&["edge", "add", &bo, "std:works_for", &team]);
+    assert!(quiet.warnings.is_empty(), "{}", quiet.to_json());
+    assert_eq!(quiet.data["edge"]["type"], json!("works_for"));
+    // Widening adds to std's ends, never replaces them: a person to an organisation stays quiet.
+    let cy = add("demo", "person", "Cy");
+    let still = home.ok(&["edge", "add", &cy, "works_for", &acme]);
+    assert!(still.warnings.is_empty(), "{}", still.to_json());
+    // A symmetric relation has no direction, so it takes no end types: with --symmetric, after it, or before it.
+    let usage = |args: &[&str]| {
+        let (env, exit) = home.umx(args);
+        assert_eq!(exit, 2, "{args:?}: {}", env.to_json());
+        issue(&env, Code::UsageInvalid);
+    };
+    let g = ["--graph", "demo"];
+    usage(
+        &[
+            &[
+                "ontology",
+                "add",
+                "relation",
+                "rivals",
+                "--symmetric",
+                "--from",
+                "team",
+            ][..],
+            &g,
+        ]
+        .concat(),
+    );
+    home.ok(&[
+        &["ontology", "add", "relation", "rivals", "--symmetric"][..],
+        &g,
+    ]
+    .concat());
+    usage(
+        &[
+            &["ontology", "add", "relation", "rivals", "--from", "team"][..],
+            &g,
+        ]
+        .concat(),
+    );
+    usage(
+        &[
+            &[
+                "ontology",
+                "add",
+                "relation",
+                "conflicts_with",
+                "--to",
+                "team",
+            ][..],
+            &g,
+        ]
+        .concat(),
+    );
+    home.ok(&[
+        &[
+            "ontology",
+            "add",
+            "relation",
+            "pairs_with",
+            "--from",
+            "team",
+        ][..],
+        &g,
+    ]
+    .concat());
+    usage(
+        &[
+            &["ontology", "add", "relation", "pairs_with", "--symmetric"][..],
+            &g,
+        ]
+        .concat(),
+    );
+    assert_eq!(
+        graph_json(&demo)["ontology"]["relation_endpoints"],
+        json!({ "works_for": { "from": ["person"], "to": ["team"] }, "pairs_with": { "from": ["team"] } })
+    );
+    // A graph without std expects nothing of works_for.
+    let (p, t) = (add("plain", "person", "Cy"), add("plain", "team", "Ops"));
+    let env = home.ok(&["edge", "add", &p, "works_for", &t]);
+    assert!(
+        !env.to_json().contains("relation_endpoint_unexpected"),
+        "{}",
+        env.to_json()
+    );
+    // A batch warns as edge add does (one code path).
+    let (env, exit) = batch_of(
+        &home,
+        "demo",
+        &[json!({"op":"edge add","from":ada,"relation":"member_of","to":question})],
+    );
+    assert_eq!(exit, 0, "{}", env.to_json());
+    issue(&env, Code::RelationEndpointUnexpected);
+}
+
+#[test]
+fn an_older_umx_s_stored_authored_by_edge_loads_kept_and_warned() {
+    let mut home = Home::new("t2b-stored");
+    let path = home.graph();
+    let (a, b) = (home.add("problem", "First"), home.add("problem", "Second"));
+    let id = edge_id(&home.umx(&["edge", "add", &a, "blocks", &b]).0);
+    home.ok(&["graph", "unload", "demo"]);
+    let file = Path::new(&path).join("edges.jsonl");
+    let text = fs::read_to_string(&file)
+        .unwrap()
+        .replace("\"blocks\"", "\"authored_by\"");
+    fs::write(&file, &text).unwrap();
+    let env = home.ok(&["graph", "load", &path]);
+    let w = issue(&env, Code::ReservedRelationStored);
+    assert_eq!(w.next(), format!("umx edge show {id}"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), text, "nothing dropped");
+    let shown = home.ok(&["edge", "show", &id]);
+    assert_eq!(
+        shown.data["type"],
+        json!("authored_by"),
+        "{}",
+        shown.to_json()
+    );
+}
+
+#[test]
+fn std_names_are_plain_in_cypher_and_derived_authorship_reads_as_before_in_a_std_graph() {
+    // ws008 T2b (req-99): std's qualifier is refused in Cypher; the derived authored_by rules (ws007) hold in a std
+    // graph.
+    let mut home = Home::new("t2b-cypher");
+    home.graph();
+    let (ada, team) = (home.add("person", "Ada"), home.add("team", "Platform"));
+    home.ok(&["edge", "add", &ada, "member_of", &team]);
+    for (text, plain) in [
+        ("MATCH (n:std:person) RETURN n", "person"),
+        ("MATCH (n:`std:person`) RETURN n", "person"),
+        ("MATCH (a)-[:std:member_of]->(b) RETURN a", "member_of"),
+    ] {
+        let (env, exit) = home.query(text, &[]);
+        assert_eq!(exit, 1, "{text}: {}", env.to_json());
+        let refused = issue(&env, Code::QueryStdQualifier);
+        assert_eq!(
+            refused.message(),
+            format!("std names are plain in Cypher: write :{plain}."),
+            "{text}"
+        );
+        assert_eq!(refused.next(), "umx docs get query");
+    }
+    let env = home.ok(&[
+        "query",
+        "MATCH (p:person)-[:member_of]->(t:team) RETURN p.id AS id",
+    ]);
+    assert_eq!(
+        env.data["rows"],
+        json!([{ "id": ada }]),
+        "{}",
+        env.to_json()
+    );
+    let authored = home.ok(&[
+        "query",
+        "MATCH (n)-[r:authored_by]->(s:session) RETURN n.id AS node, r AS edge",
+        "--provenance",
+    ]);
+    let rows = authored.data["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().any(|row| row["node"] == json!(ada)),
+        "{}",
+        authored.to_json()
+    );
+    for row in rows {
+        assert_eq!(row["edge"]["derived"], json!(true), "{row}");
+        assert_eq!(row["edge"]["type"], json!("authored_by"), "{row}");
+        assert!(row["edge"].get("id").is_none_or(Value::is_null), "{row}");
+    }
+    let untyped = home.ok(&[
+        "query",
+        "MATCH (n)-[r]->(s:session) RETURN count(r) AS total",
+        "--provenance",
+    ]);
+    assert_eq!(untyped.data["rows"], json!([{ "total": 0 }]));
+    let (env, exit) = home.query("MATCH (n)-[:authored_by*1..2]->(s) RETURN n.id AS id", &[]);
+    assert_eq!(exit, 1);
+    issue(&env, Code::QueryFeatureNotSupported);
+}
+
+#[test]
+fn a_batch_edge_into_a_secured_graph_never_names_the_far_node_s_type() {
+    // ws008 T2b (d-20): an end in a secured graph is linked with link_into_secured, and its type is never read for
+    // relation_endpoint_unexpected, even when it is outside the relation's expected ends.
+    let mut home = Home::new("t2b-secured-end");
+    home.graph();
+    let ada = home.add("person", "Ada");
+    let vault = home.path.join("vault").display().to_string();
+    home.ok(&["graph", "new", &vault, "--alias", "vault"]);
+    let team = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "team",
+        "--title",
+        "Hidden team",
+        "--graph",
+        "vault",
+    ]);
+    let team = team.data["node"]["id"].as_str().unwrap().to_owned();
+    home.ok(&["graph", "set", "vault", "--policy", "secured"]);
+    let far = format!("umx:vault/{team}");
+    let (env, exit) = batch_of(
+        &home,
+        "demo",
+        &[json!({"op":"edge add","from":ada,"relation":"works_for","to":far})],
+    );
+    assert_eq!(exit, 0, "{}", env.to_json());
+    let codes: Vec<&str> = env.warnings.iter().map(|w| w.code()).collect();
+    assert_eq!(codes, ["link_into_secured"], "{}", env.to_json());
+    assert!(!env.to_json().contains("team"), "{}", env.to_json());
+}
+
+#[test]
+fn ontology_set_takes_a_std_qualified_type() {
+    // ws008 T2b: `std:` on ontology set type and ontology set field, stored plain.
+    let mut home = Home::new("t2b-set-std");
+    let path = home.graph();
+    // person is std's, not in graph.json: the list (a std field included) is the graph's own declaration.
+    let columns = home.ok(&[
+        "ontology",
+        "set",
+        "type",
+        "std:person",
+        "--columns",
+        "title,job_title",
+    ]);
+    assert_eq!(
+        columns.data["type"],
+        json!("person"),
+        "{}",
+        columns.to_json()
+    );
+    home.add("person", "Ada");
+    let listed = home.ok(&["node", "list", "--type", "person"]);
+    assert_eq!(
+        listed.data["columns"],
+        json!(["id", "title", "job_title"]),
+        "{}",
+        listed.to_json()
+    );
+    home.ok(&["graph", "unload", "demo"]);
+    let loaded = home.ok(&["graph", "load", &path]);
+    assert!(loaded.warnings.is_empty(), "{}", loaded.to_json());
+    let role = home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "std:person",
+        "job_title",
+        "--role",
+        "content",
+    ]);
+    assert_eq!(role.data["type"], json!("person"), "{}", role.to_json());
+    assert_eq!(
+        type_in_file(&path, "person"),
+        json!({ "name": "person", "fields": [{ "name": "job_title", "kind": "string", "role": "content" }],
+            "columns": ["title", "job_title"] })
+    );
+    assert!(
+        !fs::read_to_string(Path::new(&path).join("graph.json"))
+            .unwrap()
+            .contains("std:")
+    );
+    // A column is known as node list and the load rule know it: tags is not a field std places on team, and a
+    // provenance type is umx's, never the graph's own declaration.
+    let before = fs::read_to_string(Path::new(&path).join("graph.json")).unwrap();
+    refused_with(
+        &home,
+        &["ontology", "set", "type", "team", "--columns", "title,tags"],
+        Code::FieldMissing,
+    );
+    refused_with(
+        &home,
+        &["ontology", "set", "type", "session", "--columns", "title"],
+        Code::ReservedName,
+    );
+    assert_eq!(
+        fs::read_to_string(Path::new(&path).join("graph.json")).unwrap(),
+        before,
+        "nothing written"
+    );
+}
+
+#[test]
+fn an_edge_into_a_secured_graph_never_names_the_far_node_s_type() {
+    // ws008 T2b (security N3): edge add's twin of the batch case.
+    let mut home = Home::new("t2b-secured-edge");
+    home.graph();
+    let ada = home.add("person", "Ada");
+    let vault = home.path.join("vault").display().to_string();
+    home.ok(&["graph", "new", &vault, "--alias", "vault"]);
+    let team = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "team",
+        "--title",
+        "Hidden team",
+        "--graph",
+        "vault",
+    ]);
+    let team = team.data["node"]["id"].as_str().unwrap().to_owned();
+    home.ok(&["graph", "set", "vault", "--policy", "secured"]);
+    let far = format!("umx:vault/{team}");
+    let env = home.ok(&["edge", "add", &ada, "works_for", &far, "--graph", "demo"]);
+    let codes: Vec<&str> = env.warnings.iter().map(|w| w.code()).collect();
+    assert_eq!(codes, ["link_into_secured"], "{}", env.to_json());
+    assert!(!env.to_json().contains("team"), "{}", env.to_json());
 }

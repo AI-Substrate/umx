@@ -381,6 +381,9 @@ pub(crate) fn draft_node<'g>(
                 .word("<title>"),
         )
     })?;
+    if req.kind == umx_core::standard::STD {
+        return Err(problems::std_reserved());
+    }
     if req.kind == "graph" {
         warnings.push(problems::reserved_type(&kind));
     }
@@ -412,6 +415,9 @@ pub(crate) fn draft_node<'g>(
         }
         if RESERVED_NODE_FIELDS.contains(&name.as_str()) {
             return Err(problems::reserved_name(name));
+        }
+        if name == umx_core::standard::STD {
+            return Err(problems::std_reserved());
         }
         let field = check_name(name, "field name", &|g| {
             ctx.same_graph(add_command().word("--set").name_with(g, '=', "<value>"))

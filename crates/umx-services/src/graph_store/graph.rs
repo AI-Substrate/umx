@@ -112,7 +112,8 @@ fn unknown_keys(meta: &GraphMeta) -> BTreeSet<Vec<&str>> {
 /// later); node list skips them. A type whose name is not a valid name is left to the other load rules.
 fn type_column_rules(alias: &ValidName, meta: &GraphMeta) -> Vec<Problem> {
     let mut out = Vec::new();
-    for t in &meta.ontology.types {
+    // The effective declaration (req-98): a std type's list may name a field std gives it (ws008 T2b).
+    for t in &meta.ontology.effective().types {
         let Some(kind) = ValidName::new(&t.name) else {
             continue;
         };
@@ -660,6 +661,29 @@ impl GraphStore {
                 .iter()
                 .map(|path| problems::unknown_key(&alias, GraphFile::Graph, path)),
         );
+        // ws008 T2b (req-99): in a std graph, a stored edge of a relation umx derives, or of a provenance relation
+        // between nodes that are not provenance records, as an older umx could write: kept and loaded, warned.
+        if meta.ontology.std_version().is_some() {
+            use umx_core::ontology::{PROVENANCE_DERIVED, PROVENANCE_RELATIONS};
+            rules.extend(
+                graph
+                    .edges()
+                    .filter(|e| {
+                        PROVENANCE_DERIVED.contains(&e.kind())
+                            || (PROVENANCE_RELATIONS.contains(&e.kind())
+                                && [e.from_ix(), e.to_ix()]
+                                    .into_iter()
+                                    .flatten()
+                                    .any(|ix| !graph.is_provenance(ix)))
+                    })
+                    .filter_map(|e| {
+                        Some(problems::reserved_relation_stored(
+                            &umx_core::ValidName::new(e.kind())?,
+                            e.id(),
+                        ))
+                    }),
+            );
+        }
         // req-98: a newer std loads, read with this build's std names (`Ontology::effective`).
         if let Some(std) = meta.ontology.std_version().filter(|&v| v > STD_VERSION) {
             rules.push(problems::std_newer(&alias, std, STD_VERSION));

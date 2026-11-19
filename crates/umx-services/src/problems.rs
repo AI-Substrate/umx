@@ -87,6 +87,8 @@ pub const CODES: &[&str] = &[
     "reserved_type",
     "reserved_relation",
     "derived_relation",
+    "reserved_relation_stored",
+    "std_field_conflict",
     "session_agent_conflict",
     "duplicate_prov_key",
     "node_id_is_graph_id",
@@ -1828,7 +1830,45 @@ pub fn derived_relation_reserved(kind: &'static str) -> Problem {
 }
 
 pub fn reserved_name(given: &str) -> Problem {
-    Problem::new("reserved_name").with("name", Slot::name_or(given, "(that name)"))
+    reserved_name_because(given, "it is a standard field name")
+}
+
+/// `reserved_name` with why umx keeps the name (ws008 T2b): `std` itself, a provenance type.
+pub fn reserved_name_because(given: &str, why: &'static str) -> Problem {
+    Problem::new("reserved_name")
+        .with("name", Slot::name_or(given, "(that name)"))
+        .with("why", Slot::Word(why))
+}
+
+/// `std` as a type, relation or field name, in every graph (ws008 T2b, req-99).
+pub fn std_reserved() -> Problem {
+    reserved_name_because(
+        umx_core::standard::STD,
+        "it qualifies umx's standard vocabulary (std:person)",
+    )
+}
+
+/// A provenance type declared or given by hand (ws008 T2b): umx alone makes those records.
+pub fn provenance_type_reserved(kind: &str) -> Problem {
+    reserved_name_because(kind, "umx records provenance with that type")
+}
+
+/// ws008 T2b (req-99): a std graph declares a field std has, with another kind than std's.
+pub fn std_field_conflict(graph: &ValidName, field: &ValidName, std_kind: FieldKind) -> Problem {
+    Problem::new("std_field_conflict")
+        .with("graph", name(graph))
+        .with("field", name(field))
+        .with("kind", Slot::Word(std_kind.as_str()))
+}
+
+/// ws008 T2b (req-99): a std graph's edges.jsonl holds an edge of a relation umx derives or keeps for provenance
+/// between non-provenance nodes, as an older umx could write. Kept and loaded as written.
+pub fn reserved_relation_stored(relation: &ValidName, id: Id) -> Problem {
+    Problem::new("reserved_relation_stored")
+        .with("relation", name(relation))
+        .with("id", Slot::Id(id))
+        .with("fix", Slot::Command(Command::new("edge show").id(id)))
+        .subject(id.to_text())
 }
 
 /// `next` shows the ontology; [`already_declared_describe`] is the case where a description came with it.

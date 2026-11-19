@@ -29,6 +29,7 @@ entries first, each marked (see std below).
     umx ontology add status parked --description "Waiting on someone else"
     umx ontology add field doc file:string --role data
     umx ontology add field doc summary:string --role content   # prose: searched by meaning
+    umx ontology add relation works_for --from person --to team   # expected end types (soft), see std below
 
 One field on several types (a comma list, or several types before the field) or on `--all-types` is one write,
 all or nothing: if any type is not declared (`type_unknown`) or already has the field with another kind
@@ -160,7 +161,15 @@ be custom fields (`reserved_name`). The provenance fields `prov_key`, `authored_
 itself (`umx docs get node`, Who wrote it). The types `platform`, `agent`, `model`, `harness` and `session` are
 umx's for provenance (a node of yours with one stays content and warns `reserved_type`); the relations
 `session_of`, `runs_on`, `uses_model` and `registered_in` (`reserved_relation`) and `authored_by` and
-`edited_by` (`derived_relation`) are refused on `edge add`.
+`edited_by` (`derived_relation`) are refused on `edge add`, and so is declaring any of those relations, in every
+graph: `umx ontology add relation authored_by` is `derived_relation` and `umx ontology add relation session_of` is
+`reserved_relation`. In a std graph `umx ontology add type session` (or another provenance type) is
+`reserved_name` too; a graph without std may declare `model`, `agent` or `platform` as its own types, as before.
+Each refusal's `next` names the docs to read.
+
+`std` is reserved as a type, relation and field name in every graph, std or not (`reserved_name`), so the
+qualifier `std:` is never ambiguous: `umx ontology add type std`, a relation or field named `std`, `--type std`
+and `--set std=...` are refused.
 
 ## Symmetric relations
 
@@ -185,9 +194,43 @@ types, `step` on `segment`, `starts_on` and `ends_on` on `works_for` and `member
 declarations. So on a std graph `umx node add --type person --set job_title=...` warns nothing, word search finds
 `job_title` text, and a Cypher `MATCH (p:person)` knows the label, all with no `ontology add`.
 
-The graph adds to std and never removes or narrows it: declaring a std name again merges into std's entry (a
-field std places keeps std's kind). graph.json holds only the graph's own declarations and `"std": 1`; std's
-entries are never written into it, and a graph without `std` is written byte for byte as before.
+The graph adds to std and never removes or narrows it: declaring a std name again merges into std's entry.
+graph.json holds only the graph's own declarations and `"std": 1`; std's entries are never written into it, and a
+graph without `std` is written byte for byte as before.
+
+### std's names in a std graph
+
+- A std type or relation declared by name alone (`umx ontology add type person`, `umx ontology add relation
+  works_for`) is std's already: `"unchanged": true`, nothing written. With fields or a description it is the
+  graph's own declaration, merged into std's.
+- A field std has keeps std's kind on any type or relation: `umx ontology add field person job_title:int`, or
+  `due_on:string` on any type, is refused with `std_field_conflict` (its next is `umx ontology show --std`).
+  The same name with std's kind is fine anywhere.
+- A provenance type cannot be declared (`umx ontology add type session` is `reserved_name`); a user node of one
+  warns `reserved_type`. A user edge of a provenance relation is refused (`reserved_relation`), of a derived one
+  too (`derived_relation`).
+- An edge that an older umx stored with `authored_by` or `edited_by`, or with a provenance relation between nodes
+  that are not provenance records, loads with the warning `reserved_relation_stored` (its next shows the edge).
+  Nothing is dropped.
+
+A graph without std takes all of these names as its own custom names, the provenance types included. It reserves
+only `std` itself and what every graph reserves (the provenance and derived relations above).
+
+`std:<name>` is accepted wherever a flag or word takes a type or relation name (`--type std:person`,
+`umx edge add <a> std:works_for <b>`, `umx ontology add field std:person nickname:string`) and is stored plain,
+as `person`. A `std:` before a name std does not have is refused by the name rules (`name_invalid`).
+
+### Expected end types
+
+Each std relation expects types at its ends: `works_for` from `person` to `organisation`; `member_of` from
+`person` or `team` to `team` or `organisation`; `owns` from `person`, `team` or `organisation` to any node;
+`raised_by` from `question`, `risk`, `decision` or `action` to `person`, `team` or `organisation`; `raised_in` to
+`segment`, `meeting`, `event`, `transcript` or `phase`; `held_at` from `meeting` or `event` to `place` or
+`system`; `precedes` between two nodes of one type. The expectation is soft: in a std graph an edge outside it
+is stored, with the warning `relation_endpoint_unexpected` naming the end's type and the types expected.
+`umx ontology add relation works_for --from person --to team` widens them for this graph (repeat `--from` and
+`--to` for more): graph.json keeps the added types under `relation_endpoints`, written only once one is added.
+On a relation of the graph's own the same flags set its expected end types. `--symmetric` takes neither.
 
 `umx ontology show` on a std graph marks what std gives: top-level `std` (the version, null when not std), `std:
 true` on each std type, on each field std places and on each std relation field, and the std names among

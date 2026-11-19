@@ -24,6 +24,12 @@ edge or relation by hand (`name_invalid`); umx keeps them, read with `umx neighb
 graph adds. `umx ontology show` marks std's entries `std: true` (hint `std_entries_shown`) and `--std` prints std
 v1 alone; `--no-std` makes a graph without std. On `std_newer`, keep working: the graph loads on this umx's std.
 
+**usage 211**: in a std graph std's names keep std's kinds (`std_field_conflict`), and a std type or relation
+declared by name alone is unchanged. `std` is never a type, relation or field name, and umx's provenance and
+derived names are refused in every graph (`reserved_name`, `reserved_relation`, `derived_relation`). std relations
+expect end types softly (`relation_endpoint_unexpected` names them); widen with `umx ontology add relation <r>
+--from <type> --to <type>`. `std:person` works on flags; in Cypher write std names plain (`query_std_qualifier`).
+
 An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
 ## Vocabulary and settings

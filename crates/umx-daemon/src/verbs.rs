@@ -285,6 +285,75 @@ fn with_live_alias(services: &Services, ctx: &Ctx, op: &Op) -> Result<Option<Op>
     Ok(Some(op))
 }
 
+/// ws008 T2b (req-99): `std:<name>` on a name-taking flag or word (`--type std:person`, `--relation
+/// std:works_for`, `ontology add field std:person ...`) is `<name>` when that is a std name of its kind; names are
+/// stored plain. `None` when the op names none: a `std:` that is not std stays as given and fails the name rules, and
+/// `ontology remove` keeps it, so it is refused as a std entry.
+fn std_plain(op: &Op) -> Option<Op> {
+    use umx_core::standard::{NameKind, QUALIFIER, plain};
+    let named = |s: &str| s.starts_with(QUALIFIER);
+    let some = |s: &Option<String>| s.as_deref().is_some_and(named);
+    let any = match op {
+        Op::NodeAdd { kind, .. } => named(kind),
+        Op::EdgeAdd { relation, .. } | Op::OntologyAddRelationField { relation, .. } => {
+            named(relation)
+        }
+        Op::OntologyAddType { name, .. } | Op::OntologySetType { name, .. } => named(name),
+        Op::OntologySetField { type_name, .. } => named(type_name),
+        Op::NodeEdit { kind, .. } | Op::NodeList { kind, .. } | Op::NodeFind { kind, .. } => {
+            some(kind)
+        }
+        Op::EdgeEdit { relation, .. }
+        | Op::Neighbours { relation, .. }
+        | Op::Walk { relation, .. }
+        | Op::Path { relation, .. } => some(relation),
+        Op::EdgeList { kind, .. } => some(kind),
+        Op::OntologyAddField { types, .. } => types.iter().any(|t| named(t)),
+        Op::OntologyAddRelation { name, from, to, .. } => {
+            named(name) || from.iter().chain(to).any(|t| named(t))
+        }
+        _ => false,
+    };
+    if !any {
+        return None;
+    }
+    let fix = |kind: NameKind, s: &mut String| *s = plain(kind, s).to_string();
+    let fix_opt = |kind: NameKind, s: &mut Option<String>| {
+        if let Some(s) = s {
+            fix(kind, s);
+        }
+    };
+    let mut op = op.clone();
+    match &mut op {
+        Op::NodeAdd { kind, .. }
+        | Op::OntologyAddType { name: kind, .. }
+        | Op::OntologySetType { name: kind, .. }
+        | Op::OntologySetField {
+            type_name: kind, ..
+        } => fix(NameKind::Type, kind),
+        Op::EdgeAdd { relation, .. } | Op::OntologyAddRelationField { relation, .. } => {
+            fix(NameKind::Relation, relation)
+        }
+        Op::NodeEdit { kind, .. } | Op::NodeList { kind, .. } | Op::NodeFind { kind, .. } => {
+            fix_opt(NameKind::Type, kind)
+        }
+        Op::EdgeEdit { relation, .. }
+        | Op::Neighbours { relation, .. }
+        | Op::Walk { relation, .. }
+        | Op::Path { relation, .. }
+        | Op::EdgeList { kind: relation, .. } => fix_opt(NameKind::Relation, relation),
+        Op::OntologyAddField { types, .. } => types.iter_mut().for_each(|t| fix(NameKind::Type, t)),
+        Op::OntologyAddRelation { name, from, to, .. } => {
+            fix(NameKind::Relation, name);
+            from.iter_mut()
+                .chain(to.iter_mut())
+                .for_each(|t| fix(NameKind::Type, t));
+        }
+        _ => {}
+    }
+    Some(op)
+}
+
 /// The graph alias a verb takes by position, if it takes one.
 fn positional_alias(op: &mut Op) -> Option<&mut String> {
     match op {
@@ -312,6 +381,8 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
         Err(p) => return Envelope::fail(command, issue(&p, command)),
     };
     let op = live.as_ref().unwrap_or(op);
+    let plain = std_plain(op);
+    let op = plain.as_ref().unwrap_or(op);
     if let Some(problem) = scope_usage(request) {
         return Envelope::fail(command, issue(&problem, command));
     }
@@ -577,9 +648,18 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             name,
             symmetric,
             description,
+            from,
+            to,
         } => reply(
             command,
-            services.ontology_add_relation(&ctx, name, *symmetric, description.as_deref()),
+            services.ontology_add_relation_with_ends(
+                &ctx,
+                name,
+                *symmetric,
+                description.as_deref(),
+                from,
+                to,
+            ),
             |v| json!({ "added": v.added, "name": v.name, "unchanged": v.unchanged }),
         ),
         // One type: the original form, which declares a new type too (F71 keeps it as it was).
@@ -3169,8 +3249,15 @@ fn retry(op: &Op) -> Command {
             name: n,
             symmetric,
             description,
+            from,
+            to,
         } => {
-            let c = name(Command::new("ontology add relation"), n, "<name>");
+            let mut c = name(Command::new("ontology add relation"), n, "<name>");
+            for (flag, types) in [("--from", from), ("--to", to)] {
+                for t in types {
+                    c = name(c.word(flag), t, "<type>");
+                }
+            }
             let c = if *symmetric { c.word("--symmetric") } else { c };
             text(c, "--description", description, "<text>")
         }

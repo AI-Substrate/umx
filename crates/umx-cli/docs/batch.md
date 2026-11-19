@@ -99,6 +99,9 @@ On disk an edge's relation is stored as `type` (the record's kind, as for nodes 
 Batch input also accepts `type`, so an edge port can keep that spelling. Giving both names is
 `batch_line_invalid`, even when their values agree. The file key never changes.
 
+Batch lines take plain names (`"type":"person"`, `"relation":"works_for"`): the `std:` qualifier is for flags
+(`--type std:person`), not batch lines.
+
 ## Keeping source identities
 
 For an umx-to-umx port, give `id` on a node or edge add to keep its full 26-character Crockford ULID.

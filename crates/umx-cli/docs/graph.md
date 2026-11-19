@@ -57,7 +57,7 @@ There are no graph templates. Every new graph starts from the starter vocabulary
 as the work needs. The reply's `data.next` (and the `next:` lines with `--human`) lists commands, each runnable
 as printed, that add a type, a relation and a status and change a graph setting:
 
-    umx ontology add type risk --graph launch
+    umx ontology add type experiment --graph launch
     umx ontology add relation mitigates --graph launch
     umx ontology add status parked --graph launch
     umx graph set launch --title "Launch planning"

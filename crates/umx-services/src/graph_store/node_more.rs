@@ -356,6 +356,9 @@ pub(crate) fn edit_node(
 
     if let Some(kind) = req.kind {
         let name = check_name(&kind, "node type", &|g| edit().word("--type").name(g))?;
+        if kind == umx_core::standard::STD {
+            return Err(problems::std_reserved());
+        }
         if umx_core::provenance::user_node_warning(&kind).is_some() {
             warnings.push(problems::reserved_type(&name));
         }
@@ -389,6 +392,9 @@ pub(crate) fn edit_node(
         }
         if RESERVED_NODE_FIELDS.contains(&field.as_str()) {
             return Err(problems::reserved_name(field));
+        }
+        if field == umx_core::standard::STD {
+            return Err(problems::std_reserved());
         }
         let name = check_name(field, "field name", &|g| {
             edit().word("--set").name_with(g, '=', "<value>")

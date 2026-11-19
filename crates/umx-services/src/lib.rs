@@ -2290,6 +2290,20 @@ impl Services {
             .ontology_add_relation(ctx, name, symmetric, description)
     }
 
+    /// `ontology add relation --from <t> --to <t>` (ws008 T2b, req-99).
+    pub fn ontology_add_relation_with_ends(
+        &mut self,
+        ctx: &Ctx,
+        name: &str,
+        symmetric: bool,
+        description: Option<&str>,
+        from: &[String],
+        to: &[String],
+    ) -> Outcome<OntologyAdded> {
+        self.graph
+            .ontology_add_relation_with_ends(ctx, name, symmetric, description, (from, to))
+    }
+
     pub fn ontology_add_field(
         &mut self,
         ctx: &Ctx,

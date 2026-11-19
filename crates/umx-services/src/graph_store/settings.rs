@@ -18,10 +18,11 @@ pub struct GraphSet {
 }
 
 /// `graph new`'s next commands: how to change the new graph's vocabulary and settings, each runnable as
-/// printed. Built from the alias and umx's own words only.
+/// printed. Built from the alias and umx's own words only. The type is one std v1 does not have, so on a std graph
+/// (the default) the add declares it rather than finding it there already (ws008 T2b).
 pub(crate) fn change_commands(graph: &ValidName) -> Vec<Command> {
     let mut out: Vec<Command> = [
-        Command::new("ontology add type").word("risk"),
+        Command::new("ontology add type").word("experiment"),
         Command::new("ontology add relation").word("mitigates"),
         Command::new("ontology add status").word("parked"),
     ]

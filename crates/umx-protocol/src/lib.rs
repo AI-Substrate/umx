@@ -182,12 +182,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 90: std graphs and the effective ontology (ws008 T2a, req-98): `GraphNew`'s `no_std` (`graph new --no-std`; a new
 /// graph's ontology says `std: 1` otherwise) and `OntologyShow`'s `std` (`ontology show --std`, std v1 alone); the
 /// warning `std_newer` and the hint `std_entries_shown`.
+/// 91: std reserved names (ws008 T2b, req-99): `OntologyAddRelation`'s `from` and `to` (`--from`/`--to`, soft end
+/// types kept in graph.json's `relation_endpoints`); `std:<name>` accepted on name-taking flags and stored plain;
+/// `ontology add relation` and `ontology add type` refuse umx's reserved names in every graph; new codes
+/// `std_field_conflict`, `reserved_relation_stored` and `query_std_qualifier`; `reserved_name` gains its `why`.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 90;
+pub const PROTOCOL: u32 = 91;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -196,7 +200,7 @@ pub const PROTOCOL: u32 = 90;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (90, 0x74bc_bd28_a8c7_8497);
+const WIRE_FINGERPRINT: (u32, u64) = (91, 0xfa45_e5f9_dbaf_bb98);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1398,6 +1402,12 @@ pub enum Op {
         /// `--description <text>` (PROTOCOL 34): one line on what the entry means, for `umx graph guide`.
         #[serde(default)]
         description: Option<String>,
+        /// `--from <type>` and `--to <type>` (ws008 T2b, req-99), each repeatable: the relation's expected end
+        /// types (soft), widening a std relation's. Not sent when empty, so an older request is unchanged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        from: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        to: Vec<String>,
     },
     /// F71: one field on several types in one write. Exactly one of a non-empty `types` (deduped, first seen kept)
     /// or `all_types` (every type the graph declares); the daemon refuses anything else as `usage_invalid`.
@@ -2378,13 +2388,22 @@ catalogue! {
         "<type> is reserved by umx. This stored node is kept unchanged.",
         "umx docs get ontology";
     ReservedRelation => "reserved_relation", Error, 1,
-        "a user edge asks for a stored provenance relation",
+        "a user edge, or ontology add relation, asks for a stored provenance relation",
         "<relation> is managed by umx between provenance records. Nothing changed.",
         "umx docs get ontology";
     DerivedRelation => "derived_relation", Error, 1,
-        "a user edge asks for a derived authorship relation",
+        "a user edge, or ontology add relation, asks for a derived authorship relation",
         "<relation> is derived from session keys and cannot be stored. Nothing changed.",
         "umx docs get node";
+    // ws008 T2b (req-99): reserved names in std graphs.
+    ReservedRelationStored => "reserved_relation_stored", Warning, 0,
+        "a std graph's edges.jsonl holds an edge of a relation umx derives, or keeps for provenance, between nodes that are not provenance records (as an older umx could write); it is kept and loaded",
+        "Edge <id> is a stored <relation> edge; umx derives or keeps that relation itself. It is kept as written.",
+        "<fix>";
+    StdFieldConflict => "std_field_conflict", Error, 1,
+        "a std graph declares a field std v1 has with another kind than std's; nothing changed",
+        "<field> is a std field of kind <kind>; a std graph cannot declare it as another kind. Nothing changed.",
+        "umx ontology show --std";
     SessionAgentConflict => "session_agent_conflict", Warning, 0,
         "a captured session already belongs to a different agent; the first link is retained",
         "Session <session> already belongs to agent <agent>. Its first session_of link is kept.",
@@ -2906,8 +2925,8 @@ catalogue! {
         "<name> is not allowed as a <kind of name>: <reason>.",
         "<fix>";
     ReservedName => "reserved_name", Error, 1,
-        "a custom field uses a standard field name",
-        "<name> is a standard field name.",
+        "a custom field uses a standard field name, or a name umx reserves (std in every graph, a provenance type); nothing changed",
+        "<name> is reserved: <why>. Nothing changed.",
         "umx docs get ontology";
     EntityKeyInvalid => "entity_key_invalid", Error, 1,
         "an entity_key is not scheme:value with a snake_case scheme, has no value, or is an id: key that is not a 26-character umx id (ws008 E1); nothing is written",
@@ -3795,6 +3814,11 @@ catalogue! {
         "a feature outside the subset (UNION, path variables, shortest path, arithmetic, regex, list comprehensions, list predicates, parameters)",
         "<feature> is not part of the query subset. <instead>",
         "<fix>";
+    // ws008 T2b (req-99): `(n:std:person)` is a label union umx's soft vocabulary would accept and widen.
+    QueryStdQualifier => "query_std_qualifier", Error, 1,
+        "a node label or relationship type is std or std:<name>; std names are plain in Cypher",
+        "std names are plain in Cypher: write :<name>.",
+        "umx docs get query";
     QueryAmbiguousLabels => "query_ambiguous_labels", Error, 1,
         "a node pattern with two labels joined by a colon",
         "(n:<a>:<b>) is ambiguous; write (n:<a>|<b>) for either label.",
@@ -5240,6 +5264,8 @@ mod tests {
                 name: "r".into(),
                 symmetric: true,
                 description: s("d"),
+                from: vec!["a".into()],
+                to: vec!["b".into()],
             },
             Op::OntologyAddField {
                 types: list(),

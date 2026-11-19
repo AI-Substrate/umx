@@ -229,6 +229,29 @@ fn triggers() -> Vec<(&'static str, Problem)> {
             "ambiguous labels",
             refused("MATCH (n:question:criterion) RETURN n.id AS id"),
         ),
+        // ws008 T2b (req-99): std names are plain in Cypher.
+        ("std label", refused("MATCH (n:std:person) RETURN n.id")),
+        (
+            "std backticked",
+            refused("MATCH (n:`std:person`) RETURN n.id"),
+        ),
+        (
+            "std type",
+            refused("MATCH (a)-[:std:member_of]->(b) RETURN a.id"),
+        ),
+        ("std alone", refused("MATCH (n:std) RETURN n.id")),
+        (
+            "std in a union",
+            refused("MATCH (n:question|std) RETURN n.id"),
+        ),
+        (
+            "std type alone",
+            refused("MATCH (a)-[:blocks|std]->(b) RETURN a.id"),
+        ),
+        (
+            "std label predicate",
+            refused("MATCH (n) WHERE n:std:person RETURN n.id"),
+        ),
         ("type()", refused("MATCH (n:problem) RETURN type(n)")),
         ("labels()", refused("MATCH (n:problem) RETURN labels(n)")),
         ("id()", refused("MATCH (n:problem) RETURN id(n)")),
@@ -410,6 +433,18 @@ fn each_refusal_says_which() {
     ] {
         assert_eq!(get(case).code, check::FEATURE_NOT_SUPPORTED, "{case}");
         assert_eq!(word(get(case), "feature"), feature, "{case}");
+    }
+    for (case, plain) in [
+        ("std label", "person"),
+        ("std backticked", "person"),
+        ("std type", "member_of"),
+        ("std alone", "a name"),
+        ("std in a union", "a name"),
+        ("std type alone", "a name"),
+        ("std label predicate", "person"),
+    ] {
+        assert_eq!(get(case).code, check::STD_QUALIFIER, "{case}");
+        assert_eq!(word(get(case), "name"), plain, "{case}");
     }
     assert_eq!(word(get("ambiguous labels"), "a"), "question");
     assert_eq!(word(get("ambiguous labels"), "b"), "criterion");
@@ -719,5 +754,51 @@ fn only_bound_variables_are_read() {
         "UNWIND [1] AS v WITH v AS w RETURN v AS z",
     ] {
         assert_eq!(refused(q).code, check::UNKNOWN_VARIABLE, "{q}");
+    }
+}
+
+/// ws008 T2b (cypher-expert): `std` is refused only as a label or relationship type. As a variable, a map key, a list
+/// comprehension's value or a property it is a name like any other, and a query that parses is never refused by the
+/// token scan. Likewise a stored provenance relation warns provenance_hidden only as a step's type.
+#[test]
+fn std_and_provenance_names_elsewhere_are_names() {
+    let options = RunOptions::default();
+    for text in [
+        "MATCH (std) RETURN std.id AS i",
+        "MATCH (session_of) RETURN session_of.id AS i",
+        "MATCH (n) WITH n.id AS std RETURN std",
+    ] {
+        let codes: Vec<&str> = outcome(text, &options)
+            .unwrap_or_else(|p| panic!("{text}: {}", p.code))
+            .warnings
+            .iter()
+            .map(|w| w.code)
+            .collect();
+        assert!(codes.is_empty(), "{text}: {codes:?}");
+    }
+    let codes: Vec<&str> = warned("MATCH (n) RETURN n.std AS s", &options)
+        .iter()
+        .map(|w| w.code)
+        .collect();
+    assert_eq!(codes, [check::UNKNOWN_PROPERTY]);
+    // Map literals and list comprehensions are outside the subset whatever their names: refused as before, never
+    // with the std qualifier.
+    for (text, code) in [
+        ("MATCH (n) RETURN {k: n.id, std: 1} AS m", check::SYNTAX),
+        ("MATCH (n) RETURN {session_of: n.id} AS m", check::SYNTAX),
+        (
+            "WITH 1 AS std RETURN [x IN [1] | std] AS l",
+            check::FEATURE_NOT_SUPPORTED,
+        ),
+    ] {
+        assert_eq!(refused(text).code, code, "{text}");
+    }
+    // Each stored provenance relation as a step's type warns by its own name, from the fixed list.
+    for relation in ["session_of", "runs_on", "uses_model", "registered_in"] {
+        let text = format!("MATCH (a)-[:{relation}]->(b) RETURN a.id AS id");
+        let w = warned(&text, &options);
+        assert_eq!(w.len(), 1, "{relation}: {w:?}");
+        assert_eq!(w[0].code, check::PROVENANCE_HIDDEN, "{relation}");
+        assert_eq!(word(&w[0], "name"), relation);
     }
 }

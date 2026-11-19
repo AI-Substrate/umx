@@ -35,8 +35,16 @@ An edge's attribution is in `r.authored_by_session` and `r.edited_by_session`, n
 Without the flag, a query naming a reserved provenance label (`session`, `agent`, `model`, `harness`
 or `platform`), `authored_by`/`edited_by`, or a stored provenance relation (`session_of`, `runs_on`,
 `uses_model`, `registered_in`) warns `provenance_hidden`, not `query_unknown_*` or
-`query_*_unused` for that name. This warning depends only on the name in the query, even when no
-provenance exists. An ordinary user node of one of those types stays visible.
+`query_*_unused` for that name. This warning depends only on the name as a label or a step's type in the
+query, even when no provenance exists; the same name as a variable or a map key warns nothing. An ordinary user
+node of one of those types stays visible.
+
+## std names
+
+std names are plain in Cypher: write `(p:person)` and `-[:member_of]->`, never `std:`. A label or relationship
+type spelled `std` or `std:<name>` (`(n:std:person)`, ``(n:`std:person`)``, `-[:std:member_of]-`) is refused with
+`query_std_qualifier` ("std names are plain in Cypher: write :person"), because `(n:std:person)` is a label union
+that would otherwise widen to every node. `std` as a variable or a property is a name like any other.
 
 ## The subset
 
