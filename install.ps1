@@ -7,10 +7,12 @@
 # The version is the latest release unless -Version or UMX_VERSION names one (-Version wins; a leading `v` is
 # optional), checked as install.sh checks it before anything runs. It finds the default WSL distro with
 # `wsl.exe -l -v` and refuses, with nothing changed, when there is no WSL, no distro, or the default distro is WSL 1.
-# Then, in that distro, it has WSL's own curl download install.sh over https into a temporary file and runs it with
-# `--version <version>` when one was named: install.sh downloads the release, checks it against SHA256SUMS and installs
-# umx into the distro's ~/.local/bin (docs/install.md). Windows itself downloads and runs nothing; the version reaches
-# install.sh as an argument, never as shell text. install.sh's output is shown as it runs, and its exit code is
+# Then, in that distro, it has WSL's own curl, https only, find the release (the version named, or the one
+# /releases/latest leads to, as its tag), download that release's install.sh and SHA256SUMS into a temporary folder,
+# and run install.sh with `--version <version>` only when it matches its line in SHA256SUMS: install.sh downloads the
+# same release's archive, checks it against SHA256SUMS and installs umx into the distro's ~/.local/bin
+# (docs/install.md). Windows itself downloads and runs nothing; the version reaches WSL as an argument, never as shell
+# text. install.sh's output is shown as it runs, and its exit code is
 # install.ps1's. It needs no administrator rights, changes no execution policy and installs nothing on Windows.
 #
 # Run as a file, it exits with that code. Run with `irm ... | iex`, it leaves the PowerShell window open: it sets
@@ -28,7 +30,7 @@
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
 
-        $installSh = 'https://github.com/AI-Substrate/umx/releases/latest/download/install.sh'
+        $releases = 'https://github.com/AI-Substrate/umx/releases'
         $setup = 'install WSL 2 and Ubuntu with `wsl --install` in PowerShell run as administrator, restart Windows if it asks, open Ubuntu once to make your Linux user, then run this again; see https://learn.microsoft.com/windows/wsl/install'
 
         function Fail([string]$what, [string]$hint) {
@@ -86,17 +88,34 @@
         }
 
         # Runs in the distro, as sh: no double quotes or backslashes, so Windows PowerShell 5.1 and PowerShell 7 pass it to
-        # wsl.exe the same. $1 is install.sh's URL; the rest are install.sh's arguments. The download goes to a file and
-        # runs only when complete, so a failed download is an error, not an empty script that exits 0.
-        $script = 'set -euf; ' +
-            'command -v curl >/dev/null 2>&1 || { echo install.ps1: curl is not installed in this WSL distro, so install.sh cannot be downloaded: install curl, for example sudo apt install curl, then run install.ps1 again >&2; exit 1; }; ' +
-            'f=$(mktemp /tmp/umx-install-sh.XXXXXX); ' +
-            'if ! curl --proto =https --proto-redir =https --tlsv1.2 -fsSL -o $f $1; then rm -f $f; echo install.ps1: could not download $1 inside WSL: check the connection, nothing changed >&2; exit 1; fi; ' +
-            'shift; rc=0; sh $f $@ || rc=$?; rm -f $f; exit $rc'
-        $shArgs = @($installSh)
-        if ($want -ne '') { $shArgs += @('--version', $want) }
+        # wsl.exe the same. $1 is the releases URL; $2, when given, is the version. With no version it first resolves
+        # /releases/latest to that release's tag, so install.sh, SHA256SUMS and the archive install.sh fetches all come
+        # from one release, even if another is published meanwhile. It downloads that release's install.sh and SHA256SUMS
+        # into a private temporary folder and runs install.sh only when it matches its line in SHA256SUMS.
+        $script = 'set -euf; r=$1; v=${2-}; d=; ' +
+            'no() { rm -rf $d; echo install.ps1: $@ >&2; exit 1; }; ' +
+            'command -v curl >/dev/null 2>&1 || no curl is not installed in this WSL distro, so install.sh cannot be downloaded: install curl, for example sudo apt install curl, then run install.ps1 again; ' +
+            'command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || no neither sha256sum nor shasum is installed in this WSL distro, so install.sh cannot be checked: install coreutils, then run install.ps1 again; ' +
+            'g() { curl --proto =https --proto-redir =https --tlsv1.2 -fsSL $@; }; ' +
+            'if [ ${#v} -eq 0 ]; then ' +
+            'u=$(g -I -o /dev/null -w %{url_effective} $r/latest) || no could not find the latest umx release at $r/latest inside WSL: check the connection, nothing changed; ' +
+            'v=${u#$r/tag/v}; case $u in $r/tag/v[0-9]*) ;; *) v=/ ;; esac; ' +
+            'case $v in *[!0-9A-Za-z.-]*) no $r/latest led to $u, not to a umx release: nothing changed ;; esac; ' +
+            'fi; ' +
+            'd=$(mktemp -d /tmp/umx-install-sh.XXXXXX); u=$r/download/v$v; ' +
+            'for a in install.sh SHA256SUMS; do g -o $d/$a $u/$a || no could not download $u/$a inside WSL: check the version and the connection, nothing changed; done; ' +
+            'w=$(awk -v f=install.sh ''NF == 2 && $2 == f { print $1; n++ } END { exit n == 1 ? 0 : 1 }'' $d/SHA256SUMS) || w=; ' +
+            'case $w in *[!0-9a-f]*) w= ;; esac; ' +
+            '[ ${#w} -eq 64 ] || no SHA256SUMS of umx $v has no single valid line for install.sh, so install.sh was not run: nothing changed; ' +
+            'if command -v sha256sum >/dev/null 2>&1; then s=$(sha256sum $d/install.sh); else s=$(shasum -a 256 $d/install.sh); fi; ' +
+            '[ x${s%% *} = x$w ] || no install.sh of umx $v does not match its sha256 in SHA256SUMS, so it was not run: the download is not the published file, nothing changed; ' +
+            'echo install.ps1: checked install.sh of umx $v against its SHA256SUMS.; ' +
+            'rc=0; sh $d/install.sh --version $v || rc=$?; rm -rf $d; exit $rc'
+        $shArgs = @($releases)
+        if ($want -ne '') { $shArgs += $want }
 
-        Write-Host "install.ps1: installing umx inside WSL 2, in the default distro $distro, with install.sh..."
+        $release = if ($want -ne '') { "umx $want" } else { 'the latest umx' }
+        Write-Host "install.ps1: installing $release inside WSL 2, in the default distro $distro, with that release's install.sh..."
         $encoding = $null
         try {
             try { $encoding = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { $encoding = $null }

@@ -59,10 +59,12 @@ What `install.ps1` does, in order:
 1. Checks a named version as install.sh does, before anything runs.
 2. Finds the default WSL distro with `wsl -l -v`, and refuses, with nothing changed, when WSL is not installed, there
    is no distro, or the default distro is WSL 1.
-3. In that distro, has WSL's own `curl` download `install.sh` (https only) into a temporary file and runs it, with
-   `--version` when you named one: the same as running the Install line in a WSL terminal, so everything under Install
-   happens inside WSL. Windows itself downloads and runs nothing else, and the version reaches install.sh as an
-   argument, never as shell text.
+3. In that distro, has WSL's own `curl` (https only) find the release, the version you named or the tag
+   `/releases/latest` leads to, and download that release's `install.sh` and `SHA256SUMS` into a temporary folder. It
+   runs `install.sh --version <that version>` only when `install.sh` matches its line in `SHA256SUMS`, and otherwise
+   stops with nothing changed. That is the Install line in a WSL terminal, with `install.sh` checked first, so
+   everything under Install happens inside WSL, from one release even if another is published meanwhile. Windows
+   itself downloads and runs nothing else, and the version reaches WSL as an argument, never as shell text.
 4. Shows install.sh's output as it runs, and ends with install.sh's exit code. Run with `irm ... | iex`, it leaves the
    PowerShell window open, sets `$LASTEXITCODE` and nothing else in that session, and ends with an error when the
    install failed.
@@ -105,8 +107,9 @@ checked, which needs no change to the execution policy:
     & ([scriptblock]::Create((Get-Content -Raw .\install.ps1))) -Version $version
 
 That proves the `install.ps1` you ran is the one this repository's release workflow published. What it runs inside
-WSL (install.sh, then the archive) is checked as the one line checks (below); to know who built the umx you run,
-Verify and install by hand inside WSL.
+WSL is checked against that release's `SHA256SUMS`, downloaded again inside WSL: `install.sh` by `install.ps1`, then
+the archive by `install.sh` (What the one line checks, below). That proves integrity, not who built it; to know who
+built the umx you run, Verify and install by hand inside WSL.
 
 ## What the one line checks
 

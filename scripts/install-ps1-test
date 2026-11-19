@@ -2,8 +2,9 @@
 # shellcheck disable=SC2016 # the bad versions and the PowerShell commands are literal text
 # Proves install.ps1 (ws012 s13) with PowerShell 7 (`pwsh`) and a stub `wsl.exe` on PATH: no Windows, no WSL, no
 # network. The stub answers `wsl.exe -l -v` as WSL does (UTF-16LE, or UTF-8 when it honours WSL_UTF8=1) from a planted
-# list, and runs `wsl.exe -d <distro> -e sh -c <script> sh <url> <args>` for real here, with a fake curl that serves a
-# fake install.sh: so the sh script install.ps1 sends into WSL, its download and exit code, run as they would there.
+# list, and runs `wsl.exe -d <distro> -e sh -c <script> sh <releases> [<version>]` for real here, with a fake curl that
+# answers /releases/latest and serves a release's fake install.sh and its SHA256SUMS: so the sh script install.ps1 sends
+# into WSL, its downloads, its check of install.sh against SHA256SUMS and its exit code, run as they would there.
 # Each case runs install.ps1 as a file; three more run it the ways docs/install.md gives: `irm ... | iex` and
 # `& ([scriptblock]::Create((irm ...))) -Version`; four more check those leave the caller's session as it was. Windows
 # PowerShell 5.1, the real wsl.exe and its command-line parsing are untested here (ws012 s15 checks them on a Windows
@@ -15,26 +16,43 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 pwsh=$(command -v pwsh) || { echo "install-ps1-test: pwsh is not installed" >&2; exit 2; }
 work=$(mktemp -d "${TMPDIR:-/tmp}/install-ps1-test.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-url=https://github.com/AI-Substrate/umx/releases/latest/download/install.sh
+rel=https://github.com/AI-Substrate/umx/releases
 fails=0
 
-# The tools the sh script needs inside "WSL", with and without curl; and wsl.exe on a PATH of its own.
-mkdir -p "$work/linux" "$work/linux-nocurl" "$work/win"
-for tool in sh mktemp rm cat; do
-    ln -s "$(command -v "$tool")" "$work/linux/$tool"
-    ln -s "$(command -v "$tool")" "$work/linux-nocurl/$tool"
+# The tools the sh script needs inside "WSL": with sha256sum; with shasum only; without curl; without either sum tool.
+# And wsl.exe on a PATH of its own.
+mkdir -p "$work/linux" "$work/linux-shasum" "$work/linux-nocurl" "$work/linux-nosum" "$work/win"
+for tool in sh mktemp rm cat awk; do
+    for linux in linux linux-shasum linux-nocurl linux-nosum; do ln -s "$(command -v "$tool")" "$work/$linux/$tool"; done
 done
+for linux in linux linux-shasum linux-nosum; do ln -s "$work/curl" "$work/$linux/curl"; done
+for linux in linux linux-nocurl; do ln -s "$(command -v sha256sum)" "$work/$linux/sha256sum"; done
+ln -s "$(command -v shasum)" "$work/linux-shasum/shasum"
 
-cat >"$work/linux/curl" <<'SH'
+# fake curl: install.ps1's flags, then either `-I -o /dev/null -w %{url_effective} <releases>/latest`, answered with
+# STUB_LATEST (the URL /releases/latest leads to), or `-o <file> <releases>/download/v<version>/<asset>`, serving the fake
+# install.sh and the SHA256SUMS at STUB_SUMS. STUB_CURL names the one URL suffix that fails, as a dropped connection.
+cat >"$work/curl" <<'SH'
 #!/bin/sh
-# fake curl: install.ps1's flags, then install.sh's URL; serves the fake install.sh or fails.
 printf 'curl %s\n' "$*" >>"$STUB_LOG"
 [ "$1 $2 $3 $4 $5 $6" = "--proto =https --proto-redir =https --tlsv1.2 -fsSL" ] || { echo "fake curl: flags $*" >&2; exit 90; }
-[ "$7" = -o ] || { echo "fake curl: no -o" >&2; exit 90; }
-[ "${STUB_CURL-}" != fail ] || { echo "curl: (6) Could not resolve host: github.com" >&2; exit 6; }
-cat "$STUB_INSTALL_SH" >"$8"
+shift 6
+rel=https://github.com/AI-Substrate/umx/releases
+fails() { case "$1" in *"${STUB_CURL:-/none}") echo "curl: (6) Could not resolve host: github.com" >&2; exit 6 ;; esac; }
+if [ "$*" = "-I -o /dev/null -w %{url_effective} $rel/latest" ]; then
+    fails "$6"
+    printf '%s' "${STUB_LATEST:-$rel/tag/v0.2.0}"
+    exit 0
+fi
+[ "$1" = -o ] && [ $# = 3 ] || { echo "fake curl: unexpected $*" >&2; exit 90; }
+fails "$3"
+case "$3" in
+"$rel"/download/v*/install.sh) cat "$STUB_INSTALL_SH" >"$2" ;;
+"$rel"/download/v*/SHA256SUMS) cat "$STUB_SUMS" >"$2" ;;
+*) echo "curl: (56) The requested URL returned error: 404" >&2; exit 56 ;;
+esac
 SH
-chmod +x "$work/linux/curl"
+chmod +x "$work/curl"
 
 cat >"$work/install.sh" <<'SH'
 #!/bin/sh
@@ -46,6 +64,12 @@ echo "Run these next (agents: run them; they are not run for you):"
 echo "  umx agents-start-here"
 exit "${STUB_RC:-0}"
 SH
+# SHA256SUMS as the release writes it; one whose install.sh line is another file's; one with no install.sh line.
+other=$(printf 'not install.sh\n' | shasum -a 256 | cut -d' ' -f1)
+good=$(shasum -a 256 "$work/install.sh" | cut -d' ' -f1)
+printf '%s  install.sh\n%s  umx-x86_64-unknown-linux-gnu.tar.gz\n' "$good" "$other" >"$work/sums-good"
+printf '%s  install.sh\n%s  umx-x86_64-unknown-linux-gnu.tar.gz\n' "$other" "$other" >"$work/sums-mismatch"
+printf '%s  umx-x86_64-unknown-linux-gnu.tar.gz\n' "$other" >"$work/sums-missing"
 
 # The stub wsl.exe. STUB_LIST: none (no distro), or lines `<default *> <name> <state> <version>` joined by `;`.
 # STUB_UTF8=honour answers in UTF-8 when WSL_UTF8=1, as newer WSL does; otherwise always UTF-16LE.
@@ -70,7 +94,7 @@ case "$6" in *'"'* | *\\*) echo "stub wsl.exe: the sh script holds a double quot
 printf '%s\n' "$2" >"$STUB_DISTRO"
 shift 4
 exec env -i HOME="$HOME" PATH="$STUB_LINUX" STUB_LOG="$STUB_LOG" STUB_INSTALL_SH="$STUB_INSTALL_SH" \
-    STUB_CURL="${STUB_CURL-}" STUB_RC="${STUB_RC-}" sh "$@"
+    STUB_SUMS="$STUB_SUMS" STUB_LATEST="${STUB_LATEST-}" STUB_CURL="${STUB_CURL-}" STUB_RC="${STUB_RC-}" sh "$@"
 SH
 chmod +x "$work/win/wsl.exe"
 
@@ -125,9 +149,14 @@ run() {
     rc=0
     out=$(env PATH="$path" HOME="$case_dir" STUB_LOG="$case_dir/log" STUB_DISTRO="$case_dir/distro" \
         STUB_INSTALL_SH="$work/install.sh" STUB_LINUX="${LINUX:-$work/linux}" STUB_LIST="${LIST:-$wsl2}" \
+        STUB_SUMS="$work/sums-${SUMS:-good}" STUB_LATEST="${LATEST-}" \
         STUB_UTF8="${UTF8-}" STUB_CURL="${CURL-}" STUB_RC="${RC-}" ${UMX_VERSION+UMX_VERSION="$UMX_VERSION"} \
         nice -n 20 "${cmd[@]}" 2>&1) || rc=$?
     log=$(cat "$case_dir/log")
+    local tmp
+    while read -r tmp; do
+        [ -z "$tmp" ] || [ ! -e "$tmp" ] || { fail "$name" "left $tmp behind"; rm -rf "$tmp"; }
+    done < <(grep -oE '/tmp/umx-install-sh[.][A-Za-z0-9]+' <<<"$log" | sort -u)
 }
 
 fail() {
@@ -151,16 +180,33 @@ expect_refused() {
     ok "$name"
 }
 
-# install.sh ran once in the default distro, fetched from the release URL, with exactly these arguments.
+# install.sh ran once in the default distro, fetched with SHA256SUMS from release v<version> and checked against it, with
+# `--version <version>`.
 expect_ran() {
-    local name="$1" want_rc="$2" want_args="$3"
+    local name="$1" want_rc="$2" version="$3" flags="curl --proto =https --proto-redir =https --tlsv1.2 -fsSL -o /tmp/umx-install-sh."
     [ "$rc" = "$want_rc" ] || { fail "$name" "exit $rc, want $want_rc"; return; }
     [ "$(cat "$case_dir/distro" 2>/dev/null)" = Ubuntu-22.04 ] || { fail "$name" "not run in Ubuntu-22.04"; return; }
-    [[ "$log" == *"curl --proto =https --proto-redir =https --tlsv1.2 -fsSL -o /tmp/umx-install-sh."*" $url"* ]] ||
-        { fail "$name" "install.sh not fetched from $url"; return; }
+    for asset in install.sh SHA256SUMS; do
+        grep -qE "^${flags//./[.]}[A-Za-z0-9]+/$asset ${rel//./[.]}/download/v${version//./[.]}/$asset\$" <<<"$log" ||
+            { fail "$name" "$asset not fetched from $rel/download/v$version"; return; }
+    done
+    [[ "$log" != *latest/download* ]] || { fail "$name" "fetched from latest/download"; return; }
+    has "checked install.sh of umx $version against its SHA256SUMS" || { fail "$name" "install.sh not checked"; return; }
     [ "$(grep -c '^install.sh ran' <<<"$log")" = 1 ] || { fail "$name" "install.sh did not run once"; return; }
-    grep -qxF "install.sh ran with $want_args" <<<"$log" || { fail "$name" "install.sh args, want: $want_args"; return; }
+    grep -qxF "install.sh ran with 2 arguments: [--version] [$version]" <<<"$log" ||
+        { fail "$name" "install.sh args, want: --version $version"; return; }
     has "Run these next" || { fail "$name" "install.sh's output is not shown"; return; }
+    ok "$name"
+}
+
+# Refused inside WSL before install.sh ran: exit 1, the message, and no temporary folder left.
+expect_not_run() {
+    local name="$1" says="$2"
+    [ "$rc" = 1 ] || { fail "$name" "exit $rc, want 1"; return; }
+    has "$says" || { fail "$name" "no '$says'"; return; }
+    [[ "$log" != *"install.sh ran"* ]] || { fail "$name" "install.sh ran"; return; }
+    has "umx was not installed" || has "install.sh failed inside WSL (Ubuntu-22.04) with exit code 1" ||
+        { fail "$name" "no failure line"; return; }
     ok "$name"
 }
 
@@ -191,32 +237,55 @@ UMX_VERSION='0.1.0;x' run bad-env file
 expect_refused "UMX_VERSION '0.1.0;x' refused" "the -Version or UMX_VERSION given is not a version" "nothing changed"
 
 run latest file
-expect_ran "WSL 2, latest (UTF-16 list)" 0 "0 arguments:"
+expect_ran "WSL 2, latest: resolved to its tag v0.2.0 (UTF-16 list)" 0 0.2.0
+grep -qxF "curl --proto =https --proto-redir =https --tlsv1.2 -fsSL -I -o /dev/null -w %{url_effective} $rel/latest" <<<"$log" ||
+    fail "latest" "did not resolve $rel/latest"
 has "umx is installed inside WSL (Ubuntu-22.04), not on Windows" || fail "latest" "no inside-WSL note"
 has "Open WSL with \`wsl\`" || fail "latest" "no hint to open WSL"
 
 UTF8=honour LIST='* Ubuntu-22.04    Wird ausgefuehrt    2' run pinned file -Version v0.1.0
-expect_ran "WSL 2, -Version v0.1.0 (UTF-8 list, a two-word state)" 0 "2 arguments: [--version] [0.1.0]"
+expect_ran "WSL 2, -Version v0.1.0: that tag's install.sh (UTF-8 list, a two-word state)" 0 0.1.0
+! grep -q "^curl .*/latest" <<<"$log" || fail "pinned" "a pinned run looked up the latest release"
 
 UMX_VERSION=0.2.0-rc.1 run env file
-expect_ran "UMX_VERSION=0.2.0-rc.1" 0 "2 arguments: [--version] [0.2.0-rc.1]"
+expect_ran "UMX_VERSION=0.2.0-rc.1" 0 0.2.0-rc.1
 
 UMX_VERSION=0.2.0 run flag-wins file -Version 0.1.0
-expect_ran "-Version wins over UMX_VERSION" 0 "2 arguments: [--version] [0.1.0]"
+expect_ran "-Version wins over UMX_VERSION" 0 0.1.0
+
+LINUX="$work/linux-shasum" run shasum file -Version 0.1.0
+expect_ran "no sha256sum in WSL: checked with shasum -a 256" 0 0.1.0
 
 RC=3 run fails file
-expect_ran "install.sh's exit code 3 is install.ps1's" 3 "0 arguments:"
+expect_ran "install.sh's exit code 3 is install.ps1's" 3 0.2.0
 has "install.sh failed inside WSL (Ubuntu-22.04) with exit code 3" || fail "exit 3" "no failure line"
 
-CURL=fail run no-download file
-if [ "$rc" = 1 ] && has "could not download $url inside WSL" && [[ "$log" != *"install.sh ran"* ]]; then
-    ok "a failed download inside WSL exits 1 and runs nothing"
-else fail "no-download" "want exit 1, the download message and no install.sh"; fi
-
+# Refused inside WSL, install.sh not run: each failed download, a SHA256SUMS that does not vouch for install.sh, a
+# /releases/latest that leads nowhere usable, no curl, no sum tool.
+SUMS=mismatch run bad-sums file -Version 0.1.0
+expect_not_run "-Version 0.1.0, install.sh not the one in SHA256SUMS: not run" \
+    "install.sh of umx 0.1.0 does not match its sha256 in SHA256SUMS, so it was not run"
+SUMS=mismatch run bad-sums-latest file
+expect_not_run "latest, install.sh not the one in SHA256SUMS: not run" \
+    "install.sh of umx 0.2.0 does not match its sha256 in SHA256SUMS, so it was not run"
+SUMS=missing run no-sums-line file -Version 0.1.0
+expect_not_run "SHA256SUMS has no install.sh line: not run" \
+    "SHA256SUMS of umx 0.1.0 has no single valid line for install.sh, so install.sh was not run"
+CURL=/SHA256SUMS run no-sums file -Version 0.1.0
+expect_not_run "SHA256SUMS download fails: not run" "could not download $rel/download/v0.1.0/SHA256SUMS inside WSL"
+CURL=/install.sh run no-download file
+expect_not_run "install.sh download fails: not run" "could not download $rel/download/v0.2.0/install.sh inside WSL"
+CURL=/latest run no-latest file
+expect_not_run "/releases/latest cannot be reached: not run" "could not find the latest umx release at $rel/latest inside WSL"
+for led in "$rel" "$rel/tag/v0.2.0 --help" "$rel/tag/v0.2.0;id" "https://example.com/umx/releases/tag/v0.2.0"; do
+    LATEST="$led" run latest-elsewhere file
+    expect_not_run "/releases/latest leads to '$led': not run" "not to a umx release"
+    ! grep -q "^curl .*download/" <<<"$log" || fail "latest-elsewhere" "downloaded after '$led'"
+done
 LINUX="$work/linux-nocurl" run no-curl file
-if [ "$rc" = 1 ] && has "curl is not installed in this WSL distro" && [[ "$log" != *"install.sh ran"* ]]; then
-    ok "no curl inside WSL exits 1 and runs nothing"
-else fail "no-curl" "want exit 1 and the curl message"; fi
+expect_not_run "no curl inside WSL: not run" "curl is not installed in this WSL distro"
+LINUX="$work/linux-nosum" run no-sum file
+expect_not_run "no sha256sum or shasum inside WSL: not run" "neither sha256sum nor shasum is installed in this WSL distro"
 
 UMX_VERSION=0.1.0 run iex-ok iex
 if [ "$rc" = 0 ] && has "after iex: LASTEXITCODE 0" && grep -qxF "install.sh ran with 2 arguments: [--version] [0.1.0]" <<<"$log"; then
