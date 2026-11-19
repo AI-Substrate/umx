@@ -65,8 +65,8 @@ breaking.
    publishes it (Releases, below).
 
 The configuration is `release-please-config.json` (the `simple` strategy with the files above as extra files) and
-`.release-please-manifest.json` (the last released version). It pins the first release to exactly 0.1.0 with
-`release-as`; s8 removes `release-as` after that release, or every later release PR would ask for 0.1.0 again.
+`.release-please-manifest.json` (the last released version). The first release was pinned to exactly 0.1.0 with
+`release-as`, removed once 0.1.0 shipped, so each release now takes its version from the commits since the last one.
 `bootstrap-sha` stops release-please reading the history before Conventional Commits began.
 
 ## Releases

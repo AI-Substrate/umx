@@ -67,7 +67,8 @@ worked, so a failed download or check stops it before anything is installed:
 
     archive=umx-$target.tar.gz &&
     base=https://github.com/AI-Substrate/umx/releases/download/v$version &&
-    cd "$(mktemp -d)" &&
+    dir=$(mktemp -d) &&
+    cd "$dir" &&
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSLO "$base/$archive" &&
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSLO "$base/SHA256SUMS" &&
     gh attestation verify "$archive" --repo AI-Substrate/umx &&
