@@ -105,7 +105,7 @@ To check a download (on Linux, `sha256sum -c` in place of `shasum -a 256 -c`):
     base=https://github.com/AI-Substrate/umx/releases/latest/download
     curl -fsSLO "$base/umx-aarch64-apple-darwin.tar.gz" -O "$base/SHA256SUMS"
     grep ' umx-aarch64-apple-darwin.tar.gz$' SHA256SUMS | shasum -a 256 -c
-    gh attestation verify umx-aarch64-apple-darwin.tar.gz --repo AI-Substrate/umx
+    gh attestation verify umx-aarch64-apple-darwin.tar.gz --repo AI-Substrate/umx --signer-workflow AI-Substrate/umx/.github/workflows/release.yml
 
 The checks prove different things:
 

@@ -97,7 +97,7 @@ Verify and install by hand does for the archive. In PowerShell:
     Set-Location (New-Item -ItemType Directory (Join-Path $env:TEMP "umx-$(Get-Random)"))
     Invoke-WebRequest -UseBasicParsing "$base/install.ps1" -OutFile install.ps1
     Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS" -OutFile SHA256SUMS
-    gh attestation verify SHA256SUMS --repo AI-Substrate/umx
+    gh attestation verify SHA256SUMS --repo AI-Substrate/umx --signer-workflow AI-Substrate/umx/.github/workflows/release.yml
     (Get-FileHash install.ps1).Hash; Select-String '  install\.ps1$' SHA256SUMS
 
 Go on only if `gh` says the attestation verified and the two hashes printed last are the same (letter case aside);
@@ -137,7 +137,7 @@ worked, so a failed download or check stops it before anything is installed:
     cd "$dir" &&
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSLO "$base/$archive" &&
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSLO "$base/SHA256SUMS" &&
-    gh attestation verify "$archive" --repo AI-Substrate/umx &&
+    gh attestation verify "$archive" --repo AI-Substrate/umx --signer-workflow AI-Substrate/umx/.github/workflows/release.yml &&
     awk -v f="$archive" '$2 == f' SHA256SUMS | shasum -a 256 -c &&
     tar -xzf "$archive" "umx-$target/umx" &&
     mkdir -p ~/.local/bin &&
@@ -145,8 +145,8 @@ worked, so a failed download or check stops it before anything is installed:
     ~/.local/bin/umx version --human
 
 On Linux, use `sha256sum -c` in place of `shasum -a 256 -c`. `gh attestation verify` proves this repository's release
-workflow built the archive; the `SHA256SUMS` line proves it is the one published for that version. The last line
-prints the version just installed.
+workflow built the archive (`--signer-workflow` names release.yml, so no other workflow in the repository counts); the
+`SHA256SUMS` line proves it is the one published for that version. The last line prints the version just installed.
 
 Then do what the one line does after it installs. If `~/.local/bin` is not on your `PATH`, add
 `export PATH="$HOME/.local/bin:$PATH"` to the end of your shell's startup file (`~/.zshrc`, `~/.bashrc`; on fish,
