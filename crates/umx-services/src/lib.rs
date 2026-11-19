@@ -89,8 +89,8 @@ pub use pairs::{
     PairRows, PairsAsk, PairsFound, PairsJob, PairsMin, PairsPart, PairsResult, Skipped,
 };
 pub use query::{
-    Direction, EdgeCell, HIT_LINKS, HitLink, HitLinks, NeighbourRow, NeighboursRequest, NodeCell,
-    PathRequest, PathRow, QueryService, WalkRequest, WalkRow, Way,
+    Direction, EdgeCell, Entities, HIT_LINKS, HitLink, HitLinks, NeighbourRow, NeighboursRequest,
+    NodeCell, PathRequest, PathRow, QueryService, WalkRequest, WalkRow, Way,
 };
 pub use service_agent::ServiceAgent;
 
@@ -264,6 +264,9 @@ pub struct Page<T> {
     pub graphs: Option<PageGraphs>,
     /// The spine range the rows were kept by (`--along`, D71 step 12), with what it left out.
     pub along: Option<graph_store::AlongInfo>,
+    /// The graphs an entity read covered, by alias in scope order (ws008 E3: `umx neighbours` with `--entities` on).
+    /// Never an unnamed secured graph (d-20).
+    pub covered: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -282,6 +285,7 @@ impl<T> Page<T> {
             truncated: self.truncated,
             graphs: self.graphs,
             along: self.along,
+            covered: self.covered,
         }
     }
 }
@@ -297,6 +301,7 @@ fn page<T: Clone>(alias: &str, all: Vec<T>, limit: usize, offset: usize) -> Page
         truncated,
         graphs: None,
         along: None,
+        covered: None,
     }
 }
 
@@ -318,6 +323,7 @@ fn lazy_page<T>(
         truncated,
         graphs: None,
         along: None,
+        covered: None,
     }
 }
 

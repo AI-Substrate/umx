@@ -105,6 +105,10 @@ every named graph it lists; do not combine it or `--scope` with `--all`.
    steps, breadth first, each node once with the node it came `from`. `similar_to` edges only when named.
    **usage 081**: `--relation similar_to` lists a node's top matches by whole-node vector (`out`, best first) and
    who lists it (`in`), each with a `score` and `derived: true` and no edge id; walks along them stop at 2 steps.
+   **usage 218**: on a node that is one entity with others (shared key, `entity link`, a proposal), neighbours also
+   lists the other members' stored edges, each row with `via` (the member) and `match_status`
+   (`own`/`confirmed`/`proposed`), plus `graphs` (what it covered) and the `entities_grouped` hint. `--entities
+   confirmed` drops proposals; `--entities off` gives the node's own rows only, as before.
    On `similar_to_incomplete`, run `umx similarity rebuild --graph <alias>`; never edit `similar/` by hand.
    **usage 177**: across graphs, `umx similarity pairs --graph a,b` lists each node's top k (`--k`, default 3)
    in the other graphs by meaning, computed per call and never stored; only graphs whose vectors are in the same model

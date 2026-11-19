@@ -41,6 +41,7 @@ pub const HINTS: &[&str] = &[
     "segment_without_parent",
     "std_entries_shown",
     "already_std",
+    "entities_grouped",
     "adopt_rename_suggested",
     "edge_direction_normalised",
     "lint_orphans",
@@ -103,6 +104,7 @@ pub const CODES: &[&str] = &[
     "adopt_field_to_tag_refused",
     "adopt_tag_value_invalid",
     "already_std",
+    "entities_grouped",
     "adopt_rename_suggested",
     "session_agent_conflict",
     "duplicate_prov_key",
@@ -2209,6 +2211,15 @@ pub fn adopt_tag_value_invalid(
             ),
         )
         .candidates(listed)
+}
+
+/// ws008 E3 (req-127): `umx neighbours` grouped `count` nodes (`proposed` of them through proposals) and listed their
+/// edges. Counts only; `fix` is the `entity show` that lists the members.
+pub fn entities_grouped(count: usize, proposed: usize, fix: Command) -> Problem {
+    Problem::new("entities_grouped")
+        .with("count", Slot::Count(count as u64))
+        .with("proposed", Slot::Count(proposed as u64))
+        .with("fix", Slot::Command(fix))
 }
 
 pub fn already_std(graph: &ValidName, std: u32) -> Problem {

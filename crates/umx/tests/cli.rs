@@ -1257,6 +1257,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
         | Code::TagUnusable
         | Code::TagFilterNotStd => tags::tags_trigger(&mut home, code),
         Code::TagFilterUntested => tag_reads::untested_trigger(&mut home),
+        Code::EntitiesGrouped => entity_neighbours::grouped_trigger(&mut home),
         Code::ReservedRelationStored => {
             let path = home.graph();
             let a = home.add("problem", "First");
@@ -5436,6 +5437,8 @@ mod config;
 mod daemon;
 #[path = "cli/entity.rs"]
 mod entity;
+#[path = "cli/entity_neighbours.rs"]
+mod entity_neighbours;
 #[path = "cli/evidence.rs"]
 mod evidence;
 #[path = "cli/graph.rs"]

@@ -7,8 +7,9 @@ lives on each node, in its own graph, and travels with that graph's files.
 Two nodes can also be joined by a link: `umx entity link` stores one `same_as` edge between them, for nodes that
 already exist with different keys (or none). `umx entity show` lists an entity's members across the loaded graphs
 and says how each one joined. When two nodes are NOT one thing, though a key or a link says so, `umx entity deny`
-stores one `not_same_as` edge with a reason, and no key or link joins them while it counts. Seeing an entity's edges
-from every graph at once (neighbours that follow members) comes later.
+stores one `not_same_as` edge with a reason, and no key or link joins them while it counts. `umx neighbours` on a
+member also lists the other members' edges, each row with `via` and `match_status` (`--entities off` turns this
+off; see `umx docs get explore`).
 
 ## Related, not the same
 

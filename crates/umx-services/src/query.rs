@@ -87,6 +87,11 @@ pub struct NeighbourRow {
     pub candidates: Vec<String>,
     pub edge: EdgeCell,
     pub node: NodeCell,
+    /// ws008 E3 (req-127): the member of the node's entity this row's edge is at, as `umx:<alias>/<id>`; None for
+    /// the node's own edges.
+    pub via: Option<String>,
+    /// `own`, `confirmed` or `proposed` when the reply groups the node with other members; else None (today's rows).
+    pub match_status: Option<&'static str>,
 }
 
 /// One node reached by a walk: how far, from which node, by which edge.
@@ -128,6 +133,20 @@ pub struct NeighboursRequest {
     /// `--tag` and `--no-tag` (ws008 t2b): only far ends that pass are listed.
     pub tags: Vec<String>,
     pub no_tags: Vec<String>,
+    /// `--entities` (ws008 E3, req-127). The daemon's default is `On`; this struct's is `Off` (today's rows).
+    pub entities: Entities,
+}
+
+/// Which members of the node's entity `umx neighbours` lists the edges of (ws008 E3, req-127).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Entities {
+    /// Only the node's own edges, as before E3.
+    #[default]
+    Off,
+    /// Every member's, proposals included.
+    On,
+    /// Confirmed members' only (keys and `same_as`), no proposals.
+    Confirmed,
 }
 
 #[derive(Clone, Debug)]
@@ -350,6 +369,8 @@ impl QueryService {
                 candidates: Vec::new(),
                 node: node_cell(g, h.other),
                 edge: h.edge,
+                via: None,
+                match_status: None,
             })
             .collect();
         let incident = store.incident_edges(&access, &refs, &alias, ids[0].expect("start"));
@@ -447,6 +468,8 @@ impl QueryService {
                         score: None,
                         derived: false,
                     },
+                    via: None,
+                    match_status: None,
                 });
             }
             rows[derived..].sort_by_key(|row| {

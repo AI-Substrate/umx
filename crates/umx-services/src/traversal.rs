@@ -699,6 +699,65 @@ impl<'a> ReadSpace<'a> {
     }
 }
 
+/// The other members of a neighbours start's entity whose edges the read lists (ws008 E3, req-127), with each one's
+/// `match_status`, and the graphs the entity read covered. Built as `umx entity show` builds the entity, from the
+/// start's address and the same request, so both always agree: confirmed members in its order, then (unless
+/// `--entities confirmed`) the one-hop proposals it lists. A member the read space does not hold is left out.
+struct Inherit {
+    covered: Vec<String>,
+    members: Vec<(At, &'static str)>,
+    proposed: usize,
+}
+
+fn inherit(
+    store: &GraphStore,
+    ctx: &Ctx,
+    space: &ReadSpace<'_>,
+    start: At,
+    entities: crate::Entities,
+) -> Result<Inherit, Problem> {
+    let shown = store.entity_show(ctx, &space.address(start))?.value;
+    let at = |alias: &str, id: Id| {
+        space
+            .aliases
+            .iter()
+            .position(|a| a == alias)
+            .map(|part| space.at(part, id))
+    };
+    let mut members: Vec<(At, &'static str)> = shown
+        .members
+        .iter()
+        .filter_map(|m| at(&m.alias, m.id))
+        .filter(|m| (m.graph, m.node) != (start.graph, start.node))
+        .map(|m| (m, "confirmed"))
+        .collect();
+    let mut proposed = 0;
+    if entities == crate::Entities::On {
+        for p in &shown.proposed {
+            if let Some(p) = at(&p.alias, p.id) {
+                members.push((p, "proposed"));
+                proposed += 1;
+            }
+        }
+    }
+    Ok(Inherit {
+        covered: shown.graphs,
+        members,
+        proposed,
+    })
+}
+
+/// `cmd` with the request's `--scope`, else its `--graph` (a next that reads what this read covered).
+fn same_read(ctx: &Ctx, cmd: umx_core::Command) -> umx_core::Command {
+    match &ctx.scope {
+        Some(crate::Scope::Saved(name)) => match umx_core::ValidName::alias(name) {
+            Some(name) => cmd.word("--scope").name(&name),
+            None => cmd.word("--scope").word("<scope>"),
+        },
+        _ => ctx.same_graph(cmd),
+    }
+}
+
 pub(crate) fn neighbours(
     store: &GraphStore,
     ctx: &Ctx,
@@ -706,10 +765,56 @@ pub(crate) fn neighbours(
 ) -> Outcome<Page<crate::NeighbourRow>> {
     let refs = [Some(req.node.as_str())];
     let (mut space, scope) = ReadSpace::new(store, ctx, &refs, "neighbours")?;
+    // similar_to is a ranking, not a stored fact: never inherited (ws008 E3).
+    let entities = if req.relation.as_deref() == Some("similar_to") {
+        crate::Entities::Off
+    } else {
+        req.entities
+    };
     for pass in 0..2 {
         let at = space.start(&req.node)?;
         let mut tagged = space.tag_rows(ctx, "neighbours", at, &req.tags, &req.no_tags)?;
-        let rows: Vec<_> = space
+        // Loaded copies of a graph with no primary in the covered set (`entity show` refuses with copy_ambiguous) never
+        // fail neighbours: the reply is the node's own rows, as with `--entities off`. Any other refusal is the read's.
+        let group = if entities == crate::Entities::Off {
+            None
+        } else {
+            match inherit(store, ctx, &space, at, entities) {
+                Ok(group) => Some(group),
+                Err(p) if p.code == "copy_ambiguous" => None,
+                Err(p) => return Err(p),
+            }
+        };
+        let grouped = group.as_ref().is_some_and(|g| !g.members.is_empty());
+        let row = |space: &ReadSpace<'_>,
+                   here: At,
+                   hop: Hop,
+                   via: Option<String>,
+                   status: Option<&'static str>| {
+            let owner = store.loaded(&space.aliases[hop.owner]).expect("owner");
+            let (from, to) = if hop.edge.way == Way::Out {
+                (here, hop.to)
+            } else {
+                (hop.to, here)
+            };
+            crate::NeighbourRow {
+                address: space.address(hop.to),
+                graph: owner.meta.id,
+                from_graph: from.graph,
+                to_graph: to.graph,
+                node_graph: hop.to.graph,
+                from: from.node,
+                to: to.node,
+                state: space.state(hop.to),
+                candidates: space.candidates(hop.to),
+                node: space.cell(hop.to),
+                edge: hop.edge,
+                via,
+                match_status: status,
+            }
+        };
+        let own_status = grouped.then_some("own");
+        let mut rows: Vec<_> = space
             .steps(at, req.direction, req.relation.as_deref())
             .into_iter()
             .filter(|hop| {
@@ -717,28 +822,50 @@ pub(crate) fn neighbours(
                     .as_mut()
                     .is_none_or(|t| t.keeps(space.shown(hop.to), hop.to.node))
             })
-            .map(|hop| {
-                let owner = store.loaded(&space.aliases[hop.owner]).expect("owner");
-                let (from, to) = if hop.edge.way == Way::Out {
-                    (at, hop.to)
-                } else {
-                    (hop.to, at)
-                };
-                crate::NeighbourRow {
-                    address: space.address(hop.to),
-                    graph: owner.meta.id,
-                    from_graph: from.graph,
-                    to_graph: to.graph,
-                    node_graph: hop.to.graph,
-                    from: from.node,
-                    to: to.node,
-                    state: space.state(hop.to),
-                    candidates: space.candidates(hop.to),
-                    node: space.cell(hop.to),
-                    edge: hop.edge,
-                }
-            })
+            .map(|hop| row(&space, at, hop, None, own_status))
             .collect();
+        if let Some(group) = group.as_ref().filter(|_| grouped) {
+            // Inherited rows: each member's real stored edges, never an identity edge or one back into the group, and
+            // each stored edge once.
+            let inside: BTreeSet<(Id, Id)> = core::iter::once(at)
+                .chain(group.members.iter().map(|m| m.0))
+                .map(|m| (m.graph, m.node))
+                .collect();
+            let mut seen: BTreeSet<(Id, Id)> = rows
+                .iter()
+                .filter_map(|r| r.edge.id.map(|e| (r.graph, e)))
+                .collect();
+            for &(member, status) in &group.members {
+                let via = space.address(member);
+                for hop in space.steps(member, req.direction, req.relation.as_deref()) {
+                    let Some(edge) = hop.edge.id.filter(|_| !hop.edge.derived) else {
+                        continue;
+                    };
+                    let owner = store
+                        .loaded(&space.aliases[hop.owner])
+                        .expect("owner")
+                        .meta
+                        .id;
+                    if [
+                        umx_core::ontology::SAME_AS,
+                        umx_core::ontology::POSSIBLY_SAME_AS,
+                        umx_core::ontology::NOT_SAME_AS,
+                    ]
+                    .contains(&hop.edge.relation.as_str())
+                        || inside.contains(&(hop.to.graph, hop.to.node))
+                        || !seen.insert((owner, edge))
+                    {
+                        continue;
+                    }
+                    if let Some(t) = tagged.as_mut()
+                        && !t.keeps(space.shown(hop.to), hop.to.node)
+                    {
+                        continue;
+                    }
+                    rows.push(row(&space, member, hop, Some(via.clone()), Some(status)));
+                }
+            }
+        }
         let count = rows.len();
         let missing = req.relation.as_deref() == Some("similar_to")
             && (space.lacks_vector(at)
@@ -768,6 +895,7 @@ pub(crate) fn neighbours(
             req.limit.min(count),
             req.offset,
         );
+        value.covered = group.as_ref().map(|g| g.covered.clone());
         let changed = space.finish();
         if changed.is_none() {
             let (names, notices) =
@@ -785,6 +913,18 @@ pub(crate) fn neighbours(
                 warnings.extend(store.saved_warnings(saved, &space.aliases)?);
             }
             warnings.extend(tagged.iter().flat_map(|t| t.notes()));
+            if let Some(group) = group.as_ref().filter(|_| grouped) {
+                let show = umx_core::Command::new("entity show");
+                let show = match umx_core::ValidName::alias(&space.graph_name(at)) {
+                    Some(g) => show.address(&g, at.node),
+                    None => show.word("<node>"),
+                };
+                warnings.push(problems::entities_grouped(
+                    1 + group.members.len(),
+                    group.proposed,
+                    same_read(ctx, show),
+                ));
+            }
             return Ok(Done {
                 value,
                 notes: warnings,

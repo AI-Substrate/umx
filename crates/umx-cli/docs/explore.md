@@ -27,7 +27,8 @@ Provenance is a record of what the writer claimed, never proof or permission.
 
 Every edge at one node and the node at its other end. `--direction out|in|both` (default `both`),
 `--relation <r>` for one relation. `--tag <a>[,<b>]` and `--no-tag <a>` (std graphs) list only the far ends whose
-tags pass; see `umx docs get ontology`.
+tags pass; see `umx docs get ontology`. `--entities on|off|confirmed` (default `on`) also lists the edges of the node's
+entity members (below).
 
     umx neighbours umx:demo/01JC8XA4H7
     umx neighbours 01JC8XA4H7 --direction out --relation blocks
@@ -35,6 +36,40 @@ tags pass; see `umx docs get ontology`.
 
 Rows: `way` (`out`: the edge leaves this node; `in`: it arrives), `relation`, `edge`, then the other node's `id`,
 `type`, `title`, `status`.
+
+### Entities: members' edges too
+
+When the node is one entity with other nodes (a shared `entity_key`, a `same_as` link, or a `possibly_same_as`
+proposal; see `umx docs get entity`), neighbours lists their edges as well, after the node's own. This is on by
+default. `--entities off` lists only the node's own edges, as before; `--entities confirmed` leaves out proposals.
+The entity is built at read time as `umx entity show` builds it, and nothing merged is stored.
+
+    umx neighbours umx:crm/01JC8XA4H7
+    umx neighbours umx:crm/01JC8XA4H7 --entities confirmed
+    umx neighbours umx:crm/01JC8XA4H7 --entities off
+
+A reply that groups adds `match_status` to every row (`own` for the node's own edges, `confirmed` for a member a
+key or link joined, `proposed` for a `possibly_same_as` partner) and `via`, the address of the member an inherited
+row came from (`umx:<alias>/<id>`); its `from` and `to` are the stored ends, so the member, not the node. A
+proposal is a `possibly_same_as` partner of the node or of any confirmed member, as `umx entity show` lists it; it
+brings only its own edges, never the partner's other members. Inherited rows are each member's
+stored edges: an identity edge (`same_as`, `possibly_same_as`, `not_same_as`), an edge to another member, and
+`similar_to` or `--provenance` rows are never inherited, and one stored edge is listed once. `--relation`,
+`--direction` and `--tag` apply to inherited rows as to the node's own; `--limit` and `--offset` page the own rows
+then the inherited ones. `--relation similar_to` never groups.
+
+The list's `graphs` names the graphs the entity read covered: with no `--scope`, the node's graph and every loaded
+open graph; a secured graph only when the read names it (by address, `--graph` or `--scope`), never as a member,
+row or count otherwise, even when a link through it joins two open members. `--scope` pins the set. Two copies of
+one graph never group. A reply that groups ends with the `entities_grouped` hint: how many nodes were grouped,
+how many of them through proposals, and `umx entity show` to list the members. A reply that does not group keeps
+today's rows; only `graphs` is added. When the entity cannot be read because loaded copies of a graph have no primary
+(`copy_ambiguous` from `umx entity show`), neighbours gives the node's own rows as with `--entities off`; any other
+refusal of the entity read is the reply's (an address in one graph with `--graph` naming another is
+`graph_mismatch`). Under `--entities confirmed` a proposal partner is not a member, so a member's edge to it is an
+ordinary inherited row (the `possibly_same_as` edge itself never is). Neighbours does not repeat `umx entity show`'s
+warnings (two types holding a key, a link skipped because of a denial, a key held twice in a graph): the hint's
+next, `umx entity show`, gives them.
 
 Neighbours includes external links, including incoming links stored by other loaded graphs. Rows carry
 `graph` (the other node's graph id), `edge_graph`, `from`, `to`, `from_graph` and `to_graph`. An unloaded or

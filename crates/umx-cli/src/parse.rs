@@ -78,6 +78,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--provenance",
             "--tag",
             "--no-tag",
+            "--entities",
         ],
     ),
     (
@@ -982,6 +983,15 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 offset: a.number("--offset")?,
                 tags: a.all("--tag"),
                 no_tags: a.all("--no-tag"),
+                entities: a
+                    .one("--entities")
+                    .map(|v| {
+                        umx_protocol::Entities::parse(&v).ok_or(Usage {
+                            command: "neighbours",
+                            what: "--entities is on, off or confirmed",
+                        })
+                    })
+                    .transpose()?,
             }
             .with(a));
         }

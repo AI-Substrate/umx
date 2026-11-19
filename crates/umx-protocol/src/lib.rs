@@ -206,12 +206,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `Op::Search`, `Op::Walk` and `Op::Neighbours`; new code `tag_filter_untested` (warning).
 /// 97: field to tag (ws008 t2b, req-117): `Op::OntologyAdoptStd`'s `field_to_tag` (`--field-to-tag <field>`), the
 /// reply's `field_to_tag`; new codes `adopt_field_to_tag_refused` (error) and `adopt_tag_value_invalid` (warning).
+/// 98: neighbours inherits (ws008 E3, req-127): `Op::Neighbours`'s `entities` (`--entities on|off|confirmed`, None is
+/// on); neighbours rows' `via` and `match_status` when the reply groups, the list's `graphs` (the covered graphs);
+/// new code `entities_grouped` (hint).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 97;
+pub const PROTOCOL: u32 = 98;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -220,7 +223,7 @@ pub const PROTOCOL: u32 = 97;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (97, 0xf874_30b2_65c6_7a66);
+const WIRE_FINGERPRINT: (u32, u64) = (98, 0x52e1_11f9_08d7_2277);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1689,6 +1692,10 @@ pub enum Op {
         tags: Vec<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         no_tags: Vec<String>,
+        /// `--entities on|off|confirmed` (ws008 E3, req-127, PROTOCOL 98): whether the node's entity members' edges are
+        /// listed too. None is `on`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entities: Option<Entities>,
     },
     /// `umx walk <node>` (req-28): nodes reachable within `depth` steps, breadth first.
     Walk {
@@ -2117,6 +2124,35 @@ impl KeyAction {
             "add" => Some(KeyAction::Add),
             "remove" => Some(KeyAction::Remove),
             _ => None,
+        }
+    }
+}
+
+/// `umx neighbours --entities` (ws008 E3, req-127): list the edges of the node's entity members too (`on`), only of
+/// its confirmed members (`confirmed`, no proposals), or only the node's own (`off`, today's rows).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Entities {
+    On,
+    Off,
+    Confirmed,
+}
+
+impl Entities {
+    pub fn parse(text: &str) -> Option<Entities> {
+        match text {
+            "on" => Some(Entities::On),
+            "off" => Some(Entities::Off),
+            "confirmed" => Some(Entities::Confirmed),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Entities::On => "on",
+            Entities::Off => "off",
+            Entities::Confirmed => "confirmed",
         }
     }
 }
@@ -3457,6 +3493,11 @@ catalogue! {
     AdoptTagValueInvalid => "adopt_tag_value_invalid", Warning, 0,
         "ontology adopt-std --field-to-tag left values in their field: candidates give each node id and value, a secret-shaped value masked",
         "<count> values of <field> in graph <graph> stay in the field: <reason>.",
+        "<fix>";
+    // ws008 E3 (req-127): neighbours listed the edges of the node's entity members.
+    EntitiesGrouped => "entities_grouped", Hint, 0,
+        "neighbours grouped the node with its entity's members and listed their edges too, each row with via and match_status; --entities off lists only the node's own edges",
+        "Neighbours grouped <count> nodes as one entity (<proposed> of them through proposals) and listed their edges with via. --entities off lists only this node's edges; entity show lists the members.",
         "<fix>";
     AlreadyStd => "already_std", Hint, 0,
         "ontology adopt-std on a graph that already uses std; nothing was written",
@@ -5630,6 +5671,7 @@ mod tests {
                 direction: Some(Direction::In),
                 limit: Some(1),
                 offset: Some(2),
+                entities: Some(Entities::Confirmed),
             },
             Op::Walk {
                 node: "n".into(),

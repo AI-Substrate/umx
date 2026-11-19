@@ -294,6 +294,7 @@ fn provenance_neighbours_exposes_derived_relations_in_both_directions() {
     for (node, direction, expected) in [(a, Direction::Out, session), (session, Direction::In, a)] {
         let req = NeighboursRequest {
             no_tags: Default::default(),
+            entities: Default::default(),
             tags: Default::default(),
             node: node.to_text(),
             relation: Some("authored_by".into()),
@@ -769,6 +770,7 @@ fn default_read_scope_hides_provenance_in_counts_pages_resolution_search_and_tra
             &ctx(),
             NeighboursRequest {
                 no_tags: Default::default(),
+                entities: Default::default(),
                 tags: Default::default(),
                 node: a.id.to_text(),
                 relation: None,
@@ -1674,6 +1676,7 @@ mod cross_graph_reads {
         link(&mut w, "g1", &a.to_text(), &format!("umx:g2/{b}"));
         let request = umx_services::NeighboursRequest {
             no_tags: Default::default(),
+            entities: Default::default(),
             tags: Default::default(),
             node: a.to_text(),
             relation: Some("blocks".into()),
@@ -2481,6 +2484,7 @@ mod external_edges {
                 &ctx().graph(alias),
                 NeighboursRequest {
                     no_tags: Default::default(),
+                    entities: Default::default(),
                     tags: Default::default(),
                     node: id.to_text(),
                     relation: None,
@@ -2992,6 +2996,7 @@ mod external_edges {
                 &ctx().default_graph("beta"),
                 NeighboursRequest {
                     no_tags: Default::default(),
+                    entities: Default::default(),
                     tags: Default::default(),
                     node: format!("umx:demo/{a}"),
                     relation: None,
@@ -7275,6 +7280,7 @@ mod symmetric {
                 &ctx(),
                 NeighboursRequest {
                     no_tags: Default::default(),
+                    entities: Default::default(),
                     tags: Default::default(),
                     node: a.to_text(),
                     relation: None,
@@ -7294,6 +7300,7 @@ mod symmetric {
                 &ctx(),
                 NeighboursRequest {
                     no_tags: Default::default(),
+                    entities: Default::default(),
                     tags: Default::default(),
                     node: node.to_text(),
                     relation: None,
@@ -7427,6 +7434,7 @@ mod symmetric {
                     &ctx(),
                     NeighboursRequest {
                         no_tags: Default::default(),
+                        entities: Default::default(),
                         tags: Default::default(),
                         node: b.to_text(),
                         relation: None,

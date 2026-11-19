@@ -397,6 +397,7 @@ impl GraphStore {
                     copies: !scope.twice.is_empty(),
                 }),
                 along: None,
+                covered: None,
             },
             notes: warnings,
         })

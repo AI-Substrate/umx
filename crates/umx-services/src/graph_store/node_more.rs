@@ -866,6 +866,7 @@ impl GraphStore {
                 truncated: skip > 0,
                 graphs: None,
                 along: None,
+                covered: None,
             },
             notes: warnings,
         })

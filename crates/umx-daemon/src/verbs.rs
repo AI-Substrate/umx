@@ -2430,6 +2430,7 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             offset,
             tags,
             no_tags,
+            entities,
         } => {
             let req = NeighboursRequest {
                 node: node.clone(),
@@ -2439,6 +2440,12 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 offset: offset.unwrap_or(0),
                 tags: tags.clone(),
                 no_tags: no_tags.clone(),
+                // ws008 E3 (req-127): on unless the request says otherwise.
+                entities: match entities.unwrap_or(umx_protocol::Entities::On) {
+                    umx_protocol::Entities::On => umx_services::Entities::On,
+                    umx_protocol::Entities::Off => umx_services::Entities::Off,
+                    umx_protocol::Entities::Confirmed => umx_services::Entities::Confirmed,
+                },
             };
             let similar = similar_to(relation);
             reply(command, services.neighbours(&ctx, req), |page| {
@@ -2482,6 +2489,11 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                         row.insert("way".into(), json!(r.edge.way.as_str()));
                         row.insert("relation".into(), json!(r.edge.relation));
                         edge_cells(&mut row, &r.edge, similar);
+                        // ws008 E3: only a reply that groups carries these; an ungrouped row is today's.
+                        if let Some(status) = r.match_status {
+                            row.insert("match_status".into(), json!(status));
+                            row.insert("via".into(), json!(r.via));
+                        }
                         with_flags(Value::Object(row), &flags, false)
                     })
                     .collect();
@@ -2498,12 +2510,18 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 if page.rows.iter().any(|row| !row.candidates.is_empty()) {
                     columns.push("candidates");
                 }
+                if page.rows.iter().any(|row| row.match_status.is_some()) {
+                    columns.extend(["match_status", "via"]);
+                }
                 let mut names = with_score(&columns, similar, ctx.include_provenance);
                 if any_flagged(&rows) {
                     names.push(SECRET_SUSPECTED);
                 }
                 let mut v = list(&names, rows, Some((page.total, page.truncated)));
                 similarity_meta(&mut v, services, &page.alias, similar);
+                if let Some(covered) = &page.covered {
+                    v["graphs"] = json!(covered);
+                }
                 v
             })
         }
@@ -3734,11 +3752,16 @@ fn retry(op: &Op) -> Command {
             offset,
             tags,
             no_tags,
+            entities,
         } => {
             let c = node(Command::new("neighbours"), n, "<node>");
             let c = opt(c, "--relation", relation, &|c, v| name(c, v, "<relation>"));
             let c = direction_word(c, direction);
             let c = tag_words(tag_words(c, "--tag", tags), "--no-tag", no_tags);
+            let c = match entities {
+                Some(e) => c.word("--entities").word(e.as_str()),
+                None => c,
+            };
             number(number(c, "--limit", limit), "--offset", offset)
         }
         Op::Walk {
@@ -6426,10 +6449,11 @@ mod retry_tests {
             direction: None,
             limit: None,
             offset: Some(10),
+            entities: Some(umx_protocol::Entities::Confirmed),
         };
         assert_eq!(
             retry(&op).as_str(),
-            "umx neighbours 01JC8X --relation <relation> --offset 10"
+            "umx neighbours 01JC8X --relation <relation> --entities confirmed --offset 10"
         );
     }
 

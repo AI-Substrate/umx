@@ -363,6 +363,13 @@ fn data(data: &Value, command: &str, style: Style) -> String {
             }
         }
         out.push_str(&table(&cols, rows, data, style));
+        // ws008 E3: the graphs an entity read of neighbours covered.
+        if command == "neighbours"
+            && let Some(graphs) = data["graphs"].as_array()
+        {
+            let names: Vec<String> = graphs.iter().map(|g| clean(&text(g))).collect();
+            out.push_str(&format!("covered: {}\n", names.join(", ")));
+        }
         // umx doctor: what --fix did, then the verdict last, where it is read first.
         for f in data["fixed"].as_array().into_iter().flatten() {
             let done = if f["done"] == true {

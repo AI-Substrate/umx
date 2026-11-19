@@ -21,6 +21,7 @@ relation means there.
 | All nodes of a kind, filtered | `umx node list --type action --status open --where 'due_on<2026-12-01'` |
 | One node in full: note, evidence, fields | `umx node get <node>`, then `umx node history <node>` for its status moves |
 | What one node connects to | `umx neighbours <node>` |
+| What one entity connects to, across graphs | `umx neighbours <node>` (members' edges too; `--entities off` for the node's own) |
 | Everything upstream or downstream | `umx walk <node> --depth 3 --direction in --relation depends_on` |
 | How two nodes are connected | `umx path <node> <node>` |
 | What sits under a node by `part_of` | `--within <node>` on list, find, search and walk |

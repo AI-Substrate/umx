@@ -314,6 +314,7 @@ fn hidden_provenance_preserves_nonempty_similarity_results_and_query_work() {
     run(&mut w);
     let req = NeighboursRequest {
         no_tags: Default::default(),
+        entities: Default::default(),
         tags: Default::default(),
         node: ids[0].to_text(),
         relation: Some("similar_to".into()),
@@ -607,6 +608,7 @@ fn neighbours(
             &ctx(),
             NeighboursRequest {
                 no_tags: Default::default(),
+                entities: Default::default(),
                 tags: Default::default(),
                 node: node.to_text(),
                 relation: relation.map(str::to_owned),

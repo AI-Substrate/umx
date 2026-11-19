@@ -211,6 +211,7 @@ fn similar(d: &Daemon, alias: &str, node: &str) -> (Value, Vec<Value>) {
             direction: None,
             limit: None,
             offset: None,
+            entities: None,
         },
         Some(alias),
     ));
