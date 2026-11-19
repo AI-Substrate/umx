@@ -24,8 +24,8 @@ entries first, each marked (see std below).
     umx ontology add relation rivals --symmetric   # a rivals b means b rivals a; declares it too if new
     umx ontology add field risk impact:int        # declares the type too if it is new
     umx ontology add field --relation works_for starts_on:date   # a field on the relation's edges
-    umx ontology add field risk,issue,task impact:int   # several declared types, one write
-    umx ontology add field --all-types owner:string     # every type the graph declares, one write
+    umx ontology add field risk,issue,task impact:int   # several declared types (std's count), one write
+    umx ontology add field --all-types owner:string     # every type graph.json declares (not std's), one write
     umx ontology add status parked --description "Waiting on someone else"
     umx ontology add field doc file:string --role data
     umx ontology add field doc summary:string --role content   # prose: searched by meaning
@@ -145,7 +145,8 @@ relation takes its symmetric mark, description and declared fields. Only records
 keeps in the files but does not use (a duplicate id's other lines, a dangling edge) never block a removal, and
 once it is done they warn off-vocabulary when the graph loads. umx refuses to remove what it relies on (`ontology_builtin`):
 `part_of`, the default status `open`, the derived relations (`similar_to`, `authored_by`, `edited_by`), the
-provenance types and relations, `same_as` (`umx entity link`), the standard fields and any `std:` entry. Removing something not declared is ok
+provenance types and relations, `same_as` (`umx entity link`), the standard fields and any `std:` entry. In a std
+graph a field std gives the type or relation is refused with `reserved_name` (see Custom fields on std types). Removing something not declared is ok
 with `"unchanged": true` and writes nothing, so setup scripts can re-run.
 
 ## Names
@@ -219,6 +220,32 @@ only `std` itself and what every graph reserves (the provenance and derived rela
 `std:<name>` is accepted wherever a flag or word takes a type or relation name (`--type std:person`,
 `umx edge add <a> std:works_for <b>`, `umx ontology add field std:person nickname:string`) and is stored plain,
 as `person`. A `std:` before a name std does not have is refused by the name rules (`name_invalid`).
+
+### Custom fields on std types
+
+A std graph adds its own fields to a std type or relation: `umx ontology add field person shoe_size:int` writes
+only `shoe_size` under `person` in graph.json, never std's fields. `umx ontology show` lists std's fields first,
+marked `"std": true`, then the graph's own, marked `"std": false`. The graph's field then works like any other:
+`node add` and `node edit --set`, batch, `--where` and `--columns`, word search (a string field), roles and
+embedding (`umx ontology set field person shoe_size --role ...`), and Cypher (`p.shoe_size`). Several types take a
+field in one call, std's included (`umx ontology add field risk,team impact:int`); `--all-types` means only the
+types graph.json declares, never std's.
+
+- A custom field may reuse a std field name only with std's kind (`std_field_conflict` otherwise). On a type or
+  relation std already gives the field to (`job_title` on `person`, `tags` on any node, `starts_on` on
+  `works_for` edges), the same kind and role is std's already: `"unchanged": true`, nothing written. With
+  `--description` it is the graph's own declaration, std's kind and the description. Another role is
+  `field_role_conflict`; change a role with `umx ontology set field`. On a type std does not give it to
+  (`umx ontology add field topic due_on:date`) it is the graph's own declaration, with std's kind.
+- A reserved key (`id`, `title`, `status`, `note`, the provenance keys such as `prov_key`, the locator fields,
+  `entity_key`, `std`) is never a custom field name (`reserved_name`), in any graph.
+- `umx ontology remove field person shoe_size` removes the extension. A field std gives the type cannot be
+  removed (`umx ontology remove field person aliases` is `reserved_name`). Removing the graph's own declaration
+  of a field std places on the type (a role from `umx ontology set field`, or a description) brings std's back,
+  even while nodes hold the field; when that changes the role, it is a role change like `ontology set field`'s
+  (`role_changed`, the nodes pending until remade). A field std allows on any node but does not place on the type
+  (`starts_on` on a `widget`) is the graph's own once declared, and is in use while a node holds it.
+- A graph.json edited by hand to give a std field another kind still loads; std's kind wins.
 
 ### Expected end types
 

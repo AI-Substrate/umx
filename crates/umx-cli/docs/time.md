@@ -11,6 +11,9 @@ Declare a date field before you use it, on a type or on a relation's edges:
     umx ontology add field meeting starts_on:date
     umx ontology add field --relation works_for starts_on:date
 
+In a std graph std has `starts_on` and `ends_on` on every node and edge already, so both lines are
+`"unchanged": true` there and write nothing; declare any other date field the same way.
+
 A value in a date field:
 
 - A year (`2025`), a month (`2025-01`) or a day (`2026-10-30`) is stored as written. Write what the source

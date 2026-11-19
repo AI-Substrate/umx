@@ -1133,11 +1133,11 @@
 				{
 					"id": "req-100",
 					"title": "Custom fields on std types",
-					"statement": "A graph can add its own fields to a std type (`umx ontology add field person shoe_size:int`). The effective declaration is std's fields plus the graph's; a custom field may not reuse a std or reserved field name, and a lower ontology level may add fields to a std type but never narrow or override std's own.",
+					"statement": "A graph can add its own fields to a std type (`umx ontology add field person shoe_size:int`). The effective declaration is std's fields plus the graph's; a custom field may reuse a std field name only with std's kind and may never use a reserved key name, and a lower ontology level may add fields to a std type but never narrow or override std's own.",
 					"actor": "a-operator",
 					"priority": "should",
-					"state": "planned",
-					"done_when": "`umx ontology add field person shoe_size:int` in a std graph stores only the custom field and `ontology show` lists std fields first, tagged std, then the extension; a field that reuses a std field name or a reserved key name is refused; a lower level that redeclares a std field's kind is refused.",
+					"state": "shipped",
+					"done_when": "`umx ontology add field person shoe_size:int` in a std graph stores only the custom field and `ontology show` lists std fields first, tagged std, then the extension; a field that reuses a std field name with another kind than std's, or a reserved key name, is refused; a std field redeclared with std's kind and role and no description where std already gives it is unchanged and writes nothing, and with a description is the graph's own declaration; a lower level that redeclares a std field's kind is refused; `ontology remove field` on a std field is refused, while on the extension it removes only the extension, and on the graph's own role for a std field it brings std's role back as a role change (`role_changed`, nodes pending).",
 					"source": "decision D57 (2026-11-11); graph-addressing expert ws008 design"
 				},
 				{

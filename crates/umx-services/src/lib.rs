@@ -29,7 +29,7 @@ use alloc::vec::Vec;
 use umx_core::ports::{Embedder, GraphDir, ServiceManager};
 use umx_core::provenance::Actor;
 use umx_core::value::SetValue;
-use umx_core::{Command, GraphEmbedding, Id, Node, Ontology, Problem, ValidName};
+use umx_core::{Command, GraphEmbedding, Id, Node, Ontology, Problem, Role, ValidName};
 
 pub use config::{
     ConfigImported, ConfigServices, ConfigSet, ConfigShown, ConfigUnset, RootAdded, RootRemoved,
@@ -2467,10 +2467,26 @@ impl Services {
             return Ok(done);
         }
         let (alias, altered) = (v.alias.clone(), v.affected.clone());
-        let unreadable = self.recheck(&alias, &altered);
+        let (t, f, role) = (v.type_name.clone(), v.field.clone(), v.role);
+        done.value.affected = self.role_moved(&alias, &t, &f, role, &altered, &mut done.notes);
+        Ok(done)
+    }
+
+    /// A field's effective role moved to `role` (req-97): rechecks the `altered` nodes, warns `role_changed` with how
+    /// many are pending, queues them all and gives the pending ones.
+    fn role_moved(
+        &mut self,
+        alias: &str,
+        type_name: &str,
+        field: &str,
+        role: Role,
+        altered: &[Id],
+        notes: &mut Vec<Problem>,
+    ) -> Vec<Id> {
+        let unreadable = self.recheck(alias, altered);
         let pending: Vec<Id> = match self
             .graph
-            .loaded(&alias)
+            .loaded(alias)
             .and_then(|l| l.vectors_pending.as_ref())
         {
             Some(set) => altered
@@ -2478,25 +2494,23 @@ impl Services {
                 .copied()
                 .filter(|id| set.contains(id))
                 .collect(),
-            None => altered.clone(),
+            None => altered.to_vec(),
         };
-        let v = &done.value;
-        let names = (ValidName::new(&v.type_name), ValidName::new(&v.field));
+        let names = (ValidName::new(type_name), ValidName::new(field));
         if let (Some(t), Some(f), false) = (names.0, names.1, pending.is_empty()) {
-            done.notes.push(problems::role_changed(
-                &graph_store::alias_name(&alias),
+            notes.push(problems::role_changed(
+                &graph_store::alias_name(alias),
                 &t,
                 &f,
-                v.role,
+                role,
                 pending.len(),
             ));
         }
         // One cause, possibly for every altered node: the first says it, the pending count holds the rest (s6b B1).
-        done.notes.extend(unreadable.into_iter().take(1));
-        done.value.affected = pending;
-        self.queue(&alias, altered.iter().copied());
-        self.settle_held(&alias, Some(&altered));
-        Ok(done)
+        notes.extend(unreadable.into_iter().take(1));
+        self.queue(alias, altered.iter().copied());
+        self.settle_held(alias, Some(altered));
+        pending
     }
 
     /// F76: `ontology remove type`; refused while in use (see the store's doc).
@@ -2512,13 +2526,22 @@ impl Services {
         self.graph.ontology_remove_relation(ctx, name)
     }
 
+    /// F76: `ontology remove field`. Removing the graph's own role for a std field (req-100) moves the field back to
+    /// std's role, which is a role change like `ontology set field`'s.
     pub fn ontology_remove_field(
         &mut self,
         ctx: &Ctx,
         type_name: &str,
         field: &str,
     ) -> Outcome<OntologyRemoved> {
-        self.graph.ontology_remove_field(ctx, type_name, field)
+        let mut done = self.graph.ontology_remove_field(ctx, type_name, field)?;
+        let v = &done.value;
+        if let (Some(role), false) = (v.role, v.affected.is_empty()) {
+            let (alias, altered, name) = (v.alias.clone(), v.affected.clone(), v.name.clone());
+            done.value.affected =
+                self.role_moved(&alias, type_name, &name, role, &altered, &mut done.notes);
+        }
+        Ok(done)
     }
 
     pub fn ontology_remove_relation_field(

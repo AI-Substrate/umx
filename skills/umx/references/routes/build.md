@@ -30,6 +30,12 @@ derived names are refused in every graph (`reserved_name`, `reserved_relation`, 
 expect end types softly (`relation_endpoint_unexpected` names them); widen with `umx ontology add relation <r>
 --from <type> --to <type>`. `std:person` works on flags; in Cypher write std names plain (`query_std_qualifier`).
 
+**usage 212**: add a field to a std type with `umx ontology add field person shoe_size:int`: graph.json gets only
+yours, `ontology show` lists std's first. A field std already gives the type, with std's kind and role, is
+unchanged; another kind is `std_field_conflict`. Several types take a field at once, std's included
+(`risk,team`); `--all-types` means graph.json's types only. `ontology remove field` refuses std's own fields
+(`reserved_name`) and removes only your extension or your role for a std field.
+
 An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
 ## Vocabulary and settings

@@ -1853,6 +1853,14 @@ pub fn provenance_type_reserved(kind: &str) -> Problem {
     reserved_name_because(kind, "umx records provenance with that type")
 }
 
+/// ws008 T2c (req-100): `ontology remove field` names a field std gives the type or relation in a std graph.
+pub fn std_field_kept(field: &ValidName) -> Problem {
+    reserved_name_because(
+        field.as_str(),
+        "it is a std field: a graph adds fields to a std type but never removes std's own",
+    )
+}
+
 /// ws008 T2b (req-99): a std graph declares a field std has, with another kind than std's.
 pub fn std_field_conflict(graph: &ValidName, field: &ValidName, std_kind: FieldKind) -> Problem {
     Problem::new("std_field_conflict")

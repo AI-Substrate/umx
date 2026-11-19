@@ -27071,6 +27071,522 @@ fn a_std_graph_keeps_std_s_names_and_kinds_and_a_plain_one_takes_them_as_its_own
     assert!(!file(&plain).contains("relation_endpoints"));
 }
 
+/// ws008 T2c (req-100): the names of the fields `type_name` has in `ontology show`, in order.
+fn shown_fields(home: &Home, graph: &str, type_name: &str) -> Vec<(String, Value)> {
+    let env = home.ok(&["ontology", "show", "--graph", graph]);
+    named(&env.data["types"], type_name)["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["name"].as_str().unwrap().to_owned(), f["std"].clone()))
+        .collect()
+}
+
+/// `args` with `--graph <graph>` after them.
+fn on<'a>(graph: &'a str, args: &[&'a str]) -> Vec<&'a str> {
+    args.iter().copied().chain(["--graph", graph]).collect()
+}
+
+#[test]
+fn a_custom_field_on_a_std_type_is_written_alone_and_works_as_any_field() {
+    // req-100 clauses 1, 2 and 5: graph.json holds only the extension; show lists std's first; the extension is a
+    // field to node add and edit, batch, --where, word search, roles and Cypher.
+    let mut home = Home::new("t2c-extension");
+    std_and_plain(&mut home);
+    let demo = home.path.join("g").display().to_string();
+    let added = home.ok(&on(
+        "demo",
+        &["ontology", "add", "field", "person", "shoe_size:int"],
+    ));
+    assert_eq!(added.data["unchanged"], json!(false));
+    assert_eq!(
+        type_in_file(&demo, "person"),
+        json!({ "name": "person", "fields": [{ "name": "shoe_size", "kind": "int" }] }),
+        "only the extension, never std's fields"
+    );
+    assert_eq!(
+        shown_fields(&home, "demo", "person"),
+        [
+            ("aliases".to_owned(), json!(true)),
+            ("job_title".to_owned(), json!(true)),
+            ("org".to_owned(), json!(true)),
+            ("shoe_size".to_owned(), json!(false)),
+        ]
+    );
+    home.ok(&on(
+        "demo",
+        &["ontology", "add", "field", "person", "nickname:string"],
+    ));
+    let ada = home.ok(&on(
+        "demo",
+        &[
+            "node",
+            "add",
+            "--type",
+            "person",
+            "--title",
+            "Ada",
+            "--set",
+            "shoe_size=42",
+            "--set",
+            "nickname=Countess of quartermasters",
+        ],
+    ));
+    assert!(ada.warnings.is_empty(), "{}", ada.to_json());
+    let ada = ada.data["node"]["id"].as_str().unwrap().to_owned();
+    let edited = home.ok(&on(
+        "demo",
+        &["node", "edit", &ada, "--set", "shoe_size=43"],
+    ));
+    assert!(edited.warnings.is_empty(), "{}", edited.to_json());
+    let (bad, _) = home.umx(&on(
+        "demo",
+        &["node", "edit", &ada, "--set", "shoe_size=big"],
+    ));
+    issue(&bad, Code::FieldKindMismatch);
+    home.ok(&on(
+        "demo",
+        &["node", "edit", &ada, "--set", "shoe_size=43"],
+    ));
+    let (done, exit) = batch_of(
+        &home,
+        "demo",
+        &[json!({"op":"node add","type":"person","title":"Bo",
+            "sets":[{"field":"shoe_size","value":40},{"field":"nickname","value":"Bosun"}]})],
+    );
+    assert_eq!(exit, 0, "{}", done.to_json());
+    assert!(done.warnings.is_empty(), "{}", done.to_json());
+    let env = home.ok(&on("demo", &["search", "countess"]));
+    assert_eq!(hit(&env, "Ada")["text_field"], "nickname");
+    let env = home.ok(&on("demo", &["search", "bosun"]));
+    assert_eq!(hit(&env, "Bo")["text_field"], "nickname");
+    let env = home.ok(&on(
+        "demo",
+        &[
+            "node",
+            "list",
+            "--type",
+            "person",
+            "--where",
+            "shoe_size=43",
+        ],
+    ));
+    let ids: Vec<&str> = env.data["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, [ada.as_str()]);
+    let env = home.ok(&on(
+        "demo",
+        &[
+            "query",
+            "MATCH (p:person) WHERE p.shoe_size > 41 RETURN p.title AS t, p.nickname AS n",
+        ],
+    ));
+    assert_eq!(
+        env.data["rows"],
+        json!([{ "t": "Ada", "n": "Countess of quartermasters" }])
+    );
+    // A role on the extension: graph.json holds it, and Ada's vector is pending.
+    let set = home.ok(&on(
+        "demo",
+        &[
+            "ontology", "set", "field", "person", "nickname", "--role", "content",
+        ],
+    ));
+    assert_eq!(set.data["changed"], json!(true), "{}", set.to_json());
+    assert_eq!(
+        type_in_file(&demo, "person")["fields"][1],
+        json!({ "name": "nickname", "kind": "string", "role": "content" })
+    );
+    // Removing an unused extension removes only it; std's fields stay.
+    home.ok(&on(
+        "demo",
+        &["ontology", "add", "field", "person", "badge:string"],
+    ));
+    let removed = home.ok(&on(
+        "demo",
+        &["ontology", "remove", "field", "person", "badge"],
+    ));
+    assert_eq!(removed.data["unchanged"], json!(false));
+    let names: Vec<String> = shown_fields(&home, "demo", "person")
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(
+        names,
+        ["aliases", "job_title", "org", "shoe_size", "nickname"]
+    );
+    // An extension a node holds is in use, as in any graph.
+    refused_with(
+        &home,
+        &on(
+            "demo",
+            &["ontology", "remove", "field", "person", "shoe_size"],
+        ),
+        Code::OntologyInUse,
+    );
+}
+
+#[test]
+fn a_std_field_again_writes_nothing_and_another_kind_role_or_a_reserved_key_is_refused() {
+    // req-100 clauses 3 and 4: a std field std already gives the type or relation, with std's kind and role, is
+    // std's (unchanged, nothing written); another role is field_role_conflict; a reserved key is reserved_name.
+    let mut home = Home::new("t2c-again");
+    let plain = std_and_plain(&mut home);
+    let demo = home.path.join("g").display().to_string();
+    let file = |path: &str| fs::read_to_string(Path::new(path).join("graph.json")).unwrap();
+    let before = file(&demo);
+    for args in [
+        &["ontology", "add", "field", "person", "job_title:string"][..],
+        &["ontology", "add", "field", "person", "tags:list"][..],
+        &["ontology", "add", "field", "meeting", "starts_on:date"][..],
+        &["ontology", "add", "field", "std:person", "aliases:list"][..],
+        &[
+            "ontology",
+            "add",
+            "field",
+            "--relation",
+            "works_for",
+            "starts_on:date",
+        ][..],
+    ] {
+        let env = home.ok(&[args, &["--graph", "demo"][..]].concat());
+        assert_eq!(
+            env.data["unchanged"],
+            json!(true),
+            "{args:?}: {}",
+            env.to_json()
+        );
+    }
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "person,organisation",
+        "aliases:list",
+        "--graph",
+        "demo",
+    ]);
+    assert_eq!(
+        (&env.data["types"], &env.data["unchanged"]),
+        (&json!([]), &json!(["person", "organisation"])),
+        "{}",
+        env.to_json()
+    );
+    let env = refused_with(
+        &home,
+        &[
+            "ontology",
+            "add",
+            "field",
+            "person",
+            "job_title:string",
+            "--role",
+            "content",
+            "--graph",
+            "demo",
+        ],
+        Code::FieldRoleConflict,
+    );
+    let found = issue(&env, Code::FieldRoleConflict);
+    assert_eq!(found.next(), "umx ontology show --graph demo");
+    assert!(
+        found.message().contains("ontology set field"),
+        "{}",
+        env.to_json()
+    );
+    for key in [
+        "id:string",
+        "title:string",
+        "status:string",
+        "note:string",
+        "created:date",
+        "prov_key:string",
+        "locator:string",
+        "entity_key:list",
+        "std:string",
+    ] {
+        refused_with(
+            &home,
+            &["ontology", "add", "field", "person", key, "--graph", "demo"],
+            Code::ReservedName,
+        );
+    }
+    assert_eq!(file(&demo), before, "nothing written");
+    // A graph without std declares the same field as its own, as before.
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "person",
+        "job_title:string",
+        "--graph",
+        "plain",
+    ]);
+    assert_eq!(env.data["unchanged"], json!(false));
+    assert!(file(&plain).contains("job_title"));
+}
+
+#[test]
+fn several_types_take_a_field_with_std_s_types_counted_as_declared() {
+    // req-100, t2b-1's lesson: `type_unknown` on a std type had the no-op `ontology add type` as its next. The docs
+    // example `risk,issue,task` and usage 103's `risk,issue` run on a new std graph.
+    let mut home = Home::new("t2c-many");
+    let path = home.graph();
+    let (env, exit) = home.umx(&["ontology", "add", "field", "risk,issue,task", "impact:int"]);
+    assert_eq!(exit, 1, "{}", env.to_json());
+    let unknown: Vec<(&str, &str)> = env.errors.iter().map(|e| (e.code(), e.message())).collect();
+    assert_eq!(unknown.len(), 2, "risk is std's: {unknown:?}");
+    assert!(
+        unknown
+            .iter()
+            .all(|(code, message)| *code == "type_unknown" && !message.contains("risk")),
+        "{unknown:?}"
+    );
+    for e in &env.errors {
+        let (next, exit) = run_as_printed(&home, e.next());
+        assert_eq!(exit, 0, "{}", next.to_json());
+        assert_eq!(next.data["unchanged"], json!(false), "{}", next.to_json());
+    }
+    let env = home.ok(&["ontology", "add", "field", "risk,issue,task", "impact:int"]);
+    assert_eq!(env.data["types"], json!(["risk", "issue", "task"]));
+    assert_eq!(
+        type_in_file(&path, "risk"),
+        json!({ "name": "risk", "fields": [{ "name": "impact", "kind": "int" }] })
+    );
+    let env = home.ok(&["ontology", "add", "field", "risk,issue", "impact:int"]);
+    assert_eq!(env.data["unchanged"], json!(["risk", "issue"]));
+    // --all-types means graph.json's types, never std's.
+    home.ok(&["ontology", "add", "field", "--all-types", "owner:string"]);
+    let meta = graph_json(&path);
+    assert!(
+        !meta["ontology"]["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "team"),
+        "{meta}"
+    );
+}
+
+#[test]
+fn std_s_own_fields_are_never_removed_and_the_graph_s_role_for_one_is() {
+    // req-100 clause 5: remove field takes out only what the graph added.
+    let mut home = Home::new("t2c-remove");
+    let plain = std_and_plain(&mut home);
+    let demo = home.path.join("g").display().to_string();
+    let file = |path: &str| fs::read_to_string(Path::new(path).join("graph.json")).unwrap();
+    let before = file(&demo);
+    for args in [
+        &["ontology", "remove", "field", "person", "aliases"][..],
+        &["ontology", "remove", "field", "person", "tags"][..],
+        &[
+            "ontology",
+            "remove",
+            "field",
+            "--relation",
+            "works_for",
+            "starts_on",
+        ][..],
+    ] {
+        let env = refused_with(
+            &home,
+            &[args, &["--graph", "demo"][..]].concat(),
+            Code::ReservedName,
+        );
+        assert!(
+            issue(&env, Code::ReservedName)
+                .message()
+                .contains("std field"),
+            "{}",
+            env.to_json()
+        );
+    }
+    assert_eq!(file(&demo), before, "nothing written");
+    // The graph's own role for a std field goes, even while nodes hold the field: std's declaration backs them.
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "person",
+        "--title",
+        "Ada",
+        "--set",
+        "job_title=Quartermaster",
+        "--graph",
+        "demo",
+    ]);
+    home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "person",
+        "job_title",
+        "--role",
+        "content",
+        "--graph",
+        "demo",
+    ]);
+    assert!(file(&demo).contains("job_title"));
+    let env = home.ok(&[
+        "ontology",
+        "remove",
+        "field",
+        "person",
+        "job_title",
+        "--graph",
+        "demo",
+    ]);
+    assert_eq!(env.data["unchanged"], json!(false), "{}", env.to_json());
+    assert!(!file(&demo).contains("job_title"));
+    // req-97: the field is data again, so Ada's embedded text changed and her vector is pending, as after
+    // `ontology set field person job_title --role data`.
+    let moved = issue(&env, Code::RoleChanged);
+    assert!(
+        moved.message().contains("is now data: 1 nodes"),
+        "{}",
+        env.to_json()
+    );
+    let show = home.ok(&["ontology", "show", "--graph", "demo"]);
+    let job = named(&named(&show.data["types"], "person")["fields"], "job_title");
+    assert_eq!((&job["role"], &job["std"]), (&json!("data"), &json!(true)));
+    // A graph without std has no std fields: nothing declared, nothing to refuse.
+    let before = file(&plain);
+    let env = home.ok(&[
+        "ontology", "remove", "field", "person", "aliases", "--graph", "plain",
+    ]);
+    assert_eq!(env.data["unchanged"], json!(true));
+    assert_eq!(file(&plain), before);
+}
+
+#[test]
+fn a_description_for_a_std_field_is_the_graph_s_own_declaration_of_it() {
+    // req-100 review F2: std's entry has no description, so a described std field is written as the graph's own
+    // (std's kind), never already_declared with a next that loops on description_undeclared.
+    let mut home = Home::new("t2c-describe");
+    let path = home.graph();
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "person",
+        "org:string",
+        "--description",
+        "The employer as the source names it",
+    ]);
+    assert_eq!(env.data["unchanged"], json!(false), "{}", env.to_json());
+    let printed: Vec<String> = env
+        .hints
+        .iter()
+        .chain(&env.warnings)
+        .map(|i| i.next().to_owned())
+        .collect();
+    assert_eq!(
+        type_in_file(&path, "person")["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "org")
+            .unwrap()["description"],
+        json!("The employer as the source names it")
+    );
+    let show = home.ok(&["ontology", "show"]);
+    let org = named(&named(&show.data["types"], "person")["fields"], "org");
+    assert_eq!(
+        (&org["kind"], &org["description"]),
+        (
+            &json!("string"),
+            &json!("The employer as the source names it")
+        )
+    );
+    // The same again is unchanged; another description is already_declared, and its next now runs.
+    let again = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "person",
+        "org:string",
+        "--description",
+        "The employer as the source names it",
+    ]);
+    assert_eq!(again.data["unchanged"], json!(true));
+    let (env, exit) = home.umx(&[
+        "ontology",
+        "add",
+        "field",
+        "person",
+        "org:string",
+        "--description",
+        "Who pays them",
+    ]);
+    assert_eq!(exit, 1, "{}", env.to_json());
+    let next = issue(&env, Code::AlreadyDeclared)
+        .next()
+        .replace("<text>", "\"Who pays them\"");
+    let (done, exit) = run_as_printed(&home, &next);
+    assert_eq!(exit, 0, "{next}: {}", done.to_json());
+    // Several types at once do the same: the described std field is written on each.
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "person,organisation",
+        "aliases:list",
+        "--description",
+        "Other names it goes by",
+    ]);
+    assert_eq!(
+        env.data["types"],
+        json!(["person", "organisation"]),
+        "{}",
+        env.to_json()
+    );
+    // The first add's printed nexts run as printed.
+    assert!(!printed.is_empty());
+    for next in &printed {
+        let (done, exit) = run_as_printed(&home, next);
+        assert_eq!(exit, 0, "{next}: {}", done.to_json());
+    }
+}
+
+#[test]
+fn a_stored_any_node_std_field_on_a_custom_type_is_in_use_while_a_node_holds_it() {
+    // req-100 review F3: std allows starts_on on any node, but places it only on the dated types; a widget's own
+    // starts_on, written by an older umx, is the graph's field and keeps the in-use rule.
+    let mut home = Home::new("t2c-any-node");
+    let path = home.graph();
+    edit_graph_json(&path, |g| {
+        g["ontology"]["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "name": "widget", "fields": [{ "name": "starts_on", "kind": "date" }] }));
+    });
+    home.ok(&["graph", "load", &path]);
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "widget",
+        "--title",
+        "Gear",
+        "--set",
+        "starts_on=2026-01",
+    ]);
+    let before = fs::read_to_string(Path::new(&path).join("graph.json")).unwrap();
+    refused_with(
+        &home,
+        &["ontology", "remove", "field", "widget", "starts_on"],
+        Code::OntologyInUse,
+    );
+    assert_eq!(
+        fs::read_to_string(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+}
+
 #[test]
 fn std_relations_expect_end_types_softly_and_a_graph_widens_them() {
     let mut home = Home::new("t2b-ends");

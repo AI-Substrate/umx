@@ -61,6 +61,12 @@ pub struct OntologyRemoved {
     pub name: String,
     /// It was not declared, so nothing was written (setup scripts can re-run, as F71's adds).
     pub unchanged: bool,
+    /// req-100: removing the graph's own role for a std field brought std's role back (`ontology remove field`
+    /// only). Set with `affected` when the field's effective role changed; the services treat it as `ontology set
+    /// field` does (req-97).
+    pub role: Option<Role>,
+    /// The nodes whose embedded text that role change alters (see [`RoleSet::affected`]).
+    pub affected: Vec<Id>,
 }
 
 /// Why umx refuses to remove `given` as a `what` (F76, architect): it relies on the entry itself. Checked on what was
@@ -176,6 +182,60 @@ fn std_kind(o: &Ontology, graph: &ValidName, field: &FieldDecl) -> Result<(), Pr
         }
         _ => Ok(()),
     }
+}
+
+/// ws008 T2c (req-100): std's declaration of `field` on node type `kind` in a std graph, placed there or allowed on
+/// any node; none in a graph without std. A graph's own declaration of it is an override, never an extension.
+fn std_decl(o: &Ontology, kind: &str, field: &str) -> Option<FieldDecl> {
+    o.std_version()?;
+    standard::fields_of_type(kind)
+        .find(|f| f.name == field)
+        .map(|f| std_field_as_decl(&f))
+}
+
+/// [`std_decl`] on relation `relation`'s edges.
+fn std_relation_decl(o: &Ontology, relation: &str, field: &str) -> Option<FieldDecl> {
+    o.std_version()?;
+    standard::fields_of_relation(relation)
+        .find(|f| f.name == field)
+        .map(|f| std_field_as_decl(&f))
+}
+
+/// Whether std places `field` on node type `kind` in a std graph, so the type's effective declaration carries it
+/// whatever graph.json says (not a field std allows on any node, which a type has only once it declares it).
+fn std_placed(o: &Ontology, kind: &str, field: &str) -> bool {
+    o.std_version().is_some()
+        && standard::fields().any(|f| f.name == field && f.types.contains(&kind))
+}
+
+/// [`std_placed`] on relation `relation`'s edges.
+fn std_placed_on_relation(o: &Ontology, relation: &str, field: &str) -> bool {
+    o.std_version().is_some()
+        && standard::fields().any(|f| f.name == field && f.relations.contains(&relation))
+}
+
+/// The nodes of `kind` whose embedded text a role change of `field` alters: those holding non-blank text in it.
+fn role_affected(graph: &Graph, kind: &str, field: &str) -> Vec<Id> {
+    graph
+        .nodes()
+        .map(|n| n.to_node())
+        .filter(|n| {
+            n.kind == kind
+                && n.fields
+                    .get(field)
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|v| !v.trim().is_empty())
+        })
+        .map(|n| n.id)
+        .collect()
+}
+
+fn std_field_as_decl(f: &standard::StdField) -> FieldDecl {
+    let mut decl = FieldDecl::new(f.name, f.kind);
+    if f.role != f.kind.default_role() {
+        decl.role = Some(f.role);
+    }
+    decl
 }
 
 /// A type name umx keeps (ws008 T2b): `std` in every graph; in a std graph also the provenance types only umx writes
@@ -776,25 +836,26 @@ impl GraphStore {
         let name = ValidName::new(&field.name).expect("checked by field_decl");
         let done = self.change_ontology(ctx, "field", &name.clone(), |o, graph| {
             std_kind(o, graph, &field)?;
-            if o.type_decl(type_name.as_str()).is_none() {
-                o.types.push(TypeDecl::new(type_name.as_str(), Vec::new()));
-            }
-            let t = o
-                .types
-                .iter_mut()
-                .find(|t| t.name == type_name.as_str())
-                .expect("declared above");
-            match t.fields.iter().find(|f| f.name == field.name) {
+            // The effective declaration (req-100): a field std already gives the type counts as declared, so the
+            // same field again writes nothing and graph.json holds only the graph's own extensions.
+            let own = o.field_decl(type_name.as_str(), &field.name).cloned();
+            let from_std = own.is_none();
+            let have = own.or_else(|| std_decl(o, type_name.as_str(), &field.name));
+            match have {
                 Some(f) if f.kind == field.kind && f.effective_role() == field.effective_role() => {
-                    redescribed(
-                        graph,
-                        Described::Field,
-                        &type_name,
-                        Some(&name),
-                        &field.description,
-                        f.description.as_ref(),
-                    )?;
-                    return Ok(false);
+                    // A description for a std field is the graph's own declaration of it, with std's kind (as
+                    // `ontology add type person --description` is); std's entry has no description to clash with.
+                    if !(from_std && field.description.is_some()) {
+                        redescribed(
+                            graph,
+                            Described::Field,
+                            &type_name,
+                            Some(&name),
+                            &field.description,
+                            f.description.as_ref(),
+                        )?;
+                        return Ok(false);
+                    }
                 }
                 Some(f) if f.kind == field.kind => {
                     return Err(problems::field_role_conflict(
@@ -807,7 +868,15 @@ impl GraphStore {
                 Some(f) => return Err(problems::field_conflict(graph, &type_name, &name, f.kind)),
                 None => {}
             }
-            t.fields.push(field);
+            if o.type_decl(type_name.as_str()).is_none() {
+                o.types.push(TypeDecl::new(type_name.as_str(), Vec::new()));
+            }
+            o.types
+                .iter_mut()
+                .find(|t| t.name == type_name.as_str())
+                .expect("declared above")
+                .fields
+                .push(field);
             Ok(true)
         });
         warn_secret(
@@ -853,7 +922,9 @@ impl GraphStore {
             let declared = o
                 .relation_fields
                 .get(rel.as_str())
-                .and_then(|fields| fields.iter().find(|f| f.name == field.name));
+                .and_then(|fields| fields.iter().find(|f| f.name == field.name))
+                .cloned()
+                .or_else(|| std_relation_decl(o, rel.as_str(), &field.name));
             match declared {
                 Some(f) if f.kind == field.kind => return Ok(false),
                 Some(f) => {
@@ -875,10 +946,10 @@ impl GraphStore {
     }
 
     /// `ontology add field` on several types, or every declared type with `all` (F71): one graph.json write, all or
-    /// nothing. Every type must be declared already (`type_unknown`); one that has the field with another kind is
-    /// `field_conflict`, or with another role `field_role_conflict`; one that has it with the same kind and role is
-    /// left as it is and listed as `unchanged` (all of them
-    /// unchanged: no write). One error per culprit, at most [`MAX_BATCH_ERRORS`]. The single-type form is
+    /// nothing. Every type must be declared already, std's counting in a std graph (`type_unknown`); one that has
+    /// the field (std's own counting, req-100) with another kind is `field_conflict`, or with another role
+    /// `field_role_conflict`; one that has it with the same kind and role is left as it is and listed as `unchanged`
+    /// (all of them unchanged: no write). One error per culprit, at most [`MAX_BATCH_ERRORS`]. The single-type form is
     /// [`Self::ontology_add_field`].
     pub fn ontology_add_field_many(
         &mut self,
@@ -959,35 +1030,46 @@ impl GraphStore {
             }
         }
         std_kind(o, &graph, &field).map_err(|p| vec![p])?;
+        // A std type counts as declared in a std graph (req-100), as it does for the single-type form and node list.
+        let effective = o.effective();
         let (mut added, mut unchanged) = (Vec::new(), Vec::new());
         for n in &names {
-            match o.type_decl(n.as_str()) {
-                None => errors.push(problems::type_unknown(&graph, n)),
-                Some(t) => {
-                    match t.fields.iter().find(|f| f.name == field.name) {
-                        None => added.push(n.clone()),
-                        Some(f)
-                            if f.kind == field.kind
-                                && f.effective_role() == field.effective_role() =>
-                        {
-                            match redescribed(
-                                &graph,
-                                Described::Field,
-                                n,
-                                Some(&fname),
-                                &field.description,
-                                f.description.as_ref(),
-                            ) {
-                                Ok(()) => unchanged.push(n.as_str().to_string()),
-                                Err(p) => errors.push(p),
-                            }
-                        }
-                        Some(f) if f.kind == field.kind => errors.push(
-                            problems::field_role_conflict(&graph, n, &fname, f.effective_role()),
-                        ),
-                        Some(f) => errors.push(problems::field_conflict(&graph, n, &fname, f.kind)),
+            if effective.type_decl(n.as_str()).is_none() {
+                errors.push(problems::type_unknown(&graph, n));
+                continue;
+            }
+            let own = o.field_decl(n.as_str(), &field.name).cloned();
+            let from_std = own.is_none();
+            let have = own.or_else(|| std_decl(o, n.as_str(), &field.name));
+            let same = |f: &FieldDecl| {
+                f.kind == field.kind && f.effective_role() == field.effective_role()
+            };
+            match have {
+                None => added.push(n.clone()),
+                // As the single-type form: a description for a std field is the graph's own declaration of it.
+                Some(f) if same(&f) && from_std && field.description.is_some() => {
+                    added.push(n.clone())
+                }
+                Some(f) if same(&f) => {
+                    match redescribed(
+                        &graph,
+                        Described::Field,
+                        n,
+                        Some(&fname),
+                        &field.description,
+                        f.description.as_ref(),
+                    ) {
+                        Ok(()) => unchanged.push(n.as_str().to_string()),
+                        Err(p) => errors.push(p),
                     }
                 }
+                Some(f) if f.kind == field.kind => errors.push(problems::field_role_conflict(
+                    &graph,
+                    n,
+                    &fname,
+                    f.effective_role(),
+                )),
+                Some(f) => errors.push(problems::field_conflict(&graph, n, &fname, f.kind)),
             }
         }
         cap(&mut errors)?;
@@ -1000,6 +1082,12 @@ impl GraphStore {
             }));
         }
         let before = l.meta.ontology.clone();
+        for n in &added {
+            let types = &mut l.meta.ontology.types;
+            if !types.iter().any(|t| t.name == n.as_str()) {
+                types.push(TypeDecl::new(n.as_str(), Vec::new()));
+            }
+        }
         for t in l.meta.ontology.types.iter_mut() {
             if added.iter().any(|n| n.as_str() == t.name) {
                 t.fields.push(field.clone());
@@ -1123,19 +1211,7 @@ impl GraphStore {
         .inspect_err(|_| l.meta.ontology = before)?;
         out.changed = true;
         if was != now {
-            out.affected = l
-                .graph
-                .nodes()
-                .map(|n| n.to_node())
-                .filter(|n| {
-                    n.kind == type_name.as_str()
-                        && n.fields
-                            .get(field.as_str())
-                            .and_then(|v| v.as_str())
-                            .is_some_and(|v| !v.trim().is_empty())
-                })
-                .map(|n| n.id)
-                .collect();
+            out.affected = role_affected(&l.graph, type_name.as_str(), field.as_str());
         }
         Ok(Done {
             value: out,
@@ -1216,7 +1292,10 @@ impl GraphStore {
     }
 
     /// `ontology remove field <type> <name>` (F76): refused while a node of the type holds the field (one pass over
-    /// the nodes) or the type's default columns (F96) name it. Another type declaring the same field keeps it.
+    /// the nodes) or the type's default columns (F96) name it. Another type declaring the same field keeps it. In a
+    /// std graph a field std gives the type is refused (`reserved_name`, req-100); the graph's own override of a field
+    /// std places on the type is removed whatever uses it, and std's declaration comes back (`role` and `affected`
+    /// say when its role changed).
     pub fn ontology_remove_field(
         &mut self,
         ctx: &Ctx,
@@ -1232,13 +1311,38 @@ impl GraphStore {
         let name = check_name(field, "field name", &|g| {
             ctx.same_graph(Command::new("ontology remove field").name(&kind).name(g))
         })?;
-        self.remove_from_ontology(ctx, "field", &name, |o, g, graph| {
-            let Some(t) = o.types.iter_mut().find(|t| t.name == kind.as_str()) else {
-                return Ok(false);
+        let mut flipped = None;
+        let mut done = self.remove_from_ontology(ctx, "field", &name, |o, g, graph| {
+            let std = std_decl(o, kind.as_str(), name.as_str()).is_some();
+            let placed = std_placed(o, kind.as_str(), name.as_str())
+                .then(|| std_decl(o, kind.as_str(), name.as_str()))
+                .flatten();
+            let own = o
+                .types
+                .iter_mut()
+                .find(|t| t.name == kind.as_str())
+                .and_then(|t| {
+                    let i = t.fields.iter().position(|f| f.name == name.as_str())?;
+                    Some((t, i))
+                });
+            let Some((t, i)) = own else {
+                // req-100: std's own fields stay; a graph only adds to a std type.
+                return if std {
+                    Err(problems::std_field_kept(&name))
+                } else {
+                    Ok(false)
+                };
             };
-            let Some(i) = t.fields.iter().position(|f| f.name == name.as_str()) else {
-                return Ok(false);
-            };
+            if let Some(placed) = placed {
+                // The graph's own override of a field std places on the type (a role from `ontology set field`):
+                // std's declaration still backs the nodes and columns that use it, and std's role comes back.
+                let was = t.fields.remove(i).effective_role();
+                let now = placed.effective_role();
+                if was != now {
+                    flipped = Some(now);
+                }
+                return Ok(true);
+            }
             let holders = g
                 .nodes()
                 .filter(|n| n.kind() == kind.as_str())
@@ -1260,7 +1364,16 @@ impl GraphStore {
             })?;
             t.fields.remove(i);
             Ok(true)
-        })
+        })?;
+        if let Some(role) = flipped {
+            let l = self
+                .graphs
+                .get(&done.value.alias)
+                .expect("selected graph is loaded");
+            done.value.role = Some(role);
+            done.value.affected = role_affected(&l.graph, kind.as_str(), name.as_str());
+        }
+        Ok(done)
     }
 
     /// `ontology remove field --relation <r> <name>` (F76 on F92): refused while an edge of the relation holds the
@@ -1291,24 +1404,33 @@ impl GraphStore {
             )
         })?;
         self.remove_from_ontology(ctx, "relation field", &name, |o, g, graph| {
-            let Some(fields) = o.relation_fields.get_mut(rel.as_str()) else {
-                return Ok(false);
+            let std = std_relation_decl(o, rel.as_str(), name.as_str()).is_some();
+            let placed = std_placed_on_relation(o, rel.as_str(), name.as_str());
+            let own = o.relation_fields.get_mut(rel.as_str()).and_then(|fields| {
+                let i = fields.iter().position(|f| f.name == name.as_str())?;
+                Some((fields, i))
+            });
+            let Some((fields, i)) = own else {
+                return if std {
+                    Err(problems::std_field_kept(&name))
+                } else {
+                    Ok(false)
+                };
             };
-            let Some(i) = fields.iter().position(|f| f.name == name.as_str()) else {
-                return Ok(false);
-            };
-            let holders = g
-                .edges()
-                .filter(|e| e.kind() == rel.as_str())
-                .filter(|e| e.field(name.as_str()).is_some())
-                .count();
-            in_use(graph, "relation field", &name, holders, "edges", || {
-                Command::new("edge list")
-                    .word("--type")
-                    .name(&rel)
-                    .word("--columns")
-                    .name(&name)
-            })?;
+            if !placed {
+                let holders = g
+                    .edges()
+                    .filter(|e| e.kind() == rel.as_str())
+                    .filter(|e| e.field(name.as_str()).is_some())
+                    .count();
+                in_use(graph, "relation field", &name, holders, "edges", || {
+                    Command::new("edge list")
+                        .word("--type")
+                        .name(&rel)
+                        .word("--columns")
+                        .name(&name)
+                })?;
+            }
             fields.remove(i);
             if fields.is_empty() {
                 o.relation_fields.remove(rel.as_str());
@@ -1340,6 +1462,8 @@ impl GraphStore {
             removed,
             name: name.as_str().to_string(),
             unchanged,
+            role: None,
+            affected: Vec::new(),
         };
         if !changed {
             return Ok(Done::ok(value(true)));
