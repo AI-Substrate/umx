@@ -61,7 +61,46 @@ query word is common, so the word leg gave fusion nothing. `word_terms` lists ea
 `vendor ~ vendors (stem)`). Results:
 exact hits in graph then id order, then by `fused`, then the better single rank, then graph and id, so the same
 graphs and query give the same list every time. `--limit` defaults to 10. With `--also`, each hit also carries
-`phrasings` (below).
+`phrasings` (below). When meaning was measured, each hit carries `strength` (below).
+
+## Strength: strong, fair, weak
+
+A hit found by meaning is labelled `strong`, `fair` or `weak`, in its `strength` field (`--human` shows a `strength`
+column). The label measures the hit against what this query scored across every node it searched, not against a fixed
+number: inside one graph most nodes are near each other, so a cosine that looks high can be ordinary there.
+
+- **How.** In each model's space, umx takes every searched node's whole-node cosine with the query (the nodes in scope
+  after `--graph`, `--within`, `--along`, `--tag` and `--no-tag`, provenance left out; a secured graph only when named).
+  From those it takes the median and the MAD (the median distance from the median), both exact, the same on any order. A
+  hit's z is `(cosine - median) / MAD`. `strong` needs both a z above the model's strong z cut, which grows slowly with
+  the number of nodes searched (the best of many unrelated nodes scores higher by chance in a big graph), and a cosine
+  above the model's strong cosine cut; `fair` the same with the fair cuts; the rest are `weak`. The floor removes noise
+  first: only a hit past the floor is labelled, and the floor never changes what the hit is measured against.
+- **The cuts are measured, per model** (`umx-bench floor-calibration --strength`, beside the floors in
+  `docs/project/benchmarks/floor-calibration/`): on public BEIR sets and umx's own fixture, a query about a subject
+  the graph does not hold gets a strong best hit at most 1 in 100 times, and a fair-or-strong one at most 1 in 10.
+  How often a true match is strong is reported there, not tuned. A model with no measured cuts labels nothing; the
+  result's `floors` names each space's `strength_run` when it has them. Hosted strength cuts are measured for one model version; if the provider changes the model behind
+  a deployment, or the service is nondeterministic, labels near a cut can flip until re-measured.
+  Hosted similarity scores are nondeterministic, measured on two hosted keys (small identical, large about 0.0003); a hit within about 0.003 of a cut can flip.
+- **Other hits.** An exact match is `exact`. A hit found by words only has `strength: null` (meaning did not find it).
+  Too few nodes searched in a space (below the model's measured minimum), or no spread among them, labels nothing:
+  `null`. So do too many: the cuts were measured on up to 8,674 nodes, so labels stop above about 17,000 nodes searched
+  in one space (twice that) until larger graphs are measured. Without a measured model, or when no meaning leg ran, the reply has no `strength` at all.
+- **With `--also`.** Each phrasing is measured on its own against the nodes it searched, and a hit's label is its best
+  over the phrasings that found it by meaning.
+- **How to read it.** A label says how this hit stands out from this graph for this query; it is not a truth about
+  the node. `weak` means it is near the query only about as much as many nodes here are: read it before trusting it.
+  `strong` is a confident match. Labels never change the order, the scores or `found`.
+- **Same everywhere?** The labels are the same for the same stored vectors and the same query vector: for a local
+  model, the same on any machine running the same model file on the same backend with the same umx release (ten
+  embeds of 20 queries gave identical int8 rows). Across backends (CPU, Metal, CUDA) or releases a query vector can
+  differ by one int8 step in a few components, which moved a fixture cosine by at most 0.0023, so a label can differ
+  only for a hit whose cosine is within 0.003 of a cut. For a hosted model, scores move by about 0.0003 from call to call (above).
+- **`no_strong_match`.** When meaning was measured and no match found (shown or not) is strong, fair or exact, and no
+  match came from a graph whose space was not measured (no cuts, too few or too many nodes), the
+  reply carries the hint `no_strong_match`, first of the hints: the graphs searched may not hold the subject. Its next
+  is the same search with one more `--also <words>`: reword it or add a phrasing, or stop.
 
 ## Several phrasings in one call
 
@@ -145,14 +184,15 @@ Search never fails for want of vectors: it returns word and exact matches and sa
 
 ## Hints on a search reply
 
-A search reply carries hints for what it left out, each with a command to run: `search_results_cut` (`--limit`
+A search reply carries hints for what it left out, each with a command to run: `no_strong_match` (above),
+`search_results_cut` (`--limit`
 cut the list: "5 of the 12 matches found are shown"; its next repeats the search as sent, with its `--graph`,
 `--scope` or `--all`, `--within` and `--along`, and a limit that shows them all, `<words>` standing for your query
 and one `--also <words>` for each phrasing you gave),
 `similarity_unavailable`, `similarity_no_embedder` and `similarity_incomplete` (above), and `secured_graphs_skipped`
 (below). The count in `search_results_cut` is of the matches found: every exact match is counted, but the word and
 meaning legs each give at most their best 100, so more nodes may hold the words. A reply lists at most 8 hints, then
-`hints_truncated`; `search_results_cut` and `secured_graphs_skipped` are always among them, however many graphs
+`hints_truncated`; `no_strong_match`, `search_results_cut` and `secured_graphs_skipped` are always among them, however many graphs
 gave a `similarity_unavailable`. Hints never change the rows, their order or their scores, and a reply with only
 hints has status ok. A search that nothing cut, that read every node by meaning and left no graph out has none of
 them.

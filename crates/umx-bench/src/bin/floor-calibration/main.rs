@@ -24,6 +24,17 @@
 //! `--probes` is searched at every `--floors` value, and only counts are printed (no titles, ids or text).
 //!        floor-calibration --embedder <instance> --cache <dir> --probe-root <dir> --probes <file> --floors 0.5,0.3
 //!
+//! Strength mode (PRD 002 search-10, embeddings-expert) measures each key's strength cuts from the cached rows of a
+//! full floors run, sending nothing (a text not in the cache fails the run), and merges them into floors.json beside
+//! the key's floors; `--repeat N --offtopic-rows <file>` (a local instance only) also embeds 20 fixture queries N
+//! times live, counting int8 differences, and records the fixture's off-topic query rows for the services tests:
+//!        floor-calibration --strength --embedder <instance> --cache <dir> --out <dir> --commit <sha> [--raw <dir>]
+//!        [--strong-rate 0.01] [--cosine-only] [--spot <file>] [--offtopic-rows <file> [--send-offtopic]]
+//! `--render --out <dir>` writes RESULT.md again from floors.json, nothing else.
+//! `--deployment-check` (with `--strength`) sends 10 s03 fixture queries and 10 fixture whole-node texts once and
+//! compares them with the floors run's cached vectors (a deployment that changed the model behind it shows here).
+//! `--send-offtopic` is the only way a hosted instance is sent anything in strength mode: the written off-topic list.
+//!
 //! Record mode writes the s03 fixture's vectors, every row, as production makes them, for hybrid_recall (s26b):
 //!        floor-calibration --embedder <instance> --cache <fresh dir> --record <out.tsv>
 
@@ -88,6 +99,16 @@ struct Args {
     probes: Option<PathBuf>,
     floors: Vec<f64>,
     record: Option<PathBuf>,
+    strength: bool,
+    raw: Option<PathBuf>,
+    repeat: usize,
+    offtopic_rows: Option<PathBuf>,
+    strong_rate: f64,
+    cosine_only: bool,
+    spot: Option<PathBuf>,
+    send_offtopic: bool,
+    deployment_check: bool,
+    render: bool,
 }
 
 const USAGE: &str = "floor-calibration --embedder <instance> --cache <dir> --out <dir> --commit <sha> \
@@ -112,11 +133,41 @@ fn args(argv: impl IntoIterator<Item = String>) -> Result<Args, String> {
         probes: None,
         floors: Vec::new(),
         record: None,
+        strength: false,
+        raw: None,
+        repeat: 0,
+        offtopic_rows: None,
+        strong_rate: 0.01,
+        cosine_only: false,
+        spot: None,
+        send_offtopic: false,
+        deployment_check: false,
+        render: false,
     };
     let mut it = argv.into_iter();
     while let Some(flag) = it.next() {
         if flag == "--dry-run" {
             a.dry_run = true;
+            continue;
+        }
+        if flag == "--strength" {
+            a.strength = true;
+            continue;
+        }
+        if flag == "--render" {
+            a.render = true;
+            continue;
+        }
+        if flag == "--deployment-check" {
+            a.deployment_check = true;
+            continue;
+        }
+        if flag == "--send-offtopic" {
+            a.send_offtopic = true;
+            continue;
+        }
+        if flag == "--cosine-only" {
+            a.cosine_only = true;
             continue;
         }
         let value = it.next().ok_or(format!("{flag} needs a value. {USAGE}"))?;
@@ -138,6 +189,17 @@ fn args(argv: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--probe-root" => a.probe_root = Some(PathBuf::from(&value)),
             "--probes" => a.probes = Some(PathBuf::from(&value)),
             "--record" => a.record = Some(PathBuf::from(&value)),
+            "--raw" => a.raw = Some(PathBuf::from(&value)),
+            "--repeat" => a.repeat = number()?,
+            "--spot" => a.spot = Some(PathBuf::from(&value)),
+            "--offtopic-rows" => a.offtopic_rows = Some(PathBuf::from(&value)),
+            "--strong-rate" => {
+                a.strong_rate = value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|r| *r > 0.0 && *r < 1.0)
+                    .ok_or("--strong-rate takes a share between 0 and 1")?
+            }
             "--floors" => {
                 a.floors = value
                     .split(',')
@@ -150,6 +212,13 @@ fn args(argv: impl IntoIterator<Item = String>) -> Result<Args, String> {
             }
             _ => return Err(format!("unknown flag {flag}. {USAGE}")),
         }
+    }
+    if a.render {
+        return if a.out.as_os_str().is_empty() {
+            Err(format!("--render needs --out. {USAGE}"))
+        } else {
+            Ok(a)
+        };
     }
     if a.record.is_some() {
         // A record always embeds every fixture text and writes the file; it has no dry run, so refuse the pair before
@@ -178,6 +247,23 @@ fn args(argv: impl IntoIterator<Item = String>) -> Result<Args, String> {
             Ok(a)
         };
     }
+    if a.strength && a.dry_run {
+        return Err(format!(
+            "--strength has no --dry-run: it sends nothing. {USAGE}"
+        ));
+    }
+    if a.deployment_check && a.repeat > strength::MAX_CHECK_PASSES {
+        return Err(format!(
+            "--deployment-check --repeat {}: at most {} passes, each resends the pinned texts. {USAGE}",
+            a.repeat,
+            strength::MAX_CHECK_PASSES
+        ));
+    }
+    if a.send_offtopic && (!a.strength || a.offtopic_rows.is_none()) {
+        return Err(format!(
+            "--send-offtopic is only for --strength with --offtopic-rows. {USAGE}"
+        ));
+    }
     if a.embedder.is_empty() || a.cache.as_os_str().is_empty() || a.out.as_os_str().is_empty() {
         return Err(format!(
             "--embedder, --cache and --out are required. {USAGE}"
@@ -199,6 +285,10 @@ struct Cached {
     file: Mutex<fs::File>,
     known: Mutex<Known>,
     sent: Mutex<(usize, usize)>,
+    /// Strength mode: a text not in the cache fails the embed instead of being sent (nothing leaves the machine).
+    offline: std::sync::atomic::AtomicBool,
+    /// Every cached record an embed read, by (kind, sha256): what a run used of the cache.
+    read: Mutex<BTreeSet<(u8, [u8; 32])>>,
 }
 
 fn kind_byte(kind: TextKind) -> u8 {
@@ -255,6 +345,8 @@ impl Cached {
             file: Mutex::new(file),
             known: Mutex::new(known),
             sent: Mutex::new((0, 0)),
+            offline: std::sync::atomic::AtomicBool::new(false),
+            read: Mutex::new(BTreeSet::new()),
         })
     }
 
@@ -277,6 +369,21 @@ impl Embedder for Cached {
                 .collect()
         };
         let mut truncated = Vec::new();
+        if !missing.is_empty() && self.offline.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(EmbedError::Config(format!(
+                "{} texts are not in the vector cache and this run sends nothing",
+                missing.len()
+            )));
+        }
+        {
+            let mut read = self.read.lock().unwrap();
+            let gone: BTreeSet<usize> = missing.iter().copied().collect();
+            for (i, h) in hashes.iter().enumerate() {
+                if !gone.contains(&i) {
+                    read.insert((k, *h));
+                }
+            }
+        }
         if !missing.is_empty() {
             let send: Vec<String> = missing.iter().map(|&i| texts[i].clone()).collect();
             let got = self.inner.embed(&send, kind)?;
@@ -609,6 +716,19 @@ fn build(
     rate: u64,
     dry_run: bool,
 ) -> Result<Built, String> {
+    build_with(task, work, embedder, rate, dry_run, true)
+}
+
+/// [`build`]; with `apply` false the vectors are only collected into `rows`, never stored in the graph (strength
+/// mode reads only the rows, and storing is most of the time).
+fn build_with(
+    task: &Task,
+    work: &Path,
+    embedder: &Arc<Cached>,
+    rate: u64,
+    dry_run: bool,
+    apply: bool,
+) -> Result<Built, String> {
     let root = work.join("graphs");
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let root = root.canonicalize().map_err(|e| e.to_string())?;
@@ -712,8 +832,10 @@ fn build(
                                 }
                             }
                         }
-                        svc.embed_apply(&vectors)
-                            .map_err(|p| format!("apply: {p:?}"))?;
+                        if apply {
+                            svc.embed_apply(&vectors)
+                                .map_err(|p| format!("apply: {p:?}"))?;
+                        }
                         break;
                     }
                     Step::Retry { wait_ms, .. } => {
@@ -931,6 +1053,9 @@ fn calibrate() -> Result<(), String> {
 
 fn calibrate_with(argv: impl IntoIterator<Item = String>) -> Result<(), String> {
     let a = args(argv)?;
+    if a.render {
+        return strength::render_only(&a.out);
+    }
     let env = Config::from_env();
     let mut source = match &a.config_home {
         Some(home) => Config::at(home.clone(), None).search_path(env.search_path.clone()),
@@ -963,6 +1088,24 @@ fn calibrate_with(argv: impl IntoIterator<Item = String>) -> Result<(), String> 
     );
     if let Some(probes) = &a.probes {
         return probe(&a, probes, &cached, &key);
+    }
+    if a.deployment_check {
+        if !a.strength {
+            return Err(format!("--deployment-check goes with --strength. {USAGE}"));
+        }
+        return strength::deployment_check(&a, &cached, &key, deployment);
+    }
+    if a.strength {
+        let cache_file = a.cache.join("floor-calibration").join(format!("{key}.vec"));
+        return strength::run(
+            &a,
+            &cached,
+            &key,
+            &cache_file,
+            instance.kind.as_str(),
+            deployment,
+            instance.local_backend().map(|(b, _)| b),
+        );
     }
     if let Some(out) = &a.record {
         return record(
@@ -1222,7 +1365,7 @@ fn write_result(out: &Path, key: &str, entry: Value) -> Result<(), String> {
         .unwrap_or_else(|| json!({ "keys": {} }));
     all["about"] = json!(
         "Calibrated similarity floors (workstream 004 s26), written by umx-bench's floor-calibration \
-         (crates/umx-bench/src/bin/floor-calibration.rs); umx_core::similarity::CALIBRATED is checked against it. \
+         (crates/umx-bench/src/bin/floor-calibration/main.rs); umx_core::similarity::CALIBRATED is checked against it. \
          No vectors and no corpus text."
     );
     all["keys"][key] = entry;
@@ -1238,6 +1381,9 @@ fn write_result(out: &Path, key: &str, entry: Value) -> Result<(), String> {
     eprintln!("floor-calibration: wrote {} and RESULT.md", path.display());
     Ok(())
 }
+
+/// Strength mode (PRD 002 search-10): the strength cuts from the cached rows; see the module.
+mod strength;
 
 const NOTES: &str = "<!-- notes: hand-written below this line -->";
 
@@ -1359,6 +1505,7 @@ fn render(all: &Value) -> String {
             }
         }
     }
+    s += &strength::render(all);
     s
 }
 
@@ -1396,6 +1543,29 @@ mod tests {
             !dir.exists(),
             "nothing made at all (no cache, no scratch graph)"
         );
+        // --deployment-check --repeat is capped before any config, provider or send (security, reviewer N1).
+        let check = |n: &str| {
+            args(argv(&[
+                "--strength",
+                "--deployment-check",
+                "--repeat",
+                n,
+                "--embedder",
+                "large",
+                "--cache",
+                "/c",
+                "--out",
+                "/o",
+                "--commit",
+                "x",
+            ]))
+        };
+        assert!(
+            check("4")
+                .err()
+                .is_some_and(|e| e.contains("at most 3 passes"))
+        );
+        assert!(check("3").is_ok());
         // The same record without --dry-run parses (it is the embed that needs a real instance).
         assert!(
             args(argv(&[

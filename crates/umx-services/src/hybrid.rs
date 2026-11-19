@@ -20,7 +20,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use umx_core::ports::{EmbedError, Embedder, GraphDir, Locality, ModelKey, TextKind};
 use umx_core::secrets;
-use umx_core::similarity::{self, inverse_length, top_k};
+use umx_core::similarity::{
+    self, Population, Strength, StrengthCuts, inverse_length, top_k, top_k_scored,
+};
 use umx_core::vectors::quantise;
 use umx_core::{Command, Id, Node, Policy, Problem, ValidName, Value};
 use umx_graph::{Graph, NodeIx, NodeSet, WordQuery, WordStats};
@@ -82,6 +84,11 @@ pub struct HybridHit {
     /// PRD 002 search-09: the 1-based positions of the phrasings that found it (1 is the main text, 2 to 5 each
     /// `--also` in order). `word` and `vector` are those of its best phrasing, the largest term in its sum.
     pub phrasings: Vec<usize>,
+    /// PRD 002 search-10: how strongly it matches, its best over the phrasings whose meaning leg found it, each
+    /// measured in its own vector space against every node that phrasing searched there ([`similarity::strength`]);
+    /// `Exact` for an exact match. None when it was found by words only, when its space has no calibrated strength
+    /// cuts or too few nodes to measure against, or when it has no whole-node vector.
+    pub strength: Option<Strength>,
 }
 
 impl HybridHit {
@@ -142,6 +149,15 @@ pub struct HybridResult {
     pub along: Option<crate::AlongInfo>,
     /// How many phrasings were searched: 1, or more with `--also` (PRD 002 search-09).
     pub phrasings: usize,
+    /// PRD 002 search-10: whether hits were labelled: a meaning leg ran in a space with calibrated strength cuts.
+    /// False for every other search, whose reply then has no strength at all.
+    pub labelled: bool,
+    /// PRD 002 search-10: a meaning leg ran, some space had a population it could measure against, and no match found
+    /// (all of `found`, not only the hits shown) is strong, fair or exact ([`no_strong_match`]): the hint
+    /// `no_strong_match`.
+    pub no_strong_match: bool,
+    /// The strength run of each vector space that has calibrated cuts, by key.
+    pub strength_runs: Vec<(ModelKey, &'static str)>,
 }
 
 /// Why a vector space got no query vector.
@@ -325,16 +341,44 @@ pub fn vector_candidates(
     scope: Option<&NodeSet<'_>>,
     floor: f32,
 ) -> Vec<(Id, f32, String)> {
+    vector_candidates_scored(graph, space, query, scope, floor, None)
+}
+
+/// [`vector_candidates`] that also fills `whole`, when given, with every searched node's whole-node cosine by node
+/// index (NaN for a node not searched or with no whole-node vector), from the same scan (PRD 002 search-10).
+pub fn vector_candidates_scored(
+    graph: &Graph,
+    space: &str,
+    query: &[i8],
+    scope: Option<&NodeSet<'_>>,
+    floor: f32,
+    mut whole: Option<&mut Vec<f32>>,
+) -> Vec<(Id, f32, String)> {
     // Each block's best rows: (field, [(handle, cosine)]).
     let mut blocks: Vec<(String, Vec<(NodeIx, f32)>)> = Vec::new();
     if let Some(w) = graph.whole_block(space)
         && w.dims() == query.len()
     {
-        let rows = top_k(query, w.values(), w.inverse_lengths(), LEG_DEPTH, |i| {
-            w.has(i)
-                && !graph.is_provenance(w.node(i as u32))
-                && scope.is_none_or(|s| s.contains_ix(w.node(i as u32)))
-        });
+        if let Some(out) = whole.as_deref_mut() {
+            out.clear();
+            out.resize(w.rows(), f32::NAN);
+        }
+        let rows = top_k_scored(
+            query,
+            w.values(),
+            w.inverse_lengths(),
+            LEG_DEPTH,
+            |i| {
+                w.has(i)
+                    && !graph.is_provenance(w.node(i as u32))
+                    && scope.is_none_or(|s| s.contains_ix(w.node(i as u32)))
+            },
+            |i, score| {
+                if let Some(out) = whole.as_deref_mut() {
+                    out[i] = score;
+                }
+            },
+        );
         let rows = rows.into_iter().map(|h| (w.node(h.row), h.score)).collect();
         blocks.push((WHOLE_NODE.to_string(), rows));
     }
@@ -523,6 +567,14 @@ pub fn fuse_phrasings(phrasings: &[Legs<'_>]) -> Vec<((String, Id), Fused)> {
             .then_with(|| ka.cmp(kb))
     });
     out.into_iter().map(|(k, f, _)| (k, f)).collect()
+}
+
+/// PRD 002 search-10, the rule of the hint `no_strong_match` (embeddings-expert): given the labels of every match
+/// found (not only those shown), it fires when no match is strong, fair or exact: every meaning hit is weak, or none
+/// passed the floor. A fair best hit is plausibly there, weakly matched, and its own label says so. The caller has
+/// checked that a meaning leg ran in a space whose population could be labelled.
+pub fn no_strong_match(labels: &[Option<Strength>]) -> bool {
+    labels.iter().all(|l| l.is_none_or(|l| l < Strength::Fair))
 }
 
 /// The text a custom field's value matches exactly: a string, number or bool as written. Lists and objects never.
@@ -955,12 +1007,19 @@ impl Services {
         let mut vectors: Vec<Ranked> = vec![Ranked::new(); texts.len()];
         let mut floors = Vec::new();
         let (mut pending, mut held) = (0usize, 0usize);
+        // PRD 002 search-10: in each space with calibrated strength cuts, every searched node's whole-node cosine per
+        // phrasing, by graph (by node index, NaN where none), and each phrasing's population over the whole space.
+        let mut wholes: BTreeMap<String, Vec<Vec<f32>>> = BTreeMap::new();
+        let mut populations: BTreeMap<ModelKey, (StrengthCuts, Vec<Option<Population>>)> =
+            BTreeMap::new();
         let spaces: BTreeSet<&ModelKey> = legs.values().collect();
         for key in spaces {
             let cut = store.floors().get(key, similarity::Use::Search);
             let floor = cut.value;
             floors.push((key.clone(), cut));
             let space = key.to_string();
+            let cuts = similarity::strength_cuts(key);
+            let mut scores: Vec<Vec<f32>> = vec![Vec::new(); texts.len()];
             let mut in_space: Vec<Ranked> = vec![Ranked::new(); texts.len()];
             for (alias, _) in legs.iter().filter(|(_, k)| *k == key) {
                 let qs = &query[&routes[alias]];
@@ -984,15 +1043,32 @@ impl Services {
                 );
                 pending += p;
                 held += h;
-                for (q, ranked) in qs.iter().zip(in_space.iter_mut()) {
-                    for (h, cosine, field) in vector_candidates(g, &space, q, scope.as_ref(), floor)
-                    {
+                for (p, (q, ranked)) in qs.iter().zip(in_space.iter_mut()).enumerate() {
+                    let mut whole = cuts.map(|_| Vec::new());
+                    for (h, cosine, field) in vector_candidates_scored(
+                        g,
+                        &space,
+                        q,
+                        scope.as_ref(),
+                        floor,
+                        whole.as_mut(),
+                    ) {
                         ranked.push((alias.clone(), h, f64::from(cosine), field));
+                    }
+                    if let Some(whole) = whole {
+                        scores[p].extend(whole.iter().copied().filter(|s| !s.is_nan()));
+                        wholes
+                            .entry(alias.clone())
+                            .or_insert_with(|| vec![Vec::new(); texts.len()])[p] = whole;
                     }
                 }
             }
             for (vector, ranked) in vectors.iter_mut().zip(in_space) {
                 vector.extend(rank(ranked));
+            }
+            if let Some(cuts) = cuts {
+                let each = scores.iter_mut().map(|s| Population::of(s)).collect();
+                populations.insert(key.clone(), (cuts, each));
             }
         }
         if pending > 0 {
@@ -1073,6 +1149,60 @@ impl Services {
             .collect();
         let fused = fuse_phrasings(&each);
         let found = fused.len();
+        // PRD 002 search-10: each match's strength, over all of `found`, its best over the phrasings whose meaning leg
+        // found it. Labels are an extra field: they never move the order or the scores.
+        let labelled = !populations.is_empty();
+        // The spaces whose population could label (cuts, enough nodes, not past the measured range, spread). The hint
+        // judges only what was measured: a match from a graph whose space was not (no cuts, too few or too many nodes,
+        // or no meaning leg at all) was never labelled, so it is not "not strong" and the hint stays quiet.
+        let measured: BTreeSet<&ModelKey> = populations
+            .iter()
+            .filter(|(_, (cuts, pops))| pops.iter().flatten().any(|p| similarity::labels(p, cuts)))
+            .map(|(k, _)| k)
+            .collect();
+        let mut strengths: Vec<Option<Strength>> = Vec::with_capacity(found);
+        let mut judged: Vec<Option<Strength>> = Vec::new();
+        let mut unmeasured = false;
+        if labelled {
+            let by_vector: Vec<BTreeSet<(&str, Id)>> = vectors
+                .iter()
+                .map(|v| v.iter().map(|(a, h, _, _)| (a.as_str(), *h)).collect())
+                .collect();
+            for ((alias, id), f) in &fused {
+                if f.exact.is_some() {
+                    strengths.push(Some(Strength::Exact));
+                    judged.push(Some(Strength::Exact));
+                    continue;
+                }
+                let ix = store
+                    .loaded(alias)
+                    .and_then(|l| l.graph.node(*id))
+                    .map(|n| n.ix().index());
+                let best = (0..texts.len())
+                    .filter(|&p| by_vector[p].contains(&(alias.as_str(), *id)))
+                    .filter_map(|p| {
+                        let (cuts, pops) = populations.get(legs.get(alias)?)?;
+                        let s = *wholes.get(alias)?[p].get(ix?)?;
+                        if s.is_nan() {
+                            return None;
+                        }
+                        similarity::strength(pops[p].as_ref()?, cuts, s)
+                    })
+                    .max();
+                strengths.push(best);
+                if legs.get(alias).is_some_and(|k| measured.contains(k)) {
+                    judged.push(best);
+                } else {
+                    unmeasured = true;
+                }
+            }
+        }
+        let no_strong_match = !measured.is_empty() && !unmeasured && no_strong_match(&judged);
+        let strength_runs = populations
+            .iter()
+            .map(|(k, (cuts, _))| (k.clone(), cuts.run))
+            .collect();
+        let mut strengths = strengths.into_iter();
         let mut hits = Vec::new();
         for ((alias, id), f) in fused.into_iter().take(limit) {
             let l = store.loaded(&alias).expect("checked");
@@ -1086,6 +1216,7 @@ impl Services {
                 vector: f.vector,
                 fused: f.fused,
                 phrasings: f.phrasings,
+                strength: strengths.next().flatten(),
             });
         }
         let along = kept.take().map(|(alias, mut k)| {
@@ -1101,6 +1232,9 @@ impl Services {
                 copies,
                 along,
                 phrasings: texts.len(),
+                labelled,
+                no_strong_match,
+                strength_runs,
             },
             notes: warnings,
         })

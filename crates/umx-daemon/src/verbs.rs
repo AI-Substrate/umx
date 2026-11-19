@@ -1654,14 +1654,36 @@ pub fn search_finish(
         }
         _ => None,
     };
+    let weak = matches!(&outcome, Ok(done) if done.value.no_strong_match);
     let env = reply("search", outcome, |r| search_json(services, r));
-    match cut {
+    let env = match cut {
         Some((shown, found)) => env.note(issue(
             &umx_services::problems::search_results_cut(shown, found, search_rest(request, found)),
             "search",
         )),
         None => env,
+    };
+    if weak {
+        env.note(issue(
+            &umx_services::problems::no_strong_match(search_reworded(request)),
+            "search",
+        ))
+    } else {
+        env
     }
+}
+
+/// search-10: `no_strong_match`'s next: the search as the caller sent it (the words a placeholder, one `--also
+/// <words>` per phrasing sent, every selector and its `--limit`), with one more `--also <words>` while fewer than 5
+/// phrasings were sent, so the caller rewords or adds a phrasing; never a phrasing's text.
+fn search_reworded(request: &Request) -> Command {
+    let mut request = request.clone();
+    if let Some(Op::Search { also, .. }) = &mut request.op
+        && also.len() < umx_protocol::MAX_ALSO
+    {
+        also.push(String::new());
+    }
+    search_again(&request)
 }
 
 /// search-13: the search as the caller sent it with `--limit <found>`: [`redirected_retry`] with no redirects (the
@@ -1673,12 +1695,14 @@ fn search_rest(request: &Request, found: usize) -> Command {
     if let Some(Op::Search { limit, .. }) = &mut request.op {
         *limit = Some(found);
     }
-    let c = redirected_retry(&request, &[]).unwrap_or_else(|| {
-        Command::new("search")
-            .word("<words>")
-            .word("--limit")
-            .count(found as u64)
-    });
+    search_again(&request)
+}
+
+/// A search's request as a runnable command: [`redirected_retry`] with no redirects, then `--include-named` and
+/// `--provenance` when given.
+fn search_again(request: &Request) -> Command {
+    let c =
+        redirected_retry(request, &[]).unwrap_or_else(|| Command::new("search").word("<words>"));
     let c = if request.all && request.include_named {
         c.word("--include-named")
     } else {
@@ -1783,6 +1807,10 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
             if result.copies {
                 row["copy"] = json!(h.alias);
             }
+            // search-10: how strongly it matches, only when the search labelled its hits.
+            if result.labelled {
+                row["strength"] = json!(h.strength.map(|s| s.word()));
+            }
             // search-09: which phrasings found it, only when --also gave more than one.
             if result.phrasings < 2
                 && let Some(row) = row.as_object_mut()
@@ -1819,6 +1847,10 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
     if result.phrasings > 1 {
         columns.insert(8, "phrasings");
     }
+    if result.labelled {
+        let at = columns.iter().position(|c| *c == "legs").expect("legs") + 1;
+        columns.insert(at, "strength");
+    }
     if any_flagged(&rows) {
         columns.push(SECRET_SUSPECTED);
     }
@@ -1828,10 +1860,15 @@ fn search_json(services: &Services, result: &umx_services::HybridResult) -> Valu
         .floors
         .iter()
         .map(|(key, floor)| {
-            json!({
+            let mut f = json!({
                 "model": key.to_string(), "floor": floor.value, "calibrated": floor.calibrated(),
                 "floor_source": floor.source.word(), "floor_run": floor.run,
-            })
+            });
+            // search-10: the run of the strength cuts that labelled this space's hits, when it has them.
+            if let Some((_, run)) = result.strength_runs.iter().find(|(k, _)| k == key) {
+                f["strength_run"] = json!(run);
+            }
+            f
         })
         .collect();
     with_along(&mut data, result.along.as_ref());

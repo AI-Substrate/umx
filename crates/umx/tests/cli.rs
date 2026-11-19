@@ -3808,6 +3808,9 @@ fn trigger(code: Code) -> (Envelope, u8) {
             unreachable!("raised by umx-services' tests/cypher.rs (permits held, a ticking clock)")
         }
         Code::SimilarityIncomplete => unreachable!("raised by umx-services' hybrid tests"),
+        Code::NoStrongMatch => {
+            unreachable!("raised by umx-daemon's s08_tests and umx-services' hybrid_recall")
+        }
         Code::SimilarityPairsTooLarge | Code::SimilarityPairsTimedOut => {
             unreachable!("raised by umx-services' pairs caps test and umx-daemon's s31_tests")
         }

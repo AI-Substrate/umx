@@ -1,0 +1,13 @@
+strength: text-embedding-3-large@256: 45 off-topic texts sent in one call (about 1254 tokens); rows written
+strength: text-embedding-3-large@256, floors run fc-2026-11-11-cdc1965, cache 52549 records, sending nothing
+scifact: 5183 whole-node rows, 300 on-topic queries
+nfcorpus: 3633 whole-node rows, 323 on-topic queries
+arguana: 8674 whole-node rows, 1401 on-topic queries
+fixture: 300 whole-node rows, 80 on-topic queries
+tight: {"base":"nfcorpus","base_pairs_at_search_floor":0.4971,"base_pairs_at_similar_floor":0.0177,"chosen":"the documents nearest (whole-node cosine) to the base document with the most neighbours at or above the similar_to floor","documents":1000,"pairs_at_search_floor":0.9345,"pairs_at_similar_floor":0.1001,"seed":"MED-3557","seed_neighbours_at_similar_floor":539}
+scifact: cells [300, 2000, 5183] scored
+nfcorpus: cells [300, 2000, 3633] scored
+arguana: cells [300, 2000, 8674] scored
+fixture: cells [300] scored
+tight: cells [300, 1000] scored
+strength: wrote docs/project/benchmarks/floor-calibration/floors.json and RESULT.md

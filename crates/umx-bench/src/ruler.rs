@@ -1522,6 +1522,16 @@ pub fn run(a: &Args) -> Result<PathBuf, String> {
         along_rows(&mut rows, &mut c, &real_f)?;
         return Ok(work.clone());
     }
+    if a.strength_only {
+        let real_f = Folder {
+            prefix: "real",
+            dir: work.join("real"),
+            fx: &r.fx,
+            meta: r.meta.clone(),
+        };
+        strength_rows(&mut rows, &real_f, a.seed)?;
+        return Ok(work.clone());
+    }
     let keyed_fx = real::keyed(a.seed, &r, a.nodes / 10);
     let (keyed_all_fx, keyed_all_duplicates) = real::keyed_all(a.seed, &r);
     let generate_ms = ms(t);
@@ -1625,6 +1635,7 @@ pub fn run(a: &Args) -> Result<PathBuf, String> {
         spine_rows(&mut rows, &svc, &real_f)?;
     }
     along_rows(&mut rows, &mut c, &real_f)?;
+    strength_rows(&mut rows, &real_f, a.seed)?;
     inbound_rows(&mut rows, &mut c, &real_f, &r, a.seed)?;
     {
         let svc = c.loaded(rich_f.path())?;
@@ -1717,6 +1728,62 @@ pub fn run(a: &Args) -> Result<PathBuf, String> {
 
 /// `umx graph spine propose` (ws005 s07): the whole proposal under the services read lock, its time and the bytes
 /// it allocates (graph-storage-expert's cost terms).
+/// The nodes the strength rows search: PRD 002 search-10's cost is measured at 20k.
+const STRENGTH_NODES: usize = 20_000;
+
+/// `real/search_vector_leg_ms` and `real/search_strength_ms` (PRD 002 search-10): one phrasing's vector leg over the
+/// first [`STRENGTH_NODES`] nodes of the realistic fixture with one seeded whole-node vector each (256 dims), without
+/// and with strength: `umx_services::vector_candidates`, then `vector_candidates_scored` (the same scan filling each
+/// node's cosine), `Population::of` (two order-statistic selections) and `similarity::strength` for every candidate,
+/// as search finish does. The cuts are embeddinggemma-2@256+p1's (their values do not change the cost).
+fn strength_rows(rows: &mut Rows, f: &Folder, seed: u64) -> Result<(), String> {
+    use umx_core::similarity::{Population, strength, strength_cuts};
+    let key = umx_core::ports::ModelKey::new("embeddinggemma-2", 256)
+        .map_err(|e| format!("{e:?}"))?
+        .with_prompt_version(1);
+    let cuts = strength_cuts(&key).ok_or("embeddinggemma-2@256+p1 has no strength cuts")?;
+    let mut g = f.graph();
+    let ids: Vec<Id> = g.nodes().map(|n| n.id()).take(STRENGTH_NODES).collect();
+    let files = crate::vectors::shards(&ids, 1, seed);
+    let held = crate::vectors::load(&mut g, &files);
+    let space = crate::vectors::SPACE;
+    let query = g
+        .vector(space, g.node_ix(ids[ids.len() / 2]).unwrap(), None)
+        .ok_or("no query vector")?
+        .to_vec();
+    let path = "umx_services::vector_candidates";
+    let notes = json!({ "nodes_with_vectors": held, "dims": 256, "floor": 0.0 });
+    let without = timed(|| umx_services::vector_candidates(&g, space, &query, None, 0.0).len());
+    rows.push(
+        &format!("{}/search_vector_leg_ms", f.prefix),
+        "ms",
+        &without,
+        path,
+        notes.clone(),
+    );
+    let mut whole = Vec::new();
+    let with = timed(|| {
+        let hits =
+            umx_services::vector_candidates_scored(&g, space, &query, None, 0.0, Some(&mut whole));
+        let mut scores: Vec<f32> = whole.iter().copied().filter(|s| !s.is_nan()).collect();
+        let pop = Population::of(&mut scores).expect("scores");
+        hits.iter()
+            .filter(|(id, _, _)| {
+                let s = whole[g.node_ix(*id).unwrap().index()];
+                strength(&pop, &cuts, s).is_some()
+            })
+            .count()
+    });
+    rows.push(
+        &format!("{}/search_strength_ms", f.prefix),
+        "ms",
+        &with,
+        "umx_services::vector_candidates_scored + umx_core::similarity::{Population::of, strength}",
+        notes,
+    );
+    Ok(())
+}
+
 fn spine_rows(rows: &mut Rows, svc: &Services, f: &Folder) -> Result<(), String> {
     let c = ctx();
     let alias = f.meta.alias.as_str();

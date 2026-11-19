@@ -1,5 +1,5 @@
 {
-  "about": "Calibrated similarity floors (workstream 004 s26), written by umx-bench's floor-calibration (crates/umx-bench/src/bin/floor-calibration.rs); umx_core::similarity::CALIBRATED is checked against it. No vectors and no corpus text.",
+  "about": "Calibrated similarity floors (workstream 004 s26), written by umx-bench's floor-calibration (crates/umx-bench/src/bin/floor-calibration/main.rs); umx_core::similarity::CALIBRATED is checked against it. No vectors and no corpus text.",
   "keys": {
     "embeddinggemma-2@256+p1": {
       "adapter": "llamacpp.embedder",
@@ -61,6 +61,1164 @@
       "search_floor_stop_p50": 0.5983,
       "similar_floor": 0.8462,
       "smoke": false,
+      "strength": {
+        "ablation": [
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.0125,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7259,
+                "on_strong": 0.147
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.0125,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9051,
+                "on_strong": 0.3119
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3919,
+                "on_strong": 0.0657
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0029,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.825,
+                "on_strong": 0.2125
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.387,
+                "on_strong": 0.0774
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6811,
+                "on_strong": 0.1827
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0667,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.2724,
+                "on_strong": 0.0526
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.096,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.73,
+                "on_strong": 0.27
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.91,
+                "on_strong": 0.4067
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.032,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.59,
+                "on_strong": 0.1933
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4845,
+                "on_strong": 0.1237
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5876,
+                "on_strong": 0.1856
+              }
+            },
+            "fair": {
+              "score": 0.7117,
+              "z": -1.5398,
+              "z_part": true,
+              "z_per_ln": 1.1069
+            },
+            "fair_level": 0.895,
+            "family": "joint",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0,
+                "queries": 15,
+                "strong_only_rule_fires": 0.4667,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.5333
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 0.6,
+                "target_fair_or_strong": 0.9,
+                "target_strong": 0.4
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.9979,
+                "queries": 1406,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0021,
+                "top_strong": 0.0
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9319,
+                "queries": 323,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0681,
+                "top_strong": 0.0
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9967,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0033,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.175,
+                "queries": 40,
+                "strong_only_rule_fires": 0.975,
+                "target_fair_or_strong": 0.8,
+                "target_strong": 0.025
+              },
+              "tail": {
+                "no_strong_match_fires": 0.2,
+                "queries": 10,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 0.5,
+                "target_strong": 0.0
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.8
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "rejected_by": {
+              "arguana@2000": {
+                "both": 70,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "arguana@300": {
+                "both": 51,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "arguana@8674": {
+                "both": 76,
+                "cosine_only": 0,
+                "z_only": 1
+              },
+              "fixture@300": {
+                "both": 45,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@2000": {
+                "both": 1,
+                "cosine_only": 0,
+                "z_only": 1
+              },
+              "nfcorpus@300": {
+                "both": 1,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@3633": {
+                "both": 2,
+                "cosine_only": 0,
+                "z_only": 2
+              },
+              "scifact@2000": {
+                "both": 41,
+                "cosine_only": 0,
+                "z_only": 7
+              },
+              "scifact@300": {
+                "both": 19,
+                "cosine_only": 0,
+                "z_only": 2
+              },
+              "scifact@5183": {
+                "both": 48,
+                "cosine_only": 0,
+                "z_only": 11
+              },
+              "tight@1000": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "tight@300": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              }
+            },
+            "strong": {
+              "score": 0.7382,
+              "z": 5.302,
+              "z_part": true,
+              "z_per_ln": 0.5996
+            },
+            "strong_level": 0.978,
+            "worst_off_topic_fair_or_strong": 0.096,
+            "worst_off_topic_strong": 0.0
+          },
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.0125,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8515,
+                "on_strong": 0.7416
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.0125,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8515,
+                "on_strong": 0.7416
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.0375,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8515,
+                "on_strong": 0.7416
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8,
+                "on_strong": 0.625
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7895,
+                "on_strong": 0.6873
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7895,
+                "on_strong": 0.6873
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0444,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7895,
+                "on_strong": 0.6873
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.008,
+                "on_fair_or_strong": 0.9667,
+                "on_strong": 0.94
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.024,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9667,
+                "on_strong": 0.94
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.096,
+                "off_queries": 125,
+                "off_strong": 0.008,
+                "on_fair_or_strong": 0.9667,
+                "on_strong": 0.94
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7629,
+                "on_strong": 0.6701
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7629,
+                "on_strong": 0.6701
+              }
+            },
+            "fair": {
+              "score": 0.7366,
+              "z": 0.0,
+              "z_part": false,
+              "z_per_ln": 0.0
+            },
+            "fair_level": 0.972,
+            "family": "cosine_only",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0,
+                "queries": 15,
+                "strong_only_rule_fires": 0.0667,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.9333
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.8
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 1.0,
+                "queries": 1406,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9814,
+                "queries": 323,
+                "strong_only_rule_fires": 0.9969,
+                "top_fair_or_strong": 0.0186,
+                "top_strong": 0.0031
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.225,
+                "queries": 40,
+                "strong_only_rule_fires": 0.5,
+                "target_fair_or_strong": 0.725,
+                "target_strong": 0.5
+              },
+              "tail": {
+                "no_strong_match_fires": 0.2,
+                "queries": 10,
+                "strong_only_rule_fires": 0.4,
+                "target_fair_or_strong": 0.5,
+                "target_strong": 0.3
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 1.0
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "strong": {
+              "score": 0.7575,
+              "z": 0.0,
+              "z_part": false,
+              "z_per_ln": 0.0
+            },
+            "strong_level": 0.997,
+            "worst_off_topic_fair_or_strong": 0.096,
+            "worst_off_topic_strong": 0.008
+          },
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.0125,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7123,
+                "on_strong": 0.147
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.0625,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9286,
+                "on_strong": 0.3133
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3926,
+                "on_strong": 0.0657
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.029,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8,
+                "on_strong": 0.2125
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3746,
+                "on_strong": 0.0774
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6594,
+                "on_strong": 0.1827
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0667,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.2724,
+                "on_strong": 0.0526
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.096,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7233,
+                "on_strong": 0.27
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.048,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9,
+                "on_strong": 0.4067
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.032,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.59,
+                "on_strong": 0.1933
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4433,
+                "on_strong": 0.1237
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.567,
+                "on_strong": 0.1856
+              }
+            },
+            "fair": {
+              "score": 0.0,
+              "z": -1.1003,
+              "z_part": true,
+              "z_per_ln": 1.0579
+            },
+            "fair_level": 0.897,
+            "family": "z_only",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0,
+                "queries": 15,
+                "strong_only_rule_fires": 0.4667,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.5333
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 0.6,
+                "target_fair_or_strong": 0.9,
+                "target_strong": 0.4
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.9922,
+                "queries": 1406,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0078,
+                "top_strong": 0.0
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.8452,
+                "queries": 323,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.1548,
+                "top_strong": 0.0
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9733,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0267,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 0.9556,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0444,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.175,
+                "queries": 40,
+                "strong_only_rule_fires": 0.975,
+                "target_fair_or_strong": 0.75,
+                "target_strong": 0.025
+              },
+              "tail": {
+                "no_strong_match_fires": 0.2,
+                "queries": 10,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 0.5,
+                "target_strong": 0.0
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.8
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "strong": {
+              "score": 0.0,
+              "z": 5.302,
+              "z_part": true,
+              "z_per_ln": 0.5996
+            },
+            "strong_level": 0.978,
+            "worst_off_topic_fair_or_strong": 0.096,
+            "worst_off_topic_strong": 0.0
+          }
+        ],
+        "bootstrap_seed": 1011,
+        "cache": {
+          "file": "<cache>/floor-calibration/<key>.vec",
+          "offline": true,
+          "records": 52536,
+          "records_read": 52536,
+          "regenerate": "floor-calibration --embedder <instance> --cache <cache> --out <dir> --commit <sha> (the floors run fills the cache); without the cache this tool cannot run again, and the committed cuts stay as they are",
+          "sha256": "d3573e948e495394dfa255ff4aa258933da003c525bd565cff670838b8c288f5",
+          "texts_sent": 0
+        },
+        "command": "floor-calibration --strength --embedder gemma --cache <cache> --out docs/project/benchmarks/floor-calibration --commit c5485aaa8b85a895c0843fec2287339fe7310119",
+        "corpora": {
+          "arguana": {
+            "documents": 8674,
+            "held": 47,
+            "off_topic_kept": [
+              "fixture"
+            ],
+            "on_topic_queries": 1401,
+            "source": {
+              "sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/arguana.zip"
+            },
+            "whole_node_rows": 8674
+          },
+          "fixture": {
+            "documents": 300,
+            "held": 0,
+            "off_topic_kept": [
+              "scifact",
+              "written"
+            ],
+            "on_topic_queries": 80,
+            "source": {
+              "path": "docs/project/benchmarks/embed-bakeoff"
+            },
+            "whole_node_rows": 300
+          },
+          "nfcorpus": {
+            "documents": 3633,
+            "held": 22,
+            "off_topic_kept": [
+              "written"
+            ],
+            "on_topic_queries": 323,
+            "source": {
+              "sha256": "efe5be03f8c5b86a5870102d0599d227c8c6e2484328e68c6522560385671b0b",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip"
+            },
+            "whole_node_rows": 3633
+          },
+          "scifact": {
+            "documents": 5183,
+            "held": 34,
+            "off_topic_kept": [
+              "fixture",
+              "written"
+            ],
+            "on_topic_queries": 300,
+            "source": {
+              "sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+            },
+            "whole_node_rows": 5183
+          },
+          "tight": {
+            "documents": 1000,
+            "held": 0,
+            "off_topic_kept": [
+              "written"
+            ],
+            "on_topic_queries": 97,
+            "source": {
+              "from": "nfcorpus"
+            },
+            "whole_node_rows": 1000
+          }
+        },
+        "cuts": {
+          "fair_score": 0.7117,
+          "fair_z": -1.5398,
+          "fair_z_per_ln": 1.1069,
+          "max_n_measured": 8674,
+          "min_population": 100,
+          "strong_score": 0.7382,
+          "strong_z": 5.302,
+          "strong_z_per_ln": 0.5996,
+          "z_part": true
+        },
+        "deployment": null,
+        "fair_level": 0.895,
+        "fair_rate": 0.1,
+        "floors_run": "fc-2026-11-11-cdc1965",
+        "instance_kind": "local",
+        "levels": [
+          300,
+          2000,
+          20000
+        ],
+        "max_n_note": "labels stop (null, and the space does not count toward no_strong_match) when more than 2 x max_n_measured nodes are searched in the space, until a larger corpus is measured (follow-up: a 57k corpus such as FiQA sampled at 20k and 50k)",
+        "min_population": {
+          "ladder": [
+            {
+              "flip_rate": 0.1261,
+              "half_gap": 2.8368,
+              "labels": 8500,
+              "n": 10,
+              "z_halfwidth_p50": 11.1741,
+              "z_halfwidth_p90": 71.1506
+            },
+            {
+              "flip_rate": 0.1235,
+              "half_gap": 2.734,
+              "labels": 8500,
+              "n": 15,
+              "z_halfwidth_p50": 4.2146,
+              "z_halfwidth_p90": 13.6928
+            },
+            {
+              "flip_rate": 0.0966,
+              "half_gap": 2.661,
+              "labels": 8500,
+              "n": 20,
+              "z_halfwidth_p50": 3.4852,
+              "z_halfwidth_p90": 10.5037
+            },
+            {
+              "flip_rate": 0.082,
+              "half_gap": 2.5582,
+              "labels": 8500,
+              "n": 30,
+              "z_halfwidth_p50": 2.5514,
+              "z_halfwidth_p90": 5.9277
+            },
+            {
+              "flip_rate": 0.0839,
+              "half_gap": 2.4286,
+              "labels": 8500,
+              "n": 50,
+              "z_halfwidth_p50": 1.7176,
+              "z_halfwidth_p90": 3.6588
+            },
+            {
+              "flip_rate": 0.0729,
+              "half_gap": 2.3258,
+              "labels": 8500,
+              "n": 75,
+              "z_halfwidth_p50": 1.2712,
+              "z_halfwidth_p90": 2.6254
+            },
+            {
+              "flip_rate": 0.0748,
+              "half_gap": 2.2528,
+              "labels": 8500,
+              "n": 100,
+              "z_halfwidth_p50": 1.1112,
+              "z_halfwidth_p90": 2.1936
+            },
+            {
+              "flip_rate": 0.0715,
+              "half_gap": 2.15,
+              "labels": 8500,
+              "n": 150,
+              "z_halfwidth_p50": 0.8851,
+              "z_halfwidth_p90": 1.6822
+            },
+            {
+              "flip_rate": 0.0468,
+              "half_gap": 2.077,
+              "labels": 8500,
+              "n": 200,
+              "z_halfwidth_p50": 0.7666,
+              "z_halfwidth_p90": 1.4984
+            },
+            {
+              "flip_rate": 0.0484,
+              "half_gap": 1.9741,
+              "labels": 8500,
+              "n": 300,
+              "z_halfwidth_p50": 0.6031,
+              "z_halfwidth_p90": 1.106
+            },
+            {
+              "flip_rate": 0.0477,
+              "half_gap": 1.8446,
+              "labels": 6500,
+              "n": 500,
+              "z_halfwidth_p50": 0.515,
+              "z_halfwidth_p90": 0.8762
+            }
+          ],
+          "min_population": 100,
+          "queries_per_corpus": 40,
+          "resamples": 25
+        },
+        "off_topic_pairs_dropped": [
+          {
+            "corpus": "scifact",
+            "queries": "nfcorpus",
+            "spot_check": "both biomedical and nutrition science"
+          },
+          {
+            "corpus": "scifact",
+            "queries": "arguana",
+            "spot_check": "health debates (organ donation, vegetarianism, obesity, HIV) meet their papers"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "scifact",
+            "spot_check": "both biomedical and nutrition science"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "arguana",
+            "spot_check": "diet debates (vegetarianism, GM food, fat tax) meet nutrition papers"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "fixture",
+            "spot_check": "food-safety questions meet food microbiology and pesticide papers"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "scifact",
+            "spot_check": "claims on policy subjects (one-child policy, open access, obesity) meet debates on them"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "nfcorpus",
+            "spot_check": "nutrition topics (trans fats, junk food, smoking) meet debates on them"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "written",
+            "spot_check": "sport and history questions (chess, cricket, the Roman Empire) meet debates on the same subjects"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "nfcorpus",
+            "spot_check": "food topics (shelf life, sweeteners, supplier risk) meet the food-plant notes"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "arguana",
+            "spot_check": "labelling and whistleblowing debates meet the food-plant notes on them"
+          },
+          {
+            "corpus": "tight",
+            "queries": "scifact",
+            "spot_check": "biomedical claims meet the nutrition cluster"
+          },
+          {
+            "corpus": "tight",
+            "queries": "arguana",
+            "spot_check": "diet debates meet the nutrition cluster"
+          },
+          {
+            "corpus": "tight",
+            "queries": "fixture",
+            "spot_check": "food-safety questions (pesticides, additives, organic produce) meet the nutrition cluster"
+          }
+        ],
+        "off_topic_pairs_kept": [
+          {
+            "corpus": "scifact",
+            "queries": "fixture",
+            "spot_check": "biomedical claims against food-plant, delivery, design and customer questions; the nearest share a word-level theme (allergy, bacteria, vision) but answer another question"
+          },
+          {
+            "corpus": "scifact",
+            "queries": "written",
+            "spot_check": "8 of 45 past the floor; nearest are cell biology papers on a shared word (migration, thermogenesis, honey bee genomics against a waggle-dance question)"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "written",
+            "spot_check": "4 of 45 past the floor; nearest share one word (whales and tuna, herding farms and Campylobacter)"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "fixture",
+            "spot_check": "debates against operational questions; nearest are unrelated arguments, one food-labelling policy debate against an allergen label review task"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "scifact",
+            "spot_check": "scientific claims against the four fixture domains; nearest are design-studio notes matched on a word (fidelity, warm-ups)"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "written",
+            "spot_check": "3 of 45 past the floor; nearest share one word (workshop, scoring)"
+          },
+          {
+            "corpus": "tight",
+            "queries": "written",
+            "spot_check": "0 of 45 past the floor"
+          }
+        ],
+        "offtopic_rows": null,
+        "reproducibility": {
+          "against_recorded": {
+            "documents": 900,
+            "int8_components_differing": 168,
+            "largest_cosine_change": 0.002293,
+            "largest_int8_step": 1,
+            "note": "the committed query rows were recorded on 2026-11-11 by another umx build on the same machine and backend",
+            "rows_compared": 20,
+            "rows_differing": 19
+          },
+          "backend": "metal",
+          "hosted": "not measured",
+          "int8_components_differing": 0,
+          "queries": 20,
+          "rows_compared": 180,
+          "rows_differing": 0,
+          "runs": 10
+        },
+        "rule": "strong: z >= strong_z + strong_z_per_ln * ln N (when z_part) AND cosine >= strong_score; fair: the same with the fair cuts; else weak. z = (cosine - median) / MAD over every searched node's whole-node cosine. The cuts at a quantile level L of the kept off-topic top hits (the best whole-node cosine among nodes past the floor): the z line a least-squares fit on ln N through each (corpus, N) cell's L-quantile, raised over every cell, and the pooled cosine L-quantile; strong the loosest L (0.001 steps from 0.999) at which no cell's off-topic top hits are strong more than strong_rate, fair the loosest at which none are fair or strong more than 1 in 10. MIN_POPULATION: the smallest N from which every larger rung's p90 bootstrap 90% half-width of z is at most half the gap between the strong and fair z cuts at that N.",
+        "run": "sc-2026-11-19-c5485aa",
+        "run_date": "2026-11-19",
+        "sample_seed": 1010,
+        "search_floor": 0.7101,
+        "shipped": {
+          "cells": {
+            "arguana@2000": {
+              "off_fair_or_strong": 0.0125,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.7259,
+              "on_strong": 0.147
+            },
+            "arguana@300": {
+              "off_fair_or_strong": 0.0125,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.9051,
+              "on_strong": 0.3119
+            },
+            "arguana@8674": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.3919,
+              "on_strong": 0.0657
+            },
+            "fixture@300": {
+              "off_fair_or_strong": 0.0029,
+              "off_queries": 345,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.825,
+              "on_strong": 0.2125
+            },
+            "nfcorpus@2000": {
+              "off_fair_or_strong": 0.0222,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.387,
+              "on_strong": 0.0774
+            },
+            "nfcorpus@300": {
+              "off_fair_or_strong": 0.0222,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.6811,
+              "on_strong": 0.1827
+            },
+            "nfcorpus@3633": {
+              "off_fair_or_strong": 0.0667,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.2724,
+              "on_strong": 0.0526
+            },
+            "scifact@2000": {
+              "off_fair_or_strong": 0.096,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.73,
+              "on_strong": 0.27
+            },
+            "scifact@300": {
+              "off_fair_or_strong": 0.056,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.91,
+              "on_strong": 0.4067
+            },
+            "scifact@5183": {
+              "off_fair_or_strong": 0.032,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.59,
+              "on_strong": 0.1933
+            },
+            "tight@1000": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.4845,
+              "on_strong": 0.1237
+            },
+            "tight@300": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.5876,
+              "on_strong": 0.1856
+            }
+          },
+          "fair": {
+            "score": 0.7117,
+            "z": -1.5398,
+            "z_part": true,
+            "z_per_ln": 1.1069
+          },
+          "fixture": {
+            "keyword": {
+              "no_strong_match_fires": 0.0,
+              "queries": 15,
+              "strong_only_rule_fires": 0.4667,
+              "target_fair_or_strong": 1.0,
+              "target_strong": 0.5333
+            },
+            "near_miss": {
+              "no_strong_match_fires": 0.0,
+              "queries": 10,
+              "strong_only_rule_fires": 0.6,
+              "target_fair_or_strong": 0.9,
+              "target_strong": 0.4
+            },
+            "off_topic_arguana": {
+              "kept": false,
+              "no_strong_match_fires": 0.9979,
+              "queries": 1406,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0021,
+              "top_strong": 0.0
+            },
+            "off_topic_nfcorpus": {
+              "kept": false,
+              "no_strong_match_fires": 0.9319,
+              "queries": 323,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0681,
+              "top_strong": 0.0
+            },
+            "off_topic_scifact": {
+              "kept": true,
+              "no_strong_match_fires": 0.9967,
+              "queries": 300,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0033,
+              "top_strong": 0.0
+            },
+            "off_topic_written": {
+              "kept": true,
+              "no_strong_match_fires": 1.0,
+              "queries": 45,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0,
+              "top_strong": 0.0
+            },
+            "paraphrase": {
+              "no_strong_match_fires": 0.175,
+              "queries": 40,
+              "strong_only_rule_fires": 0.975,
+              "target_fair_or_strong": 0.8,
+              "target_strong": 0.025
+            },
+            "tail": {
+              "no_strong_match_fires": 0.2,
+              "queries": 10,
+              "strong_only_rule_fires": 1.0,
+              "target_fair_or_strong": 0.5,
+              "target_strong": 0.0
+            },
+            "title": {
+              "no_strong_match_fires": 0.0,
+              "queries": 5,
+              "strong_only_rule_fires": 0.0,
+              "target_fair_or_strong": 1.0,
+              "target_strong": 0.8
+            }
+          },
+          "strong": {
+            "score": 0.7382,
+            "z": 5.302,
+            "z_part": true,
+            "z_per_ln": 0.5996
+          },
+          "worst_off_topic_fair_or_strong": 0.096,
+          "worst_off_topic_strong": 0.0
+        },
+        "spot_check": "each candidate pair's 20 highest off-topic top hits read side by side (`--spot <file>`, a scratch file never committed: it holds corpus text); kept only when none is on topic",
+        "strong_level": 0.978,
+        "strong_rate": 0.01,
+        "tight": {
+          "base": "nfcorpus",
+          "base_pairs_at_search_floor": 0.8518,
+          "base_pairs_at_similar_floor": 0.0244,
+          "chosen": "the documents nearest (whole-node cosine) to the base document with the most neighbours at or above the similar_to floor",
+          "documents": 1000,
+          "pairs_at_search_floor": 1.0,
+          "pairs_at_similar_floor": 0.1629,
+          "seed": "MED-2149",
+          "seed_neighbours_at_similar_floor": 668
+        },
+        "tool": "umx-bench floor-calibration --strength (crates/umx-bench/src/bin/floor-calibration/strength.rs)",
+        "tool_at": "the PR head that adds or changes this tool (its commit is recorded after merge); umx_commit is the base it was built on, which does not hold the tool",
+        "umx_commit": "c5485aaa8b85a895c0843fec2287339fe7310119",
+        "written_off_topic": true,
+        "written_off_topic_rows": {
+          "file": "docs/project/benchmarks/embed-bakeoff/vectors/<model>_<dims>[+p<n>].offtopic.rows.tsv",
+          "sha256": "1913a5604ad85ef02a2ecba9c2917bb6d26834033c54c9c849ca4be265f29c8a"
+        },
+        "z_settling": {
+          "caveat": "the joint rule's median is 0 in these cells too, because strong is rare by design at the 1-in-100 off-topic rate; the table shows z prevents a flood of strong hits in tight graphs, not that z makes strong common; cosine-only has higher on-topic strong rates and floods tight graphs",
+          "fixture@300": {
+            "cosine_only": {
+              "p50": 1.0,
+              "p90": 2.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 80
+          },
+          "scifact@300": {
+            "cosine_only": {
+              "p50": 2.0,
+              "p90": 9.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 300
+          },
+          "tight@1000": {
+            "cosine_only": {
+              "p50": 12.0,
+              "p90": 231.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 97
+          },
+          "tight@300": {
+            "cosine_only": {
+              "p50": 4.0,
+              "p90": 65.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 97
+          }
+        },
+        "rows_from": {
+          "beir_and_fixture": "the floors run fc-2026-11-11-cdc1965 (2026-11-11), deployment none (local)",
+          "written_off_topic": "docs/project/benchmarks/embed-bakeoff/vectors/<model>_<dims>[+p<n>].offtopic.rows.provenance.md"
+        }
+      },
       "tasks": {
         "arguana": {
           "at_0": {
@@ -403,6 +1561,1736 @@
       "search_floor_stop_p50": 0.2758,
       "similar_floor": 0.6133,
       "smoke": false,
+      "strength": {
+        "ablation": [
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.1,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8915,
+                "on_strong": 0.5025
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.05,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9857,
+                "on_strong": 0.7552
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.075,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6809,
+                "on_strong": 0.3019
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0029,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9,
+                "on_strong": 0.45
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5015,
+                "on_strong": 0.2291
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6285,
+                "on_strong": 0.3096
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4303,
+                "on_strong": 0.1765
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.62,
+                "on_strong": 0.27
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.008,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8333,
+                "on_strong": 0.4467
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.024,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.49,
+                "on_strong": 0.1933
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3659,
+                "on_strong": 0.1707
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4756,
+                "on_strong": 0.2195
+              }
+            },
+            "fair": {
+              "score": 0.409,
+              "z": -0.797,
+              "z_part": true,
+              "z_per_ln": 0.8843
+            },
+            "fair_level": 0.876,
+            "family": "joint",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0,
+                "queries": 15,
+                "strong_only_rule_fires": 0.3333,
+                "target_fair_or_strong": 0.9333,
+                "target_strong": 0.6667
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 0.3,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.7
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.968,
+                "queries": 1406,
+                "strong_only_rule_fires": 0.9993,
+                "top_fair_or_strong": 0.032,
+                "top_strong": 0.0007
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9443,
+                "queries": 323,
+                "strong_only_rule_fires": 0.9969,
+                "top_fair_or_strong": 0.0557,
+                "top_strong": 0.0031
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9967,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0033,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.05,
+                "queries": 40,
+                "strong_only_rule_fires": 0.7,
+                "target_fair_or_strong": 0.95,
+                "target_strong": 0.3
+              },
+              "tail": {
+                "no_strong_match_fires": 0.2,
+                "queries": 10,
+                "strong_only_rule_fires": 0.4,
+                "target_fair_or_strong": 0.5,
+                "target_strong": 0.2
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 1.0
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "rejected_by": {
+              "arguana@2000": {
+                "both": 20,
+                "cosine_only": 1,
+                "z_only": 4
+              },
+              "arguana@300": {
+                "both": 10,
+                "cosine_only": 1,
+                "z_only": 1
+              },
+              "arguana@8674": {
+                "both": 37,
+                "cosine_only": 0,
+                "z_only": 6
+              },
+              "fixture@300": {
+                "both": 1,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@2000": {
+                "both": 1,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@300": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@3633": {
+                "both": 1,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "scifact@2000": {
+                "both": 17,
+                "cosine_only": 0,
+                "z_only": 2
+              },
+              "scifact@300": {
+                "both": 7,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "scifact@5183": {
+                "both": 21,
+                "cosine_only": 0,
+                "z_only": 2
+              },
+              "tight@1000": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "tight@300": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              }
+            },
+            "strong": {
+              "score": 0.4728,
+              "z": 3.3557,
+              "z_part": true,
+              "z_per_ln": 0.6124
+            },
+            "strong_level": 0.985,
+            "worst_off_topic_fair_or_strong": 0.1,
+            "worst_off_topic_strong": 0.0
+          },
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.0625,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9986,
+                "on_strong": 0.9921
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.025,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9986,
+                "on_strong": 0.9921
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.1,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9986,
+                "on_strong": 0.9921
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0029,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8625,
+                "on_strong": 0.8
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.548,
+                "on_strong": 0.4644
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.548,
+                "on_strong": 0.4644
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.548,
+                "on_strong": 0.4644
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.016,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8767,
+                "on_strong": 0.8133
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8767,
+                "on_strong": 0.8133
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.016,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8767,
+                "on_strong": 0.8133
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5854,
+                "on_strong": 0.5122
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5854,
+                "on_strong": 0.5122
+              }
+            },
+            "fair": {
+              "score": 0.4692,
+              "z": 0.0,
+              "z_part": false,
+              "z_per_ln": 0.0
+            },
+            "fair_level": 0.983,
+            "family": "cosine_only",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0,
+                "queries": 15,
+                "strong_only_rule_fires": 0.1333,
+                "target_fair_or_strong": 0.9333,
+                "target_strong": 0.8667
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 1.0
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.9979,
+                "queries": 1406,
+                "strong_only_rule_fires": 0.9993,
+                "top_fair_or_strong": 0.0021,
+                "top_strong": 0.0007
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9845,
+                "queries": 323,
+                "strong_only_rule_fires": 0.9907,
+                "top_fair_or_strong": 0.0155,
+                "top_strong": 0.0093
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9967,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0033,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.075,
+                "queries": 40,
+                "strong_only_rule_fires": 0.175,
+                "target_fair_or_strong": 0.925,
+                "target_strong": 0.825
+              },
+              "tail": {
+                "no_strong_match_fires": 0.1,
+                "queries": 10,
+                "strong_only_rule_fires": 0.5,
+                "target_fair_or_strong": 0.3,
+                "target_strong": 0.3
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 1.0
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "strong": {
+              "score": 0.514,
+              "z": 0.0,
+              "z_part": false,
+              "z_per_ln": 0.0
+            },
+            "strong_level": 0.999,
+            "worst_off_topic_fair_or_strong": 0.1,
+            "worst_off_topic_strong": 0.0
+          },
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.1,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8822,
+                "on_strong": 0.3255
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.0625,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9786,
+                "on_strong": 0.5567
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.0875,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6959,
+                "on_strong": 0.2134
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0029,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.875,
+                "on_strong": 0.25
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5046,
+                "on_strong": 0.1424
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6471,
+                "on_strong": 0.257
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4458,
+                "on_strong": 0.1207
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6067,
+                "on_strong": 0.1733
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.016,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.82,
+                "on_strong": 0.29
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.024,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4867,
+                "on_strong": 0.15
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3293,
+                "on_strong": 0.0854
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4756,
+                "on_strong": 0.122
+              }
+            },
+            "fair": {
+              "score": 0.0,
+              "z": 0.021,
+              "z_part": true,
+              "z_per_ln": 0.7898
+            },
+            "fair_level": 0.888,
+            "family": "z_only",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0667,
+                "queries": 15,
+                "strong_only_rule_fires": 0.6,
+                "target_fair_or_strong": 0.8667,
+                "target_strong": 0.4
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.1,
+                "queries": 10,
+                "strong_only_rule_fires": 0.7,
+                "target_fair_or_strong": 0.9,
+                "target_strong": 0.3
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.9395,
+                "queries": 1406,
+                "strong_only_rule_fires": 0.9993,
+                "top_fair_or_strong": 0.0605,
+                "top_strong": 0.0007
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9257,
+                "queries": 323,
+                "strong_only_rule_fires": 0.9969,
+                "top_fair_or_strong": 0.0743,
+                "top_strong": 0.0031
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9967,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0033,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.05,
+                "queries": 40,
+                "strong_only_rule_fires": 0.875,
+                "target_fair_or_strong": 0.95,
+                "target_strong": 0.125
+              },
+              "tail": {
+                "no_strong_match_fires": 0.3,
+                "queries": 10,
+                "strong_only_rule_fires": 0.8,
+                "target_fair_or_strong": 0.5,
+                "target_strong": 0.1
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 1.0
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "strong": {
+              "score": 0.0,
+              "z": 5.2077,
+              "z_part": true,
+              "z_per_ln": 0.4624
+            },
+            "strong_level": 0.988,
+            "worst_off_topic_fair_or_strong": 0.1,
+            "worst_off_topic_strong": 0.0
+          }
+        ],
+        "bootstrap_seed": 1011,
+        "cache": {
+          "file": "<cache>/floor-calibration/<key>.vec",
+          "offline": true,
+          "records": 52549,
+          "records_read": 52536,
+          "regenerate": "floor-calibration --embedder <instance> --cache <cache> --out <dir> --commit <sha> (the floors run fills the cache); without the cache this tool cannot run again, and the committed cuts stay as they are",
+          "sha256": "694a262ac5e9583102b32c6d938afc65a7a22736487412ec55ccb13954d98a8e",
+          "texts_sent": 0
+        },
+        "command": "floor-calibration --strength --embedder large --cache <cache> --out docs/project/benchmarks/floor-calibration --commit c5485aaa8b85a895c0843fec2287339fe7310119",
+        "corpora": {
+          "arguana": {
+            "documents": 8674,
+            "held": 0,
+            "off_topic_kept": [
+              "fixture"
+            ],
+            "on_topic_queries": 1401,
+            "source": {
+              "sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/arguana.zip"
+            },
+            "whole_node_rows": 8674
+          },
+          "fixture": {
+            "documents": 300,
+            "held": 0,
+            "off_topic_kept": [
+              "scifact",
+              "written"
+            ],
+            "on_topic_queries": 80,
+            "source": {
+              "path": "docs/project/benchmarks/embed-bakeoff"
+            },
+            "whole_node_rows": 300
+          },
+          "nfcorpus": {
+            "documents": 3633,
+            "held": 0,
+            "off_topic_kept": [
+              "written"
+            ],
+            "on_topic_queries": 323,
+            "source": {
+              "sha256": "efe5be03f8c5b86a5870102d0599d227c8c6e2484328e68c6522560385671b0b",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip"
+            },
+            "whole_node_rows": 3633
+          },
+          "scifact": {
+            "documents": 5183,
+            "held": 0,
+            "off_topic_kept": [
+              "fixture",
+              "written"
+            ],
+            "on_topic_queries": 300,
+            "source": {
+              "sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+            },
+            "whole_node_rows": 5183
+          },
+          "tight": {
+            "documents": 1000,
+            "held": 0,
+            "off_topic_kept": [
+              "written"
+            ],
+            "on_topic_queries": 82,
+            "source": {
+              "from": "nfcorpus"
+            },
+            "whole_node_rows": 1000
+          }
+        },
+        "cuts": {
+          "fair_score": 0.409,
+          "fair_z": -0.797,
+          "fair_z_per_ln": 0.8843,
+          "max_n_measured": 8674,
+          "min_population": 200,
+          "strong_score": 0.4728,
+          "strong_z": 3.3557,
+          "strong_z_per_ln": 0.6124,
+          "z_part": true
+        },
+        "deployment": "text-embedding-3-large",
+        "deployment_check": {
+          "against": "the vectors the floors run fc-2026-11-11-cdc1965 cached for the same texts, through the deployment it used",
+          "date": "2026-11-19",
+          "deployment_now": "text-embedding-3-large",
+          "estimated_tokens_sent": 4305,
+          "max_int8_step": 3,
+          "min_cosine": 0.999659,
+          "pass": true,
+          "per_text": [
+            {
+              "components_differing": 20,
+              "cosine": 0.999996,
+              "int8_cosine": 0.999976,
+              "max_int8_step": 1,
+              "text": "query-01"
+            },
+            {
+              "components_differing": 8,
+              "cosine": 0.999999,
+              "int8_cosine": 0.99999,
+              "max_int8_step": 1,
+              "text": "query-02"
+            },
+            {
+              "components_differing": 4,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999994,
+              "max_int8_step": 1,
+              "text": "query-03"
+            },
+            {
+              "components_differing": 7,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999992,
+              "max_int8_step": 1,
+              "text": "query-04"
+            },
+            {
+              "components_differing": 5,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999994,
+              "max_int8_step": 1,
+              "text": "query-05"
+            },
+            {
+              "components_differing": 6,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999994,
+              "max_int8_step": 1,
+              "text": "query-06"
+            },
+            {
+              "components_differing": 10,
+              "cosine": 0.999999,
+              "int8_cosine": 0.99999,
+              "max_int8_step": 1,
+              "text": "query-07"
+            },
+            {
+              "components_differing": 80,
+              "cosine": 0.999942,
+              "int8_cosine": 0.999895,
+              "max_int8_step": 1,
+              "text": "query-08"
+            },
+            {
+              "components_differing": 3,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999997,
+              "max_int8_step": 1,
+              "text": "query-09"
+            },
+            {
+              "components_differing": 146,
+              "cosine": 0.999659,
+              "int8_cosine": 0.999577,
+              "max_int8_step": 3,
+              "text": "query-10"
+            },
+            {
+              "components_differing": 7,
+              "cosine": 0.999999,
+              "int8_cosine": 0.99999,
+              "max_int8_step": 1,
+              "text": "node-01"
+            },
+            {
+              "components_differing": 44,
+              "cosine": 0.999987,
+              "int8_cosine": 0.999948,
+              "max_int8_step": 1,
+              "text": "node-02"
+            },
+            {
+              "components_differing": 5,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999986,
+              "max_int8_step": 1,
+              "text": "node-03"
+            },
+            {
+              "components_differing": 11,
+              "cosine": 0.999999,
+              "int8_cosine": 0.99999,
+              "max_int8_step": 1,
+              "text": "node-04"
+            },
+            {
+              "components_differing": 37,
+              "cosine": 0.99998,
+              "int8_cosine": 0.999956,
+              "max_int8_step": 1,
+              "text": "node-05"
+            },
+            {
+              "components_differing": 8,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999991,
+              "max_int8_step": 1,
+              "text": "node-06"
+            },
+            {
+              "components_differing": 88,
+              "cosine": 0.999959,
+              "int8_cosine": 0.999914,
+              "max_int8_step": 2,
+              "text": "node-07"
+            },
+            {
+              "components_differing": 5,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999991,
+              "max_int8_step": 1,
+              "text": "node-08"
+            },
+            {
+              "components_differing": 43,
+              "cosine": 0.999975,
+              "int8_cosine": 0.999921,
+              "max_int8_step": 1,
+              "text": "node-09"
+            },
+            {
+              "components_differing": 99,
+              "cosine": 0.999961,
+              "int8_cosine": 0.999915,
+              "max_int8_step": 2,
+              "text": "node-10"
+            }
+          ],
+          "rule": "pass when every cosine >= 0.999 (embeddings expert, 2026-11-20: the cosine bar alone; hosted int8 rows may differ by a few steps from GPU nondeterminism)",
+          "texts": "s03 fixture queries q-001 to q-010 (Query) and the whole-node texts of nodes reg-001 to reg-010 (Document); nodes.jsonl and queries.jsonl pinned by sha256",
+          "texts_sent": 20
+        },
+        "deployment_check_repeat": {
+          "date": "2026-11-19",
+          "deployment_now": "text-embedding-3-large",
+          "estimated_tokens_sent": 8610,
+          "passes": 2,
+          "per_text": [
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 19,
+                "cosine": 0.999996,
+                "int8_cosine": 0.999978,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 19,
+                "cosine": 0.999996,
+                "int8_cosine": 0.999978,
+                "max_int8_step": 1
+              },
+              "text": "query-01"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 10,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999988,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 10,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999988,
+                "max_int8_step": 1
+              },
+              "text": "query-02"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 32,
+                "cosine": 0.999993,
+                "int8_cosine": 0.999957,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 32,
+                "cosine": 0.999993,
+                "int8_cosine": 0.999957,
+                "max_int8_step": 1
+              },
+              "text": "query-03"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 4,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999995,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 4,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999995,
+                "max_int8_step": 1
+              },
+              "text": "query-04"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 7,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999992,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 7,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999992,
+                "max_int8_step": 1
+              },
+              "text": "query-05"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 0.999999,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 7,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999993,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 7,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999993,
+                "max_int8_step": 1
+              },
+              "text": "query-06"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 13,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999987,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 13,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999987,
+                "max_int8_step": 1
+              },
+              "text": "query-07"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 12,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999984,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 12,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999984,
+                "max_int8_step": 1
+              },
+              "text": "query-08"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 4,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999996,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 4,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999996,
+                "max_int8_step": 1
+              },
+              "text": "query-09"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 7,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999986,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 7,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999986,
+                "max_int8_step": 1
+              },
+              "text": "query-10"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 89,
+                "cosine": 0.999952,
+                "int8_cosine": 0.999881,
+                "max_int8_step": 2
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 90,
+                "cosine": 0.999951,
+                "int8_cosine": 0.999883,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 4,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999994,
+                "max_int8_step": 1
+              },
+              "text": "node-01"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 36,
+                "cosine": 0.999991,
+                "int8_cosine": 0.999953,
+                "max_int8_step": 1
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 34,
+                "cosine": 0.99999,
+                "int8_cosine": 0.99996,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 48,
+                "cosine": 0.99998,
+                "int8_cosine": 0.999942,
+                "max_int8_step": 1
+              },
+              "text": "node-02"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 73,
+                "cosine": 0.999904,
+                "int8_cosine": 0.999805,
+                "max_int8_step": 1
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 5,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999986,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 74,
+                "cosine": 0.999905,
+                "int8_cosine": 0.999803,
+                "max_int8_step": 1
+              },
+              "text": "node-03"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 10,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999991,
+                "max_int8_step": 1
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 11,
+                "cosine": 0.999999,
+                "int8_cosine": 0.99999,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 5,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999995,
+                "max_int8_step": 1
+              },
+              "text": "node-04"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 0.999999,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 37,
+                "cosine": 0.99998,
+                "int8_cosine": 0.999956,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 37,
+                "cosine": 0.99998,
+                "int8_cosine": 0.999956,
+                "max_int8_step": 1
+              },
+              "text": "node-05"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 0.999999,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 8,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999991,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 8,
+                "cosine": 0.999999,
+                "int8_cosine": 0.999991,
+                "max_int8_step": 1
+              },
+              "text": "node-06"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 0.999999,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 88,
+                "cosine": 0.999959,
+                "int8_cosine": 0.999914,
+                "max_int8_step": 2
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 88,
+                "cosine": 0.999959,
+                "int8_cosine": 0.999914,
+                "max_int8_step": 2
+              },
+              "text": "node-07"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 15,
+                "cosine": 0.999997,
+                "int8_cosine": 0.999974,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 15,
+                "cosine": 0.999997,
+                "int8_cosine": 0.999974,
+                "max_int8_step": 1
+              },
+              "text": "node-08"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 1.0,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 47,
+                "cosine": 0.999976,
+                "int8_cosine": 0.999913,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 47,
+                "cosine": 0.999976,
+                "int8_cosine": 0.999913,
+                "max_int8_step": 1
+              },
+              "text": "node-09"
+            },
+            {
+              "a_vs_b": {
+                "components_differing": 0,
+                "cosine": 1.0,
+                "int8_cosine": 0.999999,
+                "max_int8_step": 0
+              },
+              "run1_vs_floors_run": {
+                "components_differing": 51,
+                "cosine": 0.999982,
+                "int8_cosine": 0.99995,
+                "max_int8_step": 1
+              },
+              "run2_vs_floors_run": {
+                "components_differing": 51,
+                "cosine": 0.999982,
+                "int8_cosine": 0.99995,
+                "max_int8_step": 1
+              },
+              "text": "node-10"
+            }
+          ],
+          "run_to_run": {
+            "bit_identical": false,
+            "max_int8_step": 2,
+            "min_cosine": 0.999904
+          },
+          "texts": "the same pinned s03 fixture texts as deployment_check",
+          "texts_sent": 40
+        },
+        "fair_level": 0.876,
+        "fair_rate": 0.1,
+        "floors_run": "fc-2026-11-11-cdc1965",
+        "instance_kind": "azure_openai",
+        "levels": [
+          300,
+          2000,
+          20000
+        ],
+        "max_n_note": "labels stop (null, and the space does not count toward no_strong_match) when more than 2 x max_n_measured nodes are searched in the space, until a larger corpus is measured (follow-up: a 57k corpus such as FiQA sampled at 20k and 50k)",
+        "min_population": {
+          "ladder": [
+            {
+              "flip_rate": 0.0933,
+              "half_gap": 1.7633,
+              "labels": 8500,
+              "n": 10,
+              "z_halfwidth_p50": 10.8204,
+              "z_halfwidth_p90": 62.2692
+            },
+            {
+              "flip_rate": 0.1014,
+              "half_gap": 1.7082,
+              "labels": 8500,
+              "n": 15,
+              "z_halfwidth_p50": 3.9944,
+              "z_halfwidth_p90": 10.3293
+            },
+            {
+              "flip_rate": 0.0775,
+              "half_gap": 1.6691,
+              "labels": 8500,
+              "n": 20,
+              "z_halfwidth_p50": 3.2434,
+              "z_halfwidth_p90": 8.6608
+            },
+            {
+              "flip_rate": 0.0694,
+              "half_gap": 1.614,
+              "labels": 8500,
+              "n": 30,
+              "z_halfwidth_p50": 2.4508,
+              "z_halfwidth_p90": 5.1907
+            },
+            {
+              "flip_rate": 0.0654,
+              "half_gap": 1.5445,
+              "labels": 8500,
+              "n": 50,
+              "z_halfwidth_p50": 1.5968,
+              "z_halfwidth_p90": 3.3334
+            },
+            {
+              "flip_rate": 0.0707,
+              "half_gap": 1.4894,
+              "labels": 8500,
+              "n": 75,
+              "z_halfwidth_p50": 1.1641,
+              "z_halfwidth_p90": 2.2786
+            },
+            {
+              "flip_rate": 0.0538,
+              "half_gap": 1.4503,
+              "labels": 8500,
+              "n": 100,
+              "z_halfwidth_p50": 1.0196,
+              "z_halfwidth_p90": 2.1385
+            },
+            {
+              "flip_rate": 0.0528,
+              "half_gap": 1.3952,
+              "labels": 8500,
+              "n": 150,
+              "z_halfwidth_p50": 0.8572,
+              "z_halfwidth_p90": 1.6626
+            },
+            {
+              "flip_rate": 0.0451,
+              "half_gap": 1.356,
+              "labels": 8500,
+              "n": 200,
+              "z_halfwidth_p50": 0.7354,
+              "z_halfwidth_p90": 1.3545
+            },
+            {
+              "flip_rate": 0.0445,
+              "half_gap": 1.3009,
+              "labels": 8500,
+              "n": 300,
+              "z_halfwidth_p50": 0.6307,
+              "z_halfwidth_p90": 1.0791
+            },
+            {
+              "flip_rate": 0.0326,
+              "half_gap": 1.2315,
+              "labels": 6500,
+              "n": 500,
+              "z_halfwidth_p50": 0.4794,
+              "z_halfwidth_p90": 0.8024
+            }
+          ],
+          "min_population": 200,
+          "queries_per_corpus": 40,
+          "resamples": 25
+        },
+        "off_topic_pairs_dropped": [
+          {
+            "corpus": "scifact",
+            "queries": "nfcorpus",
+            "spot_check": "both biomedical and nutrition science"
+          },
+          {
+            "corpus": "scifact",
+            "queries": "arguana",
+            "spot_check": "health debates (organ donation, vegetarianism, obesity, HIV) meet their papers"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "scifact",
+            "spot_check": "both biomedical and nutrition science"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "arguana",
+            "spot_check": "diet debates (vegetarianism, GM food, fat tax) meet nutrition papers"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "fixture",
+            "spot_check": "food-safety questions meet food microbiology and pesticide papers"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "scifact",
+            "spot_check": "claims on policy subjects (one-child policy, open access, obesity) meet debates on them"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "nfcorpus",
+            "spot_check": "nutrition topics (trans fats, junk food, smoking) meet debates on them"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "written",
+            "spot_check": "sport and history questions (chess, cricket, the Roman Empire) meet debates on the same subjects"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "nfcorpus",
+            "spot_check": "food topics (shelf life, sweeteners, supplier risk) meet the food-plant notes"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "arguana",
+            "spot_check": "labelling and whistleblowing debates meet the food-plant notes on them"
+          },
+          {
+            "corpus": "tight",
+            "queries": "scifact",
+            "spot_check": "biomedical claims meet the nutrition cluster"
+          },
+          {
+            "corpus": "tight",
+            "queries": "arguana",
+            "spot_check": "diet debates meet the nutrition cluster"
+          },
+          {
+            "corpus": "tight",
+            "queries": "fixture",
+            "spot_check": "food-safety questions (pesticides, additives, organic produce) meet the nutrition cluster"
+          }
+        ],
+        "off_topic_pairs_kept": [
+          {
+            "corpus": "scifact",
+            "queries": "fixture",
+            "spot_check": "biomedical claims against food-plant, delivery, design and customer questions; the nearest share a word-level theme (allergy, bacteria, vision) but answer another question"
+          },
+          {
+            "corpus": "scifact",
+            "queries": "written",
+            "spot_check": "8 of 45 past the floor; nearest are cell biology papers on a shared word (migration, thermogenesis, honey bee genomics against a waggle-dance question)"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "written",
+            "spot_check": "4 of 45 past the floor; nearest share one word (whales and tuna, herding farms and Campylobacter)"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "fixture",
+            "spot_check": "debates against operational questions; nearest are unrelated arguments, one food-labelling policy debate against an allergen label review task"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "scifact",
+            "spot_check": "scientific claims against the four fixture domains; nearest are design-studio notes matched on a word (fidelity, warm-ups)"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "written",
+            "spot_check": "3 of 45 past the floor; nearest share one word (workshop, scoring)"
+          },
+          {
+            "corpus": "tight",
+            "queries": "written",
+            "spot_check": "0 of 45 past the floor"
+          }
+        ],
+        "offtopic_rows": null,
+        "reproducibility": null,
+        "rule": "strong: z >= strong_z + strong_z_per_ln * ln N (when z_part) AND cosine >= strong_score; fair: the same with the fair cuts; else weak. z = (cosine - median) / MAD over every searched node's whole-node cosine. The cuts at a quantile level L of the kept off-topic top hits (the best whole-node cosine among nodes past the floor): the z line a least-squares fit on ln N through each (corpus, N) cell's L-quantile, raised over every cell, and the pooled cosine L-quantile; strong the loosest L (0.001 steps from 0.999) at which no cell's off-topic top hits are strong more than strong_rate, fair the loosest at which none are fair or strong more than 1 in 10. MIN_POPULATION: the smallest N from which every larger rung's p90 bootstrap 90% half-width of z is at most half the gap between the strong and fair z cuts at that N.",
+        "run": "sc-2026-11-19-c5485aa",
+        "run_date": "2026-11-19",
+        "sample_seed": 1010,
+        "search_floor": 0.409,
+        "shipped": {
+          "cells": {
+            "arguana@2000": {
+              "off_fair_or_strong": 0.1,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.8915,
+              "on_strong": 0.5025
+            },
+            "arguana@300": {
+              "off_fair_or_strong": 0.05,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.9857,
+              "on_strong": 0.7552
+            },
+            "arguana@8674": {
+              "off_fair_or_strong": 0.075,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.6809,
+              "on_strong": 0.3019
+            },
+            "fixture@300": {
+              "off_fair_or_strong": 0.0029,
+              "off_queries": 345,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.9,
+              "on_strong": 0.45
+            },
+            "nfcorpus@2000": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.5015,
+              "on_strong": 0.2291
+            },
+            "nfcorpus@300": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.6285,
+              "on_strong": 0.3096
+            },
+            "nfcorpus@3633": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.4303,
+              "on_strong": 0.1765
+            },
+            "scifact@2000": {
+              "off_fair_or_strong": 0.056,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.62,
+              "on_strong": 0.27
+            },
+            "scifact@300": {
+              "off_fair_or_strong": 0.008,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.8333,
+              "on_strong": 0.4467
+            },
+            "scifact@5183": {
+              "off_fair_or_strong": 0.024,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.49,
+              "on_strong": 0.1933
+            },
+            "tight@1000": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.3659,
+              "on_strong": 0.1707
+            },
+            "tight@300": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.4756,
+              "on_strong": 0.2195
+            }
+          },
+          "fair": {
+            "score": 0.409,
+            "z": -0.797,
+            "z_part": true,
+            "z_per_ln": 0.8843
+          },
+          "fixture": {
+            "keyword": {
+              "no_strong_match_fires": 0.0,
+              "queries": 15,
+              "strong_only_rule_fires": 0.3333,
+              "target_fair_or_strong": 0.9333,
+              "target_strong": 0.6667
+            },
+            "near_miss": {
+              "no_strong_match_fires": 0.0,
+              "queries": 10,
+              "strong_only_rule_fires": 0.3,
+              "target_fair_or_strong": 1.0,
+              "target_strong": 0.7
+            },
+            "off_topic_arguana": {
+              "kept": false,
+              "no_strong_match_fires": 0.968,
+              "queries": 1406,
+              "strong_only_rule_fires": 0.9993,
+              "top_fair_or_strong": 0.032,
+              "top_strong": 0.0007
+            },
+            "off_topic_nfcorpus": {
+              "kept": false,
+              "no_strong_match_fires": 0.9443,
+              "queries": 323,
+              "strong_only_rule_fires": 0.9969,
+              "top_fair_or_strong": 0.0557,
+              "top_strong": 0.0031
+            },
+            "off_topic_scifact": {
+              "kept": true,
+              "no_strong_match_fires": 0.9967,
+              "queries": 300,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0033,
+              "top_strong": 0.0
+            },
+            "off_topic_written": {
+              "kept": true,
+              "no_strong_match_fires": 1.0,
+              "queries": 45,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0,
+              "top_strong": 0.0
+            },
+            "paraphrase": {
+              "no_strong_match_fires": 0.05,
+              "queries": 40,
+              "strong_only_rule_fires": 0.7,
+              "target_fair_or_strong": 0.95,
+              "target_strong": 0.3
+            },
+            "tail": {
+              "no_strong_match_fires": 0.2,
+              "queries": 10,
+              "strong_only_rule_fires": 0.4,
+              "target_fair_or_strong": 0.5,
+              "target_strong": 0.2
+            },
+            "title": {
+              "no_strong_match_fires": 0.0,
+              "queries": 5,
+              "strong_only_rule_fires": 0.0,
+              "target_fair_or_strong": 1.0,
+              "target_strong": 1.0
+            }
+          },
+          "strong": {
+            "score": 0.4728,
+            "z": 3.3557,
+            "z_part": true,
+            "z_per_ln": 0.6124
+          },
+          "worst_off_topic_fair_or_strong": 0.1,
+          "worst_off_topic_strong": 0.0
+        },
+        "spot_check": "each candidate pair's 20 highest off-topic top hits read side by side (`--spot <file>`, a scratch file never committed: it holds corpus text); kept only when none is on topic",
+        "strong_level": 0.985,
+        "strong_rate": 0.01,
+        "tight": {
+          "base": "nfcorpus",
+          "base_pairs_at_search_floor": 0.4971,
+          "base_pairs_at_similar_floor": 0.0177,
+          "chosen": "the documents nearest (whole-node cosine) to the base document with the most neighbours at or above the similar_to floor",
+          "documents": 1000,
+          "pairs_at_search_floor": 0.9345,
+          "pairs_at_similar_floor": 0.1001,
+          "seed": "MED-3557",
+          "seed_neighbours_at_similar_floor": 539
+        },
+        "tool": "umx-bench floor-calibration --strength (crates/umx-bench/src/bin/floor-calibration/strength.rs)",
+        "tool_at": "the PR head that adds or changes this tool (its commit is recorded after merge); umx_commit is the base it was built on, which does not hold the tool",
+        "umx_commit": "c5485aaa8b85a895c0843fec2287339fe7310119",
+        "written_off_topic": true,
+        "written_off_topic_rows": {
+          "file": "docs/project/benchmarks/embed-bakeoff/vectors/<model>_<dims>[+p<n>].offtopic.rows.tsv",
+          "sha256": "52cf102d3cdc5536fc47843cf2321b95144f6ed562562ef7e3a7435ecfa539f5"
+        },
+        "z_settling": {
+          "caveat": "the joint rule's median is 0 in these cells too, because strong is rare by design at the 1-in-100 off-topic rate; the table shows z prevents a flood of strong hits in tight graphs, not that z makes strong common; cosine-only has higher on-topic strong rates and floods tight graphs",
+          "fixture@300": {
+            "cosine_only": {
+              "p50": 1.0,
+              "p90": 3.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 2.0
+            },
+            "queries": 80
+          },
+          "scifact@300": {
+            "cosine_only": {
+              "p50": 1.0,
+              "p90": 5.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 300
+          },
+          "tight@1000": {
+            "cosine_only": {
+              "p50": 3.0,
+              "p90": 52.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 2.0
+            },
+            "queries": 82
+          },
+          "tight@300": {
+            "cosine_only": {
+              "p50": 2.0,
+              "p90": 16.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 82
+          }
+        },
+        "rows_from": {
+          "beir_and_fixture": "the floors run fc-2026-11-11-cdc1965 (2026-11-11), deployment text-embedding-3-large-01",
+          "written_off_topic": "docs/project/benchmarks/embed-bakeoff/vectors/<model>_<dims>[+p<n>].offtopic.rows.provenance.md"
+        }
+      },
       "tasks": {
         "arguana": {
           "at_0": {
@@ -735,6 +3623,1301 @@
       "search_floor_stop_p50": 0.2687,
       "similar_floor": 0.5807,
       "smoke": false,
+      "strength": {
+        "ablation": [
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.1,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.848,
+                "on_strong": 0.0935
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.075,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9565,
+                "on_strong": 0.2541
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.0875,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6645,
+                "on_strong": 0.0514
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0087,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7875,
+                "on_strong": 0.1
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4365,
+                "on_strong": 0.0248
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5728,
+                "on_strong": 0.1084
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3684,
+                "on_strong": 0.0155
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5,
+                "on_strong": 0.0667
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.04,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.69,
+                "on_strong": 0.1067
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3733,
+                "on_strong": 0.0467
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3372,
+                "on_strong": 0.0233
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4535,
+                "on_strong": 0.0581
+              }
+            },
+            "fair": {
+              "score": 0.4095,
+              "z": 1.0806,
+              "z_part": true,
+              "z_per_ln": 0.6599
+            },
+            "fair_level": 0.876,
+            "family": "joint",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0667,
+                "queries": 15,
+                "strong_only_rule_fires": 0.6667,
+                "target_fair_or_strong": 0.8667,
+                "target_strong": 0.3333
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.0
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.9509,
+                "queries": 1406,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0491,
+                "top_strong": 0.0
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9598,
+                "queries": 323,
+                "strong_only_rule_fires": 0.9969,
+                "top_fair_or_strong": 0.0402,
+                "top_strong": 0.0031
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9933,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0067,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 0.9778,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0222,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.25,
+                "queries": 40,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 0.725,
+                "target_strong": 0.0
+              },
+              "tail": {
+                "no_strong_match_fires": 0.3,
+                "queries": 10,
+                "strong_only_rule_fires": 0.9,
+                "target_fair_or_strong": 0.6,
+                "target_strong": 0.0
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.4,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.6
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "rejected_by": {
+              "arguana@2000": {
+                "both": 22,
+                "cosine_only": 0,
+                "z_only": 3
+              },
+              "arguana@300": {
+                "both": 9,
+                "cosine_only": 0,
+                "z_only": 2
+              },
+              "arguana@8674": {
+                "both": 41,
+                "cosine_only": 0,
+                "z_only": 4
+              },
+              "fixture@300": {
+                "both": 8,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@2000": {
+                "both": 2,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@300": {
+                "both": 1,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "nfcorpus@3633": {
+                "both": 2,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "scifact@2000": {
+                "both": 19,
+                "cosine_only": 0,
+                "z_only": 2
+              },
+              "scifact@300": {
+                "both": 12,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "scifact@5183": {
+                "both": 25,
+                "cosine_only": 0,
+                "z_only": 3
+              },
+              "tight@1000": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              },
+              "tight@300": {
+                "both": 0,
+                "cosine_only": 0,
+                "z_only": 0
+              }
+            },
+            "strong": {
+              "score": 0.4883,
+              "z": 6.0899,
+              "z_part": true,
+              "z_per_ln": 0.5293
+            },
+            "strong_level": 0.988,
+            "worst_off_topic_fair_or_strong": 0.1,
+            "worst_off_topic_strong": 0.0
+          },
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.05,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9979,
+                "on_strong": 0.8858
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.025,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9979,
+                "on_strong": 0.8858
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.1,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9979,
+                "on_strong": 0.8858
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8,
+                "on_strong": 0.3
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5511,
+                "on_strong": 0.1981
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5511,
+                "on_strong": 0.1981
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5511,
+                "on_strong": 0.1981
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.024,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9133,
+                "on_strong": 0.5533
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.008,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9133,
+                "on_strong": 0.5533
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.04,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9133,
+                "on_strong": 0.5533
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4767,
+                "on_strong": 0.1628
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4767,
+                "on_strong": 0.1628
+              }
+            },
+            "fair": {
+              "score": 0.4667,
+              "z": 0.0,
+              "z_part": false,
+              "z_per_ln": 0.0
+            },
+            "fair_level": 0.98,
+            "family": "cosine_only",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.1333,
+                "queries": 15,
+                "strong_only_rule_fires": 0.5333,
+                "target_fair_or_strong": 0.8667,
+                "target_strong": 0.4667
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.0,
+                "queries": 10,
+                "strong_only_rule_fires": 0.4,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.6
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.995,
+                "queries": 1406,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.005,
+                "top_strong": 0.0
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9876,
+                "queries": 323,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0124,
+                "top_strong": 0.0
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 1.0,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.2,
+                "queries": 40,
+                "strong_only_rule_fires": 0.85,
+                "target_fair_or_strong": 0.775,
+                "target_strong": 0.15
+              },
+              "tail": {
+                "no_strong_match_fires": 0.3,
+                "queries": 10,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 0.5,
+                "target_strong": 0.0
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.0,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 1.0
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "strong": {
+              "score": 0.6104,
+              "z": 0.0,
+              "z_part": false,
+              "z_per_ln": 0.0
+            },
+            "strong_level": 0.999,
+            "worst_off_topic_fair_or_strong": 0.1,
+            "worst_off_topic_strong": 0.0
+          },
+          {
+            "cells": {
+              "arguana@2000": {
+                "off_fair_or_strong": 0.1,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.8337,
+                "on_strong": 0.0935
+              },
+              "arguana@300": {
+                "off_fair_or_strong": 0.0625,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.9479,
+                "on_strong": 0.2541
+              },
+              "arguana@8674": {
+                "off_fair_or_strong": 0.0875,
+                "off_queries": 80,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.6595,
+                "on_strong": 0.0514
+              },
+              "fixture@300": {
+                "off_fair_or_strong": 0.0145,
+                "off_queries": 345,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.7625,
+                "on_strong": 0.1
+              },
+              "nfcorpus@2000": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4272,
+                "on_strong": 0.0248
+              },
+              "nfcorpus@300": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.5882,
+                "on_strong": 0.1115
+              },
+              "nfcorpus@3633": {
+                "off_fair_or_strong": 0.0222,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3622,
+                "on_strong": 0.0155
+              },
+              "scifact@2000": {
+                "off_fair_or_strong": 0.048,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.48,
+                "on_strong": 0.0667
+              },
+              "scifact@300": {
+                "off_fair_or_strong": 0.048,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.67,
+                "on_strong": 0.1067
+              },
+              "scifact@5183": {
+                "off_fair_or_strong": 0.056,
+                "off_queries": 125,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3633,
+                "on_strong": 0.0467
+              },
+              "tight@1000": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.3721,
+                "on_strong": 0.0233
+              },
+              "tight@300": {
+                "off_fair_or_strong": 0.0,
+                "off_queries": 45,
+                "off_strong": 0.0,
+                "on_fair_or_strong": 0.4535,
+                "on_strong": 0.0814
+              }
+            },
+            "fair": {
+              "score": 0.0,
+              "z": 1.4376,
+              "z_part": true,
+              "z_per_ln": 0.6242
+            },
+            "fair_level": 0.888,
+            "family": "z_only",
+            "fixture": {
+              "keyword": {
+                "no_strong_match_fires": 0.0667,
+                "queries": 15,
+                "strong_only_rule_fires": 0.6667,
+                "target_fair_or_strong": 0.8667,
+                "target_strong": 0.3333
+              },
+              "near_miss": {
+                "no_strong_match_fires": 0.1,
+                "queries": 10,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 0.9,
+                "target_strong": 0.0
+              },
+              "off_topic_arguana": {
+                "kept": false,
+                "no_strong_match_fires": 0.9395,
+                "queries": 1406,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0605,
+                "top_strong": 0.0
+              },
+              "off_topic_nfcorpus": {
+                "kept": false,
+                "no_strong_match_fires": 0.9164,
+                "queries": 323,
+                "strong_only_rule_fires": 0.9969,
+                "top_fair_or_strong": 0.0836,
+                "top_strong": 0.0031
+              },
+              "off_topic_scifact": {
+                "kept": true,
+                "no_strong_match_fires": 0.9867,
+                "queries": 300,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0133,
+                "top_strong": 0.0
+              },
+              "off_topic_written": {
+                "kept": true,
+                "no_strong_match_fires": 0.9778,
+                "queries": 45,
+                "strong_only_rule_fires": 1.0,
+                "top_fair_or_strong": 0.0222,
+                "top_strong": 0.0
+              },
+              "paraphrase": {
+                "no_strong_match_fires": 0.275,
+                "queries": 40,
+                "strong_only_rule_fires": 1.0,
+                "target_fair_or_strong": 0.7,
+                "target_strong": 0.0
+              },
+              "tail": {
+                "no_strong_match_fires": 0.3,
+                "queries": 10,
+                "strong_only_rule_fires": 0.9,
+                "target_fair_or_strong": 0.6,
+                "target_strong": 0.0
+              },
+              "title": {
+                "no_strong_match_fires": 0.0,
+                "queries": 5,
+                "strong_only_rule_fires": 0.4,
+                "target_fair_or_strong": 1.0,
+                "target_strong": 0.6
+              }
+            },
+            "off_topic_strong_rate": 0.01,
+            "strong": {
+              "score": 0.0,
+              "z": 6.0899,
+              "z_part": true,
+              "z_per_ln": 0.5293
+            },
+            "strong_level": 0.988,
+            "worst_off_topic_fair_or_strong": 0.1,
+            "worst_off_topic_strong": 0.0
+          }
+        ],
+        "bootstrap_seed": 1011,
+        "cache": {
+          "file": "<cache>/floor-calibration/<key>.vec",
+          "offline": true,
+          "records": 52536,
+          "records_read": 52536,
+          "regenerate": "floor-calibration --embedder <instance> --cache <cache> --out <dir> --commit <sha> (the floors run fills the cache); without the cache this tool cannot run again, and the committed cuts stay as they are",
+          "sha256": "c2381b6eb205ed6b610d56b4fdf17125e2798649e2eebf925a5611d72fbee110",
+          "texts_sent": 0
+        },
+        "command": "floor-calibration --strength --embedder small --cache <cache> --out docs/project/benchmarks/floor-calibration --commit c5485aaa8b85a895c0843fec2287339fe7310119",
+        "corpora": {
+          "arguana": {
+            "documents": 8674,
+            "held": 0,
+            "off_topic_kept": [
+              "fixture"
+            ],
+            "on_topic_queries": 1401,
+            "source": {
+              "sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/arguana.zip"
+            },
+            "whole_node_rows": 8674
+          },
+          "fixture": {
+            "documents": 300,
+            "held": 0,
+            "off_topic_kept": [
+              "scifact",
+              "written"
+            ],
+            "on_topic_queries": 80,
+            "source": {
+              "path": "docs/project/benchmarks/embed-bakeoff"
+            },
+            "whole_node_rows": 300
+          },
+          "nfcorpus": {
+            "documents": 3633,
+            "held": 0,
+            "off_topic_kept": [
+              "written"
+            ],
+            "on_topic_queries": 323,
+            "source": {
+              "sha256": "efe5be03f8c5b86a5870102d0599d227c8c6e2484328e68c6522560385671b0b",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip"
+            },
+            "whole_node_rows": 3633
+          },
+          "scifact": {
+            "documents": 5183,
+            "held": 0,
+            "off_topic_kept": [
+              "fixture",
+              "written"
+            ],
+            "on_topic_queries": 300,
+            "source": {
+              "sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+              "url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+            },
+            "whole_node_rows": 5183
+          },
+          "tight": {
+            "documents": 1000,
+            "held": 0,
+            "off_topic_kept": [
+              "written"
+            ],
+            "on_topic_queries": 86,
+            "source": {
+              "from": "nfcorpus"
+            },
+            "whole_node_rows": 1000
+          }
+        },
+        "cuts": {
+          "fair_score": 0.4095,
+          "fair_z": 1.0806,
+          "fair_z_per_ln": 0.6599,
+          "max_n_measured": 8674,
+          "min_population": 100,
+          "strong_score": 0.4883,
+          "strong_z": 6.0899,
+          "strong_z_per_ln": 0.5293,
+          "z_part": true
+        },
+        "deployment": "text-embedding-3-small",
+        "deployment_check": {
+          "against": "the vectors the floors run fc-2026-11-11-cdc1965 cached for the same texts, through the deployment it used",
+          "date": "2026-11-19",
+          "deployment_now": "text-embedding-3-small",
+          "estimated_tokens_sent": 4305,
+          "max_int8_step": 1,
+          "min_cosine": 0.999999,
+          "pass": true,
+          "per_text": [
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "query-01"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "query-02"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "query-03"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 0.999999,
+              "max_int8_step": 0,
+              "text": "query-04"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "query-05"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "query-06"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 0.999999,
+              "max_int8_step": 0,
+              "text": "query-07"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 0.999999,
+              "max_int8_step": 0,
+              "text": "query-08"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 0.999999,
+              "max_int8_step": 0,
+              "text": "query-09"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "query-10"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 0.999999,
+              "max_int8_step": 0,
+              "text": "node-01"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-02"
+            },
+            {
+              "components_differing": 3,
+              "cosine": 0.999999,
+              "int8_cosine": 0.999995,
+              "max_int8_step": 1,
+              "text": "node-03"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 0.999999,
+              "max_int8_step": 0,
+              "text": "node-04"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-05"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-06"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-07"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-08"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-09"
+            },
+            {
+              "components_differing": 0,
+              "cosine": 1.0,
+              "int8_cosine": 1.0,
+              "max_int8_step": 0,
+              "text": "node-10"
+            }
+          ],
+          "rule": "pass when every cosine >= 0.999 (embeddings expert, 2026-11-20: the cosine bar alone; hosted int8 rows may differ by a few steps from GPU nondeterminism)",
+          "texts": "s03 fixture queries q-001 to q-010 (Query) and the whole-node texts of nodes reg-001 to reg-010 (Document); nodes.jsonl and queries.jsonl pinned by sha256",
+          "texts_sent": 20
+        },
+        "fair_level": 0.876,
+        "fair_rate": 0.1,
+        "floors_run": "fc-2026-11-11-cdc1965",
+        "instance_kind": "azure_openai",
+        "levels": [
+          300,
+          2000,
+          20000
+        ],
+        "max_n_note": "labels stop (null, and the space does not count toward no_strong_match) when more than 2 x max_n_measured nodes are searched in the space, until a larger corpus is measured (follow-up: a 57k corpus such as FiQA sampled at 20k and 50k)",
+        "min_population": {
+          "ladder": [
+            {
+              "flip_rate": 0.1438,
+              "half_gap": 2.3543,
+              "labels": 8500,
+              "n": 10,
+              "z_halfwidth_p50": 10.7456,
+              "z_halfwidth_p90": 55.3579
+            },
+            {
+              "flip_rate": 0.1556,
+              "half_gap": 2.3278,
+              "labels": 8500,
+              "n": 15,
+              "z_halfwidth_p50": 3.9582,
+              "z_halfwidth_p90": 11.3466
+            },
+            {
+              "flip_rate": 0.1187,
+              "half_gap": 2.309,
+              "labels": 8500,
+              "n": 20,
+              "z_halfwidth_p50": 3.6443,
+              "z_halfwidth_p90": 8.8301
+            },
+            {
+              "flip_rate": 0.0986,
+              "half_gap": 2.2826,
+              "labels": 8500,
+              "n": 30,
+              "z_halfwidth_p50": 2.2774,
+              "z_halfwidth_p90": 4.7387
+            },
+            {
+              "flip_rate": 0.1028,
+              "half_gap": 2.2492,
+              "labels": 8500,
+              "n": 50,
+              "z_halfwidth_p50": 1.6102,
+              "z_halfwidth_p90": 3.1819
+            },
+            {
+              "flip_rate": 0.0844,
+              "half_gap": 2.2227,
+              "labels": 8500,
+              "n": 75,
+              "z_halfwidth_p50": 1.22,
+              "z_halfwidth_p90": 2.2627
+            },
+            {
+              "flip_rate": 0.0836,
+              "half_gap": 2.2039,
+              "labels": 8500,
+              "n": 100,
+              "z_halfwidth_p50": 1.0739,
+              "z_halfwidth_p90": 1.9144
+            },
+            {
+              "flip_rate": 0.0573,
+              "half_gap": 2.1775,
+              "labels": 8500,
+              "n": 150,
+              "z_halfwidth_p50": 0.8589,
+              "z_halfwidth_p90": 1.5772
+            },
+            {
+              "flip_rate": 0.0546,
+              "half_gap": 2.1587,
+              "labels": 8500,
+              "n": 200,
+              "z_halfwidth_p50": 0.721,
+              "z_halfwidth_p90": 1.2396
+            },
+            {
+              "flip_rate": 0.052,
+              "half_gap": 2.1322,
+              "labels": 8500,
+              "n": 300,
+              "z_halfwidth_p50": 0.6172,
+              "z_halfwidth_p90": 1.0263
+            },
+            {
+              "flip_rate": 0.0402,
+              "half_gap": 2.0988,
+              "labels": 6500,
+              "n": 500,
+              "z_halfwidth_p50": 0.4561,
+              "z_halfwidth_p90": 0.7768
+            }
+          ],
+          "min_population": 100,
+          "queries_per_corpus": 40,
+          "resamples": 25
+        },
+        "off_topic_pairs_dropped": [
+          {
+            "corpus": "scifact",
+            "queries": "nfcorpus",
+            "spot_check": "both biomedical and nutrition science"
+          },
+          {
+            "corpus": "scifact",
+            "queries": "arguana",
+            "spot_check": "health debates (organ donation, vegetarianism, obesity, HIV) meet their papers"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "scifact",
+            "spot_check": "both biomedical and nutrition science"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "arguana",
+            "spot_check": "diet debates (vegetarianism, GM food, fat tax) meet nutrition papers"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "fixture",
+            "spot_check": "food-safety questions meet food microbiology and pesticide papers"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "scifact",
+            "spot_check": "claims on policy subjects (one-child policy, open access, obesity) meet debates on them"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "nfcorpus",
+            "spot_check": "nutrition topics (trans fats, junk food, smoking) meet debates on them"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "written",
+            "spot_check": "sport and history questions (chess, cricket, the Roman Empire) meet debates on the same subjects"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "nfcorpus",
+            "spot_check": "food topics (shelf life, sweeteners, supplier risk) meet the food-plant notes"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "arguana",
+            "spot_check": "labelling and whistleblowing debates meet the food-plant notes on them"
+          },
+          {
+            "corpus": "tight",
+            "queries": "scifact",
+            "spot_check": "biomedical claims meet the nutrition cluster"
+          },
+          {
+            "corpus": "tight",
+            "queries": "arguana",
+            "spot_check": "diet debates meet the nutrition cluster"
+          },
+          {
+            "corpus": "tight",
+            "queries": "fixture",
+            "spot_check": "food-safety questions (pesticides, additives, organic produce) meet the nutrition cluster"
+          }
+        ],
+        "off_topic_pairs_kept": [
+          {
+            "corpus": "scifact",
+            "queries": "fixture",
+            "spot_check": "biomedical claims against food-plant, delivery, design and customer questions; the nearest share a word-level theme (allergy, bacteria, vision) but answer another question"
+          },
+          {
+            "corpus": "scifact",
+            "queries": "written",
+            "spot_check": "8 of 45 past the floor; nearest are cell biology papers on a shared word (migration, thermogenesis, honey bee genomics against a waggle-dance question)"
+          },
+          {
+            "corpus": "nfcorpus",
+            "queries": "written",
+            "spot_check": "4 of 45 past the floor; nearest share one word (whales and tuna, herding farms and Campylobacter)"
+          },
+          {
+            "corpus": "arguana",
+            "queries": "fixture",
+            "spot_check": "debates against operational questions; nearest are unrelated arguments, one food-labelling policy debate against an allergen label review task"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "scifact",
+            "spot_check": "scientific claims against the four fixture domains; nearest are design-studio notes matched on a word (fidelity, warm-ups)"
+          },
+          {
+            "corpus": "fixture",
+            "queries": "written",
+            "spot_check": "3 of 45 past the floor; nearest share one word (workshop, scoring)"
+          },
+          {
+            "corpus": "tight",
+            "queries": "written",
+            "spot_check": "0 of 45 past the floor"
+          }
+        ],
+        "offtopic_rows": null,
+        "reproducibility": null,
+        "rule": "strong: z >= strong_z + strong_z_per_ln * ln N (when z_part) AND cosine >= strong_score; fair: the same with the fair cuts; else weak. z = (cosine - median) / MAD over every searched node's whole-node cosine. The cuts at a quantile level L of the kept off-topic top hits (the best whole-node cosine among nodes past the floor): the z line a least-squares fit on ln N through each (corpus, N) cell's L-quantile, raised over every cell, and the pooled cosine L-quantile; strong the loosest L (0.001 steps from 0.999) at which no cell's off-topic top hits are strong more than strong_rate, fair the loosest at which none are fair or strong more than 1 in 10. MIN_POPULATION: the smallest N from which every larger rung's p90 bootstrap 90% half-width of z is at most half the gap between the strong and fair z cuts at that N.",
+        "run": "sc-2026-11-19-c5485aa",
+        "run_date": "2026-11-19",
+        "sample_seed": 1010,
+        "search_floor": 0.4095,
+        "shipped": {
+          "cells": {
+            "arguana@2000": {
+              "off_fair_or_strong": 0.1,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.848,
+              "on_strong": 0.0935
+            },
+            "arguana@300": {
+              "off_fair_or_strong": 0.075,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.9565,
+              "on_strong": 0.2541
+            },
+            "arguana@8674": {
+              "off_fair_or_strong": 0.0875,
+              "off_queries": 80,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.6645,
+              "on_strong": 0.0514
+            },
+            "fixture@300": {
+              "off_fair_or_strong": 0.0087,
+              "off_queries": 345,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.7875,
+              "on_strong": 0.1
+            },
+            "nfcorpus@2000": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.4365,
+              "on_strong": 0.0248
+            },
+            "nfcorpus@300": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.5728,
+              "on_strong": 0.1084
+            },
+            "nfcorpus@3633": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.3684,
+              "on_strong": 0.0155
+            },
+            "scifact@2000": {
+              "off_fair_or_strong": 0.056,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.5,
+              "on_strong": 0.0667
+            },
+            "scifact@300": {
+              "off_fair_or_strong": 0.04,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.69,
+              "on_strong": 0.1067
+            },
+            "scifact@5183": {
+              "off_fair_or_strong": 0.056,
+              "off_queries": 125,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.3733,
+              "on_strong": 0.0467
+            },
+            "tight@1000": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.3372,
+              "on_strong": 0.0233
+            },
+            "tight@300": {
+              "off_fair_or_strong": 0.0,
+              "off_queries": 45,
+              "off_strong": 0.0,
+              "on_fair_or_strong": 0.4535,
+              "on_strong": 0.0581
+            }
+          },
+          "fair": {
+            "score": 0.4095,
+            "z": 1.0806,
+            "z_part": true,
+            "z_per_ln": 0.6599
+          },
+          "fixture": {
+            "keyword": {
+              "no_strong_match_fires": 0.0667,
+              "queries": 15,
+              "strong_only_rule_fires": 0.6667,
+              "target_fair_or_strong": 0.8667,
+              "target_strong": 0.3333
+            },
+            "near_miss": {
+              "no_strong_match_fires": 0.0,
+              "queries": 10,
+              "strong_only_rule_fires": 1.0,
+              "target_fair_or_strong": 1.0,
+              "target_strong": 0.0
+            },
+            "off_topic_arguana": {
+              "kept": false,
+              "no_strong_match_fires": 0.9509,
+              "queries": 1406,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0491,
+              "top_strong": 0.0
+            },
+            "off_topic_nfcorpus": {
+              "kept": false,
+              "no_strong_match_fires": 0.9598,
+              "queries": 323,
+              "strong_only_rule_fires": 0.9969,
+              "top_fair_or_strong": 0.0402,
+              "top_strong": 0.0031
+            },
+            "off_topic_scifact": {
+              "kept": true,
+              "no_strong_match_fires": 0.9933,
+              "queries": 300,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0067,
+              "top_strong": 0.0
+            },
+            "off_topic_written": {
+              "kept": true,
+              "no_strong_match_fires": 0.9778,
+              "queries": 45,
+              "strong_only_rule_fires": 1.0,
+              "top_fair_or_strong": 0.0222,
+              "top_strong": 0.0
+            },
+            "paraphrase": {
+              "no_strong_match_fires": 0.25,
+              "queries": 40,
+              "strong_only_rule_fires": 1.0,
+              "target_fair_or_strong": 0.725,
+              "target_strong": 0.0
+            },
+            "tail": {
+              "no_strong_match_fires": 0.3,
+              "queries": 10,
+              "strong_only_rule_fires": 0.9,
+              "target_fair_or_strong": 0.6,
+              "target_strong": 0.0
+            },
+            "title": {
+              "no_strong_match_fires": 0.0,
+              "queries": 5,
+              "strong_only_rule_fires": 0.4,
+              "target_fair_or_strong": 1.0,
+              "target_strong": 0.6
+            }
+          },
+          "strong": {
+            "score": 0.4883,
+            "z": 6.0899,
+            "z_part": true,
+            "z_per_ln": 0.5293
+          },
+          "worst_off_topic_fair_or_strong": 0.1,
+          "worst_off_topic_strong": 0.0
+        },
+        "spot_check": "each candidate pair's 20 highest off-topic top hits read side by side (`--spot <file>`, a scratch file never committed: it holds corpus text); kept only when none is on topic",
+        "strong_level": 0.988,
+        "strong_rate": 0.01,
+        "tight": {
+          "base": "nfcorpus",
+          "base_pairs_at_search_floor": 0.299,
+          "base_pairs_at_similar_floor": 0.0147,
+          "chosen": "the documents nearest (whole-node cosine) to the base document with the most neighbours at or above the similar_to floor",
+          "documents": 1000,
+          "pairs_at_search_floor": 0.7875,
+          "pairs_at_similar_floor": 0.0865,
+          "seed": "MED-2584",
+          "seed_neighbours_at_similar_floor": 472
+        },
+        "tool": "umx-bench floor-calibration --strength (crates/umx-bench/src/bin/floor-calibration/strength.rs)",
+        "tool_at": "the PR head that adds or changes this tool (its commit is recorded after merge); umx_commit is the base it was built on, which does not hold the tool",
+        "umx_commit": "c5485aaa8b85a895c0843fec2287339fe7310119",
+        "written_off_topic": true,
+        "written_off_topic_rows": {
+          "file": "docs/project/benchmarks/embed-bakeoff/vectors/<model>_<dims>[+p<n>].offtopic.rows.tsv",
+          "sha256": "41e72fefae34777c5f214b25db578fddbb3ef929e8ed5ab9f94050539d07ea35"
+        },
+        "z_settling": {
+          "caveat": "the joint rule's median is 0 in these cells too, because strong is rare by design at the 1-in-100 off-topic rate; the table shows z prevents a flood of strong hits in tight graphs, not that z makes strong common; cosine-only has higher on-topic strong rates and floods tight graphs",
+          "fixture@300": {
+            "cosine_only": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 80
+          },
+          "scifact@300": {
+            "cosine_only": {
+              "p50": 1.0,
+              "p90": 1.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 1.0
+            },
+            "queries": 300
+          },
+          "tight@1000": {
+            "cosine_only": {
+              "p50": 0.0,
+              "p90": 2.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 0.0
+            },
+            "queries": 86
+          },
+          "tight@300": {
+            "cosine_only": {
+              "p50": 0.0,
+              "p90": 2.0
+            },
+            "joint": {
+              "p50": 0.0,
+              "p90": 0.0
+            },
+            "queries": 86
+          }
+        },
+        "rows_from": {
+          "beir_and_fixture": "the floors run fc-2026-11-11-cdc1965 (2026-11-11), deployment text-embedding-3-small-01",
+          "written_off_topic": "docs/project/benchmarks/embed-bakeoff/vectors/<model>_<dims>[+p<n>].offtopic.rows.provenance.md"
+        }
+      },
       "tasks": {
         "arguana": {
           "at_0": {

@@ -887,3 +887,285 @@ fn a_secret_in_any_phrasing_keeps_all_of_them_off_a_hosted_instance() {
         let _ = fs::remove_dir_all(&root);
     }
 }
+
+/// An instance of a calibrated key (embeddinggemma-2@256+p1, so its strength cuts apply) whose vectors are seeded by
+/// the first `tokNNN` word of a text: a node and a query naming the same token share a direction, and a text with no
+/// token gets its own, near no other.
+struct Tokens;
+
+impl Tokens {
+    fn vector(text: &str) -> Vec<f32> {
+        let seed = text
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .find(|w| w.starts_with("tok"))
+            .unwrap_or(text);
+        let mut state = seed.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)
+        });
+        (0..256)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                ((state >> 33) as f32 / (1u64 << 31) as f32) - 0.5
+            })
+            .collect()
+    }
+}
+
+/// [`Tokens`] under another, uncalibrated key: it labels nothing.
+struct OtherTokens;
+
+impl Embedder for OtherTokens {
+    fn embed(&self, texts: &[String], kind: TextKind) -> Result<Embedded, EmbedError> {
+        Tokens.embed(texts, kind)
+    }
+    fn key(&self) -> ModelKey {
+        ModelKey::new("tokens-uncalibrated", 256).unwrap()
+    }
+    fn concurrency_ceiling(&self) -> usize {
+        1
+    }
+    fn max_input_tokens(&self) -> usize {
+        512
+    }
+    fn locality(&self) -> Locality {
+        Locality::Local
+    }
+    fn ready(&self) -> Result<(), EmbedError> {
+        Ok(())
+    }
+    fn credential(&self) -> Option<Credential> {
+        None
+    }
+    fn adapter_id(&self) -> &'static str {
+        "fake.tokens"
+    }
+}
+
+impl Embedder for Tokens {
+    fn embed(&self, texts: &[String], _: TextKind) -> Result<Embedded, EmbedError> {
+        Ok(Embedded {
+            vectors: texts.iter().map(|t| Tokens::vector(t)).collect(),
+            truncated: Vec::new(),
+            tokens: None,
+        })
+    }
+    fn key(&self) -> ModelKey {
+        ModelKey::new("embeddinggemma-2", 256)
+            .unwrap()
+            .with_prompt_version(1)
+    }
+    fn concurrency_ceiling(&self) -> usize {
+        1
+    }
+    fn max_input_tokens(&self) -> usize {
+        512
+    }
+    fn locality(&self) -> Locality {
+        Locality::Local
+    }
+    fn ready(&self) -> Result<(), EmbedError> {
+        Ok(())
+    }
+    fn credential(&self) -> Option<Credential> {
+        None
+    }
+    fn adapter_id(&self) -> &'static str {
+        "fake.tokens"
+    }
+}
+
+/// PRD 002 search-10 through the daemon: a query naming one node's token labels that node strong and raises no
+/// `no_strong_match`; an exact match is `exact` and a word-only hit has `strength: null`; a query near no node (no hit strong, fair or exact) raises it, first of the hints, with the same
+/// search as its next, the words as placeholders, every phrasing kept and one more `--also <words>`, status ok; the
+/// next run as written (placeholders filled) is a valid search. Each row carries `strength` and `floors[]` the
+/// strength run.
+#[test]
+fn no_strong_match_is_raised_exactly_when_no_hit_is_strong_fair_or_exact() {
+    let root = root("strength");
+    let key = Tokens.key();
+    let cuts =
+        umx_core::similarity::strength_cuts(&key).expect("the key's strength cuts are calibrated");
+    let config = Config::at(root.join("home"), Some(true)).roots([root.to_str().unwrap()]);
+    let (services, settings) = umx_compose::compose_with_config(umx_compose::Mode::Real, &config);
+    let d = Daemon::with_services(
+        &config,
+        build(),
+        services.with_embedder(Arc::new(Tokens)),
+        settings,
+        umx_compose::Mode::Real,
+        umx_compose::Embedders::from_instances(Vec::new()),
+    );
+    ok(d.handle(&op(Op::GraphNew {
+        path: root.join("g").display().to_string(),
+        alias: "demo".into(),
+        title: None,
+        empty: false,
+        embedding_model: None,
+        secured: false,
+        no_graphfile: false,
+        graphfile: false,
+        no_std: false,
+    })));
+    for i in 0..cuts.min_population.max(30) + 10 {
+        add(&d, &format!("tok{i:03} item"), "");
+    }
+    eventually("every vector", || pending(&d, "demo") == 0);
+    let strong = ok(d.handle(&search_also("tok007", &[], Some(3))));
+    assert_eq!(strong.data["rows"][0]["title"], "tok007 item");
+    assert_eq!(
+        strong.data["rows"][0]["strength"],
+        "strong",
+        "{}",
+        strong.to_json()
+    );
+    assert!(strong.data["floors"][0]["strength_run"].is_string());
+    assert!(strong.hints.iter().all(|h| h.code() != "no_strong_match"));
+    assert!(
+        strong.data["columns"]
+            .as_array()
+            .unwrap()
+            .contains(&"strength".into()),
+        "{}",
+        strong.to_json()
+    );
+    // An exact match is `exact`; a word-only hit (another node holding the word `item`) has no label.
+    let exact = ok(d.handle(&search_also("tok007 item", &[], Some(3))));
+    assert_eq!(
+        exact.data["rows"][0]["strength"],
+        "exact",
+        "{}",
+        exact.to_json()
+    );
+    assert_eq!(exact.data["rows"][1]["legs"], "word", "{}", exact.to_json());
+    assert!(exact.data["rows"][1]["strength"].is_null());
+    let none = ok(d.handle(&search_also("quiet harbour", &["distant lighthouse"], None)));
+    assert_eq!(none.status, umx_protocol::Status::Ok);
+    let hint = none
+        .hints
+        .first()
+        .unwrap_or_else(|| panic!("{}", none.to_json()));
+    assert_eq!(hint.code(), "no_strong_match", "{}", none.to_json());
+    assert_eq!(
+        hint.next(),
+        "umx search <words> --also <words> --also <words>"
+    );
+    for word in ["quiet", "harbour", "distant", "lighthouse"] {
+        assert!(!none.to_json().contains(word), "{word} echoed");
+    }
+    // The next, its placeholders filled in, runs: a reworded search naming a token finds it, and the hint is gone.
+    let again = ok(d.handle(&search_also(
+        "quiet harbour",
+        &["distant lighthouse", "tok011"],
+        None,
+    )));
+    assert!(again.hints.iter().all(|h| h.code() != "no_strong_match"));
+    assert_eq!(again.data["rows"][0]["strength"], "strong");
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// Reviewer B1: `no_strong_match` judges only what was measured. Graph `cal` (a calibrated key, 110 nodes) holds no
+/// match for `tok007`; graph `other` (an uncalibrated key) holds it, found by meaning and words but never labelled.
+/// Searched together: no hint (the reply cannot say the subject is not held). Two calibrated graphs that both lack it:
+/// the hint.
+#[test]
+fn no_strong_match_ignores_a_space_that_was_never_measured() {
+    use umx_services::embedding::Instance;
+    let root = root("strength-two-spaces");
+    let config = Config::at(root.join("home"), Some(true)).roots([root.to_str().unwrap()]);
+    let (mut services, settings) =
+        umx_compose::compose_with_config(umx_compose::Mode::Real, &config);
+    services.set_instances(
+        vec![
+            Instance {
+                name: "cal".into(),
+                embedder: Arc::new(Tokens),
+            },
+            Instance {
+                name: "other".into(),
+                embedder: Arc::new(OtherTokens),
+            },
+        ],
+        Some("cal"),
+    );
+    let d = Daemon::with_services(
+        &config,
+        build(),
+        services,
+        settings,
+        umx_compose::Mode::Real,
+        umx_compose::Embedders::from_instances(Vec::new()),
+    );
+    let cuts = umx_core::similarity::strength_cuts(&Tokens.key()).expect("calibrated");
+    for (alias, key) in [
+        ("cal", Tokens.key()),
+        ("cal2", Tokens.key()),
+        ("other", OtherTokens.key()),
+    ] {
+        ok(d.handle(&op(Op::GraphNew {
+            path: root.join(alias).display().to_string(),
+            alias: alias.into(),
+            title: None,
+            empty: false,
+            embedding_model: Some(key.to_string()),
+            secured: false,
+            no_graphfile: false,
+            graphfile: false,
+            no_std: false,
+        })));
+    }
+    let add_to = |alias: &str, title: &str| {
+        let mut r = op(Op::NodeAdd {
+            tags: Default::default(),
+            on_key: None,
+            related: None,
+            raised_in: None,
+            kind: "problem".into(),
+            title: title.into(),
+            status: None,
+            note: None,
+            sets: Vec::new(),
+            parent: None,
+            evidence: Vec::new(),
+            evidence_kind: None,
+            locator: None,
+        });
+        r.graph = Some(alias.into());
+        ok(d.handle(&r));
+    };
+    for i in 0..cuts.min_population + 10 {
+        add_to("cal", &format!("tok{:03} entry", 100 + i));
+        add_to("cal2", &format!("tok{:03} entry", 300 + i));
+    }
+    add_to("other", "tok007 item");
+    for alias in ["cal", "cal2", "other"] {
+        eventually("every vector", || pending(&d, alias) == 0);
+    }
+    let search = |graphs: &str| {
+        let mut r = search_also("tok007", &[], None);
+        r.graph = Some(graphs.into());
+        ok(d.handle(&r))
+    };
+    let mixed = search("cal,other");
+    assert_eq!(
+        mixed.data["rows"][0]["graph"],
+        "other",
+        "{}",
+        mixed.to_json()
+    );
+    assert!(mixed.data["rows"][0]["strength"].is_null());
+    assert!(
+        mixed.hints.iter().all(|h| h.code() != "no_strong_match"),
+        "{}",
+        mixed.to_json()
+    );
+    let both = search("cal,cal2");
+    assert_eq!(
+        both.hints.first().map(|h| h.code()),
+        Some("no_strong_match"),
+        "{}",
+        both.to_json()
+    );
+    let _ = fs::remove_dir_all(&root);
+}
