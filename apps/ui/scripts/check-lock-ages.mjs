@@ -53,7 +53,7 @@ const todo = [...lock].filter(([key, body]) => base.get(key) !== body).map(([key
 
 const byName = new Map();
 for (const key of todo) {
-  const m = /^((?:@[^/@]+\/)?[^@]+)@(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?)$/.exec(key);
+  const m = /^((?:@[^/@]+\/)?[^/@]+)@(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?)$/.exec(key);
   if (!m) {
     bad.push(`${key}: cannot read a name and an exact version from the key`);
     continue;
