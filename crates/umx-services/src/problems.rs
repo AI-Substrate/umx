@@ -100,6 +100,8 @@ pub const CODES: &[&str] = &[
     "adopt_map_symmetry",
     "adopt_map_duplicate_edge",
     "adopt_value_kind",
+    "adopt_field_to_tag_refused",
+    "adopt_tag_value_invalid",
     "already_std",
     "adopt_rename_suggested",
     "session_agent_conflict",
@@ -2163,6 +2165,50 @@ pub fn adopt_value_kind(
         .with("field", name(field))
         .with("kind", Slot::Word(std_kind.as_str()))
         .with("fix", Slot::Command(show.address(graph, first)))
+}
+
+/// `--field-to-tag <field>` cannot move `field` (ws008 t2b): `fix` shows why.
+pub fn adopt_field_to_tag_refused(
+    graph: &ValidName,
+    field: &str,
+    reason: &'static str,
+    fix: Command,
+) -> Problem {
+    Problem::new("adopt_field_to_tag_refused")
+        .with("graph", name(graph))
+        .with("field", Slot::name_or(field, "(a field)"))
+        .with("reason", Slot::Word(reason))
+        .with("fix", Slot::Command(fix))
+}
+
+/// `count` values of `field` stay in it for `reason` (ws008 t2b); `listed` are the first node ids and values (a
+/// secret-shaped value masked), as candidates: graph data, never in the message.
+pub fn adopt_tag_value_invalid(
+    graph: &ValidName,
+    field: &ValidName,
+    reason: &'static str,
+    count: usize,
+    listed: Vec<umx_core::problem::Candidate>,
+) -> Problem {
+    Problem::new("adopt_tag_value_invalid")
+        .with("graph", name(graph))
+        .with("field", name(field))
+        .with("reason", Slot::Word(reason))
+        .with("count", Slot::Count(count as u64))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("node list")
+                    .word("--columns")
+                    .names(
+                        &[ValidName::alias("id").expect("a name"), field.clone()],
+                        ",",
+                    )
+                    .word("--graph")
+                    .name(graph),
+            ),
+        )
+        .candidates(listed)
 }
 
 pub fn already_std(graph: &ValidName, std: u32) -> Problem {

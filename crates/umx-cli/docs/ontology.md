@@ -258,6 +258,7 @@ one write set:
     umx ontology adopt-std --dry-run --graph launch                    # the plan; writes nothing
     umx ontology adopt-std --graph launch                              # std: 1, the graph's own std copies folded in
     umx ontology adopt-std --map individual=person --map knows_of=mentions --graph launch
+    umx ontology adopt-std --field-to-tag origin --graph launch       # origin values become origin:<value> tags
 
 - graph.json gets `"std": 1`. A type, relation or status std has is dropped from the graph's own lists, and so is a
   field std places on that type or relation with std's kind and role and no description. What std does not supply
@@ -294,7 +295,25 @@ one write set:
   written.
 - A `--map` over many lines is one write: memory holds about one more image of the graph while it runs. Run
   `--dry-run` first to see how many lines it renames.
-- A graph that already uses std is `already_std`: `"unchanged": true`, nothing written, so a script can re-run.
+- `--field-to-tag <field>` (repeat it) turns a custom field of nodes into std tags, in the same write set: each text
+  value, or each text in a list value, becomes `<field>:<value>` in stored form, with tag_invalid's snake_case fix
+  applied (`Double Diamond` becomes `origin:double_diamond`), merged into the node's tags. Ids and addresses stay;
+  each changed line is stamped as a node edit stamps it. An empty list leaves the node with the moved values. A value
+  with no snake_case form (`123`), one whose snake_case form is longer than a tag (it is never cut), one that is not
+  text (a number, an object, a nested list), one that holds anything secret-shaped (a string or an object key at any
+  depth, as stored or upper cased), and every value of a node that would then hold more than 64 tags stay in the
+  field: `adopt_tag_value_invalid` counts them per reason and lists the first 20 node ids and values as candidates,
+  text cut to 80 characters, anything else by its shape only (`<object>`, `<list>`, `<not text>`) and a secret as
+  `<masked>`; its next lists the field. When no node keeps a non-empty value the field's declarations and default
+  columns go too. The reply's `field_to_tag` says, per
+  field, how many nodes moved values (`nodes`), the tags they gained (`tags`), the nodes that keep a value (`kept`),
+  how many distinct values became a tag another value also became (`collapsed`: `A B` and `a-b` are one tag), and
+  whether the declaration went (`declaration_removed`). Edge values and relation declarations are never touched. It
+  refuses (`adopt_field_to_tag_refused`) a std field or `tags`, a field only edges have, one no node type declares or
+  holds, and one a declared spine reads. It also works on a graph that already uses std, alone: there `--map` is
+  `usage_invalid`.
+- A graph that already uses std is `already_std` (with no `--field-to-tag`): `"unchanged": true`, nothing written, so
+  a script can re-run.
 - It works on a secured graph named with `--graph` like any write, and its reply names nothing outside that graph.
 
 ### Expected end types

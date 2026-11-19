@@ -7559,7 +7559,7 @@ fn adopt_std_with_a_map_is_all_or_nothing_across_a_crash() {
             "supports=backs".to_string(),
         ];
         assert!(
-            w.svc.ontology_adopt_std(&ctx(), &map, false).is_err(),
+            w.svc.ontology_adopt_std(&ctx(), &map, false, &[]).is_err(),
             "{point:?}"
         );
         let after = w.files.restart_for_tests();

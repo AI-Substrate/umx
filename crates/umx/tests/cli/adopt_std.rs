@@ -103,6 +103,24 @@ pub(super) fn adopt_setup(home: &mut Home, code: Code) -> Vec<String> {
             home.ok(&["ontology", "add", "type", "organization"]);
             words(&["ontology", "adopt-std", "--dry-run"])
         }
+        Code::AdoptFieldToTagRefused => {
+            pre_std(home);
+            words(&["ontology", "adopt-std", "--field-to-tag", "nothing"])
+        }
+        Code::AdoptTagValueInvalid => {
+            pre_std(home);
+            home.ok(&[
+                "node",
+                "add",
+                "--type",
+                "problem",
+                "--title",
+                "x",
+                "--set",
+                "origin=123",
+            ]);
+            words(&["ontology", "adopt-std", "--field-to-tag", "origin"])
+        }
         _ => unreachable!("{code:?}"),
     }
 }
@@ -124,7 +142,9 @@ fn lines_by_id(path: &str, file: &str) -> std::collections::BTreeMap<String, Str
         .collect()
 }
 
-const ADOPT_CODES: [Code; 11] = [
+const ADOPT_CODES: [Code; 13] = [
+    Code::AdoptFieldToTagRefused,
+    Code::AdoptTagValueInvalid,
     Code::AdoptFieldKindClash,
     Code::AdoptReservedRelation,
     Code::AdoptMapUnknown,
@@ -707,4 +727,339 @@ fn a_kind_clash_points_at_its_holders_and_edge_values_are_checked() {
     );
     assert_eq!(w.next(), format!("umx edge show umx:demo/{edge}"));
     assert_eq!(run_as_printed(&home, w.next()).1, 0);
+}
+
+/// Adds a `<kind>` titled `title` to `demo` with these `--set`/`--set-json` words; returns its id.
+fn holder(home: &Home, kind: &str, title: &str, sets: &[&str]) -> String {
+    let mut args = vec!["node", "add", "--type", kind, "--title", title];
+    args.extend(sets);
+    home.ok(&args).data["node"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// The stored line of `id` in `path`'s nodes.jsonl.
+fn node_line(path: &str, id: &str) -> Value {
+    umx_protocol::parse_json(&lines_by_id(path, "nodes.jsonl")[id]).unwrap()
+}
+
+/// req-117's done_when: `ontology adopt-std --field-to-tag origin` moves every origin value into an `origin:<value>`
+/// tag (tag_invalid's snake_case fix applied, merged with the tags a node holds), ids unchanged and each moved line
+/// stamped, lists the values it cannot normalise (they stay), and `--dry-run` writes nothing. Run again on the std
+/// graph once the last value can move, it removes the field's declaration.
+#[test]
+fn field_to_tag_moves_every_value_into_a_tag_with_ids_unchanged() {
+    let mut home = Home::new("adopt_field_to_tag");
+    let path = pre_std(&mut home);
+    home.ok(&["ontology", "add", "field", "problem", "origin:string"]);
+    let a = holder(&home, "problem", "a", &["--set", "origin=Double Diamond"]);
+    let b = holder(&home, "decision", "b", &["--set", "origin=double-diamond"]);
+    let c = holder(
+        &home,
+        "problem",
+        "c",
+        &["--set", "origin=Lean", "--set-json", "tags=[\"keep\"]"],
+    );
+    let d = holder(&home, "problem", "d", &["--set-str", "origin=123"]);
+    let e = holder(
+        &home,
+        "problem",
+        "e",
+        &["--set-json", "origin=[\"Agile\",\"x y\",7]"],
+    );
+    let f = holder(&home, "problem", "f", &[]);
+    // An empty list leaves the node with the moved values; a value whose tag would be cut stays whole.
+    let g = holder(&home, "problem", "g", &["--set-json", "origin=[]"]);
+    let long = "word ".repeat(600);
+    let h = holder(
+        &home,
+        "problem",
+        "h",
+        &["--set-str", &format!("origin={long}")],
+    );
+    let before = graph_files(&path);
+    let lines = lines_by_id(&path, "nodes.jsonl");
+    let plan = home.ok(&[
+        "ontology",
+        "adopt-std",
+        "--field-to-tag",
+        "origin",
+        "--dry-run",
+    ]);
+    assert_eq!(graph_files(&path), before, "a dry run writes nothing");
+    assert_eq!(
+        plan.data["field_to_tag"],
+        json!([{ "field": "origin", "nodes": 4, "tags": 5, "kept": 3, "collapsed": 1, "declaration_removed": false }])
+    );
+    let w = issue(&plan, Code::AdoptTagValueInvalid);
+    assert_eq!(w.code(), "adopt_tag_value_invalid");
+    // Another session than the one that made the lines, so the stamp it leaves is told apart.
+    let (env, exit) = home.umx_env(
+        &["ontology", "adopt-std", "--field-to-tag", "origin"],
+        &[("COPILOT_AGENT_SESSION_ID", "AdoptSession_02")],
+    );
+    assert_eq!(exit, 0, "{}", env.to_json());
+    assert_eq!(env.data["field_to_tag"], plan.data["field_to_tag"]);
+    let warned: Vec<(String, Vec<(String, String)>)> = env
+        .warnings
+        .iter()
+        .filter(|w| w.code() == "adopt_tag_value_invalid")
+        .map(|w| {
+            (
+                w.message().to_owned(),
+                w.candidates()
+                    .iter()
+                    .map(|c| {
+                        (
+                            c["id"].as_str().unwrap_or_default().to_owned(),
+                            c["title"].as_str().unwrap_or_default().to_owned(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(warned.len(), 3, "{warned:?}");
+    assert!(warned[0].0.contains("no snake_case tag"), "{warned:?}");
+    assert_eq!(warned[0].1, [(d.clone(), "123".to_owned())]);
+    assert!(warned[1].0.contains("not text"), "{warned:?}");
+    assert_eq!(warned[1].1, [(e.clone(), "<not text>".to_owned())]);
+    assert!(warned[2].0.contains("longer than a tag"), "{warned:?}");
+    assert_eq!(warned[2].1[0].0, h);
+    assert!(
+        warned[2].1[0].1.starts_with("word word") && warned[2].1[0].1.chars().count() == 81,
+        "{warned:?}"
+    );
+    let after = lines_by_id(&path, "nodes.jsonl");
+    // Ids unchanged: every node is still there by its id, and the only new lines are provenance records of the run
+    // (its session, and its agent when this machine's environment names one).
+    assert!(
+        lines.keys().all(|id| after.contains_key(id)),
+        "ids unchanged"
+    );
+    for (id, l) in after.iter().filter(|(id, _)| !lines.contains_key(*id)) {
+        let v: Value = umx_protocol::parse_json(l).unwrap();
+        let kind = v["type"].as_str().unwrap_or_default();
+        assert!(
+            umx_core::ontology::PROVENANCE_TYPES.contains(&kind),
+            "{id}: {l}"
+        );
+    }
+    let line = |id: &str| node_line(&path, id);
+    assert_eq!(line(&a)["tags"], json!(["origin:double_diamond"]));
+    assert!(line(&a).get("origin").is_none());
+    assert_eq!(line(&b)["tags"], json!(["origin:double_diamond"]));
+    assert_eq!(line(&c)["tags"], json!(["keep", "origin:lean"]));
+    assert_eq!(line(&d)["origin"], json!("123"));
+    assert!(line(&d).get("tags").is_none());
+    assert_eq!(line(&e)["tags"], json!(["origin:agile", "origin:x_y"]));
+    assert_eq!(line(&e)["origin"], json!([7]));
+    assert_eq!(
+        after[&f], lines[&f],
+        "a node without the field is not written"
+    );
+    assert!(line(&g).get("origin").is_none(), "an empty list leaves");
+    assert!(line(&g).get("tags").is_none());
+    assert_eq!(line(&h)["origin"], json!(long), "a long value stays whole");
+    assert!(line(&h).get("tags").is_none());
+    let (old, new) = (umx_protocol::parse_json(&lines[&a]).unwrap(), line(&a));
+    assert_eq!(new["created"], old["created"]);
+    assert!(new["edited_by_session"].is_string(), "{new}");
+    assert_ne!(
+        new["edited_by_session"], old["edited_by_session"],
+        "a moved line is stamped"
+    );
+    assert_eq!(graph_json(&path)["ontology"]["std"], json!(1));
+    let found = home.ok(&["node", "list", "--tag", "origin:*"]);
+    let mut got: Vec<&str> = found.data["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    got.sort();
+    let mut want = vec![a.as_str(), b.as_str(), c.as_str(), e.as_str()];
+    want.sort();
+    assert_eq!(got, want);
+    // On the std graph, alone: the last values move and the declaration goes.
+    home.ok(&["node", "edit", &d, "--set", "origin=Kept Value"]);
+    home.ok(&["node", "edit", &e, "--unset", "origin"]);
+    home.ok(&["node", "edit", &h, "--set-json", "origin=[]"]);
+    let env = home.ok(&["ontology", "adopt-std", "--field-to-tag", "origin"]);
+    assert_eq!(
+        env.data["field_to_tag"][0]["declaration_removed"],
+        json!(true)
+    );
+    assert_eq!(line(&d)["tags"], json!(["origin:kept_value"]));
+    let types = graph_json(&path)["ontology"]["types"].to_string();
+    assert!(!types.contains("origin"), "{types}");
+}
+
+/// A fake AWS access key id, built at run time so no credential-shaped text is in the source.
+fn token() -> String {
+    format!("AKIA{}", "Q7Z3X9K2Q7Z3X9K2")
+}
+
+/// A value that looks like a secret stays in its field and is listed masked; a node that would pass 64 tags moves
+/// none of its values. `--map` and `--field-to-tag` land in one write.
+#[test]
+fn field_to_tag_masks_secrets_keeps_the_cap_and_joins_a_map() {
+    let mut home = Home::new("adopt_field_to_tag_more");
+    let path = pre_std(&mut home);
+    let key = token();
+    let s = holder(
+        &home,
+        "problem",
+        "s",
+        &["--set-str", &format!("origin={key}")],
+    );
+    let full: Vec<String> = (0..64).map(|i| format!("\"t{i}\"")).collect();
+    let tags = format!("tags=[{}]", full.join(","));
+    let big = holder(
+        &home,
+        "problem",
+        "big",
+        &["--set", "origin=one", "--set-json", &tags],
+    );
+    let m = holder(&home, "individual", "m", &["--set", "origin=Lean"]);
+    // A key inside an object (as a value and as a key), inside a nested list, and lowercased as plain text.
+    let lower = key.to_ascii_lowercase();
+    let obj = holder(
+        &home,
+        "problem",
+        "obj",
+        &[
+            "--set-json",
+            &format!("origin={{\"note\":\"{key}\",\"{lower}\":1}}"),
+        ],
+    );
+    let nested = holder(
+        &home,
+        "problem",
+        "nested",
+        &["--set-json", &format!("origin=[[\"{key}\"]]")],
+    );
+    let low = holder(
+        &home,
+        "problem",
+        "low",
+        &["--set-str", &format!("origin={lower}")],
+    );
+    let env = home.ok(&[
+        "ontology",
+        "adopt-std",
+        "--map",
+        "individual=person",
+        "--field-to-tag",
+        "origin",
+    ]);
+    let json = env.to_json();
+    assert!(
+        !json.contains(&key) && !json.contains(&key.to_ascii_lowercase()),
+        "{json}"
+    );
+    let by_reason = |r: &str| {
+        env.warnings
+            .iter()
+            .find(|w| w.code() == "adopt_tag_value_invalid" && w.message().contains(r))
+            .unwrap_or_else(|| panic!("{r}: {json}"))
+            .candidates()
+            .iter()
+            .map(|c| {
+                (
+                    c["id"].as_str().unwrap_or_default().to_owned(),
+                    c["title"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut secrets = by_reason("looks like a secret");
+    secrets.sort();
+    let mut want: Vec<(String, String)> = [&s, &obj, &nested, &low]
+        .into_iter()
+        .map(|id| (id.clone(), "<masked>".to_owned()))
+        .collect();
+    want.sort();
+    assert_eq!(secrets, want);
+    for id in [&obj, &nested, &low] {
+        assert!(
+            node_line(&path, id).get("origin").is_some(),
+            "{id} keeps it"
+        );
+    }
+    // Counted from the final outcome: the node past the cap keeps its value, so it counts as kept.
+    assert_eq!(
+        env.data["field_to_tag"],
+        json!([{ "field": "origin", "nodes": 1, "tags": 1, "kept": 5, "collapsed": 0, "declaration_removed": false }])
+    );
+    assert_eq!(
+        by_reason("more than 64 tags"),
+        [(big.clone(), "one".to_owned())]
+    );
+    assert_eq!(node_line(&path, &s)["origin"], json!(key));
+    assert_eq!(node_line(&path, &big)["origin"], json!("one"));
+    let moved = node_line(&path, &m);
+    assert_eq!(
+        (moved["type"].clone(), moved["tags"].clone()),
+        (json!("person"), json!(["origin:lean"]))
+    );
+    assert!(moved.get("origin").is_none());
+}
+
+/// Each `--field-to-tag` refusal writes nothing and its next runs as printed: a std field, `tags`, a field only edges
+/// have, one no node holds, one a spine reads, a field given twice, and `--map` on a graph that already uses std.
+#[test]
+fn field_to_tag_refusals_write_nothing_and_their_nexts_run() {
+    let mut home = Home::new("adopt_field_to_tag_refused");
+    let path = pre_std(&mut home);
+    let a = holder(&home, "problem", "a", &["--set", "job_title=Lead"]);
+    let b = holder(&home, "problem", "b", &["--set", "origin=x"]);
+    home.ok(&["edge", "add", &a, "blocks", &b, "--set", "why=because"]);
+    home.ok(&["ontology", "add", "field", "segment", "held_on:date"]);
+    let mut decl = tm5_decl("day", "segment", false);
+    decl["order"] = json!(["held_on"]);
+    let file = home.ops_file(&decl.to_string());
+    home.ok(&["graph", "spine", "set", "demo", "--file", &file]);
+    holder(&home, "segment", "s", &["--set", "held_on=2026-01-01"]);
+    let before = graph_files(&path);
+    for (field, reason) in [
+        ("job_title", "it is a std field"),
+        ("tags", "it is a std field"),
+        ("why", "only edges have it"),
+        ("nothing", "no node type declares it"),
+        ("held_on", "a spine reads it"),
+    ] {
+        let (env, exit) = home.umx(&["ontology", "adopt-std", "--field-to-tag", field]);
+        assert_eq!(exit, 1, "{field}: {}", env.to_json());
+        let p = issue(&env, Code::AdoptFieldToTagRefused);
+        assert!(p.message().contains(reason), "{field}: {}", p.message());
+        let (ran, exit) = run_as_printed(&home, p.next());
+        assert_eq!(exit, 0, "{}: {}", p.next(), ran.to_json());
+    }
+    let (env, exit) = home.umx(&[
+        "ontology",
+        "adopt-std",
+        "--field-to-tag",
+        "origin",
+        "--field-to-tag",
+        "origin",
+    ]);
+    assert_eq!(exit, Code::UsageInvalid.spec().exit, "{}", env.to_json());
+    assert_eq!(graph_files(&path), before);
+    home.ok(&["ontology", "adopt-std"]);
+    let (env, exit) = home.umx(&[
+        "ontology",
+        "adopt-std",
+        "--map",
+        "problem=issue",
+        "--field-to-tag",
+        "origin",
+    ]);
+    assert_eq!(exit, Code::UsageInvalid.spec().exit, "{}", env.to_json());
+    let p = issue(&env, Code::UsageInvalid);
+    assert!(p.message().contains("already uses std"), "{}", p.message());
+    let (ran, exit) = run_as_printed(&home, p.next());
+    assert_eq!(exit, 0, "{}: {}", p.next(), ran.to_json());
+    assert!(node_line(&path, &b).get("tags").is_none(), "nothing moved");
 }

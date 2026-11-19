@@ -2609,8 +2609,11 @@ impl Services {
         ctx: &Ctx,
         map: &[String],
         dry_run: bool,
+        field_to_tag: &[String],
     ) -> Result<Done<StdAdopted>, Vec<Problem>> {
-        let mut done = self.graph.ontology_adopt_std(ctx, map, dry_run)?;
+        let mut done = self
+            .graph
+            .ontology_adopt_std(ctx, map, dry_run, field_to_tag)?;
         let (alias, nodes) = (done.value.alias.clone(), done.value.nodes.clone());
         if !nodes.is_empty() {
             self.queue(&alias, nodes.iter().copied());

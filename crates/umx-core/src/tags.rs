@@ -72,6 +72,21 @@ pub fn normalise_tag(given: &str) -> Result<String, TagRefused> {
 /// A part in snake_case: lowercased, every run of other characters one `_`, leading digits and `_` dropped, at most
 /// 64 characters. None if nothing usable remains.
 fn snake(part: &str) -> Option<String> {
+    let mut out = snake_whole(part);
+    out.truncate(64);
+    while out.ends_with('_') {
+        out.pop();
+    }
+    is_snake_case(&out).then_some(out)
+}
+
+/// Whether [`snake`] would cut `part` to fit a tag: its snake_case form, uncut, is longer than 64 characters.
+pub fn snake_cut(part: &str) -> bool {
+    snake_whole(part).trim_end_matches('_').len() > 64
+}
+
+/// `part` lowercased with every run of other characters one `_`, leading digits and `_` dropped, uncut.
+fn snake_whole(part: &str) -> String {
     let mut out = String::new();
     for c in part.chars() {
         let c = c.to_ascii_lowercase();
@@ -84,11 +99,7 @@ fn snake(part: &str) -> Option<String> {
             out.push('_');
         }
     }
-    out.truncate(64);
-    while out.ends_with('_') {
-        out.pop();
-    }
-    is_snake_case(&out).then_some(out)
+    out
 }
 
 /// Why a tags value was refused.

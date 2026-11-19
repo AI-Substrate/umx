@@ -441,6 +441,155 @@ pub fn suggestions<'a>(
     out
 }
 
+/// Why a value of a `--field-to-tag` field stays in its field (ws008 t2b, req-117).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Unmovable {
+    /// Text with no snake_case form (`123`, `---`, empty).
+    NoTag,
+    /// Not text: a number, a bool, an object or a nested list.
+    NotText,
+    /// Text that looks like a secret (as stored or upper cased): never moved, never shown.
+    Secret,
+    /// Text whose snake_case form is longer than a tag allows: it would be cut, so it stays whole.
+    TooLong,
+    /// The node would hold more than [`crate::tags::MAX_TAGS`] tags: none of its values move.
+    TagLimit,
+}
+
+impl Unmovable {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Unmovable::NoTag => "no snake_case tag can be made from it",
+            Unmovable::NotText => "it is not text",
+            Unmovable::Secret => "it looks like a secret",
+            Unmovable::TooLong => "it is longer than a tag allows",
+            Unmovable::TagLimit => "the node would hold more than 64 tags",
+        }
+    }
+}
+
+/// What `--field-to-tag <field>` does to one node's value of `field`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldTags {
+    /// Each text moved, with the tag it became (`<field>:<value>` in stored form).
+    pub moved: Vec<(String, String)>,
+    /// The new tags, in stored form, sorted: the ones the node did not hold yet.
+    pub added: Vec<String>,
+    /// What stays in the field: None when every value moved (the field leaves the node).
+    pub kept: Option<crate::Value>,
+    /// Each value (or list item) that stays, and why.
+    pub unmovable: Vec<(crate::Value, Unmovable)>,
+}
+
+/// The std tag text `value` of field `field` becomes: `<field>:<value>`, through the one tag normaliser, its snake_case
+/// fix taken (`Double Diamond` becomes `origin:double_diamond`). Refused when no tag with facet `field` can be made, or
+/// when the fix would cut the value to fit (a tag never holds part of a value).
+pub fn field_tag(field: &str, value: &str) -> Result<String, Unmovable> {
+    if crate::tags::snake_cut(value) {
+        return Err(Unmovable::TooLong);
+    }
+    let tag = match crate::tags::normalise_tag(&alloc::format!("{field}:{value}")) {
+        Ok(t) => t,
+        Err(r) => match r.fixed {
+            Some((Some(f), v)) => alloc::format!("{f}:{v}"),
+            _ => return Err(Unmovable::NoTag),
+        },
+    };
+    if crate::tags::split(&tag).0 == Some(field) {
+        Ok(tag)
+    } else {
+        Err(Unmovable::NoTag)
+    }
+}
+
+/// Whether any text in `v`, a string, an object's key or a value at any depth, is one `secret` flags.
+fn holds_secret(v: &crate::Value, secret: &dyn Fn(&str) -> bool) -> bool {
+    match v {
+        crate::Value::String(s) => secret(s),
+        crate::Value::Array(items) => items.iter().any(|x| holds_secret(x, secret)),
+        crate::Value::Object(map) => map
+            .iter()
+            .any(|(k, x)| secret(k) || holds_secret(x, secret)),
+        _ => false,
+    }
+}
+
+/// How a value that stays is shown: text as itself, its first 80 characters then `…` when longer; anything else by
+/// its shape only (`<object>`, `<list>`, `<not text>`), never its content; a secret is never shown at all.
+pub fn shown_value(v: &crate::Value, why: Unmovable) -> String {
+    match (why, v) {
+        (Unmovable::Secret, _) => "<masked>".to_string(),
+        (_, crate::Value::String(s)) if s.chars().count() > 80 => {
+            s.chars().take(80).chain(core::iter::once('…')).collect()
+        }
+        (_, crate::Value::String(s)) => s.clone(),
+        (_, crate::Value::Object(_)) => "<object>".to_string(),
+        (_, crate::Value::Array(_)) => "<list>".to_string(),
+        _ => "<not text>".to_string(),
+    }
+}
+
+/// `--field-to-tag` on one node (ws008 t2b, req-117): each text of `value` (a string, or each string of a list)
+/// becomes a `<field>:<value>` tag, to merge into `current` (the node's tags in stored form). A value that is not text,
+/// has no snake_case form or one longer than a tag, or that holds anything `secret` flags (a key or a string at any
+/// depth) stays in the field. The cap is the caller's, once every field is planned ([`merged_tags`]).
+pub fn field_to_tags(
+    field: &str,
+    value: &crate::Value,
+    current: &[String],
+    secret: &dyn Fn(&str) -> bool,
+) -> FieldTags {
+    use crate::Value;
+    let items: Vec<&Value> = match value {
+        Value::Array(items) => items.iter().collect(),
+        other => alloc::vec![other],
+    };
+    let mut moved = Vec::new();
+    let mut unmovable = Vec::new();
+    let mut stays = Vec::new();
+    for item in items {
+        let why = match item {
+            _ if holds_secret(item, secret) => Some(Unmovable::Secret),
+            Value::String(s) => match field_tag(field, s) {
+                Ok(tag) => {
+                    moved.push((s.clone(), tag));
+                    None
+                }
+                Err(why) => Some(why),
+            },
+            _ => Some(Unmovable::NotText),
+        };
+        if let Some(why) = why {
+            unmovable.push((item.clone(), why));
+            stays.push(item.clone());
+        }
+    }
+    let mut added: Vec<String> = moved
+        .iter()
+        .map(|(_, t)| t.clone())
+        .filter(|t| !current.contains(t))
+        .collect();
+    added.sort();
+    added.dedup();
+    let kept = match (value, stays.len()) {
+        (_, 0) => None,
+        (Value::Array(_), _) => Some(Value::Array(stays)),
+        (_, _) => Some(value.clone()),
+    };
+    FieldTags {
+        moved,
+        added,
+        kept,
+        unmovable,
+    }
+}
+
+/// The tags a node holds once `added` merge into `current` (both in stored form), or None past
+/// [`crate::tags::MAX_TAGS`]: then none of the node's values move (all or nothing per node).
+pub fn merged_tags(current: &[String], added: &[String]) -> Option<Vec<String>> {
+    crate::tags::finish(current.iter().chain(added).cloned().collect()).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,5 +926,61 @@ mod tests {
             suggestions(Renaming::Relation, ["member_off"].into_iter()),
             [("member_off".to_string(), "member_of")]
         );
+    }
+    #[test]
+    fn field_to_tags_moves_text_and_keeps_the_rest_unshown() {
+        use crate::Value;
+        let none = |_: &str| false;
+        let got = field_to_tags(
+            "origin",
+            &Value::String("Double Diamond".into()),
+            &[],
+            &none,
+        );
+        assert_eq!(got.added, ["origin:double_diamond"]);
+        assert_eq!(got.kept, None);
+        let secret = |s: &str| s == "sec";
+        let list =
+            serde_json::json!(["A B", "a-b", "123", 7, "sec", {"sec": 1}, [["sec"]], {"a": 1}]);
+        let got = field_to_tags("origin", &list, &["origin:a_b".into()], &secret);
+        assert_eq!(got.moved.len(), 2, "two texts, one tag");
+        assert!(got.added.is_empty(), "the node already held it");
+        let why: Vec<Unmovable> = got.unmovable.iter().map(|(_, w)| *w).collect();
+        assert_eq!(
+            why,
+            [
+                Unmovable::NoTag,
+                Unmovable::NotText,
+                Unmovable::Secret,
+                Unmovable::Secret,
+                Unmovable::Secret,
+                Unmovable::NotText
+            ]
+        );
+        let shown: Vec<String> = got
+            .unmovable
+            .iter()
+            .map(|(v, w)| shown_value(v, *w))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                "123",
+                "<not text>",
+                "<masked>",
+                "<masked>",
+                "<masked>",
+                "<object>"
+            ]
+        );
+        let long = "word ".repeat(600);
+        assert_eq!(field_tag("origin", &long), Err(Unmovable::TooLong));
+        assert_eq!(field_tag("origin", "a:b"), Ok("origin:a_b".into()));
+        assert_eq!(field_tag("origin", ""), Err(Unmovable::NoTag));
+        let empty = field_to_tags("origin", &serde_json::json!([]), &[], &none);
+        assert!(empty.moved.is_empty() && empty.kept.is_none());
+        let full: Vec<String> = (0..64).map(|i| alloc::format!("t{i}")).collect();
+        assert_eq!(merged_tags(&full, &["origin:x".into()]), None);
+        assert!(merged_tags(&full[1..], &["origin:x".into()]).is_some());
     }
 }

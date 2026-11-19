@@ -34,8 +34,272 @@ pub struct StdAdopted {
     /// The graph's own names std does not have, kept as they are.
     pub custom: Names,
     pub renamed: Vec<MapDone>,
-    /// The renamed nodes: the services recheck their vectors, as for any node write.
+    /// Each `--field-to-tag` field: what moved into tags (ws008 t2b, req-117).
+    pub field_to_tag: Vec<FieldMoved>,
+    /// The renamed nodes and those a field moved off: the services recheck their vectors, as for any node write.
     pub nodes: Vec<Id>,
+}
+
+/// One `--field-to-tag <field>`: how many nodes moved values into tags, the tags they gained, the nodes that keep a
+/// value in the field, how many distinct values became a tag another value of the field also became, and whether the
+/// field's declarations went (once no node keeps a value).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FieldMoved {
+    pub field: String,
+    pub nodes: usize,
+    pub tags: usize,
+    pub kept: usize,
+    pub collapsed: usize,
+    pub declaration_removed: bool,
+}
+
+/// What a write does to one node: a new type (`--map`), and fields set (Some) or removed (None).
+#[derive(Clone, Debug, Default)]
+struct NodeChange {
+    kind: Option<String>,
+    fields: Vec<(String, Option<umx_core::Value>)>,
+}
+
+/// The `--field-to-tag` values, checked (ws008 t2b): each a field name given once, not std's (nor `tags`), not read
+/// by a declared spine, and a field of nodes: declared on a node type or held by a user node. `own` is the graph's
+/// stored ontology before any fold.
+fn tag_fields(
+    graph: &ValidName,
+    l: &Loaded,
+    own: &umx_core::Ontology,
+    raw: &[String],
+) -> Result<Vec<ValidName>, Vec<Problem>> {
+    let show = |_: &ValidName| Command::new("ontology show").word("--graph").name(graph);
+    let mut out: Vec<ValidName> = Vec::new();
+    let mut errors = Vec::new();
+    for given in raw {
+        let field = match check_name(given, "field name", &show) {
+            Ok(f) => f,
+            Err(p) => {
+                errors.push(p);
+                continue;
+            }
+        };
+        if out.contains(&field) {
+            errors.push(problems::usage_invalid(
+                "each --field-to-tag names a different field",
+                "ontology",
+            ));
+            continue;
+        }
+        let f = field.as_str();
+        let refused = |reason, fix| problems::adopt_field_to_tag_refused(graph, f, reason, fix);
+        let on_nodes = own
+            .types
+            .iter()
+            .any(|t| t.fields.iter().any(|d| d.name == f))
+            || l.graph
+                .nodes()
+                .filter(|n| !l.graph.is_provenance(n.ix()))
+                .any(|n| n.custom_field_names().any(|name| name == f));
+        let on_edges = own
+            .relation_fields
+            .values()
+            .any(|fs| fs.iter().any(|d| d.name == f))
+            || l.graph.edges().any(|e| e.to_edge().fields.contains_key(f));
+        let problem = if f == umx_core::tags::TAGS || standard::std_field(f).is_some() {
+            Some(refused(
+                "it is a std field",
+                Command::new("docs get").word("ontology"),
+            ))
+        } else if l.meta.spines.iter().any(|s| s.order.iter().any(|o| o == f)) {
+            Some(refused(
+                "a spine reads it",
+                Command::new("graph spine show").name(graph),
+            ))
+        } else if !on_nodes {
+            Some(refused(
+                if on_edges {
+                    "only edges have it"
+                } else {
+                    "no node type declares it and no node holds it"
+                },
+                show(graph),
+            ))
+        } else {
+            None
+        };
+        match problem {
+            Some(p) => errors.push(p),
+            None => out.push(field),
+        }
+    }
+    if errors.is_empty() {
+        Ok(out)
+    } else {
+        Err(errors)
+    }
+}
+
+/// The first values each warning lists.
+const LISTED: usize = 20;
+
+/// One node's plan for one `--field-to-tag` field.
+struct FieldPlan {
+    field: usize,
+    plan: adopt::FieldTags,
+}
+
+/// `--field-to-tag` over every user node (ws008 t2b): each field's values become tags through
+/// [`adopt::field_to_tags`], then each node's new tags merge into its tags once, all or nothing
+/// ([`adopt::merged_tags`]): past 64 none of the node's values move. Every count is taken from that final outcome.
+/// Returns what each field did, the nodes' changes, and `adopt_tag_value_invalid` per field and reason. A value that
+/// holds anything secret-shaped (as stored or upper cased) stays and is listed masked; one that is not text is shown
+/// by its shape only.
+fn plan_tags(
+    graph: &ValidName,
+    l: &Loaded,
+    fields: &[ValidName],
+) -> (Vec<FieldMoved>, BTreeMap<Id, NodeChange>, Vec<Problem>) {
+    // Per node, in node order: each field's plan.
+    let mut plans: BTreeMap<Id, Vec<FieldPlan>> = BTreeMap::new();
+    for (i, field) in fields.iter().enumerate() {
+        let f = field.as_str();
+        let secret = |s: &str| {
+            super::tags::secret_shaped(s)
+                || umx_core::secrets::field_suspect(f, s).is_some()
+                || umx_core::secrets::field_suspect(f, &s.to_ascii_uppercase()).is_some()
+        };
+        for n in l.graph.nodes().filter(|n| !l.graph.is_provenance(n.ix())) {
+            let Some(value) = n.custom_field(f) else {
+                continue;
+            };
+            let plan = adopt::field_to_tags(f, &value, &[], &secret);
+            plans
+                .entry(n.id())
+                .or_default()
+                .push(FieldPlan { field: i, plan });
+        }
+    }
+    let mut done: Vec<FieldMoved> = fields
+        .iter()
+        .map(|f| FieldMoved {
+            field: f.as_str().to_string(),
+            nodes: 0,
+            tags: 0,
+            kept: 0,
+            collapsed: 0,
+            declaration_removed: false,
+        })
+        .collect();
+    let mut texts: Vec<BTreeMap<String, BTreeSet<String>>> = vec![BTreeMap::new(); fields.len()];
+    let mut stays: Vec<BTreeMap<adopt::Unmovable, Vec<(Id, String)>>> =
+        vec![BTreeMap::new(); fields.len()];
+    let mut changes: BTreeMap<Id, NodeChange> = BTreeMap::new();
+    for (id, node_plans) in plans {
+        let current_value = l
+            .graph
+            .node(id)
+            .and_then(|n| n.custom_field(umx_core::tags::TAGS));
+        let current = current_value
+            .as_ref()
+            .map(umx_core::tags::stored_tags)
+            .unwrap_or_default();
+        let mut added: Vec<String> = node_plans
+            .iter()
+            .flat_map(|p| p.plan.moved.iter().map(|(_, t)| t.clone()))
+            .filter(|t| !current.contains(t))
+            .collect();
+        added.sort();
+        added.dedup();
+        // The node's tags value once merged (entries umx cannot use kept), or None past the cap.
+        let merged = adopt::merged_tags(&current, &added).and_then(|_| {
+            super::tags::edited(current_value.as_ref(), &added, &[])
+                .ok()
+                .map(|(v, _)| v)
+        });
+        let mut change = NodeChange::default();
+        for FieldPlan { field, plan } in node_plans {
+            let name = fields[field].as_str();
+            let mut kept = plan.kept;
+            for (v, why) in &plan.unmovable {
+                stays[field]
+                    .entry(*why)
+                    .or_default()
+                    .push((id, adopt::shown_value(v, *why)));
+            }
+            if merged.is_none() && !plan.moved.is_empty() {
+                // Past the cap: nothing moves; the value stays whole.
+                for (text, _) in &plan.moved {
+                    stays[field]
+                        .entry(adopt::Unmovable::TagLimit)
+                        .or_default()
+                        .push((id, text.clone()));
+                }
+                done[field].kept += 1;
+                continue;
+            }
+            if kept.is_some() {
+                done[field].kept += 1;
+            }
+            if !plan.moved.is_empty() {
+                done[field].nodes += 1;
+                let mine: BTreeSet<&String> = plan.moved.iter().map(|(_, t)| t).collect();
+                done[field].tags += mine.iter().filter(|t| added.contains(t)).count();
+                for (text, tag) in &plan.moved {
+                    texts[field]
+                        .entry(tag.clone())
+                        .or_default()
+                        .insert(text.clone());
+                }
+            }
+            // A value that moved, or an empty list, leaves the node; what stays is written back.
+            if !plan.moved.is_empty() || kept.is_none() {
+                change.fields.push((name.to_string(), kept.take()));
+            }
+        }
+        if let Some(value) = merged.filter(|_| !added.is_empty()) {
+            change
+                .fields
+                .push((umx_core::tags::TAGS.to_string(), value));
+        }
+        if !change.fields.is_empty() {
+            changes.insert(id, change);
+        }
+    }
+    let mut warnings = Vec::new();
+    for (i, field) in fields.iter().enumerate() {
+        let f = field.as_str();
+        done[i].collapsed = texts[i].values().map(|t| t.len() - 1).sum();
+        done[i].declaration_removed = done[i].kept == 0
+            && l.meta
+                .ontology
+                .types
+                .iter()
+                .any(|t| t.fields.iter().any(|d| d.name == f));
+        for (why, values) in &stays[i] {
+            let listed = values
+                .iter()
+                .take(LISTED)
+                .map(|(id, shown)| umx_core::problem::Candidate {
+                    id: id.to_text(),
+                    title: Some(shown.clone()),
+                    score: None,
+                })
+                .collect();
+            warnings.push(problems::adopt_tag_value_invalid(
+                graph,
+                field,
+                why.as_str(),
+                values.len(),
+                listed,
+            ));
+        }
+    }
+    (done, changes, warnings)
+}
+
+/// Removes field `f`'s declarations from every node type, and from their default columns (its values are tags now).
+fn drop_declarations(o: &mut umx_core::Ontology, f: &str) {
+    for t in &mut o.types {
+        t.fields.retain(|d| d.name != f);
+        t.columns.retain(|c| c != f);
+    }
 }
 
 /// One `--map`: what it renamed and how many lines.
@@ -190,6 +454,7 @@ impl GraphStore {
         ctx: &Ctx,
         map: &[String],
         dry_run: bool,
+        field_to_tag: &[String],
     ) -> Result<Done<StdAdopted>, Vec<Problem>> {
         let alias = self.select_write(ctx, &[]).map_err(|p| vec![p])?;
         let graph = alias_name(&alias);
@@ -204,15 +469,56 @@ impl GraphStore {
             extended: Vec::new(),
             custom: Names::default(),
             renamed: Vec::new(),
+            field_to_tag: Vec::new(),
             nodes: Vec::new(),
         };
         if let Some(std) = l.meta.ontology.std_version() {
-            return Ok(Done {
-                value: empty(std, true),
-                notes: vec![problems::already_std(&graph, std)],
-            });
+            if field_to_tag.is_empty() {
+                return Ok(Done {
+                    value: empty(std, true),
+                    notes: vec![problems::already_std(&graph, std)],
+                });
+            }
+            // ws008 t2b: a std graph takes --field-to-tag alone; --map renames only as a graph adopts std.
+            if !map.is_empty() {
+                return Err(vec![problems::usage_invalid(
+                    "--map renames only while a graph adopts std; this graph already uses std",
+                    "ontology",
+                )]);
+            }
+            let fields = tag_fields(&graph, l, &l.meta.ontology, field_to_tag)?;
+            let (moved, changes, warnings) = plan_tags(&graph, l, &fields);
+            let mut ontology = l.meta.ontology.clone();
+            for m in moved.iter().filter(|m| m.declaration_removed) {
+                drop_declarations(&mut ontology, &m.field);
+            }
+            let mut value = empty(std, false);
+            value.field_to_tag = moved;
+            if dry_run {
+                return Ok(Done {
+                    value,
+                    notes: warnings,
+                });
+            }
+            let spines = l.meta.spines.clone();
+            let changes: Vec<(Id, NodeChange)> = changes.into_iter().collect();
+            let mut notes = self
+                .adopt_write(ctx, &alias, (ontology, spines), &changes, &[])
+                .map_err(|p| vec![p])?;
+            notes.splice(0..0, warnings);
+            value.nodes = changes.iter().map(|(id, _)| *id).collect();
+            return Ok(Done { value, notes });
         }
-        let maps = maps(&graph, l, map)?;
+        let fields = tag_fields(&graph, l, &l.meta.ontology, field_to_tag);
+        let maps = maps(&graph, l, map);
+        let (maps, fields) = match (maps, fields) {
+            (Ok(m), Ok(f)) => (m, f),
+            (m, f) => {
+                let mut errors = m.err().unwrap_or_default();
+                errors.extend(f.err().unwrap_or_default());
+                return Err(errors);
+            }
+        };
         let (used_types, used_relations) = used_names(l);
         let mut own = l.meta.ontology.clone();
         let mut spines = l.meta.spines.clone();
@@ -398,7 +704,9 @@ impl GraphStore {
             e.extend(hints);
             return Err(e);
         }
-        let warnings = value_warnings(&graph, l, &maps, &map_of);
+        let mut warnings = value_warnings(&graph, l, &maps, &map_of);
+        let (moved, tag_changes, tag_warnings) = plan_tags(&graph, l, &fields);
+        warnings.extend(tag_warnings);
         let renamed: Vec<MapDone> = maps
             .iter()
             .enumerate()
@@ -416,25 +724,29 @@ impl GraphStore {
         value.extended = fold.extended;
         value.custom = fold.custom;
         value.renamed = renamed;
+        let mut ontology = fold.ontology;
+        for m in moved.iter().filter(|m| m.declaration_removed) {
+            drop_declarations(&mut ontology, &m.field);
+        }
+        value.field_to_tag = moved;
         if dry_run {
             let mut notes = warnings;
             notes.extend(hints);
             return Ok(Done { value, notes });
         }
         let to = |(id, i): &(Id, usize)| (*id, maps[*i].to.as_str().to_string());
-        let renames: Vec<(Id, String)> = nodes.iter().map(to).collect();
+        // One change per node: its new type and the fields --field-to-tag moved.
+        let mut changes = tag_changes;
+        for (id, i) in &nodes {
+            changes.entry(*id).or_default().kind = Some(maps[*i].to.as_str().to_string());
+        }
+        let changes: Vec<(Id, NodeChange)> = changes.into_iter().collect();
         let edge_renames: Vec<(Id, String)> = edges.iter().map(to).collect();
         let mut notes = self
-            .adopt_write(
-                ctx,
-                &alias,
-                (fold.ontology, spines),
-                &renames,
-                &edge_renames,
-            )
+            .adopt_write(ctx, &alias, (ontology, spines), &changes, &edge_renames)
             .map_err(|p| vec![p])?;
         notes.splice(0..0, warnings);
-        value.nodes = renames.iter().map(|(id, _)| *id).collect();
+        value.nodes = changes.iter().map(|(id, _)| *id).collect();
         Ok(Done { value, notes })
     }
 
@@ -445,7 +757,7 @@ impl GraphStore {
         ctx: &Ctx,
         alias: &str,
         (ontology, spines): (umx_core::Ontology, Vec<umx_core::spine::SpineDecl>),
-        nodes: &[(Id, String)],
+        nodes: &[(Id, NodeChange)],
         edges: &[(Id, String)],
     ) -> Result<Vec<Problem>, Problem> {
         let files = self.ports.files.clone();
@@ -484,12 +796,24 @@ impl GraphStore {
             alias,
             &[GraphFile::Graph],
             |batch, session, _, now, at| {
-                for (id, kind) in nodes {
+                for (id, change) in nodes {
                     let Some(old) = batch.graph().node(*id).map(|n| n.to_node()) else {
                         continue;
                     };
                     let mut n = old.clone();
-                    n.kind = kind.clone();
+                    if let Some(kind) = &change.kind {
+                        n.kind = kind.clone();
+                    }
+                    for (field, value) in &change.fields {
+                        match value {
+                            Some(v) => {
+                                n.fields.insert(field.clone(), v.clone());
+                            }
+                            None => {
+                                n.fields.remove(field);
+                            }
+                        }
+                    }
                     n.updated = now.to_string();
                     n.record_edit(session);
                     secrets.extend(

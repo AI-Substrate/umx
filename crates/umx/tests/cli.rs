@@ -1246,7 +1246,9 @@ fn trigger(code: Code) -> (Envelope, u8) {
         | Code::AdoptValueKind
         | Code::StdFieldConflictStored
         | Code::AlreadyStd
-        | Code::AdoptRenameSuggested => adopt_std::adopt_trigger(&mut home, code),
+        | Code::AdoptRenameSuggested
+        | Code::AdoptFieldToTagRefused
+        | Code::AdoptTagValueInvalid => adopt_std::adopt_trigger(&mut home, code),
         Code::TagInvalid
         | Code::TagLimit
         | Code::TagNeedsStd

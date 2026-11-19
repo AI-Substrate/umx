@@ -365,7 +365,10 @@ pub const FLAGS: &[(&str, &[&str])] = &[
         ],
     ),
     ("ontology set", &["--columns", "--reset", "--role"]),
-    ("ontology adopt-std", &["--map", "--dry-run"]),
+    (
+        "ontology adopt-std",
+        &["--map", "--dry-run", "--field-to-tag"],
+    ),
     ("config show", &[]),
     ("config check", &[]),
     ("config set", &["--repo"]),
@@ -1650,11 +1653,12 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             let a = args()?;
             a.positionals(
                 0,
-                "ontology adopt-std takes --map <from>=<to> and --dry-run only",
+                "ontology adopt-std takes --map <from>=<to>, --field-to-tag <field> and --dry-run only",
             )?;
             Op::OntologyAdoptStd {
                 map: a.all("--map"),
                 dry_run: a.has("--dry-run"),
+                field_to_tag: a.all("--field-to-tag"),
             }
             .with(a)
         }

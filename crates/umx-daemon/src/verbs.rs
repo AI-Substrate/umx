@@ -744,12 +744,14 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             services.ontology_remove_relation(&ctx, name),
             removed_json,
         ),
-        Op::OntologyAdoptStd { map, dry_run } => {
-            match services.ontology_adopt_std(&ctx, map, *dry_run) {
-                Ok(done) => reply(command, Ok(done), adopted_json),
-                Err(problems) => batch_errors(command, &problems),
-            }
-        }
+        Op::OntologyAdoptStd {
+            map,
+            dry_run,
+            field_to_tag,
+        } => match services.ontology_adopt_std(&ctx, map, *dry_run, field_to_tag) {
+            Ok(done) => reply(command, Ok(done), adopted_json),
+            Err(problems) => batch_errors(command, &problems),
+        },
         Op::OntologyRemoveRelationField { relation, field } => reply(
             command,
             services.ontology_remove_relation_field(&ctx, relation, field),
@@ -3023,7 +3025,7 @@ fn adopted_json(v: &umx_services::StdAdopted) -> Value {
     };
     let mut folded = names(&v.folded);
     folded["fields"] = json!(fields(&v.folded_fields));
-    json!({
+    let mut out = json!({
         "graph": v.alias,
         "std": v.std,
         "dry_run": v.dry_run,
@@ -3034,7 +3036,15 @@ fn adopted_json(v: &umx_services::StdAdopted) -> Value {
         "renamed": v.renamed.iter().map(|r| json!({
             "what": r.what.as_str(), "from": r.from, "to": r.to, "nodes": r.nodes, "edges": r.edges,
         })).collect::<Vec<_>>(),
-    })
+    });
+    // ws008 t2b: only when --field-to-tag was given, so other replies stay as they were.
+    if !v.field_to_tag.is_empty() {
+        out["field_to_tag"] = json!(v.field_to_tag.iter().map(|f| json!({
+            "field": f.field, "nodes": f.nodes, "tags": f.tags, "kept": f.kept, "collapsed": f.collapsed,
+            "declaration_removed": f.declaration_removed,
+        })).collect::<Vec<_>>());
+    }
+    out
 }
 
 /// `ontology remove`'s reply (F76).
@@ -3485,8 +3495,15 @@ fn retry(op: &Op) -> Command {
             n,
             "<name>",
         ),
-        Op::OntologyAdoptStd { map, dry_run } => {
+        Op::OntologyAdoptStd {
+            map,
+            dry_run,
+            field_to_tag,
+        } => {
             let mut c = Command::new("ontology adopt-std");
+            for f in field_to_tag {
+                c = name(c.word("--field-to-tag"), f, "<field>");
+            }
             for m in map {
                 c = match m
                     .split_once('=')

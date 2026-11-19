@@ -204,12 +204,14 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `tag_unusable` and `tag_filter_not_std` (warnings).
 /// 96: tag filters on reads (ws008 t2b, req-117): `tags` and `no_tags` (`--tag`/`--no-tag`) on `Op::NodeFind`,
 /// `Op::Search`, `Op::Walk` and `Op::Neighbours`; new code `tag_filter_untested` (warning).
+/// 97: field to tag (ws008 t2b, req-117): `Op::OntologyAdoptStd`'s `field_to_tag` (`--field-to-tag <field>`), the
+/// reply's `field_to_tag`; new codes `adopt_field_to_tag_refused` (error) and `adopt_tag_value_invalid` (warning).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 96;
+pub const PROTOCOL: u32 = 97;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -218,7 +220,7 @@ pub const PROTOCOL: u32 = 96;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (96, 0x1685_025d_de52_9d56);
+const WIRE_FINGERPRINT: (u32, u64) = (97, 0xf874_30b2_65c6_7a66);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1560,6 +1562,10 @@ pub enum Op {
     OntologyAdoptStd {
         map: Vec<String>,
         dry_run: bool,
+        /// `--field-to-tag <field>` (ws008 t2b, req-117, PROTOCOL 97), repeatable: each node value of the custom
+        /// field becomes a `<field>:<value>` std tag; values that cannot stay in the field.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        field_to_tag: Vec<String>,
     },
     GraphUnload {
         alias: String,
@@ -3443,6 +3449,14 @@ catalogue! {
     StdFieldConflictStored => "std_field_conflict_stored", Warning, 0,
         "a std graph's graph.json declares a field std v1 has with another kind than std's, as a hand edit can (F285); it loads, and std's kind is used",
         "<on> declares <field> as <kind> in graph <graph>'s graph.json, but std's <field> is <std kind>, which is used.",
+        "<fix>";
+    AdoptFieldToTagRefused => "adopt_field_to_tag_refused", Error, 1,
+        "ontology adopt-std --field-to-tag names a field it cannot move: a std field, tags, one no node type has (unknown, or only on edges), or one a spine reads; nothing changed",
+        "--field-to-tag <field> cannot move graph <graph>'s field: <reason>. Nothing changed.",
+        "<fix>";
+    AdoptTagValueInvalid => "adopt_tag_value_invalid", Warning, 0,
+        "ontology adopt-std --field-to-tag left values in their field: candidates give each node id and value, a secret-shaped value masked",
+        "<count> values of <field> in graph <graph> stay in the field: <reason>.",
         "<fix>";
     AlreadyStd => "already_std", Hint, 0,
         "ontology adopt-std on a graph that already uses std; nothing was written",
@@ -5975,6 +5989,7 @@ mod tests {
             Op::OntologyAdoptStd {
                 map: vec!["individual=person".into()],
                 dry_run: true,
+                field_to_tag: vec!["origin".into()],
             },
             Op::OntologyAddTag {
                 tag: "origin:*".into(),

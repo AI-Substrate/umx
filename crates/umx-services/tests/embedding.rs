@@ -3128,7 +3128,7 @@ fn adopt_std_map_queues_renamed_nodes_and_remakes_only_changed_texts() {
         .unwrap();
     run(&mut w);
     let map = ["problem=issue".to_string(), "chore=task".to_string()];
-    let done = w.svc.ontology_adopt_std(&ctx(), &map, false).unwrap();
+    let done = w.svc.ontology_adopt_std(&ctx(), &map, false, &[]).unwrap();
     assert_eq!(done.value.nodes.len(), 2);
     let jobs = w.svc.take_embed_jobs();
     let queued: Vec<Id> = jobs.iter().map(|j| j.node).collect();
