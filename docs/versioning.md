@@ -117,5 +117,8 @@ The checks prove different things:
 
 `umx version` reports `data.cli.version`, the release version (Cargo's package version, set by the release PR), and
 `data.cli.commit`, the full 40-character commit the binary was built from. A build of tag `v0.1.0` reports `0.1.0`
-and that tag's commit. A build between releases reports the last release's version and its own commit. With the
-daemon up, `data.daemon` reports the daemon's build the same way.
+and that tag's commit. A build between releases reports the last release's version and its own commit.
+`data.cli.built` says when it was built, in UTC: a release, its commit's time (`2026-11-19T09:43:38Z`), the same on
+every platform's build of that release; a `just dev` build, the time it was built; a plain `cargo build`, `dev`. With
+the daemon up, `data.daemon` reports the daemon's build the same way, and `umx doctor` warns when any of the three
+differs from the CLI's.

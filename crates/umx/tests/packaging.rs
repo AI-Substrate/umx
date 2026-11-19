@@ -29,6 +29,42 @@ fn install_and_shipping_recipes_do_not_enable_the_fixture_driver() {
     }
 }
 
+/// ws012 s16: a release build says when it was built. The release workflow's Build step stamps UMX_BUILD_ID with
+/// the built commit's time in UTC, in `just dev`'s format, so every target's build of one commit says the same, and
+/// checks the binary reports it.
+#[test]
+fn release_builds_stamp_their_commit_time() {
+    let workflow = include_str!("../../../.github/workflows/release.yml");
+    let build = workflow
+        .split_once("\n      - name: Build\n")
+        .expect("release.yml has a Build step")
+        .1
+        .split("\n      - ")
+        .next()
+        .unwrap();
+    let stamp =
+        "UMX_BUILD_ID=\"$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)\"";
+    let export = build.find("export UMX_BUILD_ID").expect(build);
+    let cargo = build
+        .find("cargo build --release --locked -p umx")
+        .expect(build);
+    assert!(
+        build
+            .find(stamp)
+            .is_some_and(|at| at < export && export < cargo),
+        "{build}"
+    );
+    assert!(
+        build.contains("[ \"$built\" = \"$UMX_BUILD_ID\" ]"),
+        "{build}"
+    );
+    let justfile = include_str!("../../../justfile");
+    assert!(
+        justfile.contains("build=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""),
+        "just dev's format changed"
+    );
+}
+
 /// ws012 s7: `umx version` names the full 40-character commit this binary was built from and the workspace version,
 /// so a release binary names its tag's commit exactly (docs/versioning.md). The release workflow's smoke run checks
 /// the same two fields against the commit it checked out.

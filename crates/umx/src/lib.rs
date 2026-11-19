@@ -86,7 +86,7 @@ pub fn run(
     let build = Build {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         commit: env!("UMX_COMMIT").to_owned(),
-        // `just dev` stamps each build; a plain cargo build says "dev".
+        // `just dev` stamps each build with its time, a release with its commit's time; a plain cargo build says "dev".
         built: option_env!("UMX_BUILD_ID").unwrap_or("dev").to_owned(),
     };
     if let Some(help) = umx_cli::help(&args) {

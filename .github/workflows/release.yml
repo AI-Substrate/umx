@@ -100,8 +100,18 @@ jobs:
           rustc -vV
           host="$(rustc -vV | sed -n 's/^host: //p')"
           [ "$host" = "$TARGET" ]
+      # A release says when it was built as its commit's time in UTC, in `just dev`'s format: the same on every
+      # target's build of one commit, so the cli and daemon of one release always match (docs/versioning.md).
       - name: Build
-        run: cargo build --release --locked -p umx
+        run: |
+          UMX_BUILD_ID="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
+          export UMX_BUILD_ID
+          cargo build --release --locked -p umx
+          home="$(mktemp -d)"
+          built="$(HOME="$home" UMX_HOME="$home" target/release/umx version --json | jq -r .data.cli.built)"
+          rm -rf "$home"
+          echo "built: $built"
+          [ "$built" = "$UMX_BUILD_ID" ] || { echo "target/release/umx says built $built, want $UMX_BUILD_ID" >&2; exit 1; }
       - name: Binary architecture
         env:
           EXPECTED_FILE: ${{ matrix.file }}
