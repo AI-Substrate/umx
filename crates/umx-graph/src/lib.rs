@@ -30,6 +30,7 @@ mod nodes;
 mod provenance;
 mod similar;
 mod stem;
+mod terms;
 mod unique;
 mod vectors;
 mod view;
