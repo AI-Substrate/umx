@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.0](https://github.com/AI-Substrate/umx/compare/v0.2.0...v0.3.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* ontology adopt-std moves a graph onto std in one write set (req-101)
+* umx search takes up to 5 phrasings with --also (search-09)
+* protocol 92. `GraphConfirmPolicy` loses `typed`, and the CLI's /dev/tty prompt is gone. The error `policy_confirm_needs_human` is retired. `policy_downgrade_unconfirmed`'s next is now `umx graph confirm-policy <alias>`. `similarity_no_embedder` no longer prints a command that lowers a policy; it points to adding a local instance and calls hosted instances the owner's decision.
+* std reserved names, clashes and soft endpoint types (req-99)
+
+### Features
+
+* custom fields on std types (req-100) ([2e866ac](https://github.com/AI-Substrate/umx/commit/2e866ac59708d7c219df29f335b1ada45455e3f9))
+* install.ps1 installs umx inside WSL 2 on Windows ([7b902bc](https://github.com/AI-Substrate/umx/commit/7b902bc0c2128dd54af1adde58eca203e855c7df))
+* lower a graph's embedding policy in one call, warned and recorded ([a7dd1f2](https://github.com/AI-Substrate/umx/commit/a7dd1f2d7e6a57207e6281dd5c1650b72b7fb0bb))
+* ontology adopt-std moves a graph onto std in one write set (req-101) ([5485a36](https://github.com/AI-Substrate/umx/commit/5485a36da33d5cac8607eb4ec22e562a98a0f2d4))
+* std reserved names, clashes and soft endpoint types (req-99) ([f10e18f](https://github.com/AI-Substrate/umx/commit/f10e18ff0b9d4f5dc9ae6f8e031718aa64bdfe4e))
+* umx search takes up to 5 phrasings with --also (search-09) ([0222cfc](https://github.com/AI-Substrate/umx/commit/0222cfcaf1c42b18b2a911fd66e7328e5d364bf3))
+
+
+### Bug Fixes
+
+* a pinned install.ps1 runs that release's install.sh, checked against its SHA256SUMS ([a1e531a](https://github.com/AI-Substrate/umx/commit/a1e531aef955163eb34d8e4d8ae0a6a7863673d4))
+* release builds say when they were built ([985d71f](https://github.com/AI-Substrate/umx/commit/985d71f41682fe9d60f9ca92196a6f1ea9e99aed))
+
+
+### Performance
+
+* background embedding fills each provider call up to the instance's own limit ([45ff623](https://github.com/AI-Substrate/umx/commit/45ff6237a2c1205841192042719035b06be4fce9))
+
+
+### Documentation
+
+* the attestation checks name the release workflow ([82d3fd0](https://github.com/AI-Substrate/umx/commit/82d3fd09d63b0d2a4c8c8964597148f15b61692a))
+
 ## [0.2.0](https://github.com/AI-Substrate/umx/compare/v0.1.0...v0.2.0) (2026-11-19)
 
 
