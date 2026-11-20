@@ -36,6 +36,14 @@ fn every_catalogue_code_is_triggered_and_says_what_to_do_next() {
             // through the daemon. Their catalogue rows are checked like any other's.
             continue;
         }
+        if *code == Code::NoStrongMatch {
+            // It needs a meaning leg on a calibrated model, and the CLI tests have no reachable embedder, so this loop
+            // skips it: the checks below (trigger, the issue's kind and exit, its next parsing and running through the
+            // CLI) are not run for it here. umx-daemon's s08_tests raise it through the daemon with an instance of a
+            // calibrated key and check its kind (a hint, status ok, first), its exact next and that the next runs;
+            // umx-services' tests/hybrid_recall.rs raises it on the s03 fixture's recorded rows.
+            continue;
+        }
         if *code == Code::EmbedderNotInUse {
             // A probe that succeeds needs a working embedder, which the CLI tests do not have: umx-daemon's
             // s27_tests.rs raises it with a fake instance added after start.

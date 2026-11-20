@@ -197,13 +197,12 @@
         {
           "id": "search-10",
           "title": "Strength in plain words",
-          "statement": "Each hit found by meaning is labelled strong, fair or weak. The label measures the hit against the scores of all the nodes searched for this query, not against a fixed number, because inside one graph most nodes are near each other. When no hit is strong the reply says so in a hint, so the caller rewords or stops. The model's calibrated floor still removes noise before this.",
+          "statement": "Each hit found by meaning is labelled strong, fair or weak. The label measures the hit against the scores of all the nodes searched for this query, not against a fixed number, because inside one graph most nodes are near each other. When no hit is strong or fair the reply says so in a hint, so the caller rewords or stops. The model's calibrated floor still removes noise before this.",
           "actor": "a-agent",
           "priority": "must",
-          "state": "planned",
-          "done_when": "On the search fixture, a paraphrase query labels its target strong; a query about a subject the graph does not hold returns no strong hit and the hint `no_strong_match`; the labels are the same on every machine.",
-          "source": "Project lead ruling 2026-11-16; search review (55% of all node pairs in one graph scored above the floor)",
-          "note": "How the cut points are set is for design; they must be exact and repeatable."
+          "state": "shipped",
+          "done_when": "On the search fixture, a paraphrase query labels its target strong; a query about a subject the graph does not hold returns no strong or fair hit and the hint `no_strong_match`; the labels are the same for the same stored vectors and the same query vector: for a local model, the same on any machine running the same model file on the same backend with the same umx release; across backends or releases a query vector can differ by one int8 step in a few components, so a label can differ only for a hit whose cosine is within 0.003 of a cut.",
+          "source": "Project lead ruling 2026-11-16; search review (55% of all node pairs in one graph scored above the floor)"
         },
         {
           "id": "search-11",
@@ -235,7 +234,7 @@
           "state": "in-progress",
           "done_when": "Each case above, set up on a fixture, yields its hint with a runnable command; a reply with hints keeps status ok.",
           "source": "Project lead ruling 2026-11-12 (hints are part of every feature); depends on PRD 001 req-139",
-          "note": "Shipped today: hints for results cut by `--limit` (`search_results_cut`), nodes with no vector yet (`similarity_incomplete`), graphs searched by words only and why (`similarity_unavailable`, `similarity_no_embedder`) and secured graphs left out (`secured_graphs_skipped`), each with a command; status stays ok. Missing: no strong match (comes with search-10) and a narrower search (comes with search-11)."
+          "note": "Shipped today: hints for no strong match (`no_strong_match`, search-10), results cut by `--limit` (`search_results_cut`), nodes with no vector yet (`similarity_incomplete`), graphs searched by words only and why (`similarity_unavailable`, `similarity_no_embedder`) and secured graphs left out (`secured_graphs_skipped`), each with a command; status stays ok. Missing: a narrower search (comes with search-11)."
         },
         {
           "id": "search-14",
@@ -317,7 +316,7 @@
           "state": "in-progress",
           "done_when": "For the same input the UI's results equal `umx search`'s; clicking a hit pans to it; the matching text and strength are shown.",
           "source": "PRD 001 req-112",
-          "note": "Shipped today: results and pan, and the reply's hints as umx gives them (search-13, in part). Missing in the view: text and links (the search reply carries them since search-07 and search-08) and strength (not built yet).",
+          "note": "Shipped today: results and pan, and the reply's hints as umx gives them (search-13, in part). Missing in the view: text and links (the search reply carries them since search-07 and search-08) and strength (the search reply carries it since search-10).",
           "replaces": [
             "001-concept-graph.dd.json#requirements/req-112"
           ]

@@ -67,10 +67,13 @@ struct Args {
     redact_only: bool,
     /// `--along-only`: only the ruler's `--along` rows (D71 step 12), on the realistic fixture; printed, not written.
     along_only: bool,
+    /// `--strength-only`: only the ruler's search strength rows (PRD 002 search-10), on the realistic fixture; printed,
+    /// not written.
+    strength_only: bool,
 }
 
 const USAGE: &str = "umx-bench --umx <release umx binary> --out <dir> --commit <sha> [--conditions <text>] \
-[--nodes 10000] [--edges-per-node 3] [--seed 1] [--runs 5] [--adds 50] [--vectors 4] [--rich] [--no-cli] [--external-ends-only] [--batch-ids-only] [--external-writes-only] [--cross-reads-only] [--reload-only <graphs>] [--provenance-only] [--provenance-sessions 10000] [--provenance-duplicate-lines] [--ruler] [--redact-only] [--along-only]";
+[--nodes 10000] [--edges-per-node 3] [--seed 1] [--runs 5] [--adds 50] [--vectors 4] [--rich] [--no-cli] [--external-ends-only] [--batch-ids-only] [--external-writes-only] [--cross-reads-only] [--reload-only <graphs>] [--provenance-only] [--provenance-sessions 10000] [--provenance-duplicate-lines] [--ruler] [--redact-only] [--along-only] [--strength-only]";
 
 fn args() -> Result<Args, String> {
     parse(std::env::args().skip(1))
@@ -101,6 +104,7 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
         ruler: false,
         redact_only: false,
         along_only: false,
+        strength_only: false,
     };
     while let Some(flag) = it.next() {
         match flag.as_str() {
@@ -120,6 +124,11 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
             "--along-only" => {
                 a.ruler = true;
                 a.along_only = true;
+                continue;
+            }
+            "--strength-only" => {
+                a.ruler = true;
+                a.strength_only = true;
                 continue;
             }
             "--rich" => {

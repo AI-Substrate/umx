@@ -19,6 +19,7 @@ use umx_core::{Command, FieldKind, Id, IdText, Policy, Problem, Role, SafeText, 
 /// never counted toward `batch_warnings_truncated`. The daemon's test checks this is exactly the catalogue's Hint
 /// rows that services return.
 pub const HINTS: &[&str] = &[
+    "no_strong_match",
     "search_results_cut",
     "similarity_unavailable",
     "similarity_no_embedder",
@@ -346,6 +347,7 @@ pub const CODES: &[&str] = &[
     "policy_not_recorded",
     "policy_lowered",
     "policy_not_lowered",
+    "no_strong_match",
     "search_results_cut",
     "secured_graphs_skipped",
     "secured_graphs_read",
@@ -1814,6 +1816,13 @@ pub fn search_results_cut(shown: usize, found: usize, fix: Command) -> Problem {
         .with("shown", Slot::Count(shown as u64))
         .with("found", Slot::Count(found as u64))
         .with("fix", Slot::Command(fix))
+}
+
+/// PRD 002 search-10: no match a meaning leg found is strong (or exact) against the nodes searched. `fix` is the same
+/// search with every selector, its phrasings as placeholders and one more `--also <words>`, to reword or add a
+/// phrasing.
+pub fn no_strong_match(fix: Command) -> Problem {
+    Problem::new("no_strong_match").with("fix", Slot::Command(fix))
 }
 
 pub fn secured_graphs_skipped(n: usize) -> Problem {

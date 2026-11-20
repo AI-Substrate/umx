@@ -61,7 +61,7 @@ The project lead asked for a review of how graphs are embedded and whether searc
 | c-05 | add | [search-07](../prds/002-search.dd.md#requirements) | Each hit carries about 200 characters of the field that matched. | [r-03](#rulings) |
 | c-06 | add | [search-08](../prds/002-search.dd.md#requirements) | Each hit carries up to 3 of its stored links and a count of the rest. | [r-03](#rulings) |
 | c-07 | add | [search-09](../prds/002-search.dd.md#requirements) | Up to 5 phrasings in one call, one fused list. | [r-03](#rulings) |
-| c-08 | add | [search-10](../prds/002-search.dd.md#requirements) | Strong, fair or weak against the graph's own background; a hint when nothing is strong. | [r-03](#rulings) |
+| c-08 | add | [search-10](../prds/002-search.dd.md#requirements) | Strong, fair or weak against the graph's own background; a hint when nothing is strong or fair. | [r-03](#rulings) |
 | c-09 | add | [search-11](../prds/002-search.dd.md#requirements) | Hits by type and shared neighbours, each with the command to narrow. | [r-03](#rulings) |
 | c-10 | amend | [search-12](../prds/002-search.dd.md#requirements) | Adds narrowing by type, which the hints in search-11 need. | [r-03](#rulings) |
 | c-11 | add | [search-13](../prds/002-search.dd.md#requirements) | Search replies carry hints for every omission and weak result. | [r-03](#rulings) |

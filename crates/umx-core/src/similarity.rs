@@ -82,7 +82,8 @@ impl Floor {
 
 /// One key's calibrated floors (workstream 004 s26, embeddings-expert ruling 2026-11-11): `search` is the p99 of
 /// query-to-random-document cosines (lowered only to keep BEIR hybrid nDCG@10 within 0.01 of no floor), `similar`
-/// the p99 of document-to-random-document cosines, both over int8 vectors as umx stores them.
+/// the p99 of document-to-random-document cosines, both over int8 vectors as umx stores them. `strength` holds the
+/// key's strength cuts (PRD 002 search-10), None when they were not measured for it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Calibrated {
     pub model: &'static str,
@@ -91,6 +92,146 @@ pub struct Calibrated {
     pub search: f32,
     pub similar: f32,
     pub run: &'static str,
+    pub strength: Option<StrengthCuts>,
+}
+
+/// PRD 002 search-10: how strongly a hit found by meaning matches, measured against every node searched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Strength {
+    Weak,
+    Fair,
+    Strong,
+    /// The hit's whole value equals the query (an exact match), whatever its vectors say.
+    Exact,
+}
+
+impl Strength {
+    pub fn word(self) -> &'static str {
+        match self {
+            Strength::Weak => "weak",
+            Strength::Fair => "fair",
+            Strength::Strong => "strong",
+            Strength::Exact => "exact",
+        }
+    }
+}
+
+/// One key's strength cuts (PRD 002 search-10, embeddings-expert ruling on search-10), measured by umx-bench's
+/// floor-calibration `--strength` and recorded beside the floors. A hit is strong when BOTH its robust z (its
+/// whole-node cosine against the median and MAD of every searched node's whole-node cosine) is at least
+/// `strong_z + strong_z_per_ln * ln N` (N the nodes in the population: the maximum of N off-topic draws grows with
+/// N) AND its cosine is at least `strong_score`; fair likewise with the fair cuts; else weak. A population below
+/// `min_population` nodes, or with a MAD of 0, labels nothing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StrengthCuts {
+    pub strong_z: f32,
+    pub strong_z_per_ln: f32,
+    pub strong_score: f32,
+    pub fair_z: f32,
+    pub fair_z_per_ln: f32,
+    pub fair_score: f32,
+    pub min_population: usize,
+    /// Whether the z cuts apply. False is the cosine-only rule: a label needs only the cosine cuts (and the population
+    /// minimum), so the record alone can switch the rule's shape.
+    pub z_part: bool,
+    /// The largest population the cuts were measured on. Above twice it nothing is labelled (the z cuts are a fit on
+    /// ln N, never checked that far), until a larger corpus is measured.
+    pub max_n_measured: usize,
+    /// The strength run that measured these cuts, from the rows of the key's floors run.
+    pub run: &'static str,
+}
+
+impl StrengthCuts {
+    /// The z a strong hit needs in a population of `n` nodes.
+    pub fn strong_z_at(&self, n: usize) -> f64 {
+        f64::from(self.strong_z) + f64::from(self.strong_z_per_ln) * libm::log(n.max(1) as f64)
+    }
+
+    /// The z a fair hit needs in a population of `n` nodes.
+    pub fn fair_z_at(&self, n: usize) -> f64 {
+        f64::from(self.fair_z) + f64::from(self.fair_z_per_ln) * libm::log(n.max(1) as f64)
+    }
+}
+
+/// The scores of every node searched in one vector space for one phrasing, summarised by order statistics only: the
+/// lower median `median` and the lower median of `|s - median|` (`mad`). Selection by `total_cmp`, no sums, so the
+/// result depends only on the multiset of scores, never on their order or the machine.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Population {
+    pub n: usize,
+    pub median: f32,
+    pub mad: f32,
+}
+
+impl Population {
+    /// The statistics of `scores` (reordered in place). None when empty.
+    pub fn of(scores: &mut [f32]) -> Option<Population> {
+        let n = scores.len();
+        let median = lower_median(scores)?;
+        for s in scores.iter_mut() {
+            *s = (*s - median).abs();
+        }
+        let mad = lower_median(scores)?;
+        Some(Population { n, median, mad })
+    }
+
+    /// The robust z of a score: `(s - median) / mad`. None when the MAD is 0 (no spread to measure against).
+    pub fn z(&self, s: f32) -> Option<f64> {
+        (self.mad > 0.0).then(|| (f64::from(s) - f64::from(self.median)) / f64::from(self.mad))
+    }
+}
+
+/// The element of rank `(n - 1) / 2` by `total_cmp`: the median for odd n, the lower of the middle two for even n.
+fn lower_median(v: &mut [f32]) -> Option<f32> {
+    if v.is_empty() {
+        return None;
+    }
+    let mid = (v.len() - 1) / 2;
+    Some(*v.select_nth_unstable_by(mid, f32::total_cmp).1)
+}
+
+/// The label of a hit whose whole-node cosine is `s` in `population`, by `cuts`. None (no label) when the population
+/// is below the key's `min_population` or above twice its `max_n_measured`, or, when the z cuts apply, has no spread.
+pub fn strength(population: &Population, cuts: &StrengthCuts, s: f32) -> Option<Strength> {
+    if !labels(population, cuts) {
+        return None;
+    }
+    let (strong, fair) = if cuts.z_part {
+        let z = population.z(s)?;
+        (
+            z >= cuts.strong_z_at(population.n),
+            z >= cuts.fair_z_at(population.n),
+        )
+    } else {
+        (true, true)
+    };
+    Some(if strong && s >= cuts.strong_score {
+        Strength::Strong
+    } else if fair && s >= cuts.fair_score {
+        Strength::Fair
+    } else {
+        Strength::Weak
+    })
+}
+
+/// Whether `population` can label anything by `cuts`: at least the key's minimum, at most twice the largest
+/// population measured, and some spread when the z cuts apply.
+pub fn labels(population: &Population, cuts: &StrengthCuts) -> bool {
+    population.n >= cuts.min_population
+        && population.n <= cuts.max_n_measured.saturating_mul(2)
+        && (!cuts.z_part || population.mad > 0.0)
+}
+
+/// The strength cuts for `key`: its calibrated row's, else None (an uncalibrated key or a test fake labels nothing).
+pub fn strength_cuts(key: &crate::ports::ModelKey) -> Option<StrengthCuts> {
+    CALIBRATED
+        .iter()
+        .find(|c| {
+            c.model == key.model()
+                && c.dims == key.dims()
+                && c.prompt_version == key.prompt_version()
+        })
+        .and_then(|c| c.strength)
 }
 
 /// The calibrated floors, one row per key. The record is docs/project/benchmarks/floor-calibration/floors.json and a
@@ -103,6 +244,18 @@ pub const CALIBRATED: &[Calibrated] = &[
         search: 0.7101,
         similar: 0.8462,
         run: "fc-2026-11-11-cdc1965",
+        strength: Some(StrengthCuts {
+            strong_z: 5.302,
+            strong_z_per_ln: 0.5996,
+            strong_score: 0.7382,
+            fair_z: -1.5398,
+            fair_z_per_ln: 1.1069,
+            fair_score: 0.7117,
+            min_population: 100,
+            z_part: true,
+            max_n_measured: 8674,
+            run: "sc-2026-11-19-c5485aa",
+        }),
     },
     Calibrated {
         model: "text-embedding-3-large",
@@ -111,6 +264,18 @@ pub const CALIBRATED: &[Calibrated] = &[
         search: 0.409,
         similar: 0.6133,
         run: "fc-2026-11-11-cdc1965",
+        strength: Some(StrengthCuts {
+            strong_z: 3.3557,
+            strong_z_per_ln: 0.6124,
+            strong_score: 0.4728,
+            fair_z: -0.797,
+            fair_z_per_ln: 0.8843,
+            fair_score: 0.409,
+            min_population: 200,
+            z_part: true,
+            max_n_measured: 8674,
+            run: "sc-2026-11-19-c5485aa",
+        }),
     },
     Calibrated {
         model: "text-embedding-3-small",
@@ -119,6 +284,18 @@ pub const CALIBRATED: &[Calibrated] = &[
         search: 0.4095,
         similar: 0.5807,
         run: "fc-2026-11-11-cdc1965",
+        strength: Some(StrengthCuts {
+            strong_z: 6.0899,
+            strong_z_per_ln: 0.5293,
+            strong_score: 0.4883,
+            fair_z: 1.0806,
+            fair_z_per_ln: 0.6599,
+            fair_score: 0.4095,
+            min_population: 100,
+            z_part: true,
+            max_n_measured: 8674,
+            run: "sc-2026-11-19-c5485aa",
+        }),
     },
 ];
 
@@ -247,7 +424,21 @@ pub fn top_k(
     rows: &[i8],
     inv: &[f32],
     k: usize,
+    keep: impl FnMut(usize) -> bool,
+) -> Vec<Hit> {
+    top_k_scored(query, rows, inv, k, keep, |_, _| {})
+}
+
+/// [`top_k`] that also hands every kept row's score to `scored(row, score)` from the same loop, so a caller can
+/// measure the whole distribution (PRD 002 search-10) with no second pass and no new dot products. A zero query or
+/// `k = 0` scores nothing.
+pub fn top_k_scored(
+    query: &[i8],
+    rows: &[i8],
+    inv: &[f32],
+    k: usize,
     mut keep: impl FnMut(usize) -> bool,
+    mut scored: impl FnMut(usize, f32),
 ) -> Vec<Hit> {
     let dims = query.len();
     debug_assert!(
@@ -268,6 +459,7 @@ pub fn top_k(
             row: i as u32,
             score: dot(query, row) as f32 * q * inv[i],
         };
+        scored(i, hit.score);
         if heap.len() < k {
             heap.push(Worst(hit));
         } else if heap.peek().is_some_and(|w| Worst(hit) < *w) {
@@ -332,6 +524,141 @@ mod tests {
             let similar = floor(&key, Use::Similar).source;
             assert_eq!(uses_without_floor(&key, f.source, similar), None);
         }
+    }
+
+    #[test]
+    fn population_is_the_order_statistic_median_and_mad() {
+        // Odd: sorted 0.1 0.2 0.3 0.5 0.9 → median 0.3; deviations 0.2 0.1 0 0.2 0.6 → sorted 0 0.1 0.2 0.2 0.6.
+        let p = Population::of(&mut [0.5, 0.1, 0.9, 0.3, 0.2]).unwrap();
+        assert_eq!((p.n, p.median), (5, 0.3));
+        assert_eq!(p.mad, (0.1f32 - 0.3).abs().min((0.5f32 - 0.3).abs()));
+        // Even: the lower of the middle two, an element, never an average.
+        let p = Population::of(&mut [0.4, 0.1, 0.3, 0.2]).unwrap();
+        assert_eq!(p.median, 0.2);
+        // Duplicates: three equal scores give a MAD of 0, so no z.
+        let p = Population::of(&mut [0.7, 0.7, 0.7, 0.1]).unwrap();
+        assert_eq!((p.median, p.mad, p.z(0.9)), (0.7, 0.0, None));
+        assert_eq!(Population::of(&mut []), None);
+        let p = Population::of(&mut [0.0, 0.5, 1.0]).unwrap();
+        assert_eq!(p.z(1.0), Some(1.0));
+    }
+
+    #[test]
+    fn a_population_does_not_depend_on_the_order_of_its_scores() {
+        // Every permutation of 6 scores (720, with ties and a negative) gives bit-identical statistics.
+        let base = [0.31f32, -0.05, 0.77, 0.31, 0.12, 0.64];
+        let want = Population::of(&mut base.clone()).unwrap();
+        let mut idx = [0usize, 1, 2, 3, 4, 5];
+        let mut c = [0usize; 6];
+        let mut i = 0;
+        let check = |idx: &[usize; 6]| {
+            let mut v: Vec<f32> = idx.iter().map(|&j| base[j]).collect();
+            let p = Population::of(&mut v).unwrap();
+            assert_eq!(
+                (p.median.to_bits(), p.mad.to_bits()),
+                (want.median.to_bits(), want.mad.to_bits())
+            );
+        };
+        check(&idx);
+        // Heap's algorithm: every permutation once.
+        while i < 6 {
+            if c[i] < i {
+                idx.swap(if i % 2 == 0 { 0 } else { c[i] }, i);
+                check(&idx);
+                c[i] += 1;
+                i = 0;
+            } else {
+                c[i] = 0;
+                i += 1;
+            }
+        }
+    }
+
+    #[test]
+    fn labels_need_both_cuts_and_a_big_enough_spread_population() {
+        let cuts = StrengthCuts {
+            strong_z: 2.0,
+            strong_z_per_ln: 0.0,
+            strong_score: 0.6,
+            fair_z: 1.0,
+            fair_z_per_ln: 0.0,
+            fair_score: 0.5,
+            min_population: 5,
+            z_part: true,
+            max_n_measured: 100,
+            run: "test",
+        };
+        // median 0.4, mad 0.1.
+        let p = Population::of(&mut [0.3, 0.4, 0.5, 0.4, 0.2, 0.6, 0.4]).unwrap();
+        assert_eq!(p.median, 0.4);
+        assert!((p.mad - 0.1).abs() < 1e-6);
+        assert_eq!(strength(&p, &cuts, 0.65), Some(Strength::Strong));
+        assert_eq!(strength(&p, &cuts, 0.55), Some(Strength::Fair), "z 1.5");
+        assert_eq!(strength(&p, &cuts, 0.45), Some(Strength::Weak), "z 0.5");
+        let high = StrengthCuts {
+            strong_score: 0.9,
+            ..cuts
+        };
+        assert_eq!(
+            strength(&p, &high, 0.65),
+            Some(Strength::Fair),
+            "a high z alone is not strong: the score cut holds it back"
+        );
+        let grows = StrengthCuts {
+            strong_z_per_ln: 1.0,
+            ..cuts
+        };
+        assert!(grows.strong_z_at(7) > cuts.strong_z_at(7));
+        assert_eq!(
+            strength(&p, &grows, 0.65),
+            Some(Strength::Fair),
+            "z 2.5 is below 2 + ln 7"
+        );
+        let small = StrengthCuts {
+            min_population: 8,
+            ..cuts
+        };
+        assert_eq!(strength(&p, &small, 0.65), None, "below min_population");
+        let flat = Population::of(&mut [0.4; 9]).unwrap();
+        assert_eq!(strength(&flat, &cuts, 0.9), None, "a MAD of 0");
+        let cosine_only = StrengthCuts {
+            z_part: false,
+            ..grows
+        };
+        assert_eq!(
+            strength(&p, &cosine_only, 0.65),
+            Some(Strength::Strong),
+            "without the z part only the cosine cuts apply"
+        );
+        assert_eq!(strength(&flat, &cosine_only, 0.55), Some(Strength::Fair));
+        // The cosine cuts hold at equality (>=), strong and fair alike.
+        assert_eq!(strength(&p, &cosine_only, 0.6), Some(Strength::Strong));
+        assert_eq!(strength(&p, &cosine_only, 0.5), Some(Strength::Fair));
+        assert_eq!(strength(&p, &cosine_only, 0.4999), Some(Strength::Weak));
+        // Above twice the largest population measured nothing is labelled; at twice it, still labelled.
+        let measured = StrengthCuts {
+            max_n_measured: 3,
+            ..cosine_only
+        };
+        assert!(labels(&Population { n: 6, ..p }, &measured));
+        assert_eq!(
+            strength(&Population { n: 6, ..p }, &measured, 0.65),
+            Some(Strength::Strong)
+        );
+        assert_eq!(strength(&Population { n: 7, ..p }, &measured, 0.65), None);
+        assert!(!labels(&Population { n: 7, ..p }, &measured));
+        assert_eq!(
+            strength(
+                &p,
+                &StrengthCuts {
+                    min_population: 8,
+                    ..cosine_only
+                },
+                0.65
+            ),
+            None
+        );
+        assert!(Strength::Exact > Strength::Strong && Strength::Strong > Strength::Fair);
     }
 
     #[test]
@@ -409,7 +736,24 @@ mod tests {
             })
             .collect();
         all.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.row.cmp(&b.row)));
+        let mut every = Vec::new();
+        let scored = top_k_scored(
+            &query,
+            &rows,
+            &inv,
+            25,
+            |i| i % 3 != 0,
+            |i, s| {
+                every.push(Hit {
+                    row: i as u32,
+                    score: s,
+                })
+            },
+        );
+        every.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.row.cmp(&b.row)));
+        assert_eq!(every, all, "every kept row scored once, from the same loop");
         all.truncate(25);
+        assert_eq!(scored, all);
         assert_eq!(top_k(&query, &rows, &inv, 25, |i| i % 3 != 0), all);
     }
 }

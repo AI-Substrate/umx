@@ -75,6 +75,10 @@ every named graph it lists; do not combine it or `--scope` with `--all`.
    "<words>"` (up to 4 `--also`): one list, one embedder call, nodes the phrasings agree on first; each hit's
    `phrasings` names by position (1 the main text) which found it. One question per search; no secrets in any
    phrasing (one keeps them all off a hosted embedder).
+   **usage 214**: read each meaning hit's `strength` (`strong`, `fair`, `weak`; `exact`; null for a word-only hit):
+   it measures the hit against what this query scored across the nodes searched. Open `strong` hits first, check a
+   `weak` one before trusting it. `no_strong_match` (no hit strong, fair or exact): reword, add `--also <words>`, or
+   stop and say the graph may not hold it.
    **usage 160**: `similarity_no_embedder` means no instance here may serve that graph (a `local` graph, only
    hosted instances): it was searched by words only, so empty means no word matched. Tell the user: a local instance
    gives it meaning search; allowing hosted ones is the graph owner's decision, never a search's.

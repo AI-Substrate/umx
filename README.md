@@ -219,7 +219,9 @@ Without an embedder, search still works: it returns word and exact matches and s
 `similarity_unavailable`.
 Each hit says how it was found (`legs`: `exact`, `word`, `vector` or `both`) and its scores. `--also` adds up to 4
 more phrasings of the same question to one search, fused into one list, each hit naming the phrasings that found it
-by position. See `umx docs get search`.
+by position. Each hit found by meaning is labelled `strong`, `fair` or `weak` against what the query scored across
+every node searched, and when no hit is strong or fair the hint `no_strong_match` says the graph may not hold the
+subject. See `umx docs get search`.
 
     umx search approval backlog
     umx search approval backlog --graph launch --limit 5

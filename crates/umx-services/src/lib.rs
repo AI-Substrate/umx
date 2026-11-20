@@ -82,7 +82,8 @@ pub use graphfile::{GraphfileLoad, GraphfileLoadedEntry, GraphfileNotLoaded};
 pub use hybrid::{
     Admitted, Fused, HybridHit, HybridResult, LEG_DEPTH, Legs, MatchedTerm, QueryFailed,
     QueryRunner, QueryVectors, RRF_K, Ranked, SearchPlan, VectorMatch, WHOLE_NODE,
-    WORD_MAX_DF_SHARE, WordMatch, WordRanked, fuse, fuse_phrasings, vector_candidates,
+    WORD_MAX_DF_SHARE, WordMatch, WordRanked, fuse, fuse_phrasings, no_strong_match,
+    vector_candidates, vector_candidates_scored,
 };
 pub use pairs::{
     ModelSource, PAIRS_BACKSTOP_MS, PAIRS_DEFAULT_LIMIT, PAIRS_MAX_LIMIT, Pair, PairNode, PairRow,
