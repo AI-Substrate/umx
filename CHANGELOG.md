@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/AI-Substrate/umx/compare/v0.3.0...v0.4.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* neighbours lists the edges of the node's entity members
+* ontology adopt-std --field-to-tag moves a field into std tags
+* tag filters on find, search, walk and neighbours, and IN n.tags
+* std tags and the node list tag filter
+
+### Features
+
+* doctor hints adopt-std for a graph made without std; the skill writes std names ([d2500ac](https://github.com/AI-Substrate/umx/commit/d2500aced5646fe6bc4d40826e4da6bfe24cdb9e))
+* neighbours lists the edges of the node's entity members ([7127cb5](https://github.com/AI-Substrate/umx/commit/7127cb5c5611c340a09a4b59e70411c4445e3228))
+* ontology adopt-std --field-to-tag moves a field into std tags ([6c3ff84](https://github.com/AI-Substrate/umx/commit/6c3ff849d64b99a01d8220591048a7d59bedb4d8))
+* std tags and the node list tag filter ([f3ed406](https://github.com/AI-Substrate/umx/commit/f3ed406843d4ec9a3bdbdd323494e4697c378c8f))
+* tag filters on find, search, walk and neighbours, and IN n.tags ([0c87dcf](https://github.com/AI-Substrate/umx/commit/0c87dcfed2eaff7b4daa4a9020712847e49d8785))
+
+
+### Bug Fixes
+
+* node get and node list --columns locator show the whole locator ([69e8142](https://github.com/AI-Substrate/umx/commit/69e8142c3af725cf82ba9bd0133ddd88f8df3c71))
+
 ## [0.3.0](https://github.com/AI-Substrate/umx/compare/v0.2.0...v0.3.0) (2026-11-19)
 
 
