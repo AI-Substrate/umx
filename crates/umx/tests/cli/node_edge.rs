@@ -1567,6 +1567,43 @@ fn resource_nodes_through_the_cli() {
     );
 }
 
+/// F300: `--columns locator` shows a resource node's whole locator, as the default read does, on node get and node
+/// list (it was null: the projection read it as a flat field, which answers only the parts). A plain node's is null.
+#[test]
+fn columns_locator_shows_the_locator_the_default_read_shows() {
+    let mut home = Home::new("f300-columns-locator");
+    home.graph();
+    let added = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "document",
+        "--locator",
+        "docs/brief.md",
+    ]);
+    let brief = added.data["node"]["id"].as_str().unwrap().to_owned();
+    let plain = home.ok(&["node", "add", "--type", "finding", "--title", "Plain"]);
+    let plain = plain.data["node"]["id"].as_str().unwrap().to_owned();
+    let whole = home.ok(&["node", "get", &brief]).data["node"]["locator"].clone();
+    assert_eq!(
+        whole,
+        json!({ "kind": "file", "format": "markdown", "source": "docs/brief.md" })
+    );
+    let got = home.ok(&["node", "get", &brief, "--columns", "id,locator"]);
+    assert_eq!(got.data["node"], json!({ "id": brief, "locator": whole }));
+    let got = home.ok(&["node", "get", &plain, "--columns", "locator"]);
+    assert_eq!(got.data["node"], json!({ "locator": null }));
+    let listed = home.ok(&["node", "list", "--columns", "id,locator,locator_source"]);
+    let mut rows = listed.data["rows"].as_array().unwrap().clone();
+    rows.sort_by_key(|r| r["id"].as_str().unwrap().to_owned());
+    let mut want = vec![
+        json!({ "id": brief, "locator": whole, "locator_source": "docs/brief.md" }),
+        json!({ "id": plain, "locator": null, "locator_source": null }),
+    ];
+    want.sort_by_key(|r| r["id"].as_str().unwrap().to_owned());
+    assert_eq!(rows, want, "node list --columns locator");
+}
+
 /// F211: a date field takes dates and date-times before 1970 like later ones: stored in universal time, read back,
 /// and compared across 1970 by `--where`. Outside years 0001 to 9999 a value is not a date (`field_kind_mismatch`).
 #[test]

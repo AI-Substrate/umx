@@ -2049,7 +2049,13 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                     virtual_node_json(alias, n, columns.as_deref())
                 } else {
                     match &columns {
-                        Some(cols) => pick(alias, n.id, |name| n.field(name), cols),
+                        Some(cols) => pick(
+                            alias,
+                            n.id,
+                            |name| n.field(name),
+                            || n.locator.clone(),
+                            cols,
+                        ),
                         None => node_json(alias, n),
                     }
                 };
@@ -2134,7 +2140,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                     .zip(&aliases)
                     .zip(&flags)
                     .map(|((n, alias), flags)| {
-                        let mut row = pick(alias, n.id(), |name| n.field(name), &cols);
+                        let mut row =
+                            pick(alias, n.id(), |name| n.field(name), || n.locator(), &cols);
                         if page.graphs.as_ref().is_some_and(|g| g.copies) {
                             row["copy"] = json!(alias);
                         }
@@ -5474,11 +5481,13 @@ fn pick_edge(row: &Value, edge: &umx_services::ReadEdge, columns: &[String]) -> 
 
 /// The asked-for columns of a node, read by `field`; a column the node lacks is null. Values come from `Node::field`
 /// or a listed node's `field` (the same names and values), so derived fields such as `evidence_kinds` are computed
-/// below the daemon.
+/// below the daemon. `locator` is the whole locator, as the default read shows it (F300): `field` answers nothing for
+/// it, only for its flat parts.
 fn pick(
     alias: &str,
     id: umx_core::Id,
     field: impl Fn(&str) -> Option<Value>,
+    locator: impl Fn() -> Option<umx_core::Locator>,
     columns: &[String],
 ) -> Value {
     let mut row = serde_json::Map::new();
@@ -5486,6 +5495,7 @@ fn pick(
         let v = match c.as_str() {
             "address" => json!(umx_services::address(alias, id)),
             "graph" => json!(alias),
+            umx_core::locator::LOCATOR_FIELD => json!(locator()),
             other => field(other).unwrap_or(Value::Null),
         };
         row.insert(c.clone(), v);

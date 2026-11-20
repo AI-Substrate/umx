@@ -123,6 +123,13 @@ impl<'g> ListedNode<'g> {
         self.0.custom_field_names()
     }
 
+    /// The node's whole locator, as a default read shows it. `field("locator")` answers nothing (its parts are the flat
+    /// names), so a `--columns locator` projection reads it here. The kind is hot: a node with no locator decodes no line.
+    pub fn locator(self) -> Option<umx_core::Locator> {
+        self.0.field("locator_kind")?;
+        self.0.to_node().locator
+    }
+
     /// The whole node, decoded from its line, for a reader that needs all of it.
     pub fn to_node(self) -> Node {
         self.0.to_node()
