@@ -14,6 +14,9 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    - if not, **usage 032**: add it with its evidence in one command, `umx node add --type <type> --title
      "<title>" --evidence '<file>#<selector>' --evidence-kind <kind>`. A refused pointer adds no node: fix it
      and run the whole command again.
+   - the graph is std unless it was made `--no-std`: people, organisations, teams, meetings, decisions,
+     actions, questions, risks and documents take std's types with no `ontology add`, as in
+     `umx node add --type decision --title "Ship in March" --evidence 'notes.md#L12' --evidence-kind document`.
    - **usage 161**: date what the source dates, in a `date` field, at the precision it gives: `2025-01` or
      `2025` for a month or a year (never invent a day), a date-time with its offset
      (`2026-10-30T09:40:00+11:00`). Never guess a date, and never write a time into a string field.
@@ -30,7 +33,9 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    there, so use its id; `resource_elsewhere` names another graph's copy to link to. Link people and decisions to
    it with ordinary edges. `umx resource show <node>` prints its locator; `umx node edit <node> --locator <x>`
    re-points it and `locator_changed` says what cited the old source.
-6. Relate the nodes with `umx edge add` (`/umx build`, usage 009). **usage 165**: date the anchors and link
+6. Relate the nodes with `umx edge add` (`/umx build`, usage 009), with std's relations where one fits:
+   `umx edge add <person> attended <meeting>`, `<decision> raised_by <person>`, `<person> works_for
+   <organisation>`, `<person> member_of <team>`, `<decision> sourced_from <document>`. **usage 165**: date the anchors and link
    the rest. The meeting (and each `segment` of a long one) is a node with `starts_on` and `ends_on` as full
    date-times with the offset; every point links to the finest one it came up in with `raised_in`. When
    something was said is that link, never a date field (`umx docs get time`). Fix `anchor_undated`,

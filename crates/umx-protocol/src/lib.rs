@@ -3828,6 +3828,11 @@ catalogue! {
         "umx doctor: umx check fails on a loaded graph's files (such as graph_invalid), or gives no result",
         "Graph <graph> could not be checked.",
         "umx check --graph <graph>";
+    // ws008 t5: a loaded graph made without std (`graph new --no-std`, or made before std).
+    DoctorGraphNotStd => "doctor_graph_not_std", Hint, 0,
+        "umx doctor: a loaded graph does not use std; ontology adopt-std moves it onto std v1, dry run first",
+        "Graph <graph> does not use std. ontology adopt-std moves it onto std v1; its dry run writes nothing.",
+        "umx ontology adopt-std --graph <graph> --dry-run";
     // s10: the daemon as a per-user service (req-86).
     ServiceConflict => "service_conflict", Error, 1,
         "umx daemon install while a umx service is installed for another umx binary or UMX_HOME; nothing changed",

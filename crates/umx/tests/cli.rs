@@ -3234,6 +3234,12 @@ fn trigger(code: Code) -> (Envelope, u8) {
             fs::remove_dir_all(&path).unwrap();
             home.umx(&["doctor"])
         }
+        Code::DoctorGraphNotStd => {
+            home.start();
+            let path = home.path.join("g").display().to_string();
+            home.ok(&["graph", "new", &path, "--alias", "demo", "--no-std"]);
+            home.umx(&["doctor"])
+        }
         Code::ServiceConflict => {
             home.install();
             home.service_runs("/elsewhere/umx");
@@ -5435,6 +5441,8 @@ mod catalogue;
 mod config;
 #[path = "cli/daemon.rs"]
 mod daemon;
+#[path = "cli/doctor_std.rs"]
+mod doctor_std;
 #[path = "cli/entity.rs"]
 mod entity;
 #[path = "cli/entity_neighbours.rs"]

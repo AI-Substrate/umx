@@ -30,7 +30,10 @@ It checks, in this order:
   nothing in its files. Doctor runs one check naming every loaded graph, so a link into another loaded graph is read
   whatever its visibility and is never a problem; for each graph it reports only a count, and its next is the
   explicit `umx check --graph <graph>`. A graph `umx check` cannot read is `doctor_graph_unchecked`, never clean, and a daemon
-  that does not list its graphs is `doctor_graphs_unlisted`. With the daemon down, graphs are not checked (the
+  that does not list its graphs is `doctor_graphs_unlisted`. A loaded graph made without std (`graph new --no-std`,
+  or made before std) gets the hint `doctor_graph_not_std`, whose next is
+  `umx ontology adopt-std --graph <graph> --dry-run`; it changes neither the verdict nor the exit code, and is
+  asked only about the graphs `umx graph list` returned. With the daemon down, graphs are not checked (the
   daemon reloads the remembered ones when it starts);
 - the service (`umx daemon install`): not installed is information; installed but not loaded, loaded with no
   daemon running, a daemon started by hand running instead, or the umx binary it runs gone are each a finding;

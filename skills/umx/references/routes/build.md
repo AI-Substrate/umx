@@ -48,7 +48,8 @@ makes a facet's other tags warn `tag_off_vocabulary`. `node list --tag a --tag b
 `--tag 'origin:*'` a facet, `--no-tag x` leaves out; all from the tag index. Not in a `--no-std` graph
 (`tag_needs_std`). **usage 217**: `umx ontology adopt-std --field-to-tag <field> --dry-run` (then without
 `--dry-run`) moves a custom label field into `<field>:<value>` tags, ids kept; values it cannot move stay, listed in
-`adopt_tag_value_invalid`.
+`adopt_tag_value_invalid`. `umx doctor` hints `doctor_graph_not_std` for each loaded graph made without std,
+with this dry run as its next.
 
 An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
@@ -152,9 +153,11 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 2. **usage 005**: a node is something someone could agree with, argue against or be blocked by (an option,
    decision, criterion, open question, tension, constraint, owned deliverable). Not a passing remark, a
    restatement or a topic nobody took a position on.
-3. Add: `umx node add --type <type> --title "<title>"`. **usage 006**: keep the id it prints and name nodes
+3. Add: `umx node add --type <type> --title "<title>"`, with a std type where one fits
+   (`umx node add --type person --title "Ada Lovelace"`, `--type decision`, `--type organisation`). **usage 006**: keep the id it prints and name nodes
    by id, a 6+ character prefix or `umx:<alias>/<id>`, never by title (§ C2).
-4. **usage 009**: relate with `umx edge add <from> <relation> <to>`. It echoes a sentence; check it says
+4. **usage 009**: relate with `umx edge add <from> <relation> <to>`, with a std relation where one fits
+   (`umx edge add <person> works_for <organisation>`, `<person> member_of <team>`). It echoes a sentence; check it says
    what you meant. If the relation overstates the claim, pick a gentler one or add one. **usage 135**: put
    where the relationship was asserted on the edge (`--evidence <pointer> --evidence-kind <kind>`), never in a
    custom `why` field; `umx edge show <edge id>` reads it back.

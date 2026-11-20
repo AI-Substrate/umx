@@ -33,6 +33,9 @@ Job: get from an error to a working command, or settle what a merge left in a gr
      `umx graph load <folder> --as <alias>` to run once it is fixed; `umx graph unload <alias>` forgets it.
      `graph_id_changed`: the folder holds another graph now, so load it under its own alias. `registry_unreadable`:
      nothing reloads until the human fixes or removes `~/.umx/registry/graphs.toml`; never edit it yourself.
+   - `doctor_graph_not_std` (a hint): that graph was made without std. Ask the human before moving it; run its
+     next (`umx ontology adopt-std --graph <graph> --dry-run`) and read the plan before running it without
+     `--dry-run` (`/umx build`, usage 213).
    - `daemon_version_mismatch` (a warning): the CLI and daemon are different builds. Run its `next`, then
      start the daemon from the same build (`just dev` in the umx repo).
    - **usage 090**: `daemon_busy` (exit 1): the daemon is serving as many requests as it takes at once and

@@ -207,7 +207,7 @@ fn report(rows: Vec<Row>, fixed: Vec<Value>) -> Envelope {
         }),
     );
     for issue in rows.into_iter().filter_map(|r| r.issue) {
-        env = env.warn(issue);
+        env = env.note(issue);
     }
     env.data["verdict"] = json!(match env.exit_code() {
         0 => "ok",
@@ -936,7 +936,32 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
                 Issue::fill(Code::DoctorGraphUnchecked, &[("graph", graph.clone())]),
             ),
         });
+        if let Some(row) = std_row(config, build, alias, graph) {
+            rows.push(row);
+        }
     }
+}
+
+/// ws008 t5: a hint for a loaded graph made without std, whose next is adopt-std's dry run. Asked by `ontology show`
+/// for the alias `graph list` already returned, so it names no graph doctor did not already name; bounded like every
+/// ask. A refusal or no answer is no row: doctor claims nothing it did not read.
+fn std_row(config: &Config, build: &Build, alias: &str, graph: Fill) -> Option<Row> {
+    let show = Request::op(
+        Op::OntologyShow { std: false },
+        Some(alias.to_owned()),
+        None,
+        build.clone(),
+    );
+    let reply = ask(&config.socket, &show).filter(|r| r.errors.is_empty())?;
+    let std = reply.data.get("std")?;
+    Some(match std.is_null() {
+        true => Row::found(
+            "graph std",
+            alias,
+            Issue::fill(Code::DoctorGraphNotStd, &[("graph", graph)]),
+        ),
+        false => Row::ok("graph std", alias),
+    })
 }
 
 /// F113: each loaded graph's check count from one `umx check` that names every graph `graph list` returned, so links
