@@ -10,7 +10,7 @@ export type SpineRow = {
   spines: SpineInfo[] | undefined;
   shown: string | null;
   /** Placements are being read, or this umx cannot give them (older than `node list --columns spine:<name>`). */
-  state: "ready" | "loading" | "unsupported" | "failed";
+  state: "ready" | "loading" | "unsupported" | "failed" | "gone";
 };
 
 export type SpinePanel = { rows: SpineRow[]; multi: boolean; onPick: (alias: string, name: string | null) => void };
@@ -38,6 +38,9 @@ export function SpinePicker({ rows, multi, onPick }: SpinePanel) {
           {r.shown && r.state === "loading" ? <p className="text-[11px] text-muted-foreground">Placing nodes…</p> : null}
           {r.shown && r.state === "unsupported" ? (
             <p className="text-[11px] text-muted-foreground">This umx cannot place nodes on a spine yet; update umx to lay the graph out along it.</p>
+          ) : null}
+          {r.shown && r.state === "gone" ? (
+            <p className="text-[11px] text-muted-foreground">The graph no longer declares this spine (`umx graph spine show {r.alias}`).</p>
           ) : null}
           {r.shown && r.state === "failed" ? <p className="text-[11px] text-destructive">The spine’s placements could not be read.</p> : null}
         </div>

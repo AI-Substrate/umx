@@ -78,8 +78,9 @@ date on a calendar spine, by step or chain on any other), each anchor on the lin
 beside it, above or below the line as the force layout had it; nodes placed only by rule sit in the band the rule
 gives; nodes the spine does not place wait on a shelf below. None puts every node back where the force layout put
 it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
-The choice is kept in the fragment (`spine=<alias>:<name>`, `-` for none) across a reload. A umx older than the
-`spine:<name>` column says so instead of laying the graph out.
+The choice is kept across a reload in the tab's session storage beside the open graphs, only for graphs still open,
+never in the fragment. A umx older than the `spine:<name>` column says so instead of laying the graph out, as does a
+spine the graph no longer declares.
 
 Live updates: a node or edge added, edited or removed through the CLI (or any umx client) shows in an open view
 within about a second, without a reload: "Live" in the top bar, with a brief count of what changed ("+3 nodes, 1

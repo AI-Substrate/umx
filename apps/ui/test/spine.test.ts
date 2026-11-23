@@ -87,8 +87,11 @@ describe("reading spines", () => {
 
   it("reads each node's band and how, and says when this umx gives no placements", async () => {
     const got = await loadSpinePlaces(harness([{ id: N, "spine:days": { band: 2, by: "link", anchor: false } }, { id: M, "spine:days": { band: null, by: "odd", anchor: true } }]), "demo", "days");
-    expect(got).toEqual({ graph: "demo", spine: "days", places: [[N, 2, "link", 0], [M, null, "not_placed", 1]], supported: true });
+    expect(got).toEqual({ graph: "demo", spine: "days", places: [[N, 2, "link", 0], [M, null, "not_placed", 1]], supported: true, gone: false });
     const old = await loadSpinePlaces(harness([{ id: N }]), "demo", "days");
     expect(old.supported).toBe(false);
+    // The column is there but empty: the spine was removed since it was listed, not an older umx.
+    const gone = await loadSpinePlaces(harness([{ id: N, "spine:days": null }]), "demo", "days");
+    expect([gone.supported, gone.gone]).toEqual([true, true]);
   });
 });
