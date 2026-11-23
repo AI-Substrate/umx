@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.0](https://github.com/AI-Substrate/umx/compare/v0.3.0...v0.4.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* neighbours lists the edges of the node's entity members
+* ontology adopt-std --field-to-tag moves a field into std tags
+* tag filters on find, search, walk and neighbours, and IN n.tags
+* std tags and the node list tag filter
+
+### Features
+
+* doctor hints adopt-std for a graph made without std; the skill writes std names ([d2500ac](https://github.com/AI-Substrate/umx/commit/d2500aced5646fe6bc4d40826e4da6bfe24cdb9e))
+* neighbours lists the edges of the node's entity members ([7127cb5](https://github.com/AI-Substrate/umx/commit/7127cb5c5611c340a09a4b59e70411c4445e3228))
+* node list --columns spine:&lt;name&gt; gives each node's place on a declared spine ([fe6a5b4](https://github.com/AI-Substrate/umx/commit/fe6a5b4c6a3e8716dd4d73770884f4c43733e4cc))
+* ontology adopt-std --field-to-tag moves a field into std tags ([6c3ff84](https://github.com/AI-Substrate/umx/commit/6c3ff849d64b99a01d8220591048a7d59bedb4d8))
+* std tags and the node list tag filter ([f3ed406](https://github.com/AI-Substrate/umx/commit/f3ed406843d4ec9a3bdbdd323494e4697c378c8f))
+* tag filters on find, search, walk and neighbours, and IN n.tags ([0c87dcf](https://github.com/AI-Substrate/umx/commit/0c87dcfed2eaff7b4daa4a9020712847e49d8785))
+* **ui:** a reload keeps the open graphs and the view's look ([e1c8aa5](https://github.com/AI-Substrate/umx/commit/e1c8aa59db0c2fd461031acfcce91ab1fe87e075))
+* **ui:** choose graphs in a searchable dialog, down to none ([4baf7fb](https://github.com/AI-Substrate/umx/commit/4baf7fb7965d18af400619a73dc5fa3d29498981))
+* **ui:** lay a graph out along its spine ([f8805f7](https://github.com/AI-Substrate/umx/commit/f8805f7f74e05f19e3db6934502f49a242ab7bd3))
+
+
+### Bug Fixes
+
+* node get and node list --columns locator show the whole locator ([69e8142](https://github.com/AI-Substrate/umx/commit/69e8142c3af725cf82ba9bd0133ddd88f8df3c71))
+* **ui:** keep spine picks in the tab, never in the fragment ([ae77614](https://github.com/AI-Substrate/umx/commit/ae776149c7be7853ecb0c0fbe19cd6b05a4987db))
+* **ui:** the graph dialog closes itself and gives focus back; document what a reload keeps ([9c98e17](https://github.com/AI-Substrate/umx/commit/9c98e17fcf8f0913d90f1e1eace5eee334e2af74))
+* **ui:** the graph dialog's count reads as selected, up to the limit ([83b69fa](https://github.com/AI-Substrate/umx/commit/83b69fa2f8c84359c33f9d8eb2e74ce920dd55a9))
+
 ## [0.3.0](https://github.com/AI-Substrate/umx/compare/v0.2.0...v0.3.0) (2026-11-19)
 
 
