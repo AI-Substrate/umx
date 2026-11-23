@@ -84,6 +84,11 @@ export class Hub {
    * Null when the daemon has not answered within `holdMs`: the tab then reloads on its first overflow.
    */
   async follow(graph: string, holdMs: number, signal?: AbortSignal): Promise<LiveCursor | null> {
+    // A daemon on another protocol refuses every wait: no revision is coming, so a snapshot does not wait for one.
+    if (this.error?.code === "protocol_mismatch" && !this.covered.has(graph)) {
+      void this.want(graph).catch(() => {});
+      return null;
+    }
     await this.want(graph);
     const deadline = this.deps.now() + holdMs;
     for (;;) {

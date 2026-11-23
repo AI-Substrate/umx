@@ -1,5 +1,5 @@
 import { errorResponse, ok } from "@/lib/http";
-import { followNamed, listGraphs } from "@/lib/snapshot";
+import { followNamed, freshIndex } from "@/lib/snapshot";
 import { umx } from "@/lib/umx";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,8 @@ export async function GET(req: Request) {
   try {
     const follow = new URL(req.url).searchParams.get("follow");
     const read = umx();
-    const graphs = await listGraphs(read);
+    // Read fresh, and kept for the checks the graphs' first reads make next (lib/snapshot INDEX_MS).
+    const graphs = await freshIndex(read);
     if (follow === null) return ok({ graphs });
     return ok({ graphs, ...(await followNamed(read, graphs, follow.split(","))) });
   } catch (error) {

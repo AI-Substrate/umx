@@ -153,9 +153,14 @@ async function pages<T>(read: Reader, verb: "node list" | "edge list", graph: st
  */
 export async function graphIds(read: Reader, alias: string, probes: Probes = sharedProbes()) {
   checkAlias(alias);
-  const graphs = await listGraphs(read);
-  const rows = graphs.filter((g) => g.alias === alias);
-  const local = rows.find((g) => g.state === "loaded") ?? (rows.length === 1 ? rows[0] : undefined);
+  const pick = (graphs: GraphSummary[]) => {
+    const rows = graphs.filter((g) => g.alias === alias);
+    return { graphs, rows, local: rows.find((g) => g.state === "loaded") ?? (rows.length === 1 ? rows[0] : undefined) };
+  };
+  // A kept index only ever says yes: anything it would refuse is read again fresh first (a rename, a load, a reload).
+  let found = pick(await checkedIndex(read));
+  if (!found.local?.openable) found = pick(await freshIndex(read));
+  const { graphs, rows, local } = found;
   if (rows.length === 0) {
     const renamed = await liveAlias(read, alias, graphs, probes);
     if (renamed) {
@@ -170,6 +175,34 @@ export async function graphIds(read: Reader, alias: string, probes: Probes = sha
   if (!local.openable) throw new UmxError("ui_graph_not_open", local.reason ?? "This graph cannot be opened.", local.fix, 409);
   const loaded = graphs.filter((g) => g.state === "loaded");
   return { localId: local.id, aliasOf: new Map([...loaded, local].map((g) => [g.id, g.alias])) };
+}
+
+/** How long one graph index read answers the checks before named reads (graphIds), from when it lands: as long as the
+ * change feed trusts a passed check (lib/events CHECK_MS). Opening several graphs, a spine and the change feed each
+ * check the index; `umx graph list --all` looks at every remembered graph's folder, so it is the slowest read a
+ * snapshot makes (seconds on a busy machine, against tens of ms for the graph's own rows). A kept index only ever
+ * says yes: graphIds reads it fresh before refusing. The picker's list (`/api/graphs`) is always read fresh, and
+ * then kept for the checks. */
+export const INDEX_MS = 10_000;
+const indexes = new WeakMap<Reader, { landed: number; graphs: Promise<GraphSummary[]> }>();
+
+/** The graph index for the checks: one read shared by every caller while it runs, and kept INDEX_MS once it lands. A
+ * failed read is forgotten, so the next caller asks again. */
+export function checkedIndex(read: Reader, now: () => number = Date.now): Promise<GraphSummary[]> {
+  const was = indexes.get(read);
+  if (was && now() - was.landed < INDEX_MS) return was.graphs;
+  return freshIndex(read, now);
+}
+
+/** A new index read, which the checks then share (checkedIndex). */
+export function freshIndex(read: Reader, now: () => number = Date.now): Promise<GraphSummary[]> {
+  const entry = { landed: Infinity, graphs: listGraphs(read) };
+  indexes.set(read, entry);
+  entry.graphs.then(
+    () => void (entry.landed = now()),
+    () => void (indexes.get(read) === entry && indexes.delete(read)),
+  );
+  return entry.graphs;
 }
 
 /** What one `umx resolve umx:<alias>` found: the graph id and live alias it led to, umx's refusal, or nothing. */
@@ -274,17 +307,18 @@ type EdgeListRow = {
   type: string;
   from: string;
   to: string;
-  graph_id?: string;
-  from_graph?: string;
-  to_graph?: string;
-  from_state?: string;
-  to_state?: string;
+  graph_id?: string | null;
+  from_graph?: string | null;
+  to_graph?: string | null;
+  from_state?: string | null;
+  to_state?: string | null;
 };
 
 /** Where an edge belongs on a one-graph canvas: drawn, or left out with a reason. */
 export function edgePlace(e: EdgeListRow, localId: string): "local" | "otherGraph" | "unresolved" {
-  if (e.from_state !== undefined || e.to_state !== undefined) return "unresolved";
-  if (e.from_graph !== localId || e.to_graph !== localId || (e.graph_id !== undefined && e.graph_id !== localId)) {
+  // Asked for by name (EDGE_COLUMNS), a column a row leaves out comes back null: read null as absent.
+  if (e.from_state != null || e.to_state != null) return "unresolved";
+  if (e.from_graph !== localId || e.to_graph !== localId || (e.graph_id != null && e.graph_id !== localId)) {
     return "otherGraph";
   }
   return "local";
@@ -300,9 +334,12 @@ export async function symmetricOf(read: Reader, graph: string): Promise<string[]
 export async function loadSnapshot(read: Reader, graph: string): Promise<Snapshot> {
   type N = { id: string; type: string; title: string; status: string; updated?: unknown; entity_key?: unknown };
   const { localId } = await graphIds(read, graph);
-  const nodes = await pages<N>(read, "node list", graph, NODE_CAP);
-  const symmetric = await symmetricOf(read, graph);
-  const edges = await pages<EdgeListRow>(read, "edge list", graph, EDGE_CAP);
+  // The three reads are independent: run together, a snapshot waits for the slowest, not the sum.
+  const [nodes, symmetric, edges] = await Promise.all([
+    pages<N>(read, "node list", graph, NODE_CAP),
+    symmetricOf(read, graph),
+    pages<EdgeListRow>(read, "edge list", graph, EDGE_CAP),
+  ]);
   const omittedEdges = { otherGraph: 0, unresolved: 0 };
   const local: Snapshot["edges"] = [];
   const external: ExternalRow[] = [];
@@ -314,7 +351,7 @@ export async function loadSnapshot(read: Reader, graph: string): Promise<Snapsho
     // The browser draws these only when both graphs are open on its canvas (plan 133): graph ids, never an alias. An
     // end umx gave as graph_not_loaded (a graph not loaded, or a secured one this read did not name) comes too, so a
     // secured graph the person opened by name shows its links; any other state can never be drawn.
-    const notLoaded = (s: string | undefined) => s === undefined || s === "graph_not_loaded";
+    const notLoaded = (s: string | null | undefined) => s == null || s === "graph_not_loaded";
     if (place === "otherGraph" || (place === "unresolved" && notLoaded(e.from_state) && notLoaded(e.to_state))) {
       external.push([e.id, e.type, e.from_graph ?? localId, e.from, e.to_graph ?? localId, e.to, place === "unresolved"]);
     } else if (place === "unresolved") broken.push(e.id);

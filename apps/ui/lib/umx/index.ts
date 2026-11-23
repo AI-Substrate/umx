@@ -150,6 +150,9 @@ export const IDS_MAX = 500;
 /** The columns the view reads of a node row (`node list`, `node get --columns`): each reply flags what it shows
  * (F188), so a title or key comes with its own flags (ws009 M2b). */
 export const NODE_COLUMNS = "id,type,title,status,updated,entity_key";
+/** The edge columns a snapshot reads: an edge's ends and where they are, never its titles or sentence, which the view
+ * reads per node when it needs them (a full row is about 2.5 times the bytes). */
+export const EDGE_COLUMNS = "id,type,from,to,graph_id,from_graph,to_graph,from_state,to_state";
 /** Edges by id. The subset has no id binding on a relationship, so this scans the edges once per id (lib/rows sizes
  * the reads to the work budget). The ends' graphs (aliases) say whether the edge is drawn: both open on the canvas.
  * Naming the other open graphs too (`--graph a,b`) is what lets umx follow an external edge at all. */
@@ -267,6 +270,7 @@ const READ_VERBS = {
   ],
   "edge list": (a: ReadArgs) => [
     "edge", "list", "--graph", alias(a.graph), "--limit", String(PAGE), "--offset", offset(a.offset),
+    "--columns", EDGE_COLUMNS,
   ],
   "node get": (a: ReadArgs) => ["node", "get", nodeId(a.id), "--graph", alias(a.graph)],
   // The graph's declared spines (spine view): each with its decl, clock and cover. Reads only.

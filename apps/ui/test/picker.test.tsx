@@ -156,7 +156,17 @@ describe("the picker lists the graph index", () => {
   it("refuses an alias remembered in two folders with none loaded, rather than pick one", async () => {
     const { exec, read } = harness([index("twin", GA, "idle"), index("twin", GA, "idle", { path: "/h/other" })]);
     expect((await refused(loadSnapshot(read, "twin"))).code).toBe("ui_graph_ambiguous");
-    expect(exec).toHaveBeenCalledTimes(1);
+    // Only the index is read (once more, fresh, before refusing): never a named read that would load one.
+    expect(exec.mock.calls.map((c) => c[1].slice(0, 2).join(" "))).toEqual(["graph list", "graph list"]);
+  });
+
+  it("shares one index read between checks, keeps it briefly, and reads it fresh before any refusal", async () => {
+    const { exec, read } = harness();
+    await Promise.all([loadSnapshot(read, "live"), loadSnapshot(read, "named")]);
+    await loadSnapshot(read, "live");
+    expect(exec.mock.calls.filter((c) => c[1][0] === "graph").length).toBe(1);
+    await refused(loadSnapshot(read, "nowhere"));
+    expect(exec.mock.calls.filter((c) => c[1][0] === "graph").length).toBe(2);
   });
 
   it("opens an idle graph with a named read and passes umx's graph_loaded_on_demand warning on", async () => {

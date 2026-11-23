@@ -242,6 +242,24 @@ describe("the change feed through the one wait (plan 127)", () => {
     expect(await d.hub.follow("demo", 1000)).toBeNull();
   });
 
+  it("gives a snapshot no revision at once from a daemon on another protocol, without checking the graph first", async () => {
+    let checking = false;
+    const d = daemon(async (g) => {
+      if (g === "other") {
+        checking = true;
+        await new Promise(() => {});
+      }
+    });
+    const first = d.hub.follow("demo", 2_000);
+    await flush();
+    d.last().fail(new UmxError("protocol_mismatch", "This CLI speaks protocol 98; the daemon speaks protocol 81."));
+    expect(await first).toBeNull();
+    const t = Date.now();
+    expect(await d.hub.follow("other", 2_000)).toBeNull();
+    expect(Date.now() - t).toBeLessThan(100);
+    expect(checking).toBe(true);
+  });
+
   it("answers one poll for several open graphs with each one's events and its own change (plan 133)", async () => {
     const d = daemon();
     const live = Promise.all([d.hub.follow("demo", 1000), d.hub.follow("other", 1000)]);
