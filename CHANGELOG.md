@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/AI-Substrate/umx/compare/v0.4.1...v0.5.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* bin/serve.mjs takes --stdin instead of --token-stdin and reads no token line; the UiHost port drops UiLaunch.token and renames token() to code(); `umx ui --no-open` prints the plain URL and now works with JSON output. Any process or user on this machine that can reach 127.0.0.1 can read the view: the trust boundary is the user account (umx docs get ui).
+
+### Features
+
+* open the graph view with a plain local URL, no one-time token ([81a0c43](https://github.com/AI-Substrate/umx/commit/81a0c4388f3158863a202a613d624fb37e149b38))
+* **ui:** spread a spine out, and stop a band's nodes piling up ([76aad7a](https://github.com/AI-Substrate/umx/commit/76aad7aeccdf28534dce62ff51925972cf4bb358))
+
 ## [0.4.1](https://github.com/AI-Substrate/umx/compare/v0.4.0...v0.4.1) (2026-11-23)
 
 
