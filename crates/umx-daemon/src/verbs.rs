@@ -5480,10 +5480,6 @@ fn pick_edge(row: &Value, edge: &umx_services::ReadEdge, columns: &[String]) -> 
     Value::Object(picked)
 }
 
-/// The asked-for columns of a node, read by `field`; a column the node lacks is null. Values come from `Node::field`
-/// or a listed node's `field` (the same names and values), so derived fields such as `evidence_kinds` are computed
-/// below the daemon. `locator` is the whole locator, as the default read shows it (F300): `field` answers nothing for
-/// it, only for its flat parts.
 /// The prefix of a computed `node list` column: `spine:<name>` is where that declared spine places the row's node.
 const SPINE_COLUMN: &str = "spine:";
 
@@ -5516,6 +5512,10 @@ fn spine_cells(
     }
 }
 
+/// The asked-for columns of a node, read by `field`; a column the node lacks is null. Values come from `Node::field`
+/// or a listed node's `field` (the same names and values), so derived fields such as `evidence_kinds` are computed
+/// below the daemon. `locator` is the whole locator, as the default read shows it (F300): `field` answers nothing for
+/// it, only for its flat parts.
 fn pick(
     alias: &str,
     id: umx_core::Id,

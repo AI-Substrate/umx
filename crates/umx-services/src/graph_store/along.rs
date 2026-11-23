@@ -313,10 +313,7 @@ impl GraphStore {
         let g = &l.graph;
         let f = Facts::read_for_decl(g, decl);
         let (p, v) = place(&f, decl);
-        let mut rank = vec![u32::MAX; p.how.len()];
-        for (r, &a) in v.anchors.iter().enumerate() {
-            rank[a] = r as u32;
-        }
+        let (_, rank) = positions(&p, &v);
         let one = |id: &Id| -> SpinePlace {
             let Some(ix) = g.node_ix(*id) else {
                 return SpinePlace::NOT_PLACED;
@@ -330,13 +327,11 @@ impl GraphStore {
                 How::Rule => SpineBy::Rule,
                 How::None => SpineBy::NotPlaced,
             };
-            let band = match p.how[i] {
-                How::None => None,
-                _ if anchor => Some(i64::from(rank[i])),
-                _ if p.band[i] != NO_BAND => Some(p.band[i] as i64),
-                _ => Some(-1),
-            };
-            SpinePlace { band, by, anchor }
+            SpinePlace {
+                band: band_at(&p, &v, &rank, i),
+                by,
+                anchor,
+            }
         };
         Some(ids.iter().map(one).collect())
     }
@@ -481,15 +476,25 @@ pub(crate) fn positions(p: &Placement, v: &AnchorView) -> (Vec<Result<i64, Why>>
         rank[a] = r as u32;
     }
     let position = (0..n)
-        .map(|i| match p.how[i] {
-            How::None => Err(Why::NotPlaced),
-            How::Rule => Err(Why::ByRule),
-            _ if v.is_anchor[i] => Ok(i64::from(rank[i])),
-            _ if p.band[i] != NO_BAND => Ok(p.band[i] as i64),
-            _ => Ok(-1),
+        .map(|i| match (p.how[i], band_at(p, v, &rank, i)) {
+            (How::Rule, _) => Err(Why::ByRule),
+            (_, Some(at)) => Ok(at),
+            (_, None) => Err(Why::NotPlaced),
         })
         .collect();
     (position, rank)
+}
+
+/// Node `i`'s band along the spine, the one mapping [`positions`] and [`GraphStore::spine_places`] share: an anchor's
+/// rank; else the band [`place`] (or its rule) put it in; -1 for a node placed before every anchor; none when not
+/// placed. `rank` is each anchor's rank, as [`positions`] gives it.
+fn band_at(p: &Placement, v: &AnchorView, rank: &[u32], i: usize) -> Option<i64> {
+    match p.how[i] {
+        How::None => None,
+        _ if v.is_anchor[i] => Some(i64::from(rank[i])),
+        _ if p.band[i] != NO_BAND => Some(p.band[i] as i64),
+        _ => Some(-1),
+    }
 }
 
 /// Why each content node is in or out of `[after, before]` (both inclusive, either open) along a declared spine.

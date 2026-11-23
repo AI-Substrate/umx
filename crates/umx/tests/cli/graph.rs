@@ -3200,6 +3200,99 @@ fn node_list_shows_each_nodes_place_on_a_declared_spine() {
     }
 }
 
+/// `--columns spine:<name>` over several graphs: each row's cell comes from its own graph's spine (null where that
+/// graph declares none), and a secured graph's rows, with their cells, show only when it is named.
+#[test]
+fn node_list_spine_column_over_several_graphs_and_a_secured_one() {
+    let mut home = Home::new("spine-column-graphs");
+    let (_, _) = tm5_day(&mut home);
+    home.ok(&["ontology", "add", "field", "segment", "starts_on:date"]);
+    let file = home.ops_file(&tm5_decl("day", "segment", true).to_string());
+    home.ok(&["graph", "spine", "set", "demo", "--file", &file]);
+    for alias in ["plain", "vault"] {
+        let path = home.path.join(alias).display().to_string();
+        home.ok(&["graph", "new", &path, "--alias", alias]);
+    }
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Plain risk",
+        "--graph",
+        "plain",
+    ]);
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "segment",
+        "--title",
+        "Vault day",
+        "--set",
+        "starts_on=2026-11-12T09:00:00Z",
+        "--graph",
+        "vault",
+    ]);
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "segment",
+        "starts_on:date",
+        "--graph",
+        "vault",
+    ]);
+    home.ok(&["graph", "spine", "set", "vault", "--file", &file]);
+    home.ok(&["graph", "set", "vault", "--policy", "secured"]);
+    let cells = |graphs: &[&str]| -> Vec<(String, Value)> {
+        let mut args = vec![
+            "node",
+            "list",
+            "--columns",
+            "graph,title,spine:day",
+            "--limit",
+            "100",
+        ];
+        args.extend_from_slice(graphs);
+        let env = home.ok(&args);
+        env.data["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r["graph"].as_str().unwrap().to_owned(),
+                    r["spine:day"].clone(),
+                )
+            })
+            .collect()
+    };
+    let both = cells(&["--graph", "demo,plain"]);
+    assert!(both.iter().all(|(g, _)| g != "vault"), "{both:?}");
+    assert!(
+        both.iter().any(|(g, c)| g == "demo" && c["by"].is_string()),
+        "{both:?}"
+    );
+    assert_eq!(
+        both.iter()
+            .filter(|(g, _)| g == "plain")
+            .map(|(_, c)| c.clone())
+            .collect::<Vec<_>>(),
+        vec![Value::Null]
+    );
+    let named = cells(&["--graph", "demo,vault"]);
+    assert_eq!(
+        named
+            .iter()
+            .filter(|(g, _)| g == "vault")
+            .map(|(_, c)| c.clone())
+            .collect::<Vec<_>>(),
+        vec![json!({ "band": 0, "by": "field", "anchor": true })]
+    );
+}
+
 /// ws006 S23 (req-56): `umx graph rename` keeps the old alias in graph.json, so `umx:<old>/<id>` resolves as
 /// `redirected`, reads and writes naming it follow with one `alias_redirected` hint, an inbound edge and stored
 /// evidence from another graph keep working, new evidence through the old alias is stored under the live one,
