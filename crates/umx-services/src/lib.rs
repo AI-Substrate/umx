@@ -42,7 +42,9 @@ pub use embedding::{
     settle, step,
 };
 pub use graph_store::ResourceShown;
-pub use graph_store::{AlongInfo, AlongRequest, AlongSource, along_one_graph, reserved_spine_name};
+pub use graph_store::{
+    AlongInfo, AlongRequest, AlongSource, SpineBy, SpinePlace, along_one_graph, reserved_spine_name,
+};
 pub use graph_store::{
     BatchDone, BatchLine, BatchOp, BatchOutcome, BatchRequest, BatchRow, BatchSentence, CheckRow,
     Checked, EdgeAdded, EdgeChanged, EdgeEditRequest, EdgeEvidence, EdgeListRequest, EdgeRow,
@@ -1385,6 +1387,12 @@ impl Services {
         let nodes: Vec<Node> = rows.iter().map(|(_, n)| n.shown(columns)).collect();
         let shown: Vec<(&str, &Node)> = rows.iter().map(|(alias, _)| *alias).zip(&nodes).collect();
         self.graph.secret_flags(&shown, Some(columns))
+    }
+
+    /// `node list --columns spine:<name>`: where graph `alias`'s declared spine `name` places each of `ids`; see
+    /// [`GraphStore::spine_places`]. None when that graph declares no such spine.
+    pub fn spine_places(&self, alias: &str, name: &str, ids: &[Id]) -> Option<Vec<SpinePlace>> {
+        self.graph.spine_places(alias, name, ids)
     }
 
     /// `umx resource show <node>` (ws006 S3b).

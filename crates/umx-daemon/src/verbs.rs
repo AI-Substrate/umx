@@ -2134,7 +2134,7 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                     .collect();
                 let flags = services.listed_secret_flags(&shown, &cols);
                 let explicit = asks_flags(Some(&cols));
-                let rows = page
+                let mut rows: Vec<Value> = page
                     .rows
                     .iter()
                     .zip(&aliases)
@@ -2148,6 +2148,7 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                         with_flags(row, flags, explicit)
                     })
                     .collect();
+                spine_cells(services, &cols, &aliases, &page.rows, &mut rows);
                 let mut names: Vec<&str> = cols.iter().map(String::as_str).collect();
                 if !explicit && flags.iter().any(|f| !f.is_empty()) {
                     names.push(SECRET_SUSPECTED);
@@ -5483,6 +5484,38 @@ fn pick_edge(row: &Value, edge: &umx_services::ReadEdge, columns: &[String]) -> 
 /// or a listed node's `field` (the same names and values), so derived fields such as `evidence_kinds` are computed
 /// below the daemon. `locator` is the whole locator, as the default read shows it (F300): `field` answers nothing for
 /// it, only for its flat parts.
+/// The prefix of a computed `node list` column: `spine:<name>` is where that declared spine places the row's node.
+const SPINE_COLUMN: &str = "spine:";
+
+/// Fills each `spine:<name>` column of a node list page: `{band, by, anchor}` by the one placement rule, run once per
+/// graph on the page (umx_services::SpinePlace), or null where the row's graph declares no spine of that name. A field
+/// a node stores under such a name is never shown: the computed column wins.
+fn spine_cells(
+    services: &Services,
+    cols: &[String],
+    aliases: &[&str],
+    nodes: &[umx_services::ListedNode<'_>],
+    rows: &mut [Value],
+) {
+    for col in cols {
+        let Some(name) = col.strip_prefix(SPINE_COLUMN) else {
+            continue;
+        };
+        let graphs: BTreeSet<&str> = aliases.iter().copied().collect();
+        for graph in graphs {
+            let at: Vec<usize> = (0..rows.len()).filter(|&i| aliases[i] == graph).collect();
+            let ids: Vec<umx_core::Id> = at.iter().map(|&i| nodes[i].id()).collect();
+            let places = services.spine_places(graph, name, &ids);
+            for (k, &i) in at.iter().enumerate() {
+                rows[i][col.as_str()] = places.as_ref().map_or(Value::Null, |p| {
+                    let p = p[k];
+                    json!({ "band": p.band, "by": p.by.as_str(), "anchor": p.anchor })
+                });
+            }
+        }
+    }
+}
+
 fn pick(
     alias: &str,
     id: umx_core::Id,

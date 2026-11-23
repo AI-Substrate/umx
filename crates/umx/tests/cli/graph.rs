@@ -3131,6 +3131,75 @@ fn every_spine_read_names_the_command_that_lists_its_rule_placements() {
     assert_eq!(listed(&env, "by_rule"), vec![loose_full]);
 }
 
+/// `node list --columns spine:<name>` gives each node's band along a declared spine, in the spine's order, and how
+/// the one placement rule placed it; null where the graph declares no such spine.
+#[test]
+fn node_list_shows_each_nodes_place_on_a_declared_spine() {
+    let mut home = Home::new("spine-column");
+    let (_, _) = tm5_day(&mut home);
+    home.ok(&["ontology", "add", "field", "segment", "starts_on:date"]);
+    let file = home.ops_file(&tm5_decl("day", "segment", true).to_string());
+    home.ok(&["graph", "spine", "set", "demo", "--file", &file]);
+    let rows = |kind: &str, cols: &str| -> Vec<Value> {
+        let env = home.ok(&[
+            "node",
+            "list",
+            "--type",
+            kind,
+            "--columns",
+            cols,
+            "--limit",
+            "100",
+        ]);
+        assert!(
+            env.data["columns"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("spine:day"))
+                || cols.contains("nope")
+        );
+        env.data["rows"].as_array().unwrap().clone()
+    };
+    let mut segs: Vec<(String, Value)> = rows("segment", "title,spine:day")
+        .iter()
+        .map(|r| {
+            (
+                r["title"].as_str().unwrap().to_owned(),
+                r["spine:day"].clone(),
+            )
+        })
+        .collect();
+    segs.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        segs,
+        vec![
+            (
+                "Afternoon".to_owned(),
+                json!({ "band": 1, "by": "field", "anchor": true })
+            ),
+            (
+                "Morning".to_owned(),
+                json!({ "band": 0, "by": "field", "anchor": true })
+            ),
+        ]
+    );
+    for r in rows("risk", "title,spine:day") {
+        let band = if r["title"].as_str().unwrap().starts_with("Point 0") {
+            0
+        } else {
+            1
+        };
+        assert_eq!(
+            r["spine:day"],
+            json!({ "band": band, "by": "link", "anchor": false }),
+            "{r}"
+        );
+    }
+    for r in rows("risk", "id,spine:nope") {
+        assert_eq!(r["spine:nope"], Value::Null, "{r}");
+    }
+}
+
 /// ws006 S23 (req-56): `umx graph rename` keeps the old alias in graph.json, so `umx:<old>/<id>` resolves as
 /// `redirected`, reads and writes naming it follow with one `alias_redirected` hint, an inbound edge and stored
 /// evidence from another graph keep working, new evidence through the old alias is stored under the live one,

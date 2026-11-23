@@ -896,3 +896,33 @@ fn a_declaration_may_not_take_a_built_in_name() {
     assert_eq!(err.code, "spine_name_reserved");
     assert_eq!(err.slot("suggest").unwrap(), "recorded_spine");
 }
+
+/// `node list --columns spine:<name>`: each node's band in the spine's own order and how it was placed, from the one
+/// placement rule, whatever order the ids come in.
+#[test]
+fn spine_places_give_each_node_its_band_and_how() {
+    use umx_services::{SpineBy, SpinePlace};
+    let d = day();
+    let mut ids = vec![d.alone, d.ruled, d.early, d.points[3][1], d.points[0][0]];
+    ids.extend(d.segs.iter().rev());
+    ids.push(Id(u128::MAX));
+    let at = |band: Option<i64>, by: SpineBy, anchor: bool| SpinePlace { band, by, anchor };
+    let places = d.svc.spine_places("demo", "day", &ids).unwrap();
+    assert_eq!(
+        places,
+        vec![
+            at(None, SpineBy::NotPlaced, false),
+            at(Some(1), SpineBy::Rule, false),
+            at(Some(-1), SpineBy::Field, false),
+            at(Some(3), SpineBy::Link, false),
+            at(Some(0), SpineBy::Link, false),
+            at(Some(3), SpineBy::Field, true),
+            at(Some(2), SpineBy::Field, true),
+            at(Some(1), SpineBy::Field, true),
+            at(Some(0), SpineBy::Field, true),
+            at(None, SpineBy::NotPlaced, false),
+        ]
+    );
+    assert_eq!(d.svc.spine_places("demo", "nope", &ids), None);
+    assert_eq!(d.svc.spine_places("other", "day", &ids), None);
+}

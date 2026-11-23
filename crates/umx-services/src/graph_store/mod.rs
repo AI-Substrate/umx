@@ -46,7 +46,8 @@ mod who;
 
 pub use adopt_std::StdAdopted;
 pub use along::{
-    AlongInfo, AlongRequest, AlongSource, one_graph as along_one_graph, reserved_spine_name,
+    AlongInfo, AlongRequest, AlongSource, SpineBy, SpinePlace, one_graph as along_one_graph,
+    reserved_spine_name,
 };
 pub(crate) use along::{GRAPH_WIDE, Kept, Why};
 pub use evidence_edit::{EvidenceAdded, EvidenceListed, EvidenceRemoved, EvidenceRow, Redacted};

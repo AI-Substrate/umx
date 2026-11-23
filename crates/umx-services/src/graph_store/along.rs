@@ -261,6 +261,87 @@ fn names(l: &Loaded) -> Vec<String> {
     out
 }
 
+/// How the one placement rule ([`place`]) placed a node on a spine, strongest first, as `node list --columns
+/// spine:<name>` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpineBy {
+    Field,
+    Link,
+    Evidence,
+    Rule,
+    NotPlaced,
+}
+
+impl SpineBy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SpineBy::Field => "field",
+            SpineBy::Link => "link",
+            SpineBy::Evidence => "evidence",
+            SpineBy::Rule => "rule",
+            SpineBy::NotPlaced => "not_placed",
+        }
+    }
+}
+
+/// One node's place on a declared spine (`node list --columns spine:<name>`): the band it sits in along the spine,
+/// in the spine's own order (an anchor's rank; else the rank of the anchor whose band it sits in; -1 for a node a
+/// calendar spine places by its own date before every anchor; none when not placed), how it was placed, and whether
+/// it is one of the spine's anchors. A node placed by rule has the band the rule gives it (drawn hollow).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpinePlace {
+    pub band: Option<i64>,
+    pub by: SpineBy,
+    pub anchor: bool,
+}
+
+impl SpinePlace {
+    const NOT_PLACED: SpinePlace = SpinePlace {
+        band: None,
+        by: SpineBy::NotPlaced,
+        anchor: false,
+    };
+}
+
+impl GraphStore {
+    /// Where the declared spine `name` of loaded graph `alias` places each of `ids`, by the one placement rule run
+    /// once; None when the graph is not loaded or declares no spine of that name. An id the graph does not hold is
+    /// not placed. Reads only.
+    pub fn spine_places(&self, alias: &str, name: &str, ids: &[Id]) -> Option<Vec<SpinePlace>> {
+        let l = self.graphs.get(alias)?;
+        let decl = l.meta.spines.iter().find(|s| s.name == name)?;
+        let g = &l.graph;
+        let f = Facts::read_for_decl(g, decl);
+        let (p, v) = place(&f, decl);
+        let mut rank = vec![u32::MAX; p.how.len()];
+        for (r, &a) in v.anchors.iter().enumerate() {
+            rank[a] = r as u32;
+        }
+        let one = |id: &Id| -> SpinePlace {
+            let Some(ix) = g.node_ix(*id) else {
+                return SpinePlace::NOT_PLACED;
+            };
+            let i = ix.index();
+            let anchor = v.is_anchor[i];
+            let by = match p.how[i] {
+                How::Field => SpineBy::Field,
+                How::Link => SpineBy::Link,
+                How::Evidence => SpineBy::Evidence,
+                How::Rule => SpineBy::Rule,
+                How::None => SpineBy::NotPlaced,
+            };
+            let band = match p.how[i] {
+                How::None => None,
+                _ if anchor => Some(i64::from(rank[i])),
+                _ if p.band[i] != NO_BAND => Some(p.band[i] as i64),
+                _ => Some(-1),
+            };
+            SpinePlace { band, by, anchor }
+        };
+        Some(ids.iter().map(one).collect())
+    }
+}
+
 impl GraphStore {
     /// Builds one request's range on graph `alias` (already chosen, one graph). Reads only.
     pub(crate) fn along(

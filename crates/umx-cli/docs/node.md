@@ -123,6 +123,12 @@ status, updated`; `--columns id,title,owner` picks others, as for `umx node get`
 sorted by name, null where a node lacks one (as `umx edge list --columns all`); it overrides a type's own columns.
 A custom field named like a column umx computes (`copy`, `graph`, `address`, a standard field) is never shown:
 the computed column wins.
+`--columns id,spine:<name>` adds where the graph's declared spine `<name>` places each node, by the rule `umx graph
+spine show` uses: `{"band": n, "by": "field", "anchor": false}`. `band` counts along the spine in its own order (an
+anchor's rank; for any other node, the rank of the anchor whose band it sits in; -1 before every anchor), and `by` is
+how it was placed (`field`, `link`, `evidence`, `rule` or `not_placed`, whose `band` is null). The rows stay sorted
+by id: order by `band` to read them along the spine. The cell is null where the row's graph declares no spine of
+that name (`umx graph spine show <alias>` lists them).
 Each row carries `secret_suspected` as `umx node get` does, for the columns that row returns only; the column is
 added when some row on the page has it. Ask for it by name (`--columns id,note,secret_suspected`) and every row
 has it, `[]` when nothing is flagged.

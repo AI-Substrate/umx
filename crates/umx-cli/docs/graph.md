@@ -360,6 +360,8 @@ propose <alias>`. A name not declared is `spine_not_found`, with the declared on
 <name>` shows that spine and adds `by_rule`: the ids it places only by rule, a page at a time with `--limit` (100
 when not given) and `--offset`. `--unplaced <name>` adds `unplaced` the same way, for the ids it does not place;
 give one of the two. These are the lists the `--along` hints name (`umx docs get time`).
+Each node's own place on a spine (its band and how it was placed) is `umx node list --columns id,spine:<name>`
+(`umx docs get node`).
 
     umx graph spine show demo
     umx graph spine show demo day
