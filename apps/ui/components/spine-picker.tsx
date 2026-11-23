@@ -2,6 +2,7 @@
 // The spine view's control (Jordan's brief part 2): per open graph with declared spines, None or one spine. A graph
 // shows its main spine (else its first) until the person picks; None returns it to the force layout.
 import { CalendarDays, ListOrdered } from "lucide-react";
+import { SPREAD } from "@/lib/graph/spine-layout";
 import type { SpineInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -13,9 +14,16 @@ export type SpineRow = {
   state: "ready" | "loading" | "unsupported" | "failed" | "gone";
 };
 
-export type SpinePanel = { rows: SpineRow[]; multi: boolean; onPick: (alias: string, name: string | null) => void };
+export type SpinePanel = {
+  rows: SpineRow[];
+  multi: boolean;
+  onPick: (alias: string, name: string | null) => void;
+  /** The Spread slider: the gap between bands and between a band's nodes, while a spine is shown. */
+  spread: number;
+  onSpread: (s: number) => void;
+};
 
-export function SpinePicker({ rows, multi, onPick }: SpinePanel) {
+export function SpinePicker({ rows, multi, onPick, spread, onSpread }: SpinePanel) {
   const withSpines = rows.filter((r) => (r.spines?.length ?? 0) > 0);
   if (withSpines.length === 0) return null;
   return (
@@ -45,6 +53,26 @@ export function SpinePicker({ rows, multi, onPick }: SpinePanel) {
           {r.shown && r.state === "failed" ? <p className="text-[11px] text-destructive">The spine’s placements could not be read.</p> : null}
         </div>
       ))}
+      {withSpines.some((r) => r.shown !== null) ? (
+        <label className="block space-y-1 pt-1 text-sm">
+          <span className="flex items-center justify-between">
+            <span>Spread</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{spread.toFixed(1)}</span>
+          </span>
+          <input
+            type="range"
+            min={SPREAD.min}
+            max={SPREAD.max}
+            step={SPREAD.step}
+            value={spread}
+            onChange={(e) => onSpread(Number(e.target.value))}
+            className="w-full accent-primary"
+            aria-label="Spine spread"
+            title="Spread the bands and the nodes in each band apart; Fit frames the result"
+            data-testid="spine-spread"
+          />
+        </label>
+      ) : null}
       <p className="text-[11px] text-muted-foreground">Earliest on the left. Nodes the spine does not place sit on a shelf below.</p>
     </div>
   );

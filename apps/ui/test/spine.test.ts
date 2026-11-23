@@ -1,7 +1,7 @@
 // The spine view (Jordan's brief part 2): the view lays a graph out by umx's placements (`node list --columns
 // spine:<name>`), earliest band on the left, and reads a graph's spines and placements through the two read verbs.
 import { describe, expect, it, vi } from "vitest";
-import { type Place, shownSpine, spineLayout } from "@/lib/graph/spine-layout";
+import { fanOf, type Place, shownSpine, spineLayout, SPREAD, stack } from "@/lib/graph/spine-layout";
 import { listSpines, loadSpinePlaces } from "@/lib/spine";
 import { createUmx, UMX_PROTOCOL, type Exec } from "@/lib/umx";
 
@@ -57,6 +57,71 @@ describe("laying a graph out along a spine", () => {
     expect(shownSpine(spines, "gone")).toBe("weeks");
     expect(shownSpine([{ name: "a", main: false }], undefined)).toBe("a");
     expect(shownSpine([], undefined)).toBeNull();
+  });
+});
+
+describe("spreading a spine out", () => {
+  // A pile: 30 nodes in band 0 and 12 in band 1, all at nearly the same force position, and 3 the spine does not place.
+  const nodes = [
+    { key: "g/a0", id: "a0", x: 0, y: 0 },
+    { key: "g/a1", id: "a1", x: 1, y: 0 },
+    ...Array.from({ length: 42 }, (_, i) => ({ key: `g/n${i}`, id: `n${i}`, x: (i % 3) * 0.01, y: (i % 5) * 0.01 })),
+    ...Array.from({ length: 3 }, (_, i) => ({ key: `g/loose${i}`, id: `loose${i}`, x: i, y: 50 })),
+    { key: "g/top", id: "top", x: 0, y: 100 },
+  ];
+  const places = new Map<string, Place>([
+    ["a0", place(0, "field", true)],
+    ["a1", place(1, "field", true)],
+    ...Array.from({ length: 42 }, (_, i): [string, Place] => [`n${i}`, place(i < 30 ? 0 : 1, "link")]),
+    ...Array.from({ length: 3 }, (_, i): [string, Place] => [`loose${i}`, place(null, "not_placed")]),
+    ["top", place(1, "link")],
+  ]);
+  const minGap = (at: Map<string, { x: number; y: number }>) => {
+    const pts = [...at.entries()].filter(([k]) => !k.startsWith("g/loose")).map(([, p]) => p);
+    let least = Infinity;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) least = Math.min(least, Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y));
+    return least;
+  };
+  const gap = 100 / 24;
+
+  it("never sets two nodes of a band on top of each other, or on the anchor, at the default spread", () => {
+    const { at } = spineLayout("g", nodes, places);
+    expect(minGap(at)).toBeGreaterThanOrEqual(gap - 1e-9);
+    expect(at.size).toBe(nodes.length);
+  });
+
+  it("fans a band too full for one column, and keeps every node on its own side of the line", () => {
+    const { at, axis } = spineLayout("g", nodes, places);
+    const xs = new Set(Array.from({ length: 30 }, (_, i) => at.get(`g/n${i}`)!.x));
+    expect(xs.size).toBeGreaterThan(1);
+    const half = (axis!.bands[1] - axis!.bands[0]) / 2;
+    for (const x of xs) expect(Math.abs(x - axis!.bands[0])).toBeLessThan(half);
+    expect(at.get("g/top")!.y).toBe(100);
+  });
+
+  it("widens the bands and the gaps as the spread grows, and keeps the shelf below everything placed", () => {
+    const narrow = spineLayout("g", nodes, places, 1);
+    const wide = spineLayout("g", nodes, places, 3);
+    expect(wide.axis!.bands[1] - wide.axis!.bands[0]).toBeGreaterThan(1.5 * (narrow.axis!.bands[1] - narrow.axis!.bands[0]));
+    expect(minGap(wide.at)).toBeGreaterThanOrEqual(Math.sqrt(3) * gap - 1e-9);
+    expect(wide.at.get("g/top")!.y - wide.axis!.y).toBeCloseTo(3 * (100 - narrow.axis!.y));
+    for (const { at } of [narrow, wide]) {
+      const placed = Math.min(...[...at.entries()].filter(([k]) => !k.startsWith("g/loose")).map(([, p]) => p.y));
+      for (let i = 0; i < 3; i++) expect(at.get(`g/loose${i}`)!.y).toBeLessThan(placed);
+    }
+    expect(spineLayout("g", nodes, places, 99).axis).toEqual(spineLayout("g", nodes, places, SPREAD.default).axis);
+  });
+
+  it("fans a band wider as it fills and as the spread grows, never onto the anchor's own column", () => {
+    expect([fanOf(0, 1), fanOf(1, 1)]).toEqual([0, 1]);
+    for (const n of [2, 5, 15, 30]) for (const s of [0.5, 1, 4]) expect(fanOf(n, s) % 2).toBe(0);
+    expect(fanOf(15, 3)).toBeGreaterThan(fanOf(15, 1));
+    expect(fanOf(30, 1)).toBeGreaterThan(fanOf(5, 1));
+  });
+
+  it("stacks one side of the line off it, each where the force had it when there is room", () => {
+    expect(stack([1, 1, 1, 10], 0, 2, 1)).toEqual([2, 4, 6, 10]);
+    expect(stack([-1, -9], 0, 2, -1)).toEqual([-2, -9]);
   });
 });
 

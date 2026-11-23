@@ -187,7 +187,7 @@ off whenever the view opens, is never stored, and no `umx ui` command sets it.
 A reload keeps the view as it was. The open graphs, and the spine each shows, are kept in the tab's session storage,
 which only this view in this tab can write: a reload opens them again, a secured one the person opened in this tab included, and a canvas
 the person cleared stays clear. A launch link's graphs win over them. The look (colour by, group by, resolution,
-spacing, merge entities, the provenance and out-of-play switches, the chips turned off) is kept in the address bar's
+spacing, the spine's spread, merge entities, the provenance and out-of-play switches, the chips turned off) is kept in the address bar's
 fragment, so a copied link carries it; the fragment never names a graph, so a link from another page still opens
 nothing by itself.
 
@@ -376,6 +376,9 @@ date on a calendar spine, by step or chain on any other), each anchor on the lin
 beside it, above or below the line as the force layout had it; nodes placed only by rule sit in the band the rule
 gives; nodes the spine does not place wait on a shelf below. None puts every node back where the force layout put
 it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
+A band's nodes fan out around its anchor and never sit on each other; the Spread slider (shown while a spine is)
+pushes them further off the line and apart and the bands further apart, live, and Fit frames the result, the last
+band's labels included. The spread is kept in the fragment (`spread=`) with the rest of the look.
 The choice is kept across a reload in the tab's session storage beside the open graphs, only for graphs still open,
 never in the fragment. A umx older than the `spine:<name>` column says so instead of laying the graph out, as does a
 spine the graph no longer declares.

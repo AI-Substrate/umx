@@ -158,6 +158,26 @@ function framedBox(sigma: Sigma<NodeAttrs, EdgeAttrs>, graph: ViewGraph, ids: re
   return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, ratio, angle: sigma.getCamera().angle };
 }
 
+/** The spine fit's margins in pixels: [left, right, top and bottom]; the right holds the last band's labels. */
+const SPINE_PAD = [40, 140, 40] as const;
+
+/** The camera that fits `points` (graph coordinates) inside the viewport less `pad`, measured on screen now. */
+function screenBox(sigma: Sigma<NodeAttrs, EdgeAttrs>, points: readonly { x: number; y: number }[], pad: readonly [number, number, number]): CameraState | null {
+  if (points.length === 0) return null;
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const p of points) {
+    const v = sigma.graphToViewport(p);
+    [x0, y0, x1, y1] = [Math.min(x0, v.x), Math.min(y0, v.y), Math.max(x1, v.x), Math.max(y1, v.y)];
+  }
+  const { width, height } = sigma.getDimensions();
+  const [l, r, tb] = pad;
+  const scale = Math.max((x1 - x0) / Math.max(width - l - r, 1), (y1 - y0) / Math.max(height - 2 * tb, 1), 1e-3);
+  const camera = sigma.getCamera();
+  // The box's centre, shifted so the extra room on the right falls right of it.
+  const c = sigma.viewportToFramedGraph({ x: (x0 + x1) / 2 + ((r - l) / 2) * scale, y: (y0 + y1) / 2 });
+  return { x: c.x, y: c.y, ratio: camera.ratio * scale, angle: camera.angle };
+}
+
 /** The node panel's width (components/node-panel.tsx w-[420px] max-w-[90vw]). */
 const PANEL_W = 420;
 
@@ -499,6 +519,14 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
   const fitAll = useRef<(duration: number) => void>(() => {});
   useEffect(() => {
     fitAll.current = (duration: number) => {
+      if (spineAxes.length > 0) {
+        // A spine: every shown node and each line's ends, measured on screen, with room past the last band's labels.
+        sigma.refresh();
+        const points = [...graph.filterNodes((_n, a) => !a.hidden).map((id) => graph.getNodeAttributes(id)), ...spineAxes.flatMap((a) => [{ x: a.x0, y: a.y }, { x: a.x1, y: a.y }])];
+        const target = screenBox(sigma, points, SPINE_PAD);
+        if (target) void sigma.getCamera().animate(target, { duration });
+        return;
+      }
       if (!hold) {
         void sigma.getCamera().animatedReset({ duration });
         return;
@@ -507,7 +535,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       const target = framedBox(sigma, graph, graph.filterNodes((_n, a) => !a.hidden), Infinity);
       if (target) void sigma.getCamera().animate(target, { duration });
     };
-  }, [sigma, graph, hold]);
+  }, [sigma, graph, hold, spineAxes]);
 
   useEffect(() => {
     if (layoutDone && !hold) sigma.getCamera().animatedReset({ duration: ease(400) });

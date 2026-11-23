@@ -5,6 +5,7 @@
 import type { ColourBy } from "@/lib/graph/build";
 import { MAX_OPEN } from "@/lib/graph/keys";
 import { SPACING } from "@/lib/graph/spacing";
+import { SPREAD } from "@/lib/graph/spine-layout";
 
 export type Grouping = "louvain" | "parent" | "graph";
 
@@ -14,6 +15,8 @@ export type ViewLook = {
   grouping?: Grouping;
   resolution?: number;
   spacing?: number;
+  /** The spine view's Spread slider. */
+  spread?: number;
   merge?: boolean;
   provenance?: boolean;
   retired?: boolean;
@@ -28,7 +31,7 @@ const RESOLUTION = { min: 0.1, max: 3 };
 /** Names in the fragment: a chip's key is a type, relation or status name; anything longer or odder is dropped. */
 const NAME = /^[A-Za-z0-9_:.-]{1,64}$/;
 const OFF_MAX = 200;
-const KEYS = { colourBy: "colour", grouping: "group", resolution: "res", spacing: "spacing", merge: "merge", provenance: "prov", retired: "retired" } as const;
+const KEYS = { colourBy: "colour", grouping: "group", resolution: "res", spacing: "spacing", spread: "spread", merge: "merge", provenance: "prov", retired: "retired" } as const;
 const OFF = { relations: "off.rel", types: "off.type", statuses: "off.status" } as const;
 /** A graph alias (lib/umx ALIAS) and a declared spine's name (snake case), as the tab's storage may hold them. */
 const ALIAS_NAME = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -67,6 +70,8 @@ export function readLook(hash: string): ViewLook {
   if (res !== undefined) look.resolution = res;
   const spacing = num(p.get(KEYS.spacing), SPACING.min, SPACING.max);
   if (spacing !== undefined) look.spacing = spacing;
+  const spread = num(p.get(KEYS.spread), SPREAD.min, SPREAD.max);
+  if (spread !== undefined) look.spread = spread;
   for (const k of ["merge", "provenance", "retired"] as const) {
     const f = flag(p.get(KEYS[k]));
     if (f !== undefined) look[k] = f;
@@ -83,6 +88,7 @@ export function writeLook(look: ViewLook): string {
   if (look.grouping) p.set(KEYS.grouping, look.grouping);
   if (look.resolution !== undefined && look.resolution !== LOOK_DEFAULTS.resolution) p.set(KEYS.resolution, String(look.resolution));
   if (look.spacing !== undefined && look.spacing !== SPACING.default) p.set(KEYS.spacing, String(look.spacing));
+  if (look.spread !== undefined && look.spread !== SPREAD.default) p.set(KEYS.spread, String(look.spread));
   for (const k of ["merge", "provenance", "retired"] as const) {
     if (look[k] !== undefined && look[k] !== LOOK_DEFAULTS[k]) p.set(KEYS[k], look[k] ? "1" : "0");
   }

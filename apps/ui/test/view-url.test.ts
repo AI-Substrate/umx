@@ -6,10 +6,10 @@ import { isLaunch, keptSpinePicks, readLook, readOpen, readSpinePicks, reopenGra
 
 describe("the view's look in the fragment", () => {
   it("writes only what differs from the defaults, and reads it back", () => {
-    expect(writeLook({ colourBy: "type", resolution: 1, spacing: 1.6, merge: true, provenance: false, retired: false, off: { relations: [], types: [], statuses: [] } })).toBe("");
-    const look: ViewLook = { colourBy: "graph", grouping: "parent", resolution: 1.4, spacing: 2.2, merge: false, provenance: true, retired: true, off: { relations: ["uses", "part_of"], types: ["topic"], statuses: [] } };
+    expect(writeLook({ colourBy: "type", resolution: 1, spacing: 1.6, spread: 1, merge: true, provenance: false, retired: false, off: { relations: [], types: [], statuses: [] } })).toBe("");
+    const look: ViewLook = { colourBy: "graph", grouping: "parent", resolution: 1.4, spacing: 2.2, spread: 2.5, merge: false, provenance: true, retired: true, off: { relations: ["uses", "part_of"], types: ["topic"], statuses: [] } };
     const hash = writeLook(look);
-    expect(hash).toBe("colour=graph&group=parent&res=1.4&spacing=2.2&merge=0&prov=1&retired=1&off.rel=part_of,uses&off.type=topic");
+    expect(hash).toBe("colour=graph&group=parent&res=1.4&spacing=2.2&spread=2.5&merge=0&prov=1&retired=1&off.rel=part_of,uses&off.type=topic");
     expect(readLook(`#${hash}`)).toEqual({ ...look, off: { relations: ["part_of", "uses"], types: ["topic"], statuses: [] } });
   });
 
@@ -25,7 +25,7 @@ describe("the view's look in the fragment", () => {
   });
 
   it("drops anything unknown, out of range or oddly named, and never reads graphs", () => {
-    expect(readLook("#colour=red&group=x&res=99&spacing=-1&merge=yes&off.type=<b>,ok&g=vault")).toEqual({ off: { relations: [], types: ["ok"], statuses: [] } });
+    expect(readLook("#colour=red&group=x&res=99&spacing=-1&spread=9&merge=yes&off.type=<b>,ok&g=vault")).toEqual({ off: { relations: [], types: ["ok"], statuses: [] } });
     expect(readLook("")).toEqual({});
   });
 

@@ -80,7 +80,7 @@ import type { EntityView } from "@/components/entity-section";
 import { addMany, closePanel, escape, noticeAfterPrune, noticeShown, type RemovalNotice, removeFromSelection, MAX_SELECTION, noSelection, pickOne, type Selection, toggleOne } from "@/lib/selection";
 import { type SimilarState, similarAsked, similarFor, similarReplied } from "@/lib/similar";
 import type { ApiError, GraphSummary, NodeDetail, ScopeSummary, SearchMode, SearchResult, Snapshot, SpineInfo, SpinePlaces } from "@/lib/types";
-import { type Place, shownSpine, type SpineAxis, spineLayout } from "@/lib/graph/spine-layout";
+import { type Place, shownSpine, SPREAD, type SpineAxis, spineLayout } from "@/lib/graph/spine-layout";
 import { cn, number } from "@/lib/utils";
 
 const GraphCanvas = dynamic(() => import("@/components/graph-canvas"), { ssr: false });
@@ -270,6 +270,8 @@ export function GraphApp() {
   const [resolution, setResolution] = useState(1);
   // The Spacing slider (plan 198), kept by number only, as the theme is; read once the page runs.
   const [spacing, setSpacingState] = useState<number>(SPACING.default);
+  // The spine view's Spread slider, kept in the fragment with the rest of the look.
+  const [spread, setSpread] = useState<number>(SPREAD.default);
   useEffect(() => {
     let stored: string | null = null;
     try {
@@ -310,6 +312,7 @@ export function GraphApp() {
       grouping: groupingPick ?? undefined,
       resolution,
       spacing,
+      spread,
       merge: mergeEntities,
       provenance: visible.provenance,
       retired: visible.retired,
@@ -319,7 +322,7 @@ export function GraphApp() {
     if (isLaunch(window.location.hash)) return;
     const url = window.location.pathname + window.location.search + (look ? `#${look}` : "");
     if (url !== window.location.pathname + window.location.search + window.location.hash) window.history.replaceState(null, "", url);
-  }, [colourBy, groupingPick, resolution, spacing, mergeEntities, visible, filters]);
+  }, [colourBy, groupingPick, resolution, spacing, spread, mergeEntities, visible, filters]);
   // The open graphs, once the index is read: a reload in this tab opens them again (none, if the person cleared it).
   useEffect(() => {
     if (graphs === null || !lookRestored.current) return;
@@ -474,6 +477,7 @@ export function GraphApp() {
       if (look.grouping) setGrouping(look.grouping);
       if (look.resolution !== undefined) setResolution(look.resolution);
       if (look.spacing !== undefined) setSpacingState(look.spacing);
+      if (look.spread !== undefined) setSpread(look.spread);
       if (look.merge !== undefined) setMergeEntities(look.merge);
       if (look.provenance !== undefined || look.retired !== undefined) {
         setVisible((v) => ({ provenance: look.provenance ?? v.provenance, retired: look.retired ?? v.retired }));
@@ -1547,7 +1551,7 @@ export function GraphApp() {
         g.forEachNode((k, a) => {
           if (a.graph === alias) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y });
         });
-        const laid = spineLayout(alias, nodes, places);
+        const laid = spineLayout(alias, nodes, places, spread);
         g.updateEachNodeAttributes((k, a) => {
           const p = laid.at.get(k);
           if (p) [a.x, a.y] = [p.x, p.y];
@@ -1564,7 +1568,7 @@ export function GraphApp() {
       setFit((f) => ({ nodes: [], n: (f?.n ?? 0) + 1 }));
     }
     applyMerge(g, mergeEntities && layout.done ? entities : NO_ENTITIES);
-  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow]);
+  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread]);
   // Shadow connections (ws009 M1c, plan 169). ShadowReads owns the reads (review B2 to B4): the data belongs to
   // the open set it was read over, a new set drops it, Off stops and drops it, and only the newest read lands. Read
   // again on events: a new set, a live change or an Apply (10 s after the last), and the refresh button. Under Hold the
@@ -1839,6 +1843,8 @@ export function GraphApp() {
               }),
               multi,
               onPick: (a, name) => setSpinePicks((m) => new Map(m).set(a, name)),
+              spread,
+              onSpread: setSpread,
             }}
             graphCounts={stats?.graphs ?? new Map()}
             graph={view?.graph ?? null}
