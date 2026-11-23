@@ -221,7 +221,7 @@ function GraphDialog(p: GraphPickerProps & { graphs: GraphSummary[]; onClosed: (
             Choose graphs
           </h2>
           <p className="text-xs text-muted-foreground">
-            {number.format(p.graphs.length)} known · up to {MAX_OPEN} open together on one canvas
+            {number.format(p.graphs.length)} graph{p.graphs.length === 1 ? "" : "s"} known · up to {MAX_OPEN} open together on one canvas
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close without changing">
@@ -304,7 +304,7 @@ function GraphDialog(p: GraphPickerProps & { graphs: GraphSummary[]; onClosed: (
         </label>
         <div className="flex items-center gap-3">
           <span className={cn("text-xs tabular-nums", full ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground")} data-testid="draft-count">
-            {draft.length} of {MAX_OPEN} selected
+            {draft.length} selected · up to {MAX_OPEN}
           </span>
           <span className="hidden text-[11px] text-muted-foreground lg:inline">
             <Kbd>↑↓</Kbd> move <Kbd>Space</Kbd> check <Kbd>⌘↵</Kbd> open
