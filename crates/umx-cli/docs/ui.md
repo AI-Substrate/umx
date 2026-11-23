@@ -184,8 +184,8 @@ secured graphs they left out ("1 secured graph left out") and never name them. A
 clicks it, when a launch link names it, or while the person's "include secured graphs" switch is on. That switch is
 off whenever the view opens, is never stored, and no `umx ui` command sets it.
 
-A reload keeps the view as it was. The open graphs are kept in the tab's session storage, which only this view in
-this tab can write: a reload opens them again, a secured one the person opened in this tab included, and a canvas
+A reload keeps the view as it was. The open graphs, and the spine each shows, are kept in the tab's session storage,
+which only this view in this tab can write: a reload opens them again, a secured one the person opened in this tab included, and a canvas
 the person cleared stays clear. A launch link's graphs win over them. The look (colour by, group by, resolution,
 spacing, merge entities, the provenance and out-of-play switches, the chips turned off) is kept in the address bar's
 fragment, so a copied link carries it; the fragment never names a graph, so a link from another page still opens
@@ -376,8 +376,9 @@ date on a calendar spine, by step or chain on any other), each anchor on the lin
 beside it, above or below the line as the force layout had it; nodes placed only by rule sit in the band the rule
 gives; nodes the spine does not place wait on a shelf below. None puts every node back where the force layout put
 it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
-The choice is kept in the fragment (`spine=<alias>:<name>`, `-` for none) across a reload. A umx older than the
-`spine:<name>` column says so instead of laying the graph out.
+The choice is kept across a reload in the tab's session storage beside the open graphs, only for graphs still open,
+never in the fragment. A umx older than the `spine:<name>` column says so instead of laying the graph out, as does a
+spine the graph no longer declares.
 
 ## Edges
 

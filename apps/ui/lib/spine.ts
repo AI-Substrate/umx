@@ -59,14 +59,15 @@ export async function loadSpinePlaces(read: Reader, graph: string, name: string)
     total = env.data.total;
     for (const r of env.data.rows) {
       const id = str(r.id);
+      // A null cell: this umx has the column, but the graph declares no such spine now (removed since it was listed).
+      if (column in r) cells++;
       const cell = r[column] as { band?: unknown; by?: unknown; anchor?: unknown } | null | undefined;
       if (!id || !cell || typeof cell !== "object") continue;
-      cells++;
       const by = str(cell.by);
       const band = typeof cell.band === "number" && Number.isSafeInteger(cell.band) ? cell.band : null;
       places.push([id, band, by && BY.has(by) ? by : "not_placed", cell.anchor === true ? 1 : 0]);
     }
     if (env.data.rows.length < PAGE || offset + PAGE >= total) break;
   }
-  return { graph, spine: name, places, supported: total === 0 || cells > 0 };
+  return { graph, spine: name, places, supported: total === 0 || cells > 0, gone: cells > 0 && places.length === 0 };
 }

@@ -59,7 +59,7 @@ import { effectiveFocus } from "@/lib/graph/fui";
 import { graphColor } from "@/lib/graph/graph-colors";
 import { aliasOfKey, qid, setKey, unq } from "@/lib/graph/keys";
 import { nodeScale, SPACING, SPACING_KEY, spacingOf } from "@/lib/graph/spacing";
-import { isLaunch, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, reopenGraphs, type ViewLook, writeLook } from "@/lib/view-url";
+import { isLaunch, keptSpinePicks, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, readSpinePicks, reopenGraphs, SPINES_KEY, type ViewLook, writeLook } from "@/lib/view-url";
 import { type FilterDim, hiddenReasons, NO_FILTERS, reasonText, reveal, toggleChip, toggled } from "@/lib/graph/filters";
 import { FOCUS_OFF, focusDepths, focusOf } from "@/lib/graph/focus";
 import { activeNotes, agentOff, cameraAsk, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
@@ -229,7 +229,7 @@ function graphNames(aliases: readonly string[]): string {
 type Merge = { wanted: string; frame: Extent; camera: CameraState | null; positions: Positions | null; then: Then | null; renames?: ReadonlyMap<string, string> };
 
 /** One spine's placements as read for the open graph (spine view): `data` is the live change count it was read at. */
-type SpineRead = { data: number; loading: boolean; places: Map<string, Place> | null; supported: boolean; failed?: boolean };
+type SpineRead = { data: number; loading: boolean; places: Map<string, Place> | null; supported: boolean; failed?: boolean; gone?: boolean };
 
 const total = (snaps: readonly Snapshot[], k: "totalNodes" | "totalEdges") => snaps.reduce((n, s) => n + s[k], 0);
 
@@ -314,22 +314,24 @@ export function GraphApp() {
       provenance: visible.provenance,
       retired: visible.retired,
       off: { relations: [...filters.relations], types: [...filters.types], statuses: [...filters.statuses] },
-      spines: Object.fromEntries(spinePicks),
     });
     // A launch link still in the address bar is takeLaunch's to read and drop.
     if (isLaunch(window.location.hash)) return;
     const url = window.location.pathname + window.location.search + (look ? `#${look}` : "");
     if (url !== window.location.pathname + window.location.search + window.location.hash) window.history.replaceState(null, "", url);
-  }, [colourBy, groupingPick, resolution, spacing, mergeEntities, visible, filters, spinePicks]);
+  }, [colourBy, groupingPick, resolution, spacing, mergeEntities, visible, filters]);
   // The open graphs, once the index is read: a reload in this tab opens them again (none, if the person cleared it).
   useEffect(() => {
     if (graphs === null || !lookRestored.current) return;
     try {
-      window.sessionStorage.setItem(OPEN_KEY, JSON.stringify(wanted ? wanted.split(",") : []));
+      const open = wanted ? wanted.split(",") : [];
+      window.sessionStorage.setItem(OPEN_KEY, JSON.stringify(open));
+      // Each open graph's spine pick, beside the open set; a closed graph's pick goes with it.
+      window.sessionStorage.setItem(SPINES_KEY, keptSpinePicks(spinePicks, open));
     } catch {
       // No storage: a reload opens the first graph, as before.
     }
-  }, [wanted, graphs]);
+  }, [wanted, graphs, spinePicks]);
   // The relation chips' quiet or normal choices (plan 150), per relation across the open graphs. Kept when the open
   // graphs change, as the person's relation offs are (keepPersonRelations); Reset filters clears them.
   const [relationModes, setRelationModes] = useState<RelationModes>(() => new Map());
@@ -473,7 +475,6 @@ export function GraphApp() {
       if (look.resolution !== undefined) setResolution(look.resolution);
       if (look.spacing !== undefined) setSpacingState(look.spacing);
       if (look.merge !== undefined) setMergeEntities(look.merge);
-      if (look.spines) setSpinePicks(new Map(Object.entries(look.spines)));
       if (look.provenance !== undefined || look.retired !== undefined) {
         setVisible((v) => ({ provenance: look.provenance ?? v.provenance, retired: look.retired ?? v.retired }));
       }
@@ -484,6 +485,7 @@ export function GraphApp() {
       }
       try {
         kept = readOpen(window.sessionStorage.getItem(OPEN_KEY));
+        setSpinePicks(readSpinePicks(window.sessionStorage.getItem(SPINES_KEY)));
       } catch {
         // No storage: the first graph opens, as before.
       }
@@ -1502,7 +1504,7 @@ export function GraphApp() {
       api<SpinePlaces>(`/api/graphs/${encodeURIComponent(a)}/spines/${encodeURIComponent(name)}`)
         .then((r) => {
           const places = new Map(r.places.map(([id, band, by, anchor]) => [id, { band, by, anchor: anchor === 1 }]));
-          setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places, supported: r.supported }));
+          setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places, supported: r.supported, gone: r.gone }));
         })
         .catch(() => setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places: null, supported: true, failed: true })));
     }
@@ -1512,7 +1514,7 @@ export function GraphApp() {
     const out = new Map<string, ReadonlyMap<string, Place>>();
     for (const [a, name] of spineShown) {
       const r = name ? spinePlaces.get(`${a}/${name}`) : undefined;
-      if (r?.places && r.supported) out.set(a, r.places);
+      if (r?.places && r.supported && !r.gone) out.set(a, r.places);
     }
     return out;
   }, [spineShown, spinePlaces]);
@@ -1833,7 +1835,7 @@ export function GraphApp() {
               rows: shown.map((a) => {
                 const name = spineShown.get(a) ?? null;
                 const r = name ? spinePlaces.get(`${a}/${name}`) : undefined;
-                return { alias: a, spines: spineLists.get(a), shown: name, state: !r || r.loading ? "loading" : r.failed ? "failed" : r.supported ? "ready" : "unsupported" };
+                return { alias: a, spines: spineLists.get(a), shown: name, state: !r || r.loading ? "loading" : r.failed ? "failed" : r.gone ? "gone" : r.supported ? "ready" : "unsupported" };
               }),
               multi,
               onPick: (a, name) => setSpinePicks((m) => new Map(m).set(a, name)),

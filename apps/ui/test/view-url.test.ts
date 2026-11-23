@@ -2,7 +2,7 @@
 // fragment only ever changes how the view looks: no graph is read from it (security N1).
 import { describe, expect, it } from "vitest";
 import { launchedKey } from "@/lib/graph-set";
-import { isLaunch, readLook, readOpen, reopenGraphs, type ViewLook, writeLook } from "@/lib/view-url";
+import { isLaunch, keptSpinePicks, readLook, readOpen, readSpinePicks, reopenGraphs, type ViewLook, writeLook } from "@/lib/view-url";
 
 describe("the view's look in the fragment", () => {
   it("writes only what differs from the defaults, and reads it back", () => {
@@ -13,11 +13,15 @@ describe("the view's look in the fragment", () => {
     expect(readLook(`#${hash}`)).toEqual({ ...look, off: { relations: ["part_of", "uses"], types: ["topic"], statuses: [] } });
   });
 
-  it("keeps each graph's spine pick, none as '-'", () => {
-    const hash = writeLook({ spines: { work_iq: "days", demo: null } });
-    expect(hash).toBe("spine=demo:-,work_iq:days");
-    expect(readLook(`#${hash}`)).toEqual({ spines: { demo: null, work_iq: "days" } });
-    expect(readLook("#spine=Bad:days,ok:date_field:x,ok2:")).toEqual({});
+  it("never writes a graph's spine pick: those stay in the tab, only the open graphs'", () => {
+    expect(writeLook({ colourBy: "graph" })).toBe("colour=graph");
+    expect(readLook("#spine=vault:days")).toEqual({});
+    const picks = new Map<string, string | null>([["demo", "days"], ["closed", "weeks"], ["plain", null]]);
+    const kept = keptSpinePicks(picks, ["demo", "plain"]);
+    expect(JSON.parse(kept)).toEqual({ demo: "days", plain: null });
+    expect(readSpinePicks(kept)).toEqual(new Map([["demo", "days"], ["plain", null]]));
+    expect(readSpinePicks('{"Bad":"days","ok":"date_field:x","fine":"weeks"}')).toEqual(new Map([["fine", "weeks"]]));
+    expect(readSpinePicks("[")).toEqual(new Map());
   });
 
   it("drops anything unknown, out of range or oddly named, and never reads graphs", () => {

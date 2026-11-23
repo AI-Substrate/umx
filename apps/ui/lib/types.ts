@@ -140,5 +140,5 @@ export type SpineInfo = {
 };
 
 /** Where one spine places each node: [id, band, how, anchor]. `supported` is false when umx gave no placements (a umx
- * older than the `spine:<name>` column). */
-export type SpinePlaces = { graph: string; spine: string; places: [string, number | null, string, 0 | 1][]; supported: boolean };
+ * older than the `spine:<name>` column); `gone` when it has the column but the graph no longer declares the spine. */
+export type SpinePlaces = { graph: string; spine: string; places: [string, number | null, string, 0 | 1][]; supported: boolean; gone?: boolean };
