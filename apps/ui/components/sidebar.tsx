@@ -1,6 +1,7 @@
 "use client";
 import { Loader2, RotateCcw, Search } from "lucide-react";
 import { GraphPicker, type GraphPickerProps } from "@/components/graph-picker";
+import { type SpinePanel, SpinePicker } from "@/components/spine-picker";
 import { HitList, type Placement } from "@/components/hit-list";
 import { TypeDot } from "@/components/type-dot";
 import { Segmented } from "@/components/segmented";
@@ -21,6 +22,8 @@ import { cn, number } from "@/lib/utils";
 type Props = {
   /** The graph picker: the one interface a replacement picker implements (components/graph-picker). */
   picker: GraphPickerProps;
+  /** The spine view's control: None or a spine per open graph with declared spines. */
+  spine?: SpinePanel;
   /** Shown nodes per open graph, for colour by graph. */
   graphCounts: Map<string, number>;
   graph: ViewGraph | null;
@@ -89,6 +92,7 @@ export function Sidebar({ searchRef, ...p }: Props) {
       <div className="space-y-2 px-4 pt-4 pb-3">
         <GraphPicker {...p.picker} />
       </div>
+      {p.spine ? <SpinePicker {...p.spine} /> : null}
 
       <div className="space-y-2 border-t px-4 py-3" data-testid="search">
         <div className="flex items-center justify-between gap-2">

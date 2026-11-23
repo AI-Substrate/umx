@@ -79,7 +79,8 @@ const SHADOW_SETTLE_MS = 10_000;
 import type { EntityView } from "@/components/entity-section";
 import { addMany, closePanel, escape, noticeAfterPrune, noticeShown, type RemovalNotice, removeFromSelection, MAX_SELECTION, noSelection, pickOne, type Selection, toggleOne } from "@/lib/selection";
 import { type SimilarState, similarAsked, similarFor, similarReplied } from "@/lib/similar";
-import type { ApiError, GraphSummary, NodeDetail, ScopeSummary, SearchMode, SearchResult, Snapshot } from "@/lib/types";
+import type { ApiError, GraphSummary, NodeDetail, ScopeSummary, SearchMode, SearchResult, Snapshot, SpineInfo, SpinePlaces } from "@/lib/types";
+import { type Place, shownSpine, type SpineAxis, spineLayout } from "@/lib/graph/spine-layout";
 import { cn, number } from "@/lib/utils";
 
 const GraphCanvas = dynamic(() => import("@/components/graph-canvas"), { ssr: false });
@@ -227,6 +228,9 @@ function graphNames(aliases: readonly string[]): string {
 /** `renames`: a rename being followed (plan 215), former alias to live alias, so the selection keeps its nodes. */
 type Merge = { wanted: string; frame: Extent; camera: CameraState | null; positions: Positions | null; then: Then | null; renames?: ReadonlyMap<string, string> };
 
+/** One spine's placements as read for the open graph (spine view): `data` is the live change count it was read at. */
+type SpineRead = { data: number; loading: boolean; places: Map<string, Place> | null; supported: boolean; failed?: boolean };
+
 const total = (snaps: readonly Snapshot[], k: "totalNodes" | "totalEdges") => snaps.reduce((n, s) => n + s[k], 0);
 
 export function GraphApp() {
@@ -259,6 +263,8 @@ export function GraphApp() {
   const [colourBy, setColourBy] = useState<ColourBy>("type");
   // Merge entities (ws009 M2) starts on.
   const [mergeEntities, setMergeEntities] = useState<boolean>(LOOK_DEFAULTS.merge);
+  // The spine each open graph shows, where the person picked one (null: none); the rest show their main spine.
+  const [spinePicks, setSpinePicks] = useState<ReadonlyMap<string, string | null>>(new Map());
   // null: graph when more than one graph is open, else Louvain, until the person picks one.
   const [groupingPick, setGrouping] = useState<Grouping | null>(null);
   const [resolution, setResolution] = useState(1);
@@ -308,12 +314,13 @@ export function GraphApp() {
       provenance: visible.provenance,
       retired: visible.retired,
       off: { relations: [...filters.relations], types: [...filters.types], statuses: [...filters.statuses] },
+      spines: Object.fromEntries(spinePicks),
     });
     // A launch link still in the address bar is takeLaunch's to read and drop.
     if (isLaunch(window.location.hash)) return;
     const url = window.location.pathname + window.location.search + (look ? `#${look}` : "");
     if (url !== window.location.pathname + window.location.search + window.location.hash) window.history.replaceState(null, "", url);
-  }, [colourBy, groupingPick, resolution, spacing, mergeEntities, visible, filters]);
+  }, [colourBy, groupingPick, resolution, spacing, mergeEntities, visible, filters, spinePicks]);
   // The open graphs, once the index is read: a reload in this tab opens them again (none, if the person cleared it).
   useEffect(() => {
     if (graphs === null || !lookRestored.current) return;
@@ -466,6 +473,7 @@ export function GraphApp() {
       if (look.resolution !== undefined) setResolution(look.resolution);
       if (look.spacing !== undefined) setSpacingState(look.spacing);
       if (look.merge !== undefined) setMergeEntities(look.merge);
+      if (look.spines) setSpinePicks(new Map(Object.entries(look.spines)));
       if (look.provenance !== undefined || look.retired !== undefined) {
         setVisible((v) => ({ provenance: look.provenance ?? v.provenance, retired: look.retired ?? v.retired }));
       }
@@ -1468,11 +1476,93 @@ export function GraphApp() {
           ],
         }
       : null;
-  // Merged positions follow the entities, what is shown and the layout; off puts every member back.
+  // Spines (spine view): each open graph's declared spines, the one it shows (the person's pick, else its main or
+  // first), and where umx places its nodes on it, read again after each live change.
+  const [spineLists, setSpineLists] = useState<ReadonlyMap<string, SpineInfo[]>>(new Map());
+  const [spinePlaces, setSpinePlaces] = useState<ReadonlyMap<string, SpineRead>>(new Map());
+  const spineAsked = useRef(new Set<string>());
+  useEffect(() => {
+    for (const a of shown) {
+      if (spineAsked.current.has(a)) continue;
+      spineAsked.current.add(a);
+      api<{ spines: SpineInfo[] }>(`/api/graphs/${encodeURIComponent(a)}/spines`)
+        .then((r) => setSpineLists((m) => new Map(m).set(a, r.spines)))
+        .catch(() => setSpineLists((m) => new Map(m).set(a, [])));
+    }
+  }, [shown]);
+  const spineShown = useMemo(() => new Map(shown.map((a) => [a, shownSpine(spineLists.get(a), spinePicks.has(a) ? spinePicks.get(a)! : undefined)])), [shown, spineLists, spinePicks]);
+  const dataNow = view?.data ?? 0;
+  useEffect(() => {
+    for (const [a, name] of spineShown) {
+      if (!name) continue;
+      const key = `${a}/${name}`;
+      const had = spinePlaces.get(key);
+      if (had && (had.data === dataNow || had.loading)) continue;
+      setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: true, places: had?.places ?? null, supported: had?.supported ?? true }));
+      api<SpinePlaces>(`/api/graphs/${encodeURIComponent(a)}/spines/${encodeURIComponent(name)}`)
+        .then((r) => {
+          const places = new Map(r.places.map(([id, band, by, anchor]) => [id, { band, by, anchor: anchor === 1 }]));
+          setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places, supported: r.supported }));
+        })
+        .catch(() => setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places: null, supported: true, failed: true })));
+    }
+  }, [spineShown, spinePlaces, dataNow]);
+  // The placements the canvas lays out now, by graph: only those read and supported.
+  const spineNow = useMemo(() => {
+    const out = new Map<string, ReadonlyMap<string, Place>>();
+    for (const [a, name] of spineShown) {
+      const r = name ? spinePlaces.get(`${a}/${name}`) : undefined;
+      if (r?.places && r.supported) out.set(a, r.places);
+    }
+    return out;
+  }, [spineShown, spinePlaces]);
+  const [spineAxes, setSpineAxes] = useState<SpineAxis[]>([]);
+  const spineShape = useRef("");
+  // The force layout's positions, kept while a spine is shown so none puts each node back where it was laid out.
+  const spineBase = useRef<{ graph: ViewGraph; layout: unknown; at: Map<string, { x: number; y: number }> } | null>(null);
+  // Positions: back to the force layout, then along each graph's spine, then merged; off puts every member back.
   useEffect(() => {
     if (!view) return;
-    applyMerge(view.graph, mergeEntities && layout.done ? entities : NO_ENTITIES);
-  }, [view, layout.done, mergeEntities, entities, visible, filters, nudged]);
+    const g = view.graph;
+    applyMerge(g, NO_ENTITIES);
+    const base = spineBase.current;
+    if (base && base.graph === g && base.layout === layout) {
+      g.updateEachNodeAttributes((k, a) => {
+        const p = base.at.get(k);
+        if (p) [a.x, a.y] = [p.x, p.y];
+        else base.at.set(k, { x: a.x, y: a.y });
+        return a;
+      });
+    } else if (layout.done) {
+      const at = new Map<string, { x: number; y: number }>();
+      g.forEachNode((k, a) => void at.set(k, { x: a.x, y: a.y }));
+      spineBase.current = { graph: g, layout, at };
+    }
+    const axes: SpineAxis[] = [];
+    if (layout.done && spineNow.size > 0) {
+      for (const [alias, places] of spineNow) {
+        const nodes: { key: string; id: string; x: number; y: number }[] = [];
+        g.forEachNode((k, a) => {
+          if (a.graph === alias) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y });
+        });
+        const laid = spineLayout(alias, nodes, places);
+        g.updateEachNodeAttributes((k, a) => {
+          const p = laid.at.get(k);
+          if (p) [a.x, a.y] = [p.x, p.y];
+          return a;
+        });
+        if (laid.axis) axes.push(laid.axis);
+      }
+    }
+    setSpineAxes((old) => (old.length === 0 && axes.length === 0 ? old : axes));
+    // A spine shown or put away moves every node: fit the camera to the new shape, once per change of spines.
+    const shape = [...spineNow.keys()].sort().join(",");
+    if (layout.done && shape !== spineShape.current) {
+      spineShape.current = shape;
+      setFit((f) => ({ nodes: [], n: (f?.n ?? 0) + 1 }));
+    }
+    applyMerge(g, mergeEntities && layout.done ? entities : NO_ENTITIES);
+  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow]);
   // Shadow connections (ws009 M1c, plan 169). ShadowReads owns the reads (review B2 to B4): the data belongs to
   // the open set it was read over, a new set drops it, Off stops and drops it, and only the newest read lands. Read
   // again on events: a new set, a live change or an Apply (10 s after the last), and the refresh button. Under Hold the
@@ -1739,6 +1829,15 @@ export function GraphApp() {
               onChoosing: setChoosing,
               theme,
             }}
+            spine={{
+              rows: shown.map((a) => {
+                const name = spineShown.get(a) ?? null;
+                const r = name ? spinePlaces.get(`${a}/${name}`) : undefined;
+                return { alias: a, spines: spineLists.get(a), shown: name, state: !r || r.loading ? "loading" : r.failed ? "failed" : r.supported ? "ready" : "unsupported" };
+              }),
+              multi,
+              onPick: (a, name) => setSpinePicks((m) => new Map(m).set(a, name)),
+            }}
             graphCounts={stats?.graphs ?? new Map()}
             graph={view?.graph ?? null}
             version={version}
@@ -1908,6 +2007,7 @@ export function GraphApp() {
                 key={view.key}
                 graph={view.graph}
                 hold={view.frame ?? null}
+                spineAxes={spineAxes}
                 camera={view.camera ?? null}
                 cameraOut={cameraOut}
                 palette={palette}
@@ -1915,7 +2015,7 @@ export function GraphApp() {
                 selection={selectionSet}
                 jump={jump}
                 focused={acrossDepths ?? shownFocus?.depths ?? null}
-                groups={groupShown}
+                groups={spineAxes.length > 0 ? null : groupShown}
                 layoutDone={layout.done}
                 nodeScale={nodeScale(spacing)}
                 onUnlabelled={setUnlabelled}

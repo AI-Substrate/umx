@@ -26,6 +26,7 @@ import { emphasis, SIMILAR_TO } from "@/lib/graph/focus";
 import { nodesInLasso } from "@/lib/selection";
 import { Lru } from "@/lib/lru";
 import { cn } from "@/lib/utils";
+import type { SpineAxis } from "@/lib/graph/spine-layout";
 
 export type CanvasPalette = {
   theme: Theme;
@@ -119,6 +120,8 @@ type Props = {
   panelOpen?: boolean;
   /** An agent opened graphs (ws009 M1b1): sigma keeps framing the extent the canvas had, so nothing on screen moves. */
   hold?: Extent | null;
+  /** The spine view: each graph's spine line (graph coordinates), drawn under the edges, earliest on the left. */
+  spineAxes?: readonly SpineAxis[];
   /** A camera to take on this graph (Undo of an agent's open). */
   camera?: CameraState | null;
   /** Filled with a reader of the camera now. */
@@ -157,6 +160,41 @@ function framedBox(sigma: Sigma<NodeAttrs, EdgeAttrs>, graph: ViewGraph, ids: re
 
 /** The node panel's width (components/node-panel.tsx w-[420px] max-w-[90vw]). */
 const PANEL_W = 420;
+
+const NO_AXES: readonly SpineAxis[] = [];
+
+/** The spine view's lines: a hairline through the anchors' centre, a tick at each band, and an arrowhead at the later
+ * end, so the direction of time reads without a legend. */
+function drawSpines(ctx: CanvasRenderingContext2D, sigma: Sigma<NodeAttrs, EdgeAttrs>, axes: readonly SpineAxis[], palette: CanvasPalette) {
+  for (const axis of axes) {
+    const a = sigma.graphToViewport({ x: axis.x0, y: axis.y });
+    const b = sigma.graphToViewport({ x: axis.x1, y: axis.y });
+    ctx.save();
+    ctx.strokeStyle = palette.structure;
+    ctx.fillStyle = palette.structure;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    for (const x of axis.bands) {
+      const t = sigma.graphToViewport({ x, y: axis.y });
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y - 5);
+      ctx.lineTo(t.x, t.y + 5);
+      ctx.stroke();
+    }
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x - 9 * Math.cos(angle - 0.4), b.y - 9 * Math.sin(angle - 0.4));
+    ctx.lineTo(b.x - 9 * Math.cos(angle + 0.4), b.y - 9 * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
 
 function drawHover(palette: CanvasPalette) {
   return (
@@ -277,7 +315,7 @@ const NO_PLACES: ReadonlyMap<string, Place> = new Map();
 /** A thread's width, in screen pixels: confirmed, and picked by "Show across graphs" (ws009 M2 design point 1). */
 const THREAD = { normal: 1.2, emphasis: 2.4 };
 
-function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, nodeScale = 1, onUnlabelled }: Props) {
+function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, nodeScale = 1, onUnlabelled, spineAxes = NO_AXES }: Props) {
   const sigma = useSigma<NodeAttrs, EdgeAttrs>();
   // Merged places (ws009 M2), recomputed lazily after any node change (layout, visibility, live), read by the reducers
   // and the overlays.
@@ -614,6 +652,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         hullCtx.strokeStyle = palette.grid;
         hullCtx.stroke();
       }
+      drawSpines(hullCtx, sigma, spineAxes, palette);
       if (!groups) return;
       if (dirty) {
         hulls = computeHulls(graph, groups);
@@ -684,7 +723,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       graph.off("eachNodeAttributesUpdated", markDirty);
       graph.off("nodeAttributesUpdated", markDirty);
     };
-  }, [sigma, graph, groups, palette]);
+  }, [sigma, graph, groups, palette, spineAxes]);
 
   // Curves for parallel and opposite pairs (plan 150). Sigma reprocesses only an added edge, so after a live change
   // every edge whose curvature moved is refreshed too: a pair that gains an edge bends, one that loses it straightens.

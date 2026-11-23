@@ -367,6 +367,18 @@ higher value draws them smaller and a lower one larger (size times sqrt(1.6 / sp
 out again from where its nodes are. Which nodes get labels still goes by their usual size. The same graphs at the
 same spacing open laid out the same way. The browser keeps only the number (local storage `layout-spacing`).
 
+## Spines
+
+Spine: a graph with declared spines (`umx graph spine show <alias>`) opens laid out along its main spine (else its
+first), and the Spine section lists each one with None. Where each node sits is umx's own placement, read with
+`umx node list --columns id,spine:<name>`: the spine is a line through the anchors, earliest band on the left (by
+date on a calendar spine, by step or chain on any other), each anchor on the line and every node placed in a band
+beside it, above or below the line as the force layout had it; nodes placed only by rule sit in the band the rule
+gives; nodes the spine does not place wait on a shelf below. None puts every node back where the force layout put
+it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
+The choice is kept in the fragment (`spine=<alias>:<name>`, `-` for none) across a reload. A umx older than the
+`spine:<name>` column says so instead of laying the graph out.
+
 ## Edges
 
 Every edge has a head at its target, so it reads from source to target. Into a node with more than 20 drawn incoming

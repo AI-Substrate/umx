@@ -13,6 +13,13 @@ describe("the view's look in the fragment", () => {
     expect(readLook(`#${hash}`)).toEqual({ ...look, off: { relations: ["part_of", "uses"], types: ["topic"], statuses: [] } });
   });
 
+  it("keeps each graph's spine pick, none as '-'", () => {
+    const hash = writeLook({ spines: { work_iq: "days", demo: null } });
+    expect(hash).toBe("spine=demo:-,work_iq:days");
+    expect(readLook(`#${hash}`)).toEqual({ spines: { demo: null, work_iq: "days" } });
+    expect(readLook("#spine=Bad:days,ok:date_field:x,ok2:")).toEqual({});
+  });
+
   it("drops anything unknown, out of range or oddly named, and never reads graphs", () => {
     expect(readLook("#colour=red&group=x&res=99&spacing=-1&merge=yes&off.type=<b>,ok&g=vault")).toEqual({ off: { relations: [], types: ["ok"], statuses: [] } });
     expect(readLook("")).toEqual({});
