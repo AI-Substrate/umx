@@ -436,7 +436,7 @@ impl GraphStore {
     }
 
     pub(crate) fn external_visible(&self, ctx: &Ctx, refs: &[Option<&str>], alias: &str) -> bool {
-        self.shown_unnamed(alias) || self.explicitly_named_copy(ctx, refs, alias)
+        self.shown_unnamed_in(ctx, alias) || self.explicitly_named_copy(ctx, refs, alias)
     }
 
     /// Policy is checked before looking up a node, so hidden and unloaded targets have identical states.

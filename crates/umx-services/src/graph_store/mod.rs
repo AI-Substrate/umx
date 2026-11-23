@@ -111,7 +111,7 @@ pub use node_more::{
     StatusMoved,
 };
 pub use ontology::{FieldsAdded, OntologyAdded, OntologyRemoved, RoleSet};
-pub use policy::{PolicyConfirmed, PolicyView};
+pub use policy::{PolicyConfirmed, PolicyMemo, PolicyView};
 pub use registry::{NotReloaded, ReloadReport, Reloaded};
 pub use rename::{Moved, Renamed};
 pub(crate) use resolve::check_evidence;
@@ -373,6 +373,9 @@ pub struct GraphStore {
     /// Secured policies (graph id, folder) this daemon could not write to this machine's record yet. They count as
     /// recorded, and every later write of the record carries them (ws004 s06 A2, review R1).
     unsaved: Vec<(Id, String, umx_core::Policy)>,
+    /// How many times this store has written the record: a request's [`PolicyMemo`] taken before a write reads it
+    /// again.
+    state_writes: u64,
     /// Graph ids loaded as two or more copies whose primary was unloaded: none is primary until one copy is left
     /// (d-21, see `copies`).
     demoted: alloc::collections::BTreeSet<Id>,
@@ -433,6 +436,7 @@ impl GraphStore {
             idle_ms: 0,
             roots: Vec::new(),
             unsaved: Vec::new(),
+            state_writes: 0,
             demoted: alloc::collections::BTreeSet::new(),
             incoming: IncomingIndex::default(),
             floors: umx_core::similarity::Floors::default(),

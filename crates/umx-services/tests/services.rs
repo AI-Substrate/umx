@@ -7596,3 +7596,101 @@ fn adopt_std_with_a_map_is_all_or_nothing_across_a_crash() {
         assert!(after.leftovers_for_tests(&dir("/work/g")).is_empty());
     }
 }
+
+/// A read over many edges reads this machine's policy record once per request, not once per edge or end: a list
+/// over ~30k edges reopened the file ~60k times and held the daemon's lock for seconds.
+#[test]
+fn a_read_over_many_edges_reads_the_policy_record_once_per_request() {
+    let mut w = demo();
+    let ids: Vec<Id> = (0..6)
+        .map(|i| {
+            add(&mut w.svc, "problem", &format!("Node {i}"))
+                .unwrap()
+                .value
+                .node
+                .id
+        })
+        .collect();
+    for a in &ids {
+        for b in &ids {
+            if a != b {
+                w.svc
+                    .edge_add(&ctx(), &a.to_text(), "supports", &b.to_text(), &[])
+                    .unwrap();
+            }
+        }
+    }
+    let before = w.state.reads();
+    let listed = w.svc.graph_list_in(&ctx());
+    assert_eq!(listed[0].edges, 30);
+    let reads = w.state.reads() - before;
+    assert!(
+        reads <= 2,
+        "graph list read the record {reads} times for 30 edges"
+    );
+
+    let before = w.state.reads();
+    let edges = w
+        .svc
+        .edge_list(&ctx(), EdgeListRequest::default())
+        .unwrap()
+        .value;
+    assert_eq!(edges.total, Some(30));
+    let reads = w.state.reads() - before;
+    assert!(
+        reads <= 3,
+        "edge list read the record {reads} times for 30 edges"
+    );
+}
+
+/// The per-request read is taken again after this store writes the record, so a request that reads on after a
+/// graph's policy was lowered sees the lowered policy.
+#[test]
+fn a_request_reads_the_policy_record_again_after_it_is_written() {
+    let mut w = world();
+    let mut ids = Vec::new();
+    for alias in ["g1", "g2"] {
+        w.svc
+            .graph_new(&ctx(), &format!("/work/{alias}"), alias, None, false, None)
+            .unwrap();
+        let node = NodeAddRequest {
+            kind: "problem".into(),
+            title: alias.into(),
+            ..Default::default()
+        };
+        ids.push(
+            w.svc
+                .node_add(&ctx().graph(alias), node)
+                .unwrap()
+                .value
+                .node
+                .id,
+        );
+    }
+    w.svc
+        .edge_add(
+            &ctx().graph("g1"),
+            &ids[0].to_text(),
+            "blocks",
+            &format!("umx:g2/{}", ids[1]),
+            &[],
+        )
+        .unwrap();
+    w.svc
+        .graph_set(&ctx(), "g2", &[("policy".into(), "secured".into())])
+        .unwrap();
+    let request = ctx().graph("g1");
+    let to_state = |w: &World| {
+        let listed = w
+            .svc
+            .edge_list(&request, EdgeListRequest::default())
+            .unwrap()
+            .value;
+        listed.rows[0].to_state
+    };
+    assert_eq!(to_state(&w), Some("graph_not_loaded"), "secured: hidden");
+    w.svc
+        .graph_set(&ctx(), "g2", &[("policy".into(), "open".into())])
+        .unwrap();
+    assert_eq!(to_state(&w), None, "lowered: shown");
+}

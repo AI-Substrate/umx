@@ -52,8 +52,8 @@ pub use graph_store::{
     GuideEntry, GuideExample, GuideField, GuideType, HistoryRow, Idempotency, IncomingIndex, Keyed,
     ListedNode, Loaded, NodeAddRequest, NodeAdded, NodeEditRequest, NodeEdited, NodeListRequest,
     NodeNoteRequest, NodeNoted, NodeStatusRequest, OntologyAdded, OntologyRemoved, PolicyConfirmed,
-    PolicyView, Ports, ReadEdge, ResolveStatus, Resolved, RoleSet, SecretAllowed, StatusMoved,
-    Target,
+    PolicyMemo, PolicyView, Ports, ReadEdge, ResolveStatus, Resolved, RoleSet, SecretAllowed,
+    StatusMoved, Target,
 };
 pub use graph_store::{DeclaredSpine, SpineRemoved, SpineSet, SpinesShown, StdAdopted};
 pub use graph_store::{
@@ -149,6 +149,8 @@ pub struct Ctx {
     /// The former aliases this request named and the live aliases umx used instead (ws006 S23), as (former, live):
     /// the daemon gives one `alias_redirected` hint for each. Shared by every clone of this context.
     pub redirected: Redirected,
+    /// This machine's policy record as this request read it, shared by every clone of this context.
+    pub policy: PolicyMemo,
 }
 
 /// See [`Ctx::redirected`].
@@ -165,6 +167,7 @@ impl Ctx {
             actor: Actor::unknown(),
             include_provenance: false,
             redirected: Redirected::default(),
+            policy: PolicyMemo::default(),
         }
     }
 

@@ -49,6 +49,13 @@ pub struct PolicyConfirmed {
     pub changed: bool,
 }
 
+/// One request's read of this machine's record ([`GraphStore::shown_unnamed_in`]), shared by every clone of its
+/// [`Ctx`]: the store's write count when read, and the record or why it cannot be used.
+#[derive(Clone, Debug, Default)]
+pub struct PolicyMemo(alloc::rc::Rc<core::cell::RefCell<Option<MemoRead>>>);
+
+type MemoRead = (u64, Result<PolicyState, String>);
+
 impl GraphStore {
     /// This machine's record, with the secured policies this daemon could not write yet merged in (they count as
     /// recorded). Err carries why the record cannot be used (umx's words, never the file's contents). The bool says
@@ -71,6 +78,7 @@ impl GraphStore {
     /// Writes the record. Ok(None): written and synced, and nothing is held in memory any more; Ok(Some(why)): in
     /// place but the folder sync failed; Err: not written, and what was held stays held.
     fn write_state(&mut self, state: &PolicyState) -> Result<Option<String>, String> {
+        self.state_writes += 1;
         let written = match self.ports.state.write(&state.encode()) {
             Ok(StateWritten::Durable) => None,
             Ok(StateWritten::NotSynced(why)) => Some(why),
@@ -89,6 +97,31 @@ impl GraphStore {
             Ok((state, _)) => file.join(state.recorded(l.meta.id, l.dir.as_str()).unwrap_or(file)),
             Err(_) => Policy::SECURED,
         })
+    }
+
+    /// [`shown_unnamed`](Self::shown_unnamed) for one request: the record is read once per request (`ctx.policy`)
+    /// rather than once per edge or end, so a read over many rows does not reopen the file for each. After a write of
+    /// the record by this store, or while secured policies are held unsaved, it is read fresh as before.
+    pub(crate) fn shown_unnamed_in(&self, ctx: &Ctx, alias: &str) -> bool {
+        let Some(l) = self.graphs.get(alias) else {
+            return false;
+        };
+        if !self.unsaved.is_empty() {
+            return self.shown_unnamed(alias);
+        }
+        let mut memo = ctx.policy.0.borrow_mut();
+        if memo
+            .as_ref()
+            .is_none_or(|(writes, _)| *writes != self.state_writes)
+        {
+            *memo = Some((self.state_writes, self.read_state().map(|(state, _)| state)));
+        }
+        let file = l.meta.file_policy();
+        let policy = match memo.as_ref().map(|(_, state)| state) {
+            Some(Ok(state)) => file.join(state.recorded(l.meta.id, l.dir.as_str()).unwrap_or(file)),
+            _ => Policy::SECURED,
+        };
+        policy.visibility == umx_core::Visibility::Open
     }
 
     /// Whether reads that do not name the graph may show it (d-20, D53): its effective visibility is open. Not loaded,
