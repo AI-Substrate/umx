@@ -174,7 +174,7 @@ pub fn run(
         }
         // `umx ui` (plan 095): checked with the daemon by the CLI, then run here through the UiHost port.
         [ui, rest @ ..] if ui == "ui" && !rest.first().is_some_and(|w| umx_cli::is_ui_verb(w)) => {
-            match umx_cli::ui_flags(rest, output.json).and_then(|flags| {
+            match umx_cli::ui_flags(rest).and_then(|flags| {
                 match umx_cli::ui_preflight(&config.socket, &build, &flags.graphs) {
                     Ok(notes) => Ok((flags, notes)),
                     Err(refusal) => {
@@ -243,8 +243,7 @@ pub fn run(
                             umx_cli::emit(&ready.envelope(&notes), output);
                             return;
                         } else if run.no_open {
-                            // The link holds the token: stdout only, once, as text (never an envelope or a log).
-                            println!("umx ui: open {}\n  Ctrl-C stops the view.", ready.link);
+                            println!("umx ui: open {}\n  Ctrl-C stops the view.", ready.url);
                         } else {
                             println!(
                                 "umx ui: the graph view is open at {} (Ctrl-C stops it).",

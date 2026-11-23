@@ -1,3 +1,4 @@
+import { VIEW_HEADER } from "@/lib/guard";
 import type { ApiError } from "@/lib/types";
 
 export class ApiFailure extends Error {
@@ -44,7 +45,7 @@ async function failure(res: Response): Promise<ApiFailure> {
 }
 
 export async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(path, { credentials: "same-origin", cache: "no-store", signal });
+  const res = await fetch(path, { headers: { [VIEW_HEADER]: "1" }, credentials: "same-origin", cache: "no-store", signal });
   if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
 }
@@ -53,7 +54,7 @@ export async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
 export async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", [VIEW_HEADER]: "1" },
     body: JSON.stringify(body),
     credentials: "same-origin",
     cache: "no-store",

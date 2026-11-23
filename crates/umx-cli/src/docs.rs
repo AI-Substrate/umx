@@ -206,7 +206,7 @@ const TOPICS: &[Topic] = &[
     Topic {
         name: "ui",
         title: "The graph view (umx ui)",
-        summary: "umx ui: start the local graph view and open the browser at it; --graph, --port, --no-open; the token, what it runs and every refusal; showing a person things in the open view (focus, highlight, filter, fit, clear) and reading what they selected.",
+        summary: "umx ui: start the local graph view and open the browser at it; --graph, --port, --no-open; who can reach it, what it runs and every refusal; showing a person things in the open view (focus, highlight, filter, fit, clear) and reading what they selected.",
         markdown: || include_str!("../docs/ui.md").to_owned(),
     },
     Topic {
@@ -793,7 +793,7 @@ mod tests {
             }
             ["ui", rest @ ..] => {
                 let rest: Vec<String> = rest.iter().map(|f| (*f).to_owned()).collect();
-                crate::ui_flags(&rest, false).is_ok()
+                crate::ui_flags(&rest).is_ok()
             }
             _ => OFFLINE.contains(&words.join(" ").as_str()),
         }

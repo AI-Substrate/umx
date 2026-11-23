@@ -1,21 +1,20 @@
 #!/usr/bin/env node
-// Starts the view on 127.0.0.1 only, with a per-run token (security note ws:009, B1 and B2).
-//   node bin/serve.mjs [--port=<n>]                 the built standalone server (pnpm build first); prints the link
-//   node bin/serve.mjs --dev [--port=<n>]           next dev, for local work only; prints the link
-//   node bin/serve.mjs --token-stdin [--port=<n>]   how `umx ui` runs it (plan 095): see below
-// The run's token, session and cookie name live in a process global (lib/guard.ts runSettings), never in
-// process.env, so nothing the server starts inherits them.
+// Starts the view on 127.0.0.1 only (security note ws:009, B1). There is no token: lib/guard.ts keeps the view to
+// this machine's browsers by Host, Origin and Sec-Fetch-Site.
+//   node bin/serve.mjs [--port=<n>]           the built standalone server (pnpm build first); prints the URL
+//   node bin/serve.mjs --dev [--port=<n>]     next dev, for local work only; prints the URL
+//   node bin/serve.mjs --stdin [--port=<n>]   how `umx ui` runs it (plan 095): see below
+// The run's settings live in a process global (lib/guard.ts runSettings), never in process.env, so nothing the
+// server starts inherits them.
 //
-// --token-stdin: the token is the first line on stdin (never argv or env). The server prints exactly one line,
-// {"ready":true,"port":N}, once it accepts connections, and never prints the token or the link. stdin stays open
+// --stdin: the server prints exactly one line, {"ready":true,"port":N}, once it accepts connections. stdin stays open
 // while umx runs; when it ends (umx stopped, Ctrl-C, kill -9) the server stops its whole process group, which umx
 // made for it.
-// After the token, each stdin line `code <code>` is a launch code from umx (ws009 M1b2, security D5): the server
-// answers one stdout line, {"code":"tab"} when a tab asked for events in the last 30 s (the code is dropped; that tab
-// shows the agent's raise), else {"code":"armed"} (good once, for 60 s, swapped at /api/session like the token).
+// Each stdin line `code <code>` is a launch code from umx (ws009 M1b2, security D5): the server answers one stdout
+// line, {"code":"tab"} when a tab asked for events in the last 30 s (the code is dropped; that tab shows the agent's
+// raise), else {"code":"armed"} (good once, for 60 s, taken at /api/launch so the link may name graphs).
 // `end <why>` (restarted, unreachable): umx is about to stop this server, and every events poll answers ui_ended.
 // UMX_UI_IDLE_MS (umx ui --detach): stop the group once no tab has asked for events for that long.
-import { randomBytes } from "node:crypto";
 import { createServer, get } from "node:http";
 import { setInterval } from "node:timers";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -39,11 +38,11 @@ let fromStdin = false;
 let port = 0;
 for (const arg of args) {
   if (arg === "--dev") dev = true;
-  else if (arg === "--token-stdin") fromStdin = true;
+  else if (arg === "--stdin") fromStdin = true;
   else if (/^--port=\d{1,5}$/.test(arg)) port = Number(arg.slice("--port=".length));
   else refuse(`unknown argument "${arg}". Use --dev or --port=<n>; the view binds ${LOOPBACK} and nothing else.`);
 }
-if (dev && fromStdin) refuse("--dev and --token-stdin do not go together.");
+if (dev && fromStdin) refuse("--dev and --stdin do not go together.");
 for (const name of ["UMX_UI_HOST", "HOST"]) {
   const value = process.env[name];
   if (value !== undefined && value !== "" && value !== LOOPBACK) {
@@ -67,7 +66,7 @@ function stopGroup() {
   }
 }
 
-/** A line after the token: `code <code>` arms a launch code, or leaves it to a connected tab; `end <why>` says why umx
+/** A line on stdin: `code <code>` arms a launch code, or leaves it to a connected tab; `end <why>` says why umx
  * is about to stop this server, so its tabs can say so. Anything else is ignored. */
 function onLine(line) {
   const end = /^end ([a-z]{1,16})$/.exec(line);
@@ -81,28 +80,20 @@ function onLine(line) {
   if (use) process.stdout.write(`${JSON.stringify({ code: use })}\n`);
 }
 
-/** The first line on stdin; then each further line is read, and stdin's end stops this process group. */
-function tokenFromStdin() {
-  return new Promise((resolve) => {
-    let text = "";
-    let got = false;
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data", (chunk) => {
-      text += chunk;
-      for (let end = text.indexOf("\n"); end >= 0; end = text.indexOf("\n")) {
-        const line = text.slice(0, end);
-        text = text.slice(end + 1);
-        if (got) onLine(line);
-        else {
-          got = true;
-          resolve(line);
-        }
-      }
-      if (text.length > 256) refuse("a line on stdin is too long.");
-    });
-    process.stdin.on("end", () => (got ? stopGroup() : refuse("stdin ended before a token line.")));
-    process.stdin.on("error", stopGroup);
+/** Reads each line on stdin; stdin's end stops this process group. */
+function readStdin() {
+  let text = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    text += chunk;
+    for (let end = text.indexOf("\n"); end >= 0; end = text.indexOf("\n")) {
+      onLine(text.slice(0, end));
+      text = text.slice(end + 1);
+    }
+    if (text.length > 256) refuse("a line on stdin is too long.");
   });
+  process.stdin.on("end", stopGroup);
+  process.stdin.on("error", stopGroup);
 }
 
 function freePort() {
@@ -145,25 +136,14 @@ if (idleMs > 0) {
   }, every).unref();
 }
 
-let token;
-if (fromStdin) {
-  token = await tokenFromStdin();
-  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) refuse("the token line on stdin is not 43 base64url characters.");
-} else {
-  token = randomBytes(32).toString("base64url");
-}
+if (fromStdin) readStdin();
 if (port === 0) port = await freePort();
-const session = randomBytes(32).toString("base64url");
-const cookie = `umx_ui_${randomBytes(6).toString("hex")}`;
 
 globalThis[Symbol.for("umx.ui.run")] = Object.freeze({
   UMX_UI_PORT: String(port),
-  UMX_UI_TOKEN: token,
-  UMX_UI_SESSION: session,
-  UMX_UI_COOKIE: cookie,
   UMX_UI_DEV: dev ? "1" : "0",
 });
-for (const name of ["UMX_UI_TOKEN", "UMX_UI_SESSION", "UMX_UI_COOKIE", "UMX_UI_PORT", "UMX_UI_DEV", "HOST"]) {
+for (const name of ["UMX_UI_PORT", "UMX_UI_DEV", "HOST"]) {
   delete process.env[name];
 }
 Object.assign(process.env, { HOSTNAME: LOOPBACK, PORT: String(port), NEXT_TELEMETRY_DISABLED: "1" });
@@ -173,7 +153,7 @@ async function announce() {
     await whenAccepting(port);
     process.stdout.write(`${JSON.stringify({ ready: true, port })}\n`);
   } else {
-    console.log(`\numx ui: open http://${LOOPBACK}:${port}/#t=${token}\n`);
+    console.log(`\numx ui: open http://${LOOPBACK}:${port}/\n`);
   }
 }
 

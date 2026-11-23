@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** GET ?graph=<alias>[&graph=...]&epoch=&gen=&since=[&live=<alias>:<epoch>:<rev>...]: the agent events and changes
  * for the graphs a tab has open (1 to MAX_OPEN, plan 133), held up to 20 s (plan 114). One poll per tab, however many
- * graphs it shows. The proxy has already checked the cookie, Host, Origin and Sec-Fetch-Site, as for every API route. */
+ * graphs it shows. The proxy has already checked Host, Origin, Sec-Fetch-Site and the view header, as for every API route. */
 export async function GET(req: Request) {
   // A tab asking counts as connected (ws009 M1b2): an agent's raise then reaches it, not a new tab.
   const presence = launchState();

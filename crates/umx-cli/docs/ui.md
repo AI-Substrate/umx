@@ -10,7 +10,7 @@ shows it (`umx ui status`). A view ends when the daemon restarts or stops answer
     umx ui --graph acme
     umx ui --graph alpha,beta,gamma
     umx ui --port 4747
-    umx ui --no-open --human
+    umx ui --no-open
     umx ui --detach --graph alpha,beta
 
 - `--graph <alias>[,<alias>...]` opens those graphs (1 to 12, each named once) on one canvas. A secured graph opens
@@ -20,9 +20,9 @@ shows it (`umx ui status`). A view ends when the daemon restarts or stops answer
   `graph_not_loaded` and the command that loads it. A graph named twice, or more than 12, is refused
   (`usage_invalid`).
 - `--port <n>` binds 127.0.0.1:<n> (1 to 65535) instead of a free port.
-- `--no-open` prints the link instead of opening the browser. The link holds this run's token, so it is printed
-  only as human text, to stdout, once: with JSON output `--no-open` is refused (`usage_invalid`). With `--detach`
-  it opens nothing and prints no link, so JSON is fine there.
+- `--no-open` prints the view's URL instead of opening the browser (human text, or the envelope's `url`). The URL
+  holds no secret: open it in any browser on this machine. Graphs named with `--graph` are checked but not opened;
+  open them from the picker, or with `umx ui open --graph .. --raise`. With `--detach` it opens nothing.
 - `--detach` starts the view in the background and returns once it is ready.
 
 The daemon must be running (`daemon_not_running` otherwise, as for every graph command): the view reads graphs
@@ -40,14 +40,34 @@ Human text says where the view is and that Ctrl-C stops it. JSON output is one e
 checks of those graphs warned (`stale_files` when a graph's files changed on disk since it was loaded) comes with the
 ready output as warnings with their next, in JSON and in human text; the view still starts.
 
-`url` never holds the token: the token goes only to the server's stdin (and, with `--no-open --human`, to your
-terminal), never to an envelope, argv, env or a log. The browser gets a single-use launch code instead: good once,
-within 60 seconds, then swapped for this run's cookie (HttpOnly, SameSite=Strict, gone with the server). If the view's
-server stops by itself, or the daemon restarts, umx prints `ui_failed` with why and exits.
+`url` is the plain `http://127.0.0.1:N/`; there is no per-run token and no cookie. When `--graph` names graphs, the
+browser is opened at `url` plus a single-use launch code and the graphs (`#t=<code>&g=a%2Cb`): the code is good
+once, within 60 seconds, and only says the link came from umx, so the view may open the graphs it names. It goes
+only to the server's stdin and the browser, never to an envelope, argv, env or a log. If the view's server stops by
+itself, or the daemon restarts, umx prints `ui_failed` with why and exits.
+
+## Who can reach the view
+
+The server binds 127.0.0.1 only, and refuses before routing (403, no detail):
+
+- a `Host` other than `127.0.0.1:N` or `localhost:N` (DNS rebinding: a site whose name points at 127.0.0.1);
+- an `Origin` that is not the view's own (`http://127.0.0.1:N` or `http://localhost:N`, matching the Host);
+- an API call that says it is cross-site (`Sec-Fetch-Site` other than `same-origin`), an API write with no
+  `Origin`, or an API call without the `x-umx-view: 1` header the view's own fetches send (a page on another site
+  cannot add a header without a CORS preflight, and the server never grants one). It sends no CORS headers.
+
+So a page on another site can link to the view but cannot read its data or make it act, and a link from outside
+never opens a secured graph or loads an idle one: a launch link names graphs only with a launch code this run took,
+"Include secured graphs" is off whenever the view opens, and nothing graph-named is read from the fragment otherwise.
+
+What is not stopped: any process or other OS user on this machine that can reach 127.0.0.1 can read the view and
+every graph it can open, secured ones included, as `curl` can. The per-run token used to stop that; there is none
+now. The trust boundary is the user account: on a machine you share with other users, do not leave the view
+running.
 
 ## What it runs
 
-`umx ui` runs `<node> <dir>/bin/serve.mjs --token-stdin` with no shell, in a process group of its own, with an env of
+`umx ui` runs `<node> <dir>/bin/serve.mjs --stdin` with no shell, in a process group of its own, with an env of
 only `PATH`, `UMX_HOME`, `UMX_BIN` (this umx) and `NODE_ENV=production`.
 
 - The folder `<dir>` is, first hit wins: `UMX_UI_DIR`; `ui.dir` in the machine config; apps/ui beside the source
@@ -59,10 +79,10 @@ only `PATH`, `UMX_HOME`, `UMX_BIN` (this umx) and `NODE_ENV=production`.
       umx config set ui.dir /Users/me/unimatrix/apps/ui
       umx config set ui.node /opt/homebrew/bin/node
 
-umx makes a fresh 32-byte token for each run and writes it as one line on the server's stdin. The server prints
-`{"ready":true,"port":N}` when it accepts connections; umx then opens `http://127.0.0.1:N/#t=<token>` (with
-`&g=a%2Cb%2Cc` for `--graph a,b,c`); the view opens those graphs on one canvas. The browser swaps the token for a cookie that lasts this
-run, and drops it from the address bar. umx keeps the server's stdin open: when umx ends in any way (Ctrl-C, a closed terminal, kill) the server
+The server prints `{"ready":true,"port":N}` when it accepts connections; umx then opens `http://127.0.0.1:N/`, or for
+`--graph a,b,c` `http://127.0.0.1:N/#t=<code>&g=a%2Cb%2Cc` with a fresh 32-byte launch code it first hands the
+server on stdin (`code <code>`); the view opens those graphs on one canvas and drops the fragment from the address
+bar. umx keeps the server's stdin open: when umx ends in any way (Ctrl-C, a closed terminal, kill) the server
 sees it and stops its whole process group.
 
 The browser is opened without the link in any process's arguments, which other users can read. On macOS umx runs
@@ -70,10 +90,10 @@ The browser is opened without the link in any process's arguments, which other u
 (a meta refresh and a plain link, no script) into its own run folder, which must be 0700 and yours: the file is
 created new (never over an existing file or symlink) with mode 0600 and a random name, its path is given to
 `xdg-open`, and umx deletes it after 30 seconds, when `umx ui` ends, or at the next `umx ui` if a killed umx left it.
-The page holds the token for those 30 seconds, readable only by you. A browser that starts very slowly may not have
-read it by then: rerun `umx ui`, or use `--no-open --human`. With no opener (no osascript, no xdg-open on `PATH`)
-umx never falls back to anything that puts the link in argv: it stops and says so (`ui_open_failed`); rerun with
-`--no-open --human` and open the link it prints.
+The page holds the link (with any launch code) for those 30 seconds, readable only by you. A browser that starts
+very slowly may not have read it by then: rerun `umx ui`, or use `--no-open`. With no opener (no osascript, no
+xdg-open on `PATH`) umx never falls back to anything that puts the link in argv: it stops and says so
+(`ui_open_failed`); rerun with `--no-open` and open the URL it prints.
 
 ## Refusals
 
@@ -86,8 +106,8 @@ umx never falls back to anything that puts the link in argv: it stops and says s
   `ui.dir` is set and the source folder umx was built from is not on this machine, it says so: see below.
 - `ui_start_timed_out`: the server did not say it was ready within 60 seconds; umx stopped it.
 - `ui_failed`: the server could not start or stopped early (its own message is on stderr).
-- `ui_open_failed`: the browser could not be opened; the view was stopped. Run `umx ui --no-open --human` in a
-  terminal for a person, or `umx ui --detach --no-open` and let `umx ui open --raise` open it later.
+- `ui_open_failed`: the browser could not be opened; the view was stopped. Run `umx ui --no-open` and open the URL
+  it prints, or `umx ui --detach --no-open` and let `umx ui open --raise` open it later.
 - `ui_already_running`: a view already runs for this UMX_HOME. Run its next, or `umx ui stop` first.
 
 ## In a binary install
@@ -120,17 +140,17 @@ After you update umx, check out its new commit and build again.
 with the envelope above plus `"detached":true`. It runs until `umx ui stop`, a daemon restart (or a daemon that stops
 answering for about 5 seconds, or a daemon upgrade), or 30 minutes with no tab open. When the daemon restarted or
 stopped answering, an open tab says so ("The graph view ended (umx daemon restarted). Run umx ui --detach to start it
-again."). A new one draws a new token, so old cookies stop working. Two started at once (in a terminal or detached)
+again."). A new one may listen on another port. Two started at once (in a terminal or detached)
 never both run: the first to take the view runs, and the other is refused with `ui_already_running` before it starts
 a server or opens a browser.
 
-`umx ui status` says `running`, and while it runs the `port`, `pid` and `started` time. It never prints a token or a
+`umx ui status` says `running`, and while it runs the `port`, `pid` and `started` time. It never prints a launch
 code, and never names the graphs the view shows. `umx ui stop` ends the view and its server (`stopped: true` with the
 `pid`, or `false` when none ran); any caller of the same user may run it. It signals only the process that
 `$UMX_HOME/run/ui.json` names, and only while that process has the recorded start time and is a `umx ui`: a record
 left by a view that died is removed, and the process now at that pid is never signalled. ui.json is owner-only
 (0600), replaced whole, never read through a symlink, and holds the pid, start time, port, the daemon's start id and
-the protocol; never the token or a code.
+the protocol; never a launch code.
 
 `umx ui open --raise` brings the view forward as well: if a tab is open (it asked for events in the last 30 seconds)
 that tab marks its title ("● umx: agent wants to show you gamma") and asks for focus. The title mark is the
@@ -143,7 +163,7 @@ With no view running, every `umx ui` command (focus, highlight, filter, fit, cle
 for the next view, with the next that brings one up: `umx ui --detach --graph <alias>` when nothing runs, or
 `umx ui open --graph <alias> --raise` when a view runs but no tab is open.
 
-Working on the view itself: `pnpm --dir apps/ui dev` runs `next dev` behind the same guards and prints its own link;
+Working on the view itself: `pnpm --dir apps/ui dev` runs `next dev` behind the same guards and prints its URL;
 see apps/ui/README.md.
 
 Building the view needs pnpm 10.16 or later; older pnpm ignores `minimumReleaseAge`. The `packageManager` pin in

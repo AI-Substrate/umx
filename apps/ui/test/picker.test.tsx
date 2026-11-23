@@ -3,7 +3,6 @@
 // daemon's serializer (crates/umx-daemon/src/verbs.rs graph_index).
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { LockedScreen } from "@/components/graph-app";
 import { GraphList, Scopes } from "@/components/graph-picker";
 import { allGraphs, draftToggled, groupOf, matchGraphs, scopeGraphs, selectMatching, toggled } from "@/lib/graph-set";
 import { MAX_OPEN } from "@/lib/graph/keys";
@@ -281,13 +280,5 @@ describe("several graphs in the picker (plan 133, D69 (7))", () => {
     expect(html).toContain("+3 left out");
     expect(html).not.toContain("vault");
     expect(html).not.toContain("named");
-  });
-});
-
-describe("the lock screen", () => {
-  it("says to open the link from the terminal, or reload this tab", () => {
-    const html = renderToStaticMarkup(<LockedScreen />);
-    expect(html).toContain("Open the link from the terminal");
-    expect(html).toContain("or reload this tab");
   });
 });

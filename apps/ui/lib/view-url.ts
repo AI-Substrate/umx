@@ -100,7 +100,7 @@ export function writeLook(look: ViewLook): string {
   return p.toString().replaceAll("%2C", ",").replaceAll("%3A", ":");
 }
 
-/** Whether a fragment holds a launch link's keys (a token or graphs): takeLaunch reads and drops those. */
+/** Whether a fragment holds a launch link's keys (a launch code or graphs): takeLaunch reads and drops those. */
 export function isLaunch(hash: string): boolean {
   return [...params(hash).keys()].some((k) => LAUNCH.has(k));
 }

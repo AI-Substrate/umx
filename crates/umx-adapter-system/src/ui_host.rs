@@ -1,8 +1,7 @@
 //! system.ui-host (req-104, ws009 s2): runs the graph view's server for `umx ui` and opens the browser at it.
 //!
-//! The server is `<node> <app>/bin/serve.mjs --token-stdin [--port=<n>]`, started with no shell, a fixed env and in a
-//! process group of its own, so the terminal's Ctrl-C reaches umx only. The token is one line on its stdin, never in
-//! argv or env; stdin then stays open as a lifeline: when umx ends in any way (Ctrl-C, kill -9) the pipe closes and
+//! The server is `<node> <app>/bin/serve.mjs --stdin [--port=<n>]`, started with no shell, a fixed env and in a
+//! process group of its own, so the terminal's Ctrl-C reaches umx only. Its stdin stays open as a lifeline: when umx ends in any way (Ctrl-C, kill -9) the pipe closes and
 //! serve.mjs stops its whole group. Stopping on purpose closes stdin too, waits [`STOP_GRACE`], then kills the group.
 //! The server says it is ready with one stdout line, `{"ready":true,"port":N}`; the rest of its stdout is read and
 //! dropped. Its stderr is the terminal's.
@@ -12,7 +11,7 @@
 //! random name in umx's 0700 run folder and gives its path to xdg-open, then deletes it after [`PAGE_LIFE`] or when
 //! this host is dropped; the next open sweeps any older than [`PAGE_LIFE`] that a killed umx left.
 //!
-//! ws009 M1b2: after the token, each further stdin line `code <code>` hands the server a launch code; it answers one
+//! ws009 M1b2: each stdin line `code <code>` hands the server a launch code; it answers one
 //! stdout line, `{"code":"armed"}` or `{"code":"tab"}`. A detached `umx ui` is started in a session of its own with
 //! stdio on /dev/null and reports one line on a socket in the run folder ([`SystemUiHost::with_run_dir`]), named in
 //! its argv after [`REPORT_FLAG`]. Process start times and command lines come from ps, by absolute path.
@@ -29,7 +28,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime};
 
-use umx_core::ports::ui_host::{REPORT_FLAG, TOKEN_BYTES, base64url, token_ok, url_ok};
+use umx_core::ports::ui_host::{CODE_BYTES, REPORT_FLAG, base64url, code_ok, url_ok};
 use umx_core::ports::{
     UiCodeUse, UiDetached, UiEnd, UiError, UiHost, UiLaunch, UiProcess, UiServed,
 };
@@ -249,7 +248,7 @@ fn random_bytes<const N: usize>() -> Result<[u8; N], UiError> {
     let mut bytes = [0u8; N];
     fs::File::open("/dev/urandom")
         .and_then(|mut f| f.read_exact(&mut bytes))
-        .map_err(|e| UiError::Token(format!("/dev/urandom ({:?})", e.kind())))?;
+        .map_err(|e| UiError::Code(format!("/dev/urandom ({:?})", e.kind())))?;
     Ok(bytes)
 }
 
@@ -411,8 +410,8 @@ impl UiHost for SystemUiHost {
         "system.ui-host"
     }
 
-    fn token(&self) -> Result<String, UiError> {
-        random_bytes::<TOKEN_BYTES>().map(|b| base64url(&b))
+    fn code(&self) -> Result<String, UiError> {
+        random_bytes::<CODE_BYTES>().map(|b| base64url(&b))
     }
 
     fn serve(&self, launch: &UiLaunch) -> Result<UiServed, UiError> {
@@ -420,7 +419,7 @@ impl UiHost for SystemUiHost {
         let mut command = Command::new(&launch.node);
         command
             .arg(&script)
-            .arg("--token-stdin")
+            .arg("--stdin")
             .args(launch.port.map(|p| format!("--port={p}")))
             .current_dir(&launch.app_dir)
             .env_clear()
@@ -441,13 +440,6 @@ impl UiHost for SystemUiHost {
             done: false,
             heard: None,
         };
-        let line = format!("{}\n", launch.token);
-        if let Some(stdin) = server.stdin.as_mut() {
-            // A server that died at once shows up below as an exit.
-            let _ = stdin
-                .write_all(line.as_bytes())
-                .and_then(|()| stdin.flush());
-        }
         let (said, heard) = mpsc::channel();
         std::thread::spawn(move || {
             let mut lines = BufReader::new(stdout);
@@ -727,10 +719,8 @@ impl UiHost for SystemUiHost {
     }
 
     fn launch_code(&self, server: &UiServed, code: &str) -> Result<UiCodeUse, UiError> {
-        if !token_ok(code) {
-            return Err(UiError::Token(
-                "a launch code is made like a token".to_string(),
-            ));
+        if !code_ok(code) {
+            return Err(UiError::Code("a launch code is malformed".to_string()));
         }
         let mut servers = self.servers();
         let running = servers
@@ -801,15 +791,13 @@ mod tests {
         dir
     }
 
-    /// The stand-in serve.mjs, run by /bin/sh as "node". It records what it got beside itself, reads the token
-    /// line, leaves a child in its group, and behaves as `mode` says. On stdin's end it stops its group, as
+    /// The stand-in serve.mjs, run by /bin/sh as "node". It records what it got beside itself (every stdin line in
+    /// `stdin`), leaves a child in its group, and behaves as `mode` says. On stdin's end it stops its group, as
     /// serve.mjs does.
     const SERVE: &str = r#"d="$(dirname "$0")"
 echo $$ > "$d/pid"
 echo "$0 $*" > "$d/argv"
 env > "$d/env"
-IFS= read -r t
-printf '%s' "$t" > "$d/token"
 sleep 600 &
 echo $! > "$d/child"
 port=4747
@@ -820,6 +808,7 @@ case "$(cat "$d/mode")" in
   ends) echo noise; printf '{"ready":true,"port":%s}\n' "$port"; sleep 0.2; kill -s TERM 0 ;;
   *) echo "a line before"; printf '{"ready":true,"port":%s}\n' "$port"
      while IFS= read -r l; do
+       echo "$l" >> "$d/stdin"
        case "$l" in
          "code "*) echo "${l#code }" >> "$d/codes"
                    if [ -e "$d/tab" ]; then echo '{"code":"tab"}'; else echo '{"code":"armed"}'; fi ;;
@@ -883,14 +872,14 @@ esac
     }
 
     impl UiStage for Stage {
-        fn launch(&self, server: Server, port: Option<u16>, token: &str) -> UiLaunch {
+        fn launch(&self, server: Server, port: Option<u16>) -> UiLaunch {
             let mode = match server {
                 Server::Ready => "ready",
                 Server::Silent => "silent",
                 Server::Dies => "dies",
                 Server::Ends => "ends",
             };
-            for f in ["pid", "child", "token", "argv", "env", "end", "codes"] {
+            for f in ["pid", "child", "stdin", "argv", "env", "end", "codes"] {
                 let _ = fs::remove_file(self.bin().join(f));
             }
             fs::write(self.bin().join("mode"), mode).unwrap();
@@ -899,14 +888,15 @@ esac
                 app_dir: self.dir.join("app").display().to_string(),
                 port,
                 env: vec![("PATH".to_string(), "/bin:/usr/bin".to_string())],
-                token: token.to_string(),
                 // A deadline, not a wait: the shell stage can be slow to start on a loaded machine
                 // (a 5 s bound timed out in the gate).
                 ready_ms: 60_000,
             }
         }
-        fn token_seen(&self) -> Option<String> {
-            self.read("token")
+        fn stdin_seen(&self) -> Vec<String> {
+            self.read("stdin")
+                .map(|t| t.lines().map(str::to_string).collect())
+                .unwrap_or_default()
         }
         fn argv_and_env_seen(&self) -> String {
             format!(
@@ -1031,8 +1021,8 @@ esac
 
     umx_contracts::ui_host_contract!(
         stage;
-        uh_c1_tokens_are_base64url_and_never_repeat(),
-        uh_c2_the_token_reaches_stdin_only_and_the_port_is_reported(),
+        uh_c1_codes_are_base64url_and_never_repeat(),
+        uh_c2_the_server_gets_no_secret_and_the_port_is_reported(),
         uh_c3_stop_or_dropping_the_host_leaves_no_process(),
         uh_c4_a_server_never_ready_times_out_and_leaves_no_process(),
         uh_c5_a_server_that_dies_before_ready_is_an_exit_and_leaves_no_process(),

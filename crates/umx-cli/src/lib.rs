@@ -229,9 +229,9 @@ pub struct UiFlags {
     pub report_to: Option<String>,
 }
 
-/// Parses the flags of `umx ui`. `--no-open` with JSON output is refused: the link holds the run's token, which goes
-/// only to a terminal or the browser, never into an envelope an agent keeps (security, ws009 s2).
-pub fn ui_flags(rest: &[String], json: bool) -> Result<UiFlags, Box<Envelope>> {
+/// Parses the flags of `umx ui`. The view's URL holds no secret, so `--no-open` works with JSON output too (the
+/// envelope's `url`).
+pub fn ui_flags(rest: &[String]) -> Result<UiFlags, Box<Envelope>> {
     const WHAT: &str = "ui takes only --graph <alias>[,<alias>...], --port <1-65535>, --no-open and --detach, each at most once";
     let wrong = || Box::new(usage("ui", WHAT));
     let mut flags = UiFlags::default();
@@ -280,13 +280,6 @@ pub fn ui_flags(rest: &[String], json: bool) -> Result<UiFlags, Box<Envelope>> {
     }
     if flags.detach && flags.report_to.is_some() {
         return Err(wrong());
-    }
-    // Detached, nothing prints a link: --no-open then only leaves the browser closed.
-    if flags.no_open && json && !flags.detach && flags.report_to.is_none() {
-        return Err(Box::new(usage(
-            "ui",
-            "--no-open prints the link only as text: add --human (JSON output never holds the link's token)",
-        )));
     }
     Ok(flags)
 }

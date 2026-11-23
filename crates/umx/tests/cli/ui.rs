@@ -5,8 +5,8 @@
 use super::*;
 
 /// ws009 s2 (plan 095): `umx ui` refuses before it starts anything, each refusal with a next: the daemon down,
-/// `--no-open` with JSON (the link's token never goes into an envelope), an alias that is not loaded, a folder that
-/// is missing or not built, and no node.
+/// an alias that is not loaded, a folder that is missing or not built, and no node. `--no-open` with JSON is fine: the
+/// URL holds no secret.
 #[test]
 fn ui_refuses_with_a_next_before_it_starts_anything() {
     let mut home = Home::new("ui");
@@ -14,12 +14,7 @@ fn ui_refuses_with_a_next_before_it_starts_anything() {
     assert_eq!((exit, env.errors[0].code()), (3, "daemon_not_running"));
     assert_eq!(env.command, "ui");
     let (env, exit) = home.umx(&["ui", "--no-open"]);
-    assert_eq!((exit, env.errors[0].code()), (2, "usage_invalid"));
-    assert!(
-        env.errors[0].message().contains("--human"),
-        "{}",
-        env.errors[0].message()
-    );
+    assert_eq!((exit, env.errors[0].code()), (3, "daemon_not_running"));
     let (env, exit) = home.umx(&["ui", "--port", "0"]);
     assert_eq!((exit, env.errors[0].code()), (2, "usage_invalid"));
 
@@ -414,7 +409,7 @@ fn ui_open_sends_the_open_graphs_and_refuses_a_secured_one_with_its_next() {
     }
 }
 
-/// ws009 M1b2 (plan 161): `umx ui --detach` returns once the view is up, with no token or code in what it prints;
+/// ws009 M1b2 (plan 161): `umx ui --detach` returns once the view is up, with no launch code in what it prints;
 /// the view outlives the CLI; one runs per UMX_HOME (a second is refused with what to do instead); `status` says
 /// running, port, pid and when it started, never the graphs; `stop` ends it and its server; a daemon restart ends it
 /// too (the start id changed); and a supervisor killed with -9 takes its server down (the lifeline). Agents asking a

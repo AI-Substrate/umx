@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { contentSecurityPolicy } from "@/lib/csp";
-import { guard, readGuardConfig, runSettings } from "@/lib/guard";
+import { guard, readGuardConfig, runSettings, VIEW_HEADER } from "@/lib/guard";
 
 export function proxy(req: NextRequest) {
   const cfg = readGuardConfig(runSettings());
@@ -11,7 +11,7 @@ export function proxy(req: NextRequest) {
       host: req.headers.get("host"),
       origin: req.headers.get("origin"),
       secFetchSite: req.headers.get("sec-fetch-site"),
-      cookie: cfg ? req.cookies.get(cfg.cookieName)?.value : undefined,
+      view: req.headers.get(VIEW_HEADER),
     },
     cfg,
   );

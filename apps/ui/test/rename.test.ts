@@ -248,7 +248,7 @@ describe("a launch link with a former alias (lib/snapshot followNamed, lib/launc
       gen,
       ["alpha"],
       true,
-      { list: async (named) => ({ graphs, renamed: named?.includes("alpha") ? [{ from: "alpha", to: "gamma", id: GA }] : [] }), locked: () => false, alive: () => true },
+      { list: async (named) => ({ graphs, renamed: named?.includes("alpha") ? [{ from: "alpha", to: "gamma", id: GA }] : [] }), alive: () => true },
       (r) => (result = r),
     );
     expect(result).toMatchObject({ kind: "graphs", named: ["gamma"], pick: { aliases: ["gamma"], named: true, missing: [] }, renamed: [{ from: "alpha", to: "gamma" }] });
@@ -260,7 +260,7 @@ describe("a launch link with a former alias (lib/snapshot followNamed, lib/launc
     const graphs = [
       { alias: "gamma", id: GA, nodes: 1, edges: 0, secured: false, state: "loaded", folder: "present", openable: true, reason: null, fix: null },
     ];
-    await listForLaunch(launches, launches.begin(), ["alpha"], true, { list: async () => ({ graphs }), locked: () => false, alive: () => true }, (r) => (result = r));
+    await listForLaunch(launches, launches.begin(), ["alpha"], true, { list: async () => ({ graphs }), alive: () => true }, (r) => (result = r));
     expect(result).toMatchObject({ pick: { named: false, missing: ["alpha"] } });
   });
 });

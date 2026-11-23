@@ -1,10 +1,12 @@
-// What the launch link asks for (`umx ui`, plan 095). The fragment is #t=<token>[&g=<alias>[,<alias>...]]; it never
-// reaches the server or its logs. Several aliases open several graphs on one canvas (plan 133). A link opened in a tab that is already open only changes the fragment, so the view also swaps
-// the token on `hashchange` (plan 113).
+// What a launch link asks for (`umx ui --graph`, an agent's raise). The fragment is #t=<code>&g=<alias>[,<alias>...],
+// where <code> is a single-use launch code umx armed on the server's stdin; it never reaches the server's logs. A
+// plain `umx ui` opens the bare URL, with no fragment. Several aliases open several graphs on one canvas (plan 133). A
+// link opened in a tab that is already open only changes the fragment, so the view also reads it on `hashchange`
+// (plan 113).
 import { MAX_OPEN } from "@/lib/graph/keys";
 import type { GraphSummary } from "@/lib/types";
 
-const TOKEN = /(?:^#|&)t=([A-Za-z0-9_-]{43})(?:&|$)/;
+const CODE = /(?:^#|&)t=([A-Za-z0-9_-]{43})(?:&|$)/;
 
 /** The graphs `umx ui --graph <a,b,...>` named in the fragment, each once and at most MAX_OPEN, or null. */
 export function requestedGraphs(hash: string): string[] | null {
@@ -56,7 +58,7 @@ export function firstGraphs(list: GraphSummary[], named: readonly string[] | nul
 export type Launch = { named: string[] | null; gen: number };
 
 /**
- * Numbers the launches in a tab. Each link with a token takes the next number when it lands; a result from any
+ * Numbers the launches in a tab. Each link with a code takes the next number when it lands; a result from any
  * other number is obsolete. A read that is not a launch (a background re-list) carries `now()` and goes obsolete when
  * a launch begins.
  */
@@ -76,35 +78,35 @@ export class Launches {
 export type LaunchDeps = {
   location: { hash: string; pathname: string; search: string };
   history: { replaceState(data: unknown, unused: string, url: string): void };
-  /** POST /api/session with the token (same origin; the proxy checks Host and Origin); true when it was taken. */
-  post: (token: string) => Promise<boolean>;
+  /** POST /api/launch with the code (same origin; the proxy checks Host and Origin); true when it was taken. */
+  post: (code: string) => Promise<boolean>;
 };
 
 /**
- * Reads the launch fragment, drops it from the address bar (replaceState fires no hashchange), and swaps its token
- * for the session cookie. Null when the fragment holds no token. The named graph counts only with a token this run
- * took, in the same fragment (security N1): any page can link to the view's port with `#g=<alias>`, and the
- * view's own fetches would carry the cookie, so a lone g= opens and loads nothing (and does not cancel a launch in
- * flight). A token the server refuses leaves the session as it was (N2) and names no graph.
+ * Reads the launch fragment, drops it from the address bar (replaceState fires no hashchange), and hands its code to
+ * the server. Null when the fragment holds no code. The named graphs count only with a code this run took, in the
+ * same fragment (security N1): any page can link to the view's port with `#g=<alias>`, and opening a named graph may
+ * open a secured one or load an idle one, so a lone g= opens and loads nothing (and does not cancel a launch in
+ * flight). A code the server refuses (used, stale, made up) names no graph.
  */
 export async function takeLaunch(deps: LaunchDeps, launches: Launches): Promise<Launch | null> {
   const hash = deps.location.hash;
-  const token = TOKEN.exec(hash)?.[1] ?? null;
+  const code = CODE.exec(hash)?.[1] ?? null;
   const named = requestedGraphs(hash);
   if (hash !== "") deps.history.replaceState(null, "", deps.location.pathname + deps.location.search);
-  if (token === null) return null;
+  if (code === null) return null;
   const gen = launches.begin();
   let taken = false;
   try {
-    taken = await deps.post(token);
+    taken = await deps.post(code);
   } catch {
-    // The graph list read that follows says whether a session is there.
+    // Not taken: the view lists the graphs and opens none it was not asked to by umx.
   }
   return { named: taken ? named : null, gen };
 }
 
 /**
- * Swaps the token again whenever a new launch link lands in this tab. `onLaunch` runs only for the latest launch and
+ * Reads the fragment again whenever a new launch link lands in this tab. `onLaunch` runs only for the latest launch and
  * never after the returned unsubscribe.
  */
 export function watchLaunch(target: EventTarget, deps: LaunchDeps, launches: Launches, onLaunch: (launch: Launch) => void): () => void {
@@ -136,12 +138,11 @@ export function followedNames(named: readonly string[], renamed: readonly Follow
 /** What a graph-list read for a launch tells the view. */
 export type ListResult =
   | { kind: "graphs"; graphs: GraphSummary[]; pick: FirstPick; named: string[] | null; fresh: boolean; renamed: Followed[]; refused: NonNullable<Listed["refused"]> }
-  | { kind: "locked" }
   | { kind: "failed"; error: unknown };
 
 /**
  * Lists the graphs for launch `gen` (or a background re-list carrying `launches.now()`) and hands the result to
- * `apply` only if no newer launch began meanwhile and `alive()` still holds: an obsolete list, 401 or failure changes
+ * `apply` only if no newer launch began meanwhile and `alive()` still holds: an obsolete list or failure changes
  * nothing (review R222-2). A launch's names the index does not list are followed (plan 215): a former alias opens its
  * live graph.
  */
@@ -150,7 +151,7 @@ export async function listForLaunch(
   gen: number,
   named: string[] | null,
   fresh: boolean,
-  deps: { list: (named: string[] | null) => Promise<Listed>; locked: (error: unknown) => boolean; alive: () => boolean },
+  deps: { list: (named: string[] | null) => Promise<Listed>; alive: () => boolean },
   apply: (result: ListResult) => void,
 ): Promise<void> {
   let result: ListResult;
@@ -159,7 +160,7 @@ export async function listForLaunch(
     const names = named === null ? null : followedNames(named, renamed);
     result = { kind: "graphs", graphs, pick: firstGraphs(graphs, names), named: names, fresh, renamed, refused };
   } catch (error) {
-    result = deps.locked(error) ? { kind: "locked" } : { kind: "failed", error };
+    result = { kind: "failed", error };
   }
   if (deps.alive() && launches.latest(gen)) apply(result);
 }

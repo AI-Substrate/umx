@@ -1,5 +1,5 @@
 "use client";
-import { AlertTriangle, Info, KeyRound, Loader2, Radio, Waypoints, X } from "lucide-react";
+import { AlertTriangle, Info, Loader2, Radio, Waypoints, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -23,6 +23,7 @@ import { useSelectionShare } from "@/components/use-selection";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api, ApiFailure, asIssue, onRenamed, post, renamedOf } from "@/lib/api";
+import { VIEW_HEADER } from "@/lib/guard";
 import { composeRenames, idsWithPending, movedSelection, type Rename, renameKey, renameNotice, renamesLanded, renameTarget } from "@/lib/rename";
 import { applyRows, applySnapshot, changeText, type Extent, extentOf, goneAfterRead, type Outcome, qualifyRows, readChange, remapGroups, reopen, snapAfter } from "@/lib/graph/apply";
 import { liveAll, type LiveCursor, type TabChange, toRead } from "@/lib/live";
@@ -121,29 +122,13 @@ function readPalette(theme: Theme): CanvasPalette {
   };
 }
 
-type Auth = "checking" | "locked" | "ready";
+type Auth = "checking" | "ready";
 
 function onVisibility(changed: () => void) {
   document.addEventListener("visibilitychange", changed);
   return () => document.removeEventListener("visibilitychange", changed);
 }
 
-
-/** No session cookie: the tab was not opened with this run's link. A new link pasted here is read on hashchange. */
-export function LockedScreen() {
-  return (
-    <main className="grid h-full place-items-center p-8">
-      <div className="max-w-md space-y-3 rounded-xl border bg-card p-6 text-center shadow-sm">
-        <KeyRound className="mx-auto size-6 text-primary" />
-        <h1 className="text-lg font-semibold">Open the link from the terminal</h1>
-        <p className="text-sm text-muted-foreground">
-          This view only answers the browser that opened the link `pnpm start` printed, with its one-time token. Copy
-          that link into this tab, or reload this tab.
-        </p>
-      </div>
-    </main>
-  );
-}
 
 /** Resolves once the first layout of `graph` is done, so a live change never renumbers nodes under it. */
 function whenLaid(laid: { graph: ViewGraph | null; wake: Set<() => void> }, graph: ViewGraph, signal: AbortSignal): Promise<void> {
@@ -403,7 +388,7 @@ export function GraphApp() {
   }, [liveAt]);
 
   // Lists the graphs and opens some, unless a newer launch began meanwhile (review R222-2). `named` comes from a launch
-  // link (`umx ui --graph <a,b>` adds g=<a,b>) whose token this run took: those graphs open, secured or not, since they
+  // link (`umx ui --graph <a,b>` adds g=<a,b>) whose launch code this run took: those graphs open, secured or not, since they
   // were named. `fresh` is a new link landing in an open tab: it switches only to graphs it names.
   const refreshGraphs = useCallback(
     (named: string[] | null, fresh: boolean, gen: number = launches.now()) =>
@@ -415,14 +400,9 @@ export function GraphApp() {
         {
           list: async (named) =>
             api<Listed>(named && named.length > 0 ? `/api/graphs?follow=${named.map(encodeURIComponent).join(",")}` : "/api/graphs"),
-          locked: (e) => e instanceof ApiFailure && e.status === 401,
           alive: () => mounted.current,
         },
         (r) => {
-          if (r.kind === "locked") {
-            setAuth("locked");
-            return;
-          }
           if (r.kind === "failed") {
             setAuth("ready");
             setGraphs((g) => g ?? []);
@@ -450,18 +430,18 @@ export function GraphApp() {
     [launches, launchSet],
   );
 
-  // Swap the token in the fragment for the cookie and drop it from the address bar: at load, and again whenever a
+  // Hand a launch link's code to the server and drop the fragment from the address bar: at load, and again whenever a
   // new launch link lands in this tab (hashchange). Nothing that settles after unmount changes the view.
   useEffect(() => {
     mounted.current = true;
     const deps: LaunchDeps = {
       location: window.location,
       history: window.history,
-      post: async (token) => {
-        const res = await fetch("/api/session", {
+      post: async (code) => {
+        const res = await fetch("/api/launch", {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ token }),
+          headers: { "content-type": "application/json", [VIEW_HEADER]: "1" },
+          body: JSON.stringify({ code }),
           credentials: "same-origin",
         });
         return res.ok;
@@ -1712,7 +1692,6 @@ export function GraphApp() {
   const undoAgent = useCallback(() => updateLedger(agentOff), [updateLedger]);
   const promptTarget = prompt ? describeEvent({ seq: prompt.seq, at_ms: prompt.at_ms, graph: prompt.graph, by: null, command: prompt.kind === "focus" ? { kind: "focus", node: prompt.nodes[0], hops: 1 } : { kind: "fit", nodes: prompt.nodes } }, titleOf).target.replace(/, 1 hop$/, "") : null;
 
-  if (auth === "locked") return <LockedScreen />;
 
   const wantedList = wanted ? wanted.split(",") : [];
   const reading = wantedList.length === 1 ? graphs?.find((g) => g.alias === wantedList[0]) : undefined;

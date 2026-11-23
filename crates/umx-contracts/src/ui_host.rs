@@ -2,12 +2,12 @@
 //! asks (for the real adapter, a stub script run by /bin/sh in a temp folder) and reports what that server saw, so no
 //! clause runs node or opens a real browser.
 
-use umx_core::ports::ui_host::{REPORT_FLAG, TOKEN_LEN, token_ok};
+use umx_core::ports::ui_host::{CODE_LEN, REPORT_FLAG, code_ok};
 use umx_core::ports::{UiCodeUse, UiEnd, UiError, UiHost, UiLaunch};
 
 pub const CLAUSES: &[&str] = &[
-    "uh_c1_tokens_are_base64url_and_never_repeat",
-    "uh_c2_the_token_reaches_stdin_only_and_the_port_is_reported",
+    "uh_c1_codes_are_base64url_and_never_repeat",
+    "uh_c2_the_server_gets_no_secret_and_the_port_is_reported",
     "uh_c3_stop_or_dropping_the_host_leaves_no_process",
     "uh_c4_a_server_never_ready_times_out_and_leaves_no_process",
     "uh_c5_a_server_that_dies_before_ready_is_an_exit_and_leaves_no_process",
@@ -34,21 +34,21 @@ pub enum Child {
 /// How a stage's server behaves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Server {
-    /// Reads the token, says it is ready, runs until its stdin closes, then stops its group.
+    /// Says it is ready, reads its stdin until it closes, then stops its group.
     Ready,
-    /// Reads the token and never says it is ready; stops its group when its stdin closes.
+    /// Never says it is ready; stops its group when its stdin closes.
     Silent,
-    /// Reads the token and exits with 3 before it is ready, leaving a child behind in its group.
+    /// Exits with 3 before it is ready, leaving a child behind in its group.
     Dies,
     /// Says it is ready, then exits by itself shortly after.
     Ends,
 }
 
 pub trait UiStage {
-    /// A fresh launch whose server behaves as `server`, binding `port` (or any port) with `token`.
-    fn launch(&self, server: Server, port: Option<u16>, token: &str) -> UiLaunch;
-    /// The line the last server read from its stdin.
-    fn token_seen(&self) -> Option<String>;
+    /// A fresh launch whose server behaves as `server`, binding `port` (or any port).
+    fn launch(&self, server: Server, port: Option<u16>) -> UiLaunch;
+    /// Every line the last server read from its stdin, in order.
+    fn stdin_seen(&self) -> Vec<String>;
     /// The last server's argv and env, as text.
     fn argv_and_env_seen(&self) -> String;
     /// Whether any process of the last server (its leader or a child) is still alive.
@@ -71,7 +71,7 @@ pub trait UiStage {
     fn ending_seen(&self) -> Option<String>;
 }
 
-const TOKEN: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const CODE: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 fn settle<S: UiStage>(stage: &S) -> bool {
     // A group that was signalled may take a moment to go, longer on a loaded machine; give it up to 30 s.
@@ -84,34 +84,44 @@ fn settle<S: UiStage>(stage: &S) -> bool {
     false
 }
 
-pub fn uh_c1_tokens_are_base64url_and_never_repeat<P: UiHost, S: UiStage>(
+pub fn uh_c1_codes_are_base64url_and_never_repeat<P: UiHost, S: UiStage>(
     factory: impl Fn() -> (P, S),
 ) {
     let (host, _) = factory();
     assert!(host.adapter_id().ends_with(".ui-host"));
-    let a = host.token().expect("token");
-    let b = host.token().expect("token");
-    assert_eq!(a.len(), TOKEN_LEN);
-    assert!(token_ok(&a) && token_ok(&b), "{a} {b}");
+    let a = host.code().expect("code");
+    let b = host.code().expect("code");
+    assert_eq!(a.len(), CODE_LEN);
+    assert!(code_ok(&a) && code_ok(&b), "{a} {b}");
     assert_ne!(a, b);
 }
 
-pub fn uh_c2_the_token_reaches_stdin_only_and_the_port_is_reported<P: UiHost, S: UiStage>(
+/// The view has no per-run token: starting the server writes nothing to its stdin, and its argv says `--stdin`.
+pub fn uh_c2_the_server_gets_no_secret_and_the_port_is_reported<P: UiHost, S: UiStage>(
     factory: impl Fn() -> (P, S),
 ) {
     let (host, stage) = factory();
-    let token = host.token().expect("token");
     let server = host
-        .serve(&stage.launch(Server::Ready, Some(47_471), &token))
+        .serve(&stage.launch(Server::Ready, Some(47_471)))
         .expect("serve");
     assert_eq!(server.port, 47_471);
     assert!(host.running(&server));
-    assert_eq!(stage.token_seen().as_deref(), Some(token.as_str()));
     let seen = stage.argv_and_env_seen();
-    assert!(!seen.contains(&token), "the token is in argv or env");
+    assert!(
+        seen.contains("--stdin") && !seen.contains("--token-stdin"),
+        "{seen}"
+    );
+    // Anything written before ready would be read by now, after the ready line; a code proves the pipe is read.
+    let code = host.code().expect("code");
+    assert_eq!(host.launch_code(&server, &code), Ok(UiCodeUse::Armed));
+    assert_eq!(
+        stage.stdin_seen(),
+        vec![format!("code {code}")],
+        "the server got only the code"
+    );
     host.stop(&server);
     let any = host
-        .serve(&stage.launch(Server::Ready, None, TOKEN))
+        .serve(&stage.launch(Server::Ready, None))
         .expect("serve on any port");
     assert!(any.port > 0);
     assert_ne!(any.id, server.id);
@@ -123,7 +133,7 @@ pub fn uh_c3_stop_or_dropping_the_host_leaves_no_process<P: UiHost, S: UiStage>(
 ) {
     let (host, stage) = factory();
     let server = host
-        .serve(&stage.launch(Server::Ready, None, TOKEN))
+        .serve(&stage.launch(Server::Ready, None))
         .expect("serve");
     assert!(stage.alive());
     host.stop(&server);
@@ -131,7 +141,7 @@ pub fn uh_c3_stop_or_dropping_the_host_leaves_no_process<P: UiHost, S: UiStage>(
     assert!(!host.running(&server));
     host.stop(&server);
     // Dropping the host stops what it started.
-    host.serve(&stage.launch(Server::Ready, None, TOKEN))
+    host.serve(&stage.launch(Server::Ready, None))
         .expect("serve");
     assert!(stage.alive());
     drop(host);
@@ -142,7 +152,7 @@ pub fn uh_c4_a_server_never_ready_times_out_and_leaves_no_process<P: UiHost, S: 
     factory: impl Fn() -> (P, S),
 ) {
     let (host, stage) = factory();
-    let mut launch = stage.launch(Server::Silent, None, TOKEN);
+    let mut launch = stage.launch(Server::Silent, None);
     launch.ready_ms = 300;
     match host.serve(&launch) {
         Err(UiError::TimedOut) => {}
@@ -159,7 +169,7 @@ pub fn uh_c5_a_server_that_dies_before_ready_is_an_exit_and_leaves_no_process<
     factory: impl Fn() -> (P, S),
 ) {
     let (host, stage) = factory();
-    match host.serve(&stage.launch(Server::Dies, None, TOKEN)) {
+    match host.serve(&stage.launch(Server::Dies, None)) {
         Err(UiError::Exited(Some(3))) => {}
         Err(e) => panic!("expected Exited(3), got {e:?}"),
         Ok(_) => panic!("expected Exited(3), got a server"),
@@ -172,7 +182,7 @@ pub fn uh_c6_a_server_that_ends_is_seen_as_not_running<P: UiHost, S: UiStage>(
 ) {
     let (host, stage) = factory();
     let server = host
-        .serve(&stage.launch(Server::Ends, None, TOKEN))
+        .serve(&stage.launch(Server::Ends, None))
         .expect("serve");
     let mut ended = false;
     for _ in 0..100 {
@@ -190,7 +200,7 @@ pub fn uh_c7_open_hands_over_only_a_loopback_url<P: UiHost, S: UiStage>(
     factory: impl Fn() -> (P, S),
 ) {
     let (host, stage) = factory();
-    let url = format!("http://127.0.0.1:4747/#t={TOKEN}&g=acme");
+    let url = format!("http://127.0.0.1:4747/#t={CODE}&g=acme");
     host.open(&url).expect("open");
     for bad in [
         "http://example.com/",
@@ -213,14 +223,14 @@ pub fn uh_c8_a_launch_code_reaches_stdin_only_and_is_dropped_while_a_tab_is_conn
 ) {
     let (host, stage) = factory();
     let server = host
-        .serve(&stage.launch(Server::Ready, None, TOKEN))
+        .serve(&stage.launch(Server::Ready, None))
         .expect("serve");
-    let code = host.token().expect("a code");
+    let code = host.code().expect("a code");
     assert_eq!(host.launch_code(&server, &code), Ok(UiCodeUse::Armed));
     assert_eq!(stage.codes_seen(), vec![code.clone()]);
     assert!(!stage.argv_and_env_seen().contains(&code));
     stage.tab(true);
-    let other = host.token().expect("a code");
+    let other = host.code().expect("a code");
     assert_eq!(host.launch_code(&server, &other), Ok(UiCodeUse::Tab));
     stage.tab(false);
     host.stop(&server);
@@ -311,7 +321,7 @@ pub fn uh_c12_why_the_view_ends_reaches_the_server<P: UiHost, S: UiStage>(
 ) {
     let (host, stage) = factory();
     let server = host
-        .serve(&stage.launch(Server::Ready, None, TOKEN))
+        .serve(&stage.launch(Server::Ready, None))
         .expect("serve");
     host.ending(&server, UiEnd::Restarted).expect("ending");
     let mut seen = None;

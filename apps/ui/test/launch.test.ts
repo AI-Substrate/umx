@@ -11,20 +11,20 @@ const graphs = [
   row("later", { state: "idle", nodes: null, edges: null }),
   row("gone", { state: "unloaded", openable: false, reason: "It was unloaded.", fix: "umx graph load /h/gone --as gone" }),
 ];
-const TOKEN = "A".repeat(43);
-/** A token the server refuses (wrong or from an earlier run). */
+const CODE = "A".repeat(43);
+/** A launch code the server refuses (used, stale or made up). */
 const BAD = "Z".repeat(43);
 
 describe("the launch link", () => {
-  it("reads the named graphs from the fragment, beside the token", () => {
-    expect(requestedGraphs(`#t=${TOKEN}&g=demo`)).toEqual(["demo"]);
+  it("reads the named graphs from the fragment, beside the launch code", () => {
+    expect(requestedGraphs(`#t=${CODE}&g=demo`)).toEqual(["demo"]);
     // umx ui --graph a,b,c writes the commas as %2C (ws009 M1b1).
-    expect(requestedGraphs(`#t=${TOKEN}&g=alpha%2Cbeta%2Cgamma`)).toEqual(["alpha", "beta", "gamma"]);
+    expect(requestedGraphs(`#t=${CODE}&g=alpha%2Cbeta%2Cgamma`)).toEqual(["alpha", "beta", "gamma"]);
     expect(requestedGraphs("#g=my%20graph&t=x")).toEqual(["my graph"]);
-    expect(requestedGraphs(`#t=${TOKEN}`)).toBeNull();
+    expect(requestedGraphs(`#t=${CODE}`)).toBeNull();
     expect(requestedGraphs("#g=%E0%A4%A")).toBeNull();
     // Several graphs on one canvas (plan 133): a comma list, each once, at most MAX_OPEN.
-    expect(requestedGraphs(`#t=${TOKEN}&g=a,b,,a,c`)).toEqual(["a", "b", "c"]);
+    expect(requestedGraphs(`#t=${CODE}&g=a,b,,a,c`)).toEqual(["a", "b", "c"]);
     expect(requestedGraphs(`#g=${Array.from({ length: 20 }, (_v, i) => `g${i}`).join(",")}`)).toHaveLength(12);
     expect(requestedGraphs("#g=,")).toBeNull();
   });
@@ -48,26 +48,26 @@ describe("the launch link", () => {
   });
 });
 
-/** A tab: its address, history and the session POSTs it made. */
+/** A tab: its address, history and the launch POSTs it made. */
 function tab(hash: string) {
   const location = { hash, pathname: "/", search: "" };
   const posted: string[] = [];
   const deps: LaunchDeps = {
     location,
     history: { replaceState: (_d, _u, url) => (location.hash = new URL(url, "http://h").hash) },
-    post: async (token) => {
-      posted.push(token);
-      return token !== BAD;
+    post: async (code) => {
+      posted.push(code);
+      return code !== BAD;
     },
   };
   return { location, posted, deps };
 }
 
-describe("the token exchange", () => {
-  it("swaps the token at load and clears the fragment", async () => {
-    const t = tab(`#t=${TOKEN}&g=demo`);
+describe("taking a launch code", () => {
+  it("hands the code over at load and clears the fragment", async () => {
+    const t = tab(`#t=${CODE}&g=demo`);
     expect(await takeLaunch(t.deps, new Launches())).toEqual({ named: ["demo"], gen: 1 });
-    expect(t.posted).toEqual([TOKEN]);
+    expect(t.posted).toEqual([CODE]);
     expect(t.location.hash).toBe("");
   });
 
@@ -78,7 +78,7 @@ describe("the token exchange", () => {
     expect(t.location.hash).toBe("");
   });
 
-  it("redoes the exchange when a new link lands in an open tab (hashchange)", async () => {
+  it("takes a new link that lands in an open tab (hashchange)", async () => {
     const t = tab("");
     const win = new EventTarget();
     const launched = vi.fn();
@@ -91,7 +91,7 @@ describe("the token exchange", () => {
     expect(t.location.hash).toBe("");
     // Clearing the fragment fires no hashchange, and after stop() a new link is not read.
     stop();
-    t.location.hash = `#t=${TOKEN}`;
+    t.location.hash = `#t=${CODE}`;
     win.dispatchEvent(new Event("hashchange"));
     await new Promise((r) => setTimeout(r, 10));
     expect(t.posted).toEqual([second]);
@@ -115,15 +115,15 @@ describe("the token exchange", () => {
     }
   });
 
-  it("names no graph when the server refuses the token, so the session stays as it was (N2)", async () => {
+  it("names no graph when the server refuses the code", async () => {
     const t = tab(`#t=${BAD}&g=vault`);
     expect(await takeLaunch(t.deps, new Launches())).toEqual({ named: null, gen: 1 });
     expect(t.posted).toEqual([BAD]);
     expect(t.location.hash).toBe("");
   });
 
-  it("still reports the launch when the POST fails, so the graph read can show the lock screen", async () => {
-    const t = tab(`#t=${TOKEN}&g=vault`);
+  it("still reports the launch, naming no graph, when the POST fails", async () => {
+    const t = tab(`#t=${CODE}&g=vault`);
     t.deps.post = async () => {
       throw new Error("offline");
     };
@@ -142,7 +142,7 @@ function deferred<T>() {
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
-const LOCKED = new Error("401");
+const FAILED = new Error("offline");
 
 /**
  * A tab as graph-app wires it: each launch's POST and graph-list read are held until the test settles them, and the
@@ -156,14 +156,14 @@ function liveTab() {
   const deps: LaunchDeps = {
     location,
     history: { replaceState: (_d, _u, url) => (location.hash = new URL(url, "http://h").hash) },
-    post: (token) => {
+    post: (code) => {
       const d = deferred<boolean>();
-      posts.set(token, d);
+      posts.set(code, d);
       return d.promise;
     },
   };
   const launches = new Launches();
-  const view = { alias: null as string | null, auth: "ready" as "ready" | "locked", applied: 0, alive: true };
+  const view = { alias: null as string | null, failed: false, applied: 0, alive: true };
   const refresh = (named: string[] | null, fresh: boolean, gen: number) => {
     const d = deferred<GraphSummary[]>();
     lists.set(keyOf(named), d);
@@ -172,12 +172,12 @@ function liveTab() {
       gen,
       named,
       fresh,
-      { list: () => d.promise.then((graphs) => ({ graphs })), locked: (e) => e === LOCKED, alive: () => view.alive },
+      { list: () => d.promise.then((graphs) => ({ graphs })), alive: () => view.alive },
       (r) => {
         view.applied++;
-        if (r.kind === "locked") view.auth = "locked";
-        else if (r.kind === "graphs") {
-          view.auth = "ready";
+        if (r.kind === "failed") view.failed = true;
+        else {
+          view.failed = false;
           if (r.fresh && r.pick.named) view.alias = r.pick.aliases.join(",");
           else view.alias ??= r.pick.aliases.join(",") || null;
         }
@@ -190,8 +190,8 @@ function liveTab() {
     delivered.push(keyOf(l.named));
     void refresh(l.named, true, l.gen);
   });
-  const land = (token: string, graph: string) => {
-    location.hash = `#t=${token}&g=${graph}`;
+  const land = (code: string, graph: string) => {
+    location.hash = `#t=${code}&g=${graph}`;
     win.dispatchEvent(new Event("hashchange"));
   };
   return { posts, lists, launches, view, delivered, stop, land, win, location, refresh };
@@ -245,9 +245,8 @@ describe("overlapping launches (review R222-2)", () => {
     expect(t.view.applied).toBe(1);
   });
 
-  it("never relocks a view a newer link unlocked with an obsolete 401", async () => {
+  it("never fails a view a newer link opened with an obsolete failure", async () => {
     const t = liveTab();
-    t.view.auth = "locked";
     t.land(A, "older");
     t.posts.get(A)!.resolve(false);
     await flush();
@@ -256,10 +255,10 @@ describe("overlapping launches (review R222-2)", () => {
     await flush();
     t.lists.get("newer")!.resolve(list);
     await flush();
-    expect(t.view.auth).toBe("ready");
-    t.lists.get(null)!.reject(LOCKED);
+    expect(t.view.failed).toBe(false);
+    t.lists.get(null)!.reject(FAILED);
     await flush();
-    expect(t.view.auth).toBe("ready");
+    expect(t.view.failed).toBe(false);
     expect(t.view.alias).toBe("newer");
   });
 
@@ -296,8 +295,8 @@ describe("overlapping launches (review R222-2)", () => {
     await flush();
     t.lists.get("newer")!.resolve(list);
     await flush();
-    t.lists.get(null)!.reject(LOCKED);
+    t.lists.get(null)!.reject(FAILED);
     await background;
-    expect(t.view).toMatchObject({ alias: "newer", auth: "ready", applied: 1 });
+    expect(t.view).toMatchObject({ alias: "newer", failed: false, applied: 1 });
   });
 });

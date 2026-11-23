@@ -4,14 +4,16 @@
 //! the daemon answers (umx_cli::ui_preflight).
 //!
 //! The supervisor (ws009 M1b2, design agreed by the architect and security, D1 to D6): one per UMX_HOME, recorded in
-//! `$UMX_HOME/run/ui.json` (pid, start time, port, the daemon's start id, PROTOCOL; never the token or a code). It
-//! holds the token in memory only and keeps the server's stdin lifeline; it waits on the daemon as its one
+//! `$UMX_HOME/run/ui.json` (pid, start time, port, the daemon's start id, PROTOCOL; never a code). It keeps the
+//! server's stdin lifeline; it waits on the daemon as its one
 //! supervisor wait, and ends (the server's group with it) when the daemon's start id changes or the daemon is
 //! unreachable for about 5 s, or the server stops (an idle detached view stops itself after 30 min with no tab
 //! polling). An agent's `umx ui open --raise` reaches it as an event: with a tab connected that tab shows it; else it
-//! opens a tab with a fresh single-use launch code (60 s, D5), never the token. Every browser open uses such a code;
-//! the token is printed only for a person (`--no-open --human`, D6). `--detach` starts the same supervisor in the
-//! background (UiHost::detach) and returns once it reports ready.
+//! opens a tab with a fresh single-use launch code (60 s, D5) and the graphs. The view has no per-run token: a plain
+//! open (no graphs named) is the bare URL, and the server keeps the view to this machine's browsers by Host, Origin
+//! and Sec-Fetch-Site (apps/ui lib/guard.ts). A launch code only lets a link name graphs, so an outside link never
+//! opens a secured graph or loads an idle one. `--detach` starts the same supervisor in the background
+//! (UiHost::detach) and returns once it reports ready.
 //!
 //! The app folder, first hit wins: UMX_UI_DIR, machine `ui.dir`, apps/ui beside the source umx was built from (all
 //! resolved into `config.started`). node: machine `ui.node`, else the first `node` on PATH. Both resolved once to
@@ -90,12 +92,11 @@ pub struct UiRun {
     pub notes: Vec<Issue>,
 }
 
-/// The view is up. `link` holds the token: print it only to a terminal (human `--no-open`), never in an envelope.
+/// The view is up.
 pub struct UiReady {
     pub port: u16,
-    /// `http://127.0.0.1:<port>/`, no fragment.
+    /// `http://127.0.0.1:<port>/`, no fragment: any browser on this machine opens it.
     pub url: String,
-    pub link: String,
     pub graphs: Vec<String>,
     pub opened: bool,
     /// The supervisor's pid (what `umx ui stop` signals).
@@ -104,7 +105,7 @@ pub struct UiReady {
 }
 
 impl UiReady {
-    /// The JSON envelope: no token, no code. `graphs` lists what opens; `graph` stays as the first, for older
+    /// The JSON envelope: never a launch code. `graphs` lists what opens; `graph` stays as the first, for older
     /// readers. `notes`: what the launcher's checks said (stale_files, F144; graph_loaded_on_demand), each a warning
     /// or a hint by its kind (ws002 X1), never a failure.
     pub fn envelope(&self, notes: &[Issue]) -> Envelope {
@@ -351,7 +352,7 @@ pub(crate) fn serve(
     ready: impl FnOnce(&UiReady),
 ) -> Envelope {
     let host = parts.host;
-    let (server, token, first) = match start(parts, dir, node, env, run) {
+    let (server, first) = match start(parts, dir, node, env, run) {
         Ok(started) => started,
         Err(refused) => return report_failure(parts, run, *refused),
     };
@@ -360,7 +361,6 @@ pub(crate) fn serve(
     let up = UiReady {
         port: server.port,
         url: url.clone(),
-        link: link(&url, &token, &run.graphs),
         graphs: run.graphs.clone(),
         opened: !run.no_open,
         pid: me,
@@ -384,14 +384,14 @@ pub(crate) fn serve(
 }
 
 /// Everything before the view is ready: one view per UMX_HOME, the daemon's start id, the server, the first open
-/// and ui.json. The token stays here and in the server.
+/// and ui.json.
 fn start(
     parts: &Parts,
     dir: &Path,
     node: &Path,
     env: Vec<(String, String)>,
     run: &UiRun,
-) -> Result<(UiServed, String, Waited), Box<Envelope>> {
+) -> Result<(UiServed, Waited), Box<Envelope>> {
     let host = parts.host;
     let me = std::process::id();
     let fail = |issue: Issue| Box::new(Envelope::fail(CMD, issue));
@@ -411,13 +411,11 @@ fn start(
             other => break other.map_err(fail)?,
         }
     };
-    let token = host.token().map_err(|e| fail(issue(&e)))?;
     let launch = UiLaunch {
         node: node.display().to_string(),
         app_dir: dir.display().to_string(),
         port: run.port,
         env,
-        token,
         ready_ms: READY_WITHIN.as_millis() as u64,
     };
     let server = host.serve(&launch).map_err(|e| fail(issue(&e)))?;
@@ -443,7 +441,7 @@ fn start(
         host.stop(&server);
         return Err(fail(issue));
     }
-    Ok((server, launch.token, first))
+    Ok((server, first))
 }
 
 /// Supervises until the view must end, and says why.
@@ -490,7 +488,8 @@ fn watch(
     }
 }
 
-/// Opens a tab at the view with a fresh single-use launch code, or, unless `fresh`, leaves it to a connected tab.
+/// Opens a tab at the view, or, unless `fresh`, leaves it to a connected tab. Named graphs go with a fresh
+/// single-use launch code (the view opens a named graph only with a code this run took); none named is the bare URL.
 fn open(
     host: &dyn UiHost,
     server: &UiServed,
@@ -498,21 +497,21 @@ fn open(
     graphs: &[String],
     fresh: bool,
 ) -> Result<(), UiError> {
-    let code = host.token()?;
+    if fresh && graphs.is_empty() {
+        return host.open(url);
+    }
+    let code = host.code()?;
     match host.launch_code(server, &code)? {
         UiCodeUse::Tab if !fresh => Ok(()),
+        _ if graphs.is_empty() => host.open(url),
         _ => host.open(&link(url, &code, graphs)),
     }
 }
 
-/// The view's link with a token or code, and the graphs (commas as %2C: the link stays within what
-/// ui_host::url_ok lets umx open; the view decodes g=).
-fn link(url: &str, key: &str, graphs: &[String]) -> String {
-    if graphs.is_empty() {
-        format!("{url}#t={key}")
-    } else {
-        format!("{url}#t={key}&g={}", graphs.join("%2C"))
-    }
+/// The view's link with a launch code and the graphs (commas as %2C: the link stays within what ui_host::url_ok lets
+/// umx open; the view decodes g=).
+fn link(url: &str, code: &str, graphs: &[String]) -> String {
+    format!("{url}#t={code}&g={}", graphs.join("%2C"))
 }
 
 /// `umx ui --detach`: refuses while a view runs, else starts `umx ui` in the background and returns what it
@@ -574,7 +573,7 @@ pub(crate) fn start_detached(
 }
 
 /// `umx ui status` (security D3): whether a view runs for this UMX_HOME, its port, pid and when it started. Never a
-/// token or a code, and never the graphs it shows.
+/// launch code, and never the graphs it shows.
 pub fn status(config: &Config) -> Envelope {
     let host = umx_compose::ui_host(crate::mode(), config);
     let state = umx_compose::ui_state(crate::mode(), config);
@@ -972,7 +971,7 @@ mod tests {
         daemon: &Script,
         node: &str,
         run: &UiRun,
-    ) -> (Envelope, Option<(String, String, Value)>) {
+    ) -> (Envelope, Option<(String, Value)>) {
         let mut seen = None;
         let parts = Parts {
             host,
@@ -987,16 +986,12 @@ mod tests {
             Path::new(node),
             vec![],
             run,
-            |r| seen = Some((r.url.clone(), r.link.clone(), r.envelope(&[]).data)),
+            |r| seen = Some((r.url.clone(), r.envelope(&[]).data)),
         );
         (env, seen)
     }
 
-    fn run_fake(
-        host: &FakeUiHost,
-        node: &str,
-        run: &UiRun,
-    ) -> (Envelope, Option<(String, String, Value)>) {
+    fn run_fake(host: &FakeUiHost, node: &str, run: &UiRun) -> (Envelope, Option<(String, Value)>) {
         let daemon = script(host, vec![at("e1", 0, &[])]);
         run_with(
             host,
@@ -1015,7 +1010,7 @@ mod tests {
     }
 
     #[test]
-    fn the_browser_gets_a_single_use_code_and_the_graphs_and_no_envelope_holds_a_token_or_code() {
+    fn named_graphs_open_with_a_single_use_code_and_no_envelope_holds_it() {
         let host = FakeUiHost::new();
         host.watch().add_process(std::process::id(), me());
         let state = FakeLocalState::new().with_absent_ok(true);
@@ -1026,11 +1021,14 @@ mod tests {
             ..UiRun::default()
         };
         let (end, seen) = run_with(&host, &state, &daemon, "/fake/node", &run);
-        let (url, link, data) = seen.expect("ready");
-        let token = host.token_seen().unwrap();
+        let (url, data) = seen.expect("ready");
         let codes = host.watch().codes();
         assert_eq!(codes.len(), 1, "one code for the one open");
-        assert_ne!(codes[0], token);
+        assert_eq!(
+            host.watch().stdin_seen(),
+            [format!("code {}", codes[0])],
+            "the server got the code and no token"
+        );
         assert_eq!(url, "http://127.0.0.1:4747/");
         assert_eq!(
             host.opened(),
@@ -1038,22 +1036,14 @@ mod tests {
                 "http://127.0.0.1:4747/#t={}&g=alpha%2Cbeta%2Cgamma",
                 codes[0]
             )],
-            "the browser gets the code, never the token (D5)"
-        );
-        assert_eq!(
-            link,
-            format!("http://127.0.0.1:4747/#t={token}&g=alpha%2Cbeta%2Cgamma"),
-            "the token link is kept for a person's --no-open only"
+            "the browser gets the code with the graphs (D5)"
         );
         assert_eq!(
             data,
             json!({ "url": url, "port": 4747, "graph": "alpha", "graphs": ["alpha", "beta", "gamma"], "opened": true, "pid": std::process::id() })
         );
         for said in [data.to_string(), end.to_json()] {
-            assert!(
-                !said.contains(&token) && !said.contains(&codes[0]),
-                "{said}"
-            );
+            assert!(!said.contains(&codes[0]), "{said}");
         }
         // The supervisor watched from the first wait's seq, under its epoch, and ended when the epoch changed.
         assert_eq!(
@@ -1072,7 +1062,7 @@ mod tests {
             "told first, so its tabs can say why"
         );
         assert_eq!(state.bytes(), Some(Vec::new()), "ui.json cleared");
-        // What the launcher's checks warned is said when it is ready, as a warning with its next; never the token.
+        // What the launcher's checks warned is said when it is ready, as a warning with its next.
         let stale = Issue::fill(
             Code::StaleFiles,
             &[
@@ -1084,7 +1074,6 @@ mod tests {
         let ready = UiReady {
             port: 4747,
             url: url.clone(),
-            link: String::new(),
             graphs: vec!["beta".into()],
             opened: true,
             pid: 1,
@@ -1105,7 +1094,6 @@ mod tests {
         let hinted = UiReady {
             port: 4747,
             url,
-            link: String::new(),
             graphs: vec!["beta".into()],
             opened: true,
             pid: 1,
@@ -1168,8 +1156,7 @@ mod tests {
             v,
             json!({ "pid": std::process::id(), "started": me().started, "port": 4747, "daemon": "e1", "umx": PROTOCOL })
         );
-        let token = watch.token_seen().unwrap();
-        assert!(!String::from_utf8_lossy(&bytes).contains(&token));
+        assert_eq!(watch.served(), 1);
     }
 
     /// M1b2 raise: with no tab connected the supervisor opens one with a fresh code each time; with a tab connected
@@ -1344,7 +1331,7 @@ mod tests {
             end.errors[0].next(),
             "umx ui open --graph alpha,beta --raise"
         );
-        assert!(host.token_seen().is_none(), "no server started");
+        assert_eq!(host.served(), 0, "no server started");
         assert!(
             host.opened().is_empty() && host.watch().codes().is_empty(),
             "nothing opened"
@@ -1415,13 +1402,10 @@ mod tests {
             .to_vec()]
         );
         // The CLI reads the host's report flag (umx-cli cannot name umx-core's constant).
-        let flags = umx_cli::ui_flags(
-            &[
-                umx_core::ports::ui_host::REPORT_FLAG.to_string(),
-                "/s".into(),
-            ],
-            true,
-        )
+        let flags = umx_cli::ui_flags(&[
+            umx_core::ports::ui_host::REPORT_FLAG.to_string(),
+            "/s".into(),
+        ])
         .unwrap();
         assert_eq!(flags.report_to.as_deref(), Some("/s"));
         host.watch().detach_says(None);
@@ -1505,8 +1489,18 @@ mod tests {
             ..UiRun::default()
         };
         let (_, seen) = run_fake(&host, "/fake/node-ends", &run);
-        assert!(seen.unwrap().1.contains("#t="));
+        assert_eq!(seen.unwrap().0, "http://127.0.0.1:4747/");
         assert!(host.opened().is_empty());
+    }
+
+    /// No token: a plain start opens the bare URL and arms no code; the server's stdin gets nothing.
+    #[test]
+    fn a_plain_start_opens_the_bare_url_with_no_token_or_code() {
+        let host = FakeUiHost::new();
+        let (_, seen) = run_fake(&host, "/fake/node-ends", &UiRun::default());
+        assert_eq!(seen.unwrap().0, "http://127.0.0.1:4747/");
+        assert_eq!(host.opened(), ["http://127.0.0.1:4747/"]);
+        assert!(host.watch().codes().is_empty() && host.watch().stdin_seen().is_empty());
     }
 
     #[test]

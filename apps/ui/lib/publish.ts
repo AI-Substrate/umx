@@ -1,6 +1,6 @@
 // The server half of publishing the selection (ws009 S7, plan 117): a tab POSTs {nodes} for the graph it has open,
-// and the server checks it and sends `ui select` on the daemon socket. The proxy has already checked the cookie, Host,
-// Origin and Sec-Fetch-Site, as for every API route; the browser never talks to the daemon (security T3).
+// and the server checks it and sends `ui select` on the daemon socket. The proxy has already checked Host, Origin,
+// Sec-Fetch-Site and the view header, as for every API route; the browser never talks to the daemon (security T3).
 import { BODY_MAX } from "@/lib/http";
 import { alias, nodeId, UmxError } from "@/lib/umx";
 import { MAX_SELECTION } from "@/lib/umx/socket";

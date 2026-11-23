@@ -4848,14 +4848,13 @@ fn e2_members(env: &Envelope) -> Vec<String> {
         .collect()
 }
 
-/// A stand-in `node` for the view's server (ws009 M1b2): it reads the token line, says it is ready on the port it was
+/// A stand-in `node` for the view's server (ws009 M1b2): it says it is ready on the port it was
 /// given (else 47999), arms every launch code it is handed, and on stdin's end (its supervisor gone) stops its group,
 /// as bin/serve.mjs does. It leaves its pid beside itself.
 const FAKE_NODE: &str = r#"#!/bin/sh
 d="$(dirname "$0")"
 echo $$ > "$d/server.pid"
 echo $$ >> "$d/servers.log"
-IFS= read -r t
 port=47999
 for a in "$@"; do case "$a" in --port=*) port="${a#--port=}" ;; esac; done
 printf '{"ready":true,"port":%s}\n' "$port"

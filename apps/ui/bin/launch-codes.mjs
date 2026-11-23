@@ -1,5 +1,5 @@
 // Launch codes and tab presence (ws009 M1b2, security D5), shared inside the one server process: bin/serve.mjs arms
-// a code it reads on stdin, POST /api/session swaps one for the session cookie, and GET /api/events marks a tab as
+// a code it reads on stdin, POST /api/launch takes one (so a launch link may name graphs), and GET /api/events marks a tab as
 // connected. Kept in a process global under a symbol, never in process.env.
 import { timingSafeEqual } from "node:crypto";
 
@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 export const CODE_LIFE_MS = 60_000;
 /** A tab that asked for events this recently counts as connected (ui-expert, M1b2). */
 export const TAB_LIVE_MS = 30_000;
-/** A code is made like the token: 43 base64url characters. */
+/** A code: 43 base64url characters. */
 export const CODE = /^[A-Za-z0-9_-]{43}$/;
 
 const KEY = Symbol.for("umx.ui.launch");

@@ -1,24 +1,24 @@
 //! UiHost port (req-104, ws009 s2): runs the local graph view's server for `umx ui` and opens the browser at it.
 //! Adapters: system.ui-host (node in its own process group, the browser by absolute path), fake.ui-host.
 //!
-//! The per-run token goes only to the server's stdin and the browser: never argv, env or a log. The server's stdin
-//! stays open while umx runs, so when umx ends in any way (Ctrl-C, kill) the server sees end of file and stops its
-//! whole process group.
+//! The view has no per-run token: the server keeps it to this machine's browsers by Host, Origin and Sec-Fetch-Site
+//! (apps/ui lib/guard.ts). The server's stdin stays open while umx runs, so when umx ends in any way (Ctrl-C, kill)
+//! the server sees end of file and stops its whole process group.
 //!
 //! ws009 M1b2: the host also starts `umx ui` detached ([`UiHost::detach`], [`UiHost::report`]), reads a process's
 //! start time and command line ([`UiHost::process`]) so `umx ui stop` signals only the process ui.json names
 //! ([`UiHost::signal`]), and arms single-use launch codes on a running server ([`UiHost::launch_code`]): a code goes
-//! only to the server's stdin and the browser, as the token does.
+//! only to the server's stdin and the browser, never argv, env or a log. A code lets a launch link name graphs.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-/// The bytes of randomness in a token; as unpadded base64url it is [`TOKEN_LEN`] characters.
-pub const TOKEN_BYTES: usize = 32;
-pub const TOKEN_LEN: usize = 43;
+/// The bytes of randomness in a launch code; as unpadded base64url it is [`CODE_LEN`] characters.
+pub const CODE_BYTES: usize = 32;
+pub const CODE_LEN: usize = 43;
 
-/// What to run: `<node> <app_dir>/bin/serve.mjs --token-stdin [--port=<n>]`, in `app_dir`.
+/// What to run: `<node> <app_dir>/bin/serve.mjs --stdin [--port=<n>]`, in `app_dir`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct UiLaunch {
     /// Absolute path of node.
@@ -29,13 +29,11 @@ pub struct UiLaunch {
     pub port: Option<u16>,
     /// The server's whole environment: nothing else is inherited.
     pub env: Vec<(String, String)>,
-    /// The per-run token, written to the server's stdin as one line.
-    pub token: String,
     /// How long the server may take to say it is ready.
     pub ready_ms: u64,
 }
 
-/// Debug never prints the token or env values.
+/// Debug never prints env values.
 impl fmt::Debug for UiLaunch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("UiLaunch")
@@ -44,7 +42,7 @@ impl fmt::Debug for UiLaunch {
             .field("port", &self.port)
             .field("env", &self.env.iter().map(|(k, _)| k).collect::<Vec<_>>())
             .field("ready_ms", &self.ready_ms)
-            .finish_non_exhaustive()
+            .finish()
     }
 }
 
@@ -58,8 +56,8 @@ pub enum UiError {
     Exited(Option<i32>),
     /// The browser could not be opened.
     Open(String),
-    /// No token could be made.
-    Token(String),
+    /// No launch code could be made, or one is malformed.
+    Code(String),
 }
 
 impl fmt::Display for UiError {
@@ -70,7 +68,7 @@ impl fmt::Display for UiError {
             UiError::Exited(Some(c)) => write!(f, "the view's server stopped with exit {c}"),
             UiError::Exited(None) => f.write_str("the view's server was stopped by a signal"),
             UiError::Open(m) => write!(f, "the browser could not be opened ({m})"),
-            UiError::Token(m) => write!(f, "no token could be made ({m})"),
+            UiError::Code(m) => write!(f, "no launch code could be made ({m})"),
         }
     }
 }
@@ -89,7 +87,7 @@ pub struct UiProcess {
     pub argv: String,
 }
 
-/// A detached child that reported: its pid and the one line it sent (an envelope as JSON, never a token or code).
+/// A detached child that reported: its pid and the one line it sent (an envelope as JSON, never a launch code).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UiDetached {
     pub pid: u32,
@@ -136,8 +134,8 @@ pub trait UiHost: Send + Sync {
     /// `<adapter>.ui-host`, as in the adapter matrix (d-6).
     fn adapter_id(&self) -> &'static str;
 
-    /// A fresh per-run token: [`TOKEN_BYTES`] random bytes as unpadded base64url ([`token_ok`]).
-    fn token(&self) -> Result<String, UiError>;
+    /// A fresh launch code: [`CODE_BYTES`] random bytes as unpadded base64url ([`code_ok`]).
+    fn code(&self) -> Result<String, UiError>;
 
     /// Starts the server and waits until it says it is ready, at most `launch.ready_ms`. A server that never says
     /// so is stopped (with its group) before this returns.
@@ -177,15 +175,15 @@ pub trait UiHost: Send + Sync {
     /// process holds it. Taking it again in the same host is true.
     fn own_view(&self) -> Result<bool, UiError>;
 
-    /// Hands `code` (made like a token) to the running server on its stdin. [`UiCodeUse::Armed`]: it is good once,
+    /// Hands `code` ([`code_ok`]) to the running server on its stdin. [`UiCodeUse::Armed`]: it is good once,
     /// for [`CODE_LIFE_MS`]; [`UiCodeUse::Tab`]: a tab is connected, and the code was dropped.
     fn launch_code(&self, server: &UiServed, code: &str) -> Result<UiCodeUse, UiError>;
 }
 
-/// A token as [`UiHost::token`] makes it.
-pub fn token_ok(token: &str) -> bool {
-    token.len() == TOKEN_LEN
-        && token
+/// A launch code as [`UiHost::code`] makes it.
+pub fn code_ok(code: &str) -> bool {
+    code.len() == CODE_LEN
+        && code
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
@@ -199,7 +197,7 @@ pub fn url_ok(url: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"-._~:/#=&%".contains(&b))
 }
 
-/// Unpadded base64url, for tokens.
+/// Unpadded base64url, for launch codes.
 pub fn base64url(bytes: &[u8]) -> String {
     const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -226,7 +224,7 @@ mod tests {
         assert_eq!(base64url(b"fo"), "Zm8");
         assert_eq!(base64url(b"foo"), "Zm9v");
         assert_eq!(base64url(&[0xfb, 0xff]), "-_8");
-        assert!(token_ok(&base64url(&[7u8; TOKEN_BYTES])));
+        assert!(code_ok(&base64url(&[7u8; CODE_BYTES])));
     }
 
     #[test]

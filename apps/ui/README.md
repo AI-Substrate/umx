@@ -9,13 +9,14 @@ Build once (and after each pull), then start it with umx:
 
     pnpm --dir apps/ui install --frozen-lockfile
     pnpm --dir apps/ui build
-    umx ui                     # or: umx ui --graph acme, umx ui --port 4747, umx ui --no-open --human
+    umx ui                     # or: umx ui --graph acme, umx ui --port 4747, umx ui --no-open
 
-`umx ui` checks the daemon is up, runs `node bin/serve.mjs --token-stdin` in a process group of its own, hands it a
-fresh token on stdin, waits for its `{"ready":true,"port":N}` line and opens your browser at
-`http://127.0.0.1:N/#t=<token>`. The page swaps the token for a cookie that lasts for this run; any other tab, host
-name or site is refused. Ctrl-C stops it; when umx ends in any way the server sees its stdin close and stops its
-whole group. See `umx docs get ui`.
+`umx ui` checks the daemon is up, runs `node bin/serve.mjs --stdin` in a process group of its own, waits for its
+`{"ready":true,"port":N}` line and opens your browser at `http://127.0.0.1:N/`. There is no token: any browser tab
+on this machine can open that URL (or `http://localhost:N/`); another host name, or a page on another site, is
+refused. Any process or user on this machine that can reach 127.0.0.1 can read the view: the boundary is your user
+account. Ctrl-C stops it; when umx ends in any way the server sees its stdin close and stops its whole group. See
+`umx docs get ui`.
 
 - `UMX_HOME` picks the daemon, as for `umx` itself. umx passes its own path as `UMX_BIN`; run by hand, `UMX_BIN`
   (an absolute path) picks the `umx` binary, otherwise the first `umx` on `PATH`.
@@ -24,9 +25,9 @@ whole group. See `umx docs get ui`.
   usually only adds fields. Agent control talks to the daemon's socket directly, and the daemon refuses any other
   protocol there, so `UMX_PROTOCOL` must equal `umx_protocol::PROTOCOL`: umx-arch's `protocol_pin` test fails a wire
   bump until this pin moves with it.
-- `pnpm start` (`node bin/serve.mjs`) still works for local work and prints its own link; `pnpm dev` runs
-  `next dev` behind the same launcher. The run's token, session and cookie name live in a process global
-  (`lib/guard.ts` `runSettings`), never in `process.env`, so nothing the server starts inherits them.
+- `pnpm start` (`node bin/serve.mjs`) still works for local work and prints its URL; `pnpm dev` runs
+  `next dev` behind the same launcher. The run's settings live in a process global (`lib/guard.ts` `runSettings`),
+  never in `process.env`, so nothing the server starts inherits them.
 
 ## What it shows
 
@@ -40,8 +41,8 @@ are hidden, with "show". The theme button cycles light, dark and system.
 
 Several graphs (plan 133): up to 12 graphs share one canvas. In the dialog a click on a graph checks it or unchecks
 it; "only" selects it alone; "Select all loaded" selects every loaded graph that is not secured; a saved scope
-(`umx scope list`) selects its members. A secured graph opens only when you click it, when a launch link names it
-(`#g=a,b,c`), or while "Include secured graphs" is on: that switch is off whenever the view opens, is never stored,
+(`umx scope list`) selects its members. A secured graph opens only when you click it, when a launch link from umx names it
+(`#t=<code>&g=a,b,c`; a lone `#g=` opens nothing), or while "Include secured graphs" is on: that switch is off whenever the view opens, is never stored,
 and no agent command sets it. "Select all loaded" and scopes count the secured graphs they left out and never name them. Of
 two rows that share an alias only the loaded one opens. Nodes and edges are keyed `<alias>/<id>`, so equal ids in two
 graphs never meet. An edge between two open graphs is drawn; one to a graph that is not open is left off and counted
@@ -137,8 +138,11 @@ retried until that graph's publish succeeds.
   graph first checked as the picker would open it), and the server sends `ui select` on the daemon socket. Both
   POST routes (and the rows route) read bodies through `lib/http.ts` readBody, which stops at 64 KiB even when no length is declared (413). Publishes
   from a tab go one at a time, in order (`lib/selection.ts` Publisher).
-- `proxy.ts` checks Host, Origin, Sec-Fetch-Site and the run's cookie on every request before routing, and sets
-  the CSP (`lib/csp.ts`). In `--dev`, WebSocket upgrades (HMR) skip the proxy, so `bin/upgrade-guard.mjs` checks
+- `proxy.ts` runs `lib/guard.ts` on every request before routing: Host must be `127.0.0.1:<port>` or
+  `localhost:<port>` (DNS rebinding); an Origin must be the view's own; API calls must not be cross-site
+  (Sec-Fetch-Site), writes must carry the Origin, and every API call must carry the `x-umx-view: 1` header the
+  view's own fetches send (a page on another site cannot add it without a CORS preflight, which is never granted).
+  It sets the CSP (`lib/csp.ts`) and no CORS headers. In `--dev`, WebSocket upgrades (HMR) skip the proxy, so `bin/upgrade-guard.mjs` checks
   their Host and Origin first. Graph content is shown as text; only whole http(s) values become links.
 
 ## Gate

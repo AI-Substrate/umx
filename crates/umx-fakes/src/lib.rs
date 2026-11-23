@@ -1744,8 +1744,8 @@ impl ServiceManager for FakeServiceManager {
 
 /// fake.ui-host: no process and no browser. A launch's `node` picks how its server behaves: a path ending in
 /// `-silent` never gets ready, `-dies` exits 3 first, `-ends` stops by itself; any other path serves on its port (or
-/// 4747). Tokens differ on every call. [`FakeUiHost::watch`] sees the token each server read, the URLs opened and
-/// whether the last server still runs; dropping the host stops its servers.
+/// 4747). Codes differ on every call. [`FakeUiHost::watch`] sees what the last server read on stdin, how many
+/// servers started, the URLs opened and whether the last server still runs; dropping the host stops its servers.
 /// ws009 M1b2: `detach` runs nothing. It answers what [`FakeUiWatch::detach_says`] set, else by the exe's name as
 /// `serve` does (`-silent` times out, `-dies` exits 1, otherwise it says its last argument before the report flag).
 /// Processes are what [`FakeUiWatch::add_process`] added; `signal` ends one. `launch_code` arms a code on a live
@@ -1759,8 +1759,9 @@ pub struct FakeUiWatch(Arc<Mutex<FakeUi>>);
 
 #[derive(Default)]
 struct FakeUi {
-    tokens: u64,
-    token_seen: Option<String>,
+    codes_made: u64,
+    /// The lines the last server read on its stdin.
+    stdin: Vec<String>,
     /// id to (alive, ends by itself).
     servers: BTreeMap<u64, (bool, bool)>,
     last: Option<u64>,
@@ -1781,9 +1782,14 @@ fn fake_ui(state: &Mutex<FakeUi>) -> std::sync::MutexGuard<'_, FakeUi> {
 }
 
 impl FakeUiWatch {
-    /// The token line the last server read.
-    pub fn token_seen(&self) -> Option<String> {
-        fake_ui(&self.0).token_seen.clone()
+    /// The lines the last server read on its stdin.
+    pub fn stdin_seen(&self) -> Vec<String> {
+        fake_ui(&self.0).stdin.clone()
+    }
+
+    /// How many servers were started.
+    pub fn served(&self) -> usize {
+        fake_ui(&self.0).servers.len()
     }
 
     /// Whether the last server still runs.
@@ -1860,8 +1866,8 @@ impl FakeUiHost {
         FakeUiWatch(self.0.clone())
     }
 
-    pub fn token_seen(&self) -> Option<String> {
-        self.watch().token_seen()
+    pub fn served(&self) -> usize {
+        self.watch().served()
     }
 
     pub fn alive(&self) -> bool {
@@ -1886,11 +1892,11 @@ impl UiHost for FakeUiHost {
         "fake.ui-host"
     }
 
-    fn token(&self) -> Result<String, UiError> {
+    fn code(&self) -> Result<String, UiError> {
         let mut state = fake_ui(&self.0);
-        state.tokens += 1;
-        let mut bytes = [0u8; ui_host::TOKEN_BYTES];
-        bytes[..8].copy_from_slice(&state.tokens.to_be_bytes());
+        state.codes_made += 1;
+        let mut bytes = [0u8; ui_host::CODE_BYTES];
+        bytes[..8].copy_from_slice(&state.codes_made.to_be_bytes());
         Ok(ui_host::base64url(&bytes))
     }
 
@@ -1899,7 +1905,7 @@ impl UiHost for FakeUiHost {
             return Err(UiError::Start(format!("{} not found", launch.node)));
         }
         let mut state = fake_ui(&self.0);
-        state.token_seen = Some(launch.token.clone());
+        state.stdin.clear();
         let id = state.servers.len() as u64 + 1;
         state.last = Some(id);
         if launch.node.ends_with("-silent") || launch.node.ends_with("-dies") {
@@ -2013,6 +2019,7 @@ impl UiHost for FakeUiHost {
         {
             return Err(UiError::Exited(None));
         }
+        state.stdin.push(format!("code {code}"));
         if state.tab {
             return Ok(UiCodeUse::Tab);
         }
@@ -2216,12 +2223,7 @@ mod tests {
     struct FakeUiStage(FakeUiWatch);
 
     impl umx_contracts::ui_host::UiStage for FakeUiStage {
-        fn launch(
-            &self,
-            server: umx_contracts::ui_host::Server,
-            port: Option<u16>,
-            token: &str,
-        ) -> UiLaunch {
+        fn launch(&self, server: umx_contracts::ui_host::Server, port: Option<u16>) -> UiLaunch {
             use umx_contracts::ui_host::Server;
             let node = match server {
                 Server::Ready => "/fake/node",
@@ -2234,15 +2236,14 @@ mod tests {
                 app_dir: "/fake/apps/ui".to_string(),
                 port,
                 env: vec![("UMX_HOME".to_string(), "/fake/home".to_string())],
-                token: token.to_string(),
                 ready_ms: 1_000,
             }
         }
-        fn token_seen(&self) -> Option<String> {
-            self.0.token_seen()
+        fn stdin_seen(&self) -> Vec<String> {
+            self.0.stdin_seen()
         }
         fn argv_and_env_seen(&self) -> String {
-            "/fake/node /fake/apps/ui/bin/serve.mjs --token-stdin UMX_HOME=/fake/home".to_string()
+            "/fake/node /fake/apps/ui/bin/serve.mjs --stdin UMX_HOME=/fake/home".to_string()
         }
         fn alive(&self) -> bool {
             self.0.alive()
@@ -2293,8 +2294,8 @@ mod tests {
 
     umx_contracts::ui_host_contract!(
         fake_ui_host;
-        uh_c1_tokens_are_base64url_and_never_repeat(),
-        uh_c2_the_token_reaches_stdin_only_and_the_port_is_reported(),
+        uh_c1_codes_are_base64url_and_never_repeat(),
+        uh_c2_the_server_gets_no_secret_and_the_port_is_reported(),
         uh_c3_stop_or_dropping_the_host_leaves_no_process(),
         uh_c4_a_server_never_ready_times_out_and_leaves_no_process(),
         uh_c5_a_server_that_dies_before_ready_is_an_exit_and_leaves_no_process(),
