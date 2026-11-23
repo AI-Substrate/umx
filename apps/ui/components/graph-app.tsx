@@ -59,6 +59,7 @@ import { effectiveFocus } from "@/lib/graph/fui";
 import { graphColor } from "@/lib/graph/graph-colors";
 import { aliasOfKey, qid, setKey, unq } from "@/lib/graph/keys";
 import { nodeScale, SPACING, SPACING_KEY, spacingOf } from "@/lib/graph/spacing";
+import { isLaunch, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, type ViewLook, writeLook } from "@/lib/view-url";
 import { type FilterDim, hiddenReasons, NO_FILTERS, reasonText, reveal, toggleChip, toggled } from "@/lib/graph/filters";
 import { FOCUS_OFF, focusDepths, focusOf } from "@/lib/graph/focus";
 import { activeNotes, agentOff, cameraAsk, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
@@ -256,6 +257,8 @@ export function GraphApp() {
   const [focusDepth, setFocusDepth] = useState(0);
   const [visible, setVisible] = useState<Visibility>({ provenance: false, retired: false });
   const [colourBy, setColourBy] = useState<ColourBy>("type");
+  // Merge entities (ws009 M2) starts on.
+  const [mergeEntities, setMergeEntities] = useState<boolean>(LOOK_DEFAULTS.merge);
   // null: graph when more than one graph is open, else Louvain, until the person picks one.
   const [groupingPick, setGrouping] = useState<Grouping | null>(null);
   const [resolution, setResolution] = useState(1);
@@ -290,6 +293,36 @@ export function GraphApp() {
     setLedgerState(next);
   }, []);
   const filters = ledger.filters;
+  // The look a reload keeps (lib/view-url): restored once from the fragment before the launch reads it, then written
+  // back as it changes. Chip offs for types and statuses wait for the first open, which clears them.
+  const lookRestored = useRef(false);
+  const pendingOff = useRef<ViewLook["off"] | null>(null);
+  useEffect(() => {
+    if (!lookRestored.current) return;
+    const look = writeLook({
+      colourBy,
+      grouping: groupingPick ?? undefined,
+      resolution,
+      spacing,
+      merge: mergeEntities,
+      provenance: visible.provenance,
+      retired: visible.retired,
+      off: { relations: [...filters.relations], types: [...filters.types], statuses: [...filters.statuses] },
+    });
+    // A launch link still in the address bar is takeLaunch's to read and drop.
+    if (isLaunch(window.location.hash)) return;
+    const url = window.location.pathname + window.location.search + (look ? `#${look}` : "");
+    if (url !== window.location.pathname + window.location.search + window.location.hash) window.history.replaceState(null, "", url);
+  }, [colourBy, groupingPick, resolution, spacing, mergeEntities, visible, filters]);
+  // The open graphs, once the index is read: a reload in this tab opens them again (none, if the person cleared it).
+  useEffect(() => {
+    if (graphs === null || !lookRestored.current) return;
+    try {
+      window.sessionStorage.setItem(OPEN_KEY, JSON.stringify(wanted ? wanted.split(",") : []));
+    } catch {
+      // No storage: a reload opens the first graph, as before.
+    }
+  }, [wanted, graphs]);
   // The relation chips' quiet or normal choices (plan 150), per relation across the open graphs. Kept when the open
   // graphs change, as the person's relation offs are (keepPersonRelations); Reset filters clears them.
   const [relationModes, setRelationModes] = useState<RelationModes>(() => new Map());
@@ -422,16 +455,42 @@ export function GraphApp() {
         return res.ok;
       },
     };
+    // A reload: the look from the fragment, and the graphs this tab had open (lib/view-url), read before the launch
+    // drops the fragment. A launch link's own graphs win over the tab's.
+    let kept: string[] | null = null;
+    if (!lookRestored.current) {
+      lookRestored.current = true;
+      const look = readLook(window.location.hash);
+      if (look.colourBy) setColourBy(look.colourBy);
+      if (look.grouping) setGrouping(look.grouping);
+      if (look.resolution !== undefined) setResolution(look.resolution);
+      if (look.spacing !== undefined) setSpacingState(look.spacing);
+      if (look.merge !== undefined) setMergeEntities(look.merge);
+      if (look.provenance !== undefined || look.retired !== undefined) {
+        setVisible((v) => ({ provenance: look.provenance ?? v.provenance, retired: look.retired ?? v.retired }));
+      }
+      if (look.off) {
+        const off = look.off;
+        pendingOff.current = off;
+        updateLedger((l) => ({ ...l, filters: { ...l.filters, relations: new Set(off.relations) } }));
+      }
+      try {
+        kept = readOpen(window.sessionStorage.getItem(OPEN_KEY));
+      } catch {
+        // No storage: the first graph opens, as before.
+      }
+      if (kept !== null && kept.length === 0) openSet([]);
+    }
     initial.current ??= takeLaunch(deps, launches);
     void initial.current.then((launch) => {
-      if (mounted.current) void refreshGraphs(launch?.named ?? null, false, launch?.gen ?? 0);
+      if (mounted.current) void refreshGraphs(launch?.named ?? (kept && kept.length > 0 ? kept : null), false, launch?.gen ?? 0);
     });
     const stop = watchLaunch(window, deps, launches, (launch) => void refreshGraphs(launch.named, true, launch.gen));
     return () => {
       mounted.current = false;
       stop();
     };
-  }, [launches, refreshGraphs]);
+  }, [launches, refreshGraphs, openSet, updateLedger]);
 
   // An on-demand load shows briefly; a link that named a graph the view cannot open stays until dismissed.
   useEffect(() => {
@@ -582,6 +641,11 @@ export function GraphApp() {
     setFocusDepth(0);
     setQuery("");
     updateLedger(keepPersonRelations);
+    const off = pendingOff.current;
+    if (off) {
+      pendingOff.current = null;
+      updateLedger((l) => ({ ...l, filters: { relations: new Set(off.relations), types: new Set(off.types), statuses: new Set(off.statuses) } }));
+    }
     setSimilar(null);
     setView(null);
     setLiveNote(null);
@@ -1296,7 +1360,6 @@ export function GraphApp() {
 
   // Entities (ws009 M2, plan 165): built with umx's rule over the open graphs, from what is on the canvas, so a live
   // change, a Hold or an open rebuilds them with the view.
-  const [mergeEntities, setMergeEntities] = useState(true);
   const entityBase = useMemo(() => {
     if (!view) return null;
     const graphIds = new Map(view.snaps.map((sn) => [sn.graph, sn.graphId] as const));
