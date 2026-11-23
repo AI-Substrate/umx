@@ -1,4 +1,4 @@
-# umx: concept graphs as plain files
+# umx: concept graphs that join up across graphs, as plain files
 
 Agents: install umx only when the person you work for asked for it (if you are not sure, ask them first): read
 https://github.com/AI-Substrate/umx/blob/main/docs/install.md and follow it. People: paste this to your agent.
@@ -22,24 +22,67 @@ More, including building from source: [Install](#install).
 
 ## About umx
 
-umx (Unimatrix, also called Concept Graph) keeps what a team knows as a graph: the problems, options,
-decisions, questions and people in a piece of work, and how they relate (this blocks that, this answers that,
-this depends on that). People and AI agents build it and read it together, from the command line.
+umx (Unimatrix, also called Concept Graph) keeps what a team knows as graphs: the problems, options, decisions,
+questions, people and systems in a piece of work, and how they relate (this blocks that, this answers that). People
+and AI agents build and read them together, from the command line. What sets umx apart is that many graphs can be
+read as one, along an order, back to their sources.
 
-A graph is a folder of plain text files. One local daemon serves every graph you load and writes each change
-to the files before the command returns, so a graph lives happily in git: diffs are small, merges are clean,
-and the files stay the truth.
+**1. Entities across graphs.** The same company, person or system can live in many graphs: a CRM graph, a graph per
+meeting, a graph per project. Give those nodes (of one type) a shared `entity_key` (such as `email:jo@example.com`), or join them
+with `umx entity link`, which stores a `same_as` edge. A `possibly_same_as` edge proposes a match for a person to
+confirm, and `umx entity deny` records that two nodes are not the same. `umx entity show` lists every member and how
+it joined; `umx node list --where entity_key=<key> --graph a,b` finds the holders of a key; `umx neighbours` follows
+the members' edges by default (`--entities on|off|confirmed`); and the view's "Merge entities" draws each entity as
+one node. Nothing merged is stored: each graph stays its own files, and the entity is built when you ask.
+This means you can open one customer's node and see, in one reply, every edge that the CRM and each meeting graph
+hold about them.
 
-- **Files are the truth.** `graph.json`, `nodes.jsonl` and `edges.jsonl`, one record per line, sorted by id.
-  Saving an unchanged graph rewrites the same bytes.
-- **Made for agents and people.** Every command prints one JSON object to a program and readable text to a
-  terminal. Every warning and error carries a `next`: a command to run.
-- **Soft vocabulary.** Types, statuses and relations start from a small starter set. Something new is accepted
-  with a warning that tells you how to declare it; nothing is refused for being new.
-- **Find it again.** Search by exact value, by words, and by meaning when an embedder is set up, and follow
-  edges with neighbours, walk, path and a read-only Cypher subset.
-- **Local first.** The daemon listens only on a Unix socket you own and opens no network port. Graphs marked
-  secured never send text off the machine.
+    umx entity key umx:crm/01JC8XA4H7 add email:jo@example.com
+    umx entity key umx:meetings/01JD2B9Q0M add email:jo@example.com
+    umx entity show umx:crm/01JC8XA4H7 --graph crm,meetings      # both members, and how each joined
+    umx neighbours umx:crm/01JC8XA4H7 --graph crm,meetings       # Jo's edges from both graphs
+
+**2. Spines and time.** Declare a graph's main order once: meetings by date, segments by step, or a `precedes`
+chain. `umx graph spine propose` suggests the orders the data supports, and `confirm`, `set` and `show` declare and
+read them. Every read that lists nodes or edges then takes a range with `--along <spine> --after <anchor> --before
+<anchor>`. A `raised_in` edge records where a point came up, and `umx node status <node> <status> --in <anchor>`
+records where a move was decided. The view lays a graph out along its spine. This means that, on a spine of meetings, you can
+ask which decisions came up between two of them:
+`umx node list --along meetings --after <meeting> --before <meeting> --type decision`.
+
+**3. Evidence you can trace.** A node cites the exact passage its claim came from: a transcript's cues
+(`calls/3-nov.vtt#seq=120-140`), a file's lines, a heading or a quote. Files, folders and URLs can be resource
+nodes, cited by address. Every status move keeps its reason, who made it, where it happened and its own evidence in
+the node's history. This means you can show anyone why a decision was agreed, in which meeting, and the transcript
+lines that back it.
+
+**4. Built for agents.** Every command prints one JSON envelope to a program and readable text to a terminal. Every
+warning, hint and error carries a `next`: a command you can run. Text that came from a graph is listed as
+`untrusted`, so an agent reads it as data, never as an instruction. The /umx skill ships in this repository, and
+`umx agents-start-here` and `umx docs get <topic>` teach the rest from the binary. This means an agent that makes a
+mistake can recover by running the `next` the error hands it.
+
+**5. Safe for client work.** The daemon listens only on a Unix socket you own and opens no network port. Every write
+is checked for text that looks like a credential: a single write warns `secret_suspected` and keeps the value from
+hosted embedders, and a batch holding one is refused. A secured graph is left out of any read that does not name it,
+and its text never leaves the machine. This means you can keep a client engagement next to open graphs and know
+that a search across your graphs will not surface it unless you name it.
+
+**6. A shared vocabulary.** New graphs use std v1, umx's standard types, statuses, relations and tags; an older graph
+moves onto it with `umx ontology adopt-std`. The vocabulary stays soft: a new name is accepted with a warning whose
+`next` declares it, and nothing is refused for being new. This means you can tag nodes in several graphs with
+`--tag needs_review` and list them all with `umx node list --tag needs_review --graph a,b`.
+
+**7. A live view.** `umx ui` (built from source; see [The UI](#the-ui)) shows up to 12 graphs on one canvas and
+updates as an agent writes. Agents can focus and highlight nodes in it, and the person's selection is shared back.
+The graph picker filters as you type, and a graph with a spine is laid out along it. This means you can watch an
+agent build a graph, select the nodes you mean, and have the agent read them with `umx ui selection`.
+
+**Plain files in git.** A graph is a folder: `graph.json`, `nodes.jsonl` and `edges.jsonl`, one record per line,
+sorted by id. One local daemon serves every graph you load and writes each change to the files before the command
+returns. Diffs are small, merges are clean, and `umx check` lists anything a merge left out of order. Search finds
+nodes by exact value, by words and, with an embedder, by meaning; `neighbours`, `walk`, `path` and a read-only
+Cypher subset follow the edges.
 
 ## Contents
 
