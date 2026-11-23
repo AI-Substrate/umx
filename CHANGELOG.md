@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.1](https://github.com/AI-Substrate/umx/compare/v0.4.0...v0.4.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* read the policy record once per request, not once per edge ([01ea6c4](https://github.com/AI-Substrate/umx/commit/01ea6c41d8fe0831564e98907e642bff2cc9301f))
+
+
+### Performance
+
+* **ui:** open graphs in a fraction of the time ([4b67a69](https://github.com/AI-Substrate/umx/commit/4b67a69d05d75391337243e07c4836eb14885cba))
+
+
+### Documentation
+
+* lead the README with entities across graphs, spines and evidence ([26c6fda](https://github.com/AI-Substrate/umx/commit/26c6fdad5d99d0f8a7d0a7e08813f36c8c3b4088))
+
 ## [0.4.0](https://github.com/AI-Substrate/umx/compare/v0.3.0...v0.4.0) (2026-11-23)
 
 
