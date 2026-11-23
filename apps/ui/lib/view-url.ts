@@ -18,6 +18,8 @@ export type ViewLook = {
   provenance?: boolean;
   retired?: boolean;
   off?: { relations: string[]; types: string[]; statuses: string[] };
+  /** The spine each graph shows, by alias, where the person picked one; null for none. */
+  spines?: Record<string, string | null>;
 };
 
 export const LOOK_DEFAULTS = { colourBy: "type", resolution: 1, merge: true, provenance: false, retired: false } as const;
@@ -30,6 +32,10 @@ const NAME = /^[A-Za-z0-9_:.-]{1,64}$/;
 const OFF_MAX = 200;
 const KEYS = { colourBy: "colour", grouping: "group", resolution: "res", spacing: "spacing", merge: "merge", provenance: "prov", retired: "retired" } as const;
 const OFF = { relations: "off.rel", types: "off.type", statuses: "off.status" } as const;
+const SPINES = "spine";
+/** A graph alias (lib/umx ALIAS) and a declared spine's name (snake case), as the fragment may hold them. */
+const ALIAS_NAME = /^[a-z][a-z0-9_-]{0,63}$/;
+const SPINE_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 /** Launch-link keys (lib/launch) this module never writes and leaves to takeLaunch. */
 const LAUNCH = new Set(["t", "g"]);
 
@@ -70,6 +76,16 @@ export function readLook(hash: string): ViewLook {
   }
   const off = { relations: names(p.get(OFF.relations)), types: names(p.get(OFF.types)), statuses: names(p.get(OFF.statuses)) };
   if (off.relations.length + off.types.length + off.statuses.length > 0) look.off = off;
+  const spines: Record<string, string | null> = {};
+  for (const pair of (p.get(SPINES) ?? "").split(",").slice(0, 12)) {
+    const parts = pair.split(":");
+    if (parts.length !== 2) continue;
+    const [alias, name] = parts;
+    if (!ALIAS_NAME.test(alias)) continue;
+    if (name === "-") spines[alias] = null;
+    else if (SPINE_NAME.test(name)) spines[alias] = name;
+  }
+  if (Object.keys(spines).length > 0) look.spines = spines;
   return look;
 }
 
@@ -87,8 +103,14 @@ export function writeLook(look: ViewLook): string {
     const list = (look.off?.[k] ?? []).filter((s) => NAME.test(s)).slice(0, OFF_MAX);
     if (list.length > 0) p.set(OFF[k], [...list].sort().join(","));
   }
-  // Commas read better unescaped; URLSearchParams decodes them either way.
-  return p.toString().replaceAll("%2C", ",");
+  const spines = Object.entries(look.spines ?? {})
+    .filter(([a, n]) => ALIAS_NAME.test(a) && (n === null || SPINE_NAME.test(n)))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(0, 12)
+    .map(([a, n]) => `${a}:${n ?? "-"}`);
+  if (spines.length > 0) p.set(SPINES, spines.join(","));
+  // Commas and colons read better unescaped; URLSearchParams decodes them either way.
+  return p.toString().replaceAll("%2C", ",").replaceAll("%3A", ":");
 }
 
 /** Whether a fragment holds a launch link's keys (a token or graphs): takeLaunch reads and drops those. */

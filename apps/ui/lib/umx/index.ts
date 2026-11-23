@@ -126,7 +126,18 @@ export type ReadArgs = {
   with?: readonly string[];
   /** A model key (`<model>@<dims>[+<form>]`) a similarity read compares in (ws009 M1c). */
   model?: string;
+  /** A declared spine's name (`umx graph spine show`), for its placements. */
+  spine?: string;
 };
+
+/** A declared spine's name as umx writes one (lowercase, digits, `_`), never a flag or a built-in's `date_field:`. */
+const SPINE = /^[a-z][a-z0-9_]{0,63}$/;
+function spineName(value: string | undefined): string {
+  if (typeof value !== "string" || !SPINE.test(value)) {
+    throw new UmxError("ui_bad_spine", "That is not a declared spine's name.", null, 400);
+  }
+  return value;
+}
 
 const MODEL_KEY = /^[A-Za-z0-9._-]{1,100}@[0-9]{1,5}(\+[a-z0-9]{1,16})?$/;
 function modelKey(value: string): string {
@@ -258,6 +269,14 @@ const READ_VERBS = {
     "edge", "list", "--graph", alias(a.graph), "--limit", String(PAGE), "--offset", offset(a.offset),
   ],
   "node get": (a: ReadArgs) => ["node", "get", nodeId(a.id), "--graph", alias(a.graph)],
+  // The graph's declared spines (spine view): each with its decl, clock and cover. Reads only.
+  "spine show": (a: ReadArgs) => ["graph", "spine", "show", alias(a.graph)],
+  // Where one declared spine places each node (`--columns spine:<name>`): its band in the spine's order and how it was
+  // placed, by umx's one placement rule, so the view and the CLI agree.
+  "spine places": (a: ReadArgs) => [
+    "node", "list", "--graph", alias(a.graph), "--limit", String(PAGE), "--offset", offset(a.offset),
+    "--columns", `id,spine:${spineName(a.spine)}`,
+  ],
   // One node's row with its flags (ws009 M2b): live rows and the titles of reads that carry no flags (lib/flagged-read).
   "node row": (a: ReadArgs) => ["node", "get", nodeId(a.id), "--graph", alias(a.graph), "--columns", NODE_COLUMNS],
   // A node's entity (ws009 M2, `umx entity show`): over the open graphs it names (the node's own first), by address,

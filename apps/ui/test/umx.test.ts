@@ -22,11 +22,24 @@ async function refused(p: Promise<unknown>): Promise<UmxError> {
 }
 
 describe("umx adapter", () => {
-  it("allows only the eighteen read verbs", () => {
+  it("allows only the twenty read verbs", () => {
     expect(READ_VERB_NAMES.sort()).toEqual([
       "daemon status", "edge list", "edges by id", "embeddings status", "entity show", "entity show loaded", "graph list", "neighbours",
       "node find", "node get", "node list", "node row", "ontology show", "resolve graph", "scope list", "search", "similar to", "similarity pairs",
+      "spine places", "spine show",
     ]);
+  });
+
+  it("reads a graph's spines and one spine's placements, the name checked", async () => {
+    const { exec, read } = harness();
+    await read("spine show", { graph: "demo" });
+    expect(exec.mock.calls[0][1]).toEqual(["graph", "spine", "show", "demo"]);
+    await read("spine places", { graph: "demo", spine: "day", offset: 10000 });
+    expect(exec.mock.calls[1][1]).toEqual(["node", "list", "--graph", "demo", "--limit", "10000", "--offset", "10000", "--columns", "id,spine:day"]);
+    for (const spine of ["--all", "date_field:due", "Day", "", "a,b"]) {
+      await expect(read("spine places", { graph: "demo", spine })).rejects.toMatchObject({ code: "ui_bad_spine" });
+    }
+    expect(exec).toHaveBeenCalledTimes(2);
   });
 
   it("resolves a graph address only, the alias checked (plan 215)", async () => {

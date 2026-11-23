@@ -71,6 +71,16 @@ further away; the nodes it keeps are the ones `umx walk <id> --depth n --directi
 screen. If the focused node is hidden (a toggle, or picking a hidden neighbour), focus pauses: nothing is dimmed
 until the node is shown again.
 
+Spine: a graph with declared spines (`umx graph spine show <alias>`) opens laid out along its main spine (else its
+first), and the Spine section lists each one with None. Where each node sits is umx's own placement, read with
+`umx node list --columns id,spine:<name>`: the spine is a line through the anchors, earliest band on the left (by
+date on a calendar spine, by step or chain on any other), each anchor on the line and every node placed in a band
+beside it, above or below the line as the force layout had it; nodes placed only by rule sit in the band the rule
+gives; nodes the spine does not place wait on a shelf below. None puts every node back where the force layout put
+it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
+The choice is kept in the fragment (`spine=<alias>:<name>`, `-` for none) across a reload. A umx older than the
+`spine:<name>` column says so instead of laying the graph out.
+
 Live updates: a node or edge added, edited or removed through the CLI (or any umx client) shows in an open view
 within about a second, without a reload: "Live" in the top bar, with a brief count of what changed ("+3 nodes, 1
 edge removed"). New nodes appear next to their neighbours and settle with a short nudge; nothing else moves, and

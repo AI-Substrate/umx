@@ -127,3 +127,18 @@ export type SearchResult = {
   /** Open graphs that found nothing while another did, as one quiet line (ws009 M2). */
   quiet?: string;
 };
+
+/** A declared spine as the spine view lists it (`umx graph spine show`). */
+export type SpineInfo = {
+  name: string;
+  title: string;
+  main: boolean;
+  /** calendar: its anchors are ordered by a date; order: by a step or a chain. */
+  clock: "calendar" | "order";
+  anchorType: string;
+  cover: { total: number; byField: number; byLink: number; byEvidence: number; byRule: number; notPlaced: number };
+};
+
+/** Where one spine places each node: [id, band, how, anchor]. `supported` is false when umx gave no placements (a umx
+ * older than the `spine:<name>` column). */
+export type SpinePlaces = { graph: string; spine: string; places: [string, number | null, string, 0 | 1][]; supported: boolean };
