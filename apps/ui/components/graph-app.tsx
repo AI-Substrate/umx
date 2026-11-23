@@ -20,6 +20,7 @@ import { Raiser } from "@/lib/raise";
 import { countText, heldCount, heldTotal, type HoldNote, type LiveMode, liveMode, MODE_KEY, namedHeld, noteFor } from "@/lib/hold";
 import { mergeResults, useSearch } from "@/components/use-search";
 import { useSelectionShare } from "@/components/use-selection";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api, ApiFailure, asIssue, onRenamed, post, renamedOf } from "@/lib/api";
 import { composeRenames, idsWithPending, movedSelection, type Rename, renameKey, renameNotice, renamesLanded, renameTarget } from "@/lib/rename";
@@ -660,13 +661,29 @@ export function GraphApp() {
   }, [wanted, refreshGraphs, updateLedger, settleSet]);
 
   // Opening from the picker: exactly these graphs; `left` when a scope or "all" chose them (counted, never named).
+  // None clears the canvas: nothing is read, and what the last set showed goes with it.
   const openGraphs = useCallback(
     (aliases: string[], left?: LeftOut) => {
       setNotice(null);
+      if (aliases.length === 0) {
+        setError(null);
+        setLoading(false);
+        setSelection(noSelection(null));
+        setFocusDepth(0);
+        setQuery("");
+        setSimilar(null);
+        setView(null);
+        setLiveNote(null);
+        setLiveErrors(new Map());
+        setLiveAt(new Map());
+        setRemovedPanel(null);
+        setLiveTouched(null);
+      }
       openSet(aliases, left);
     },
     [openSet],
   );
+  const [choosing, setChoosing] = useState(false);
   const shown = useMemo(() => view?.aliases ?? [], [view]);
   const shownKey = view?.key ?? null;
   const multi = shown.length > 1;
@@ -753,7 +770,10 @@ export function GraphApp() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if ((e.key === "/" && !typing) || (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey))) {
+      if (e.key.toLowerCase() === "g" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setChoosing(true);
+      } else if ((e.key === "/" && !typing) || (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey))) {
         e.preventDefault();
         searchRef.current?.focus();
         searchRef.current?.select();
@@ -1276,7 +1296,7 @@ export function GraphApp() {
 
   // Entities (ws009 M2, plan 165): built with umx's rule over the open graphs, from what is on the canvas, so a live
   // change, a Hold or an open rebuilds them with the view.
-  const [mergeEntities, setMergeEntities] = useState(false);
+  const [mergeEntities, setMergeEntities] = useState(true);
   const entityBase = useMemo(() => {
     if (!view) return null;
     const graphIds = new Map(view.snaps.map((sn) => [sn.graph, sn.graphId] as const));
@@ -1652,6 +1672,9 @@ export function GraphApp() {
               onOpen: openGraphs,
               includeSecured: set.includeSecured,
               onIncludeSecured: set.setIncludeSecured,
+              choosing,
+              onChoosing: setChoosing,
+              theme,
             }}
             graphCounts={stats?.graphs ?? new Map()}
             graph={view?.graph ?? null}
@@ -1668,7 +1691,7 @@ export function GraphApp() {
             spacing={spacing}
             onSpacing={setSpacing}
             louvainMs={louvain?.ms ?? null}
-            clustering={grouping === "louvain" && (louvain === null || louvain.resolution !== resolution)}
+            clustering={view !== null && grouping === "louvain" && (louvain === null || louvain.resolution !== resolution)}
             query={query}
             onQuery={setQuery}
             mode={mode}
@@ -1795,6 +1818,17 @@ export function GraphApp() {
                   <p className="font-mono text-xs text-destructive">{error.code}</p>
                   <p className="text-sm">{error.message}</p>
                   {error.next ? <p className="font-mono text-xs text-muted-foreground">next: {error.next}</p> : null}
+                </div>
+              </div>
+            ) : null}
+            {!view && !loading && !error && !wanted && graphs && graphs.length > 0 ? (
+              <div className="absolute inset-0 z-10 grid place-items-center p-8" data-testid="no-graphs-open">
+                <div className="max-w-sm space-y-3 text-center">
+                  <p className="text-sm font-medium">No graphs open</p>
+                  <p className="text-sm text-muted-foreground">Choose one or more of your {number.format(graphs.length)} graphs to lay out here.</p>
+                  <Button size="sm" onClick={() => setChoosing(true)}>
+                    Choose graphs <kbd className="rounded bg-primary-foreground/15 px-1 font-mono text-[10px]">G</kbd>
+                  </Button>
                 </div>
               </div>
             ) : null}

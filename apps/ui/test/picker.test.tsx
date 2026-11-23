@@ -4,8 +4,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { LockedScreen } from "@/components/graph-app";
-import { GraphList, ScopeList } from "@/components/graph-picker";
-import { allGraphs, scopeGraphs, toggled } from "@/lib/graph-set";
+import { GraphList, Scopes } from "@/components/graph-picker";
+import { allGraphs, draftToggled, groupOf, matchGraphs, scopeGraphs, selectMatching, toggled } from "@/lib/graph-set";
+import { MAX_OPEN } from "@/lib/graph/keys";
 import { firstGraphs } from "@/lib/launch";
 import { searchGraph, similarTo } from "@/lib/search";
 import { graphIds, listGraphs, listScopes, loadNode, loadSnapshot } from "@/lib/snapshot";
@@ -211,19 +212,43 @@ describe("several graphs in the picker (plan 133, D69 (7))", () => {
     expect(rows.map((r) => r.includes("<button"))).toEqual([true, false, true, false, false, false]);
   });
 
-  it("marks the open graphs, offers 'only' beside each, and never lets the last one go", async () => {
+  it("checks the draft's graphs, offers 'only' beside each, lets the last one go, and stops at the limit", async () => {
     const list = await listGraphs(harness().read);
     const html = renderToStaticMarkup(<GraphList graphs={list} open={["live", "named"]} onPick={() => {}} onToggle={() => {}} />);
     const item = (alias: string) => html.split("<li ").find((i) => i.includes(`>${alias}</span>`)) ?? "";
     expect(item("live")).toContain('data-open="true"');
-    expect(item("named")).toContain("checked");
-    expect(item("later")).not.toContain('data-open="true"');
+    expect(item("named")).toContain('aria-checked="true"');
+    expect(item("later")).toContain('aria-checked="false"');
     expect(item("later")).toContain('data-testid="graph-only"');
     expect(item("gone")).not.toContain('data-testid="graph-toggle"');
     const one = renderToStaticMarkup(<GraphList graphs={list} open={["live"]} onPick={() => {}} onToggle={() => {}} />);
-    const live = one.split("<li ").find((i) => i.includes(">live</span>")) ?? "";
-    expect(live).toContain("disabled");
-    expect(live).not.toContain('data-testid="graph-only"');
+    expect(one.split("<li ").find((i) => i.includes(">live</span>"))).not.toContain("aria-disabled");
+    expect(draftToggled(["live"], "live")).toEqual([]);
+    const full = Array.from({ length: MAX_OPEN }, (_, i) => `g${i}`);
+    expect(draftToggled(full, "live")).toEqual(full);
+    const capped = renderToStaticMarkup(<GraphList graphs={list} open={full} onPick={() => {}} onToggle={() => {}} />);
+    expect(capped.split("<li ").find((i) => i.includes(">later</span>"))).toContain('aria-disabled="true"');
+  });
+
+  it("filters by every word of the name and groups rows by what opening them does", async () => {
+    const list = await listGraphs(harness().read);
+    expect(matchGraphs(list, "").length).toBe(list.length);
+    expect(matchGraphs(list, "  LA ").map((g) => g.alias)).toEqual(["later"]);
+    expect(matchGraphs(list, "a e").map((g) => g.alias)).toEqual(["later", "named"]);
+    expect(matchGraphs(list, "zzz")).toEqual([]);
+    expect(Object.fromEntries(list.map((g) => [g.alias, groupOf(g)]))).toMatchObject({ live: "loaded", named: "loaded", later: "idle", vault: "idle", gone: "blocked", moved: "blocked" });
+    const html = renderToStaticMarkup(<GraphList graphs={list} open={[]} onPick={() => {}} onToggle={() => {}} query="at" />);
+    expect(html).toContain("l<mark");
+    expect(html).toContain(">at</mark>er");
+  });
+
+  it("'Select matching' adds the loaded matches to the draft as 'Open all' would, counting what it left out", async () => {
+    const list = await listGraphs(harness().read);
+    // later is idle (selecting it would load it); named is secured.
+    expect(selectMatching(["later"], list, false)).toEqual({ aliases: ["later", "live"], leftOut: { secured: 2, unavailable: 0 } });
+    expect(selectMatching([], matchGraphs(list, "named"), true)).toEqual({ aliases: ["named"], leftOut: { secured: 0, unavailable: 0 } });
+    const full = Array.from({ length: MAX_OPEN }, (_, i) => `g${i}`);
+    expect(selectMatching(full, list, true)).toEqual({ aliases: full, leftOut: { secured: 0, unavailable: 2 } });
   });
 
   it("'Open all' opens loaded open graphs and counts the secured ones it left out, unless the person includes them", async () => {
@@ -241,7 +266,7 @@ describe("several graphs in the picker (plan 133, D69 (7))", () => {
     expect(JSON.stringify(scopes)).not.toContain("/h/g");
     expect(scopeGraphs(scopes[0], false)).toEqual({ aliases: ["live", "later"], leftOut: { secured: 2, unavailable: 1 } });
     expect(scopeGraphs(scopes[0], true)).toEqual({ aliases: ["live", "later", "vault", "named"], leftOut: { secured: 0, unavailable: 1 } });
-    const html = renderToStaticMarkup(<ScopeList scopes={scopes} onOpen={() => {}} includeSecured={false} />);
+    const html = renderToStaticMarkup(<Scopes scopes={scopes} onPick={() => {}} includeSecured={false} />);
     expect(html).toContain("2 graphs");
     expect(html).toContain("+3 left out");
     expect(html).not.toContain("vault");

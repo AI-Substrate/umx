@@ -277,6 +277,17 @@
     transform: none;
   }
 }
+/* The graph picker dialog rises into place (components/graph-picker). */
+@keyframes picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 @keyframes bracket-in {
   from {
     opacity: 0;

@@ -176,9 +176,10 @@ through that network, install the exact version the `packageManager` pin names w
 
 ## Several graphs on one canvas
 
-The view shows 1 to 12 graphs at once as one canvas. Clicking a graph in its list, or its box, names it: adds it to
-the canvas, or takes it off (down to one); "only" opens that graph alone. "Open all" opens every loaded graph that is
-not secured, and a saved scope (`umx scope list`) opens its members. Neither opens a secured graph: they count the
+The view shows up to 12 graphs at once as one canvas. "Choose graphs" in the sidebar (or the `G` key) opens a dialog
+that lists every graph, filtered as you type. Clicking a graph there checks or unchecks it; "only" selects that
+graph alone; "Select all loaded" selects every loaded graph that is not secured, and a saved scope (`umx scope list`)
+selects its members. Nothing opens until "Open N graphs"; opening none clears the canvas. Neither opens a secured graph: they count the
 secured graphs they left out ("1 secured graph left out") and never name them. A secured graph opens when the person
 clicks it, when a launch link names it, or while the person's "include secured graphs" switch is on. That switch is
 off whenever the view opens, is never stored, and no `umx ui` command sets it.
@@ -397,7 +398,7 @@ applied). Nothing merged is stored.
 - Each entity's members stay in their own graphs, joined by threads: soft curves under the edges, in the structure
   colour, with no arrow. A `possibly_same_as` partner gets a dashed, quieter thread. Proposed partners are never
   merged. A `same_as` or `possibly_same_as` edge a thread already shows is not drawn as an edge too.
-- "Merge entities" in the top bar (off when the view opens, never stored) draws each entity as one node at its
+- "Merge entities" in the top bar (on when the view opens, never stored) draws each entity as one node at its
   members' centroid. Its ring is split in its members' graph colours, its members' edges go to it, and its threads are
   hidden. It shows the title of the most recently updated member, and nothing else from the members.
 - The node panel's Entity section, above Neighbours, reads "Entity · person · 3 members in 3 graphs". It lists the

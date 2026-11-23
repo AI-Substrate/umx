@@ -30,7 +30,7 @@ whole group. See `umx docs get ui`.
 
 ## What it shows
 
-Pick graphs on the left (counts from `umx graph list`). Each loads in pages of 10,000 rows (up to 100,000 nodes and
+Choose graphs with the button on the left, or press `G`: a dialog lists every graph `umx graph list --all` knows (with counts), in two columns grouped by loaded, not loaded (opening one loads it) and cannot open (with why and the fix). Type to filter by name; check and uncheck freely, "Select all loaded" (or "Select loaded matches" while filtering) and "Select none", then "Open N graphs" (Cmd/Ctrl+Enter). Nothing is read until then, and Cancel or Esc leaves the canvas as it was. Opening none clears the canvas. Arrow keys move through the rows and Space checks one. The sidebar lists the open graphs in their colours, each with × to take it off. Each loads in pages of 10,000 rows (up to 100,000 nodes and
 200,000 edges a graph; past that a banner says it is truncated) and lays itself out with ForceAtlas2 in a web worker.
 Scroll to zoom, drag to pan, the corner buttons zoom and fit. Click a node for its fields, note, evidence and
 neighbours (`umx node get`, `umx neighbours`); click a neighbour to move to it. A neighbour umx could not resolve
@@ -38,11 +38,11 @@ shows its state and id. `Esc` clears focus and then the selection. Provenance no
 retired, superseded or ruled_out), are hidden until you switch them on; the canvas says how many out-of-play nodes
 are hidden, with "show". The theme button cycles light, dark and system.
 
-Several graphs (plan 133): 1 to 12 graphs share one canvas. A click on a graph, or its box, adds it or takes it off
-(down to one); "only" opens it alone; "Open all" opens every loaded graph that is not secured; a saved scope
-(`umx scope list`) opens its members. A secured graph opens only when you click it, when a launch link names it
+Several graphs (plan 133): up to 12 graphs share one canvas. In the dialog a click on a graph checks it or unchecks
+it; "only" selects it alone; "Select all loaded" selects every loaded graph that is not secured; a saved scope
+(`umx scope list`) selects its members. A secured graph opens only when you click it, when a launch link names it
 (`#g=a,b,c`), or while "Include secured graphs" is on: that switch is off whenever the view opens, is never stored,
-and no agent command sets it. "Open all" and scopes count the secured graphs they left out and never name them. Of
+and no agent command sets it. "Select all loaded" and scopes count the secured graphs they left out and never name them. Of
 two rows that share an alias only the loaded one opens. Nodes and edges are keyed `<alias>/<id>`, so equal ids in two
 graphs never meet. An edge between two open graphs is drawn; one to a graph that is not open is left off and counted
 in the top bar. Hulls group by graph when more than one graph is open, and Colour by has Graph; each graph is laid

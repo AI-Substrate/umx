@@ -28,3 +28,34 @@ export function scopeGraphs(s: ScopeSummary, includeSecured: boolean): { aliases
   const secured = includeSecured ? s.secured - s.securedGraphs.length : s.secured;
   return { aliases: all.slice(0, MAX_OPEN), leftOut: { secured, unavailable: s.unavailable + Math.max(0, all.length - MAX_OPEN) } };
 }
+
+/** The picker's sections: what opens now, what opening loads first, and what cannot open (with its reason). */
+export type PickGroup = "loaded" | "idle" | "blocked";
+export function groupOf(g: GraphSummary): PickGroup {
+  return !g.openable ? "blocked" : g.state === "loaded" ? "loaded" : "idle";
+}
+
+/** The graphs whose alias holds every word of `query` (any case, any order), in umx's order. */
+export function matchGraphs<G extends Pick<GraphSummary, "alias">>(graphs: readonly G[], query: string): G[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...graphs];
+  return graphs.filter((g) => {
+    const a = g.alias.toLowerCase();
+    return words.every((w) => a.includes(w));
+  });
+}
+
+/** A draft selection with `alias` added (at the end) or taken out. Unlike `toggled` it may become empty: an empty
+ * draft clears the canvas. Never past MAX_OPEN. */
+export function draftToggled(draft: readonly string[], alias: string): string[] {
+  if (draft.includes(alias)) return draft.filter((a) => a !== alias);
+  return draft.length >= MAX_OPEN ? [...draft] : [...draft, alias];
+}
+
+/** The draft plus every loaded graph in `matching` that "Open all" would take, up to MAX_OPEN; secured ones only while
+ * "include secured graphs" is on, else counted (never named), and those past the cap counted as unavailable. */
+export function selectMatching(draft: readonly string[], matching: readonly GraphSummary[], includeSecured: boolean): { aliases: string[]; leftOut: LeftOut } {
+  const picked = allGraphs(matching, includeSecured);
+  const wanted = [...new Set([...draft, ...matching.filter((g) => g.state === "loaded" && g.openable && (includeSecured || !g.secured)).map((g) => g.alias)])];
+  return { aliases: wanted.slice(0, MAX_OPEN), leftOut: { secured: picked.leftOut.secured, unavailable: Math.max(0, wanted.length - MAX_OPEN) } };
+}
