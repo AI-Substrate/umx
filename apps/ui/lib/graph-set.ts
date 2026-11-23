@@ -1,6 +1,6 @@
 // The open set of graphs (ws009 M1a, plan 133; D69 (7)): which graphs a pick, "Open all" or a scope names, and which it
 // leaves out. Pure, so any picker (the sidebar list today, the ui-expert's picker next) uses the same rules.
-import { MAX_OPEN } from "@/lib/graph/keys";
+import { MAX_OPEN, setKey } from "@/lib/graph/keys";
 import type { GraphSummary, ScopeSummary } from "@/lib/types";
 
 /** Graphs a scope or "all" left out: counted, never named (d-20). */
@@ -58,4 +58,12 @@ export function selectMatching(draft: readonly string[], matching: readonly Grap
   const picked = allGraphs(matching, includeSecured);
   const wanted = [...new Set([...draft, ...matching.filter((g) => g.state === "loaded" && g.openable && (includeSecured || !g.secured)).map((g) => g.alias)])];
   return { aliases: wanted.slice(0, MAX_OPEN), leftOut: { secured: picked.leftOut.secured, unavailable: Math.max(0, wanted.length - MAX_OPEN) } };
+}
+
+/** The open set's key after a launch (lib/launch): a fresh one (a new link in an open tab) switches to its graphs; any
+ * other fills only an empty set, and never one the person cleared. */
+export function launchedKey(current: string, aliases: readonly string[], fresh: boolean, cleared: boolean): string {
+  if (aliases.length === 0) return current;
+  if (fresh) return setKey(aliases);
+  return current || cleared ? current : setKey(aliases);
 }

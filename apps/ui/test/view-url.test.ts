@@ -1,7 +1,8 @@
 // A reload keeps the view's look in the fragment and the open graphs in the tab's storage (lib/view-url). The
 // fragment only ever changes how the view looks: no graph is read from it (security N1).
 import { describe, expect, it } from "vitest";
-import { isLaunch, readLook, readOpen, type ViewLook, writeLook } from "@/lib/view-url";
+import { launchedKey } from "@/lib/graph-set";
+import { isLaunch, readLook, readOpen, reopenGraphs, type ViewLook, writeLook } from "@/lib/view-url";
 
 describe("the view's look in the fragment", () => {
   it("writes only what differs from the defaults, and reads it back", () => {
@@ -32,5 +33,20 @@ describe("the open graphs in the tab", () => {
     expect(readOpen("{")).toBeNull();
     expect(readOpen('["a b"]')).toBeNull();
     expect(readOpen(JSON.stringify(Array.from({ length: 20 }, (_, i) => `g${i}`)))).toHaveLength(12);
+  });
+});
+
+describe("a reload", () => {
+  it("reopens the tab's graphs unless a launch link names its own, and keeps a cleared canvas clear", () => {
+    expect(reopenGraphs(null, ["live", "vault"])).toEqual(["live", "vault"]);
+    expect(reopenGraphs(["named"], ["live"])).toEqual(["named"]);
+    expect(reopenGraphs(null, null)).toBeNull();
+    // None kept on purpose: the first graph is not picked for the person (the set is cleared first).
+    expect(reopenGraphs(null, [])).toBeNull();
+    expect(launchedKey("", ["first"], false, true)).toBe("");
+    expect(launchedKey("", ["first"], false, false)).toBe("first");
+    expect(launchedKey("live", ["first"], false, false)).toBe("live");
+    // A new launch link in the tab switches to its graphs, cleared or not.
+    expect(launchedKey("", ["a", "b"], true, true)).toBe("a,b");
   });
 });

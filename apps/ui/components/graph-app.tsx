@@ -59,7 +59,7 @@ import { effectiveFocus } from "@/lib/graph/fui";
 import { graphColor } from "@/lib/graph/graph-colors";
 import { aliasOfKey, qid, setKey, unq } from "@/lib/graph/keys";
 import { nodeScale, SPACING, SPACING_KEY, spacingOf } from "@/lib/graph/spacing";
-import { isLaunch, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, type ViewLook, writeLook } from "@/lib/view-url";
+import { isLaunch, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, reopenGraphs, type ViewLook, writeLook } from "@/lib/view-url";
 import { type FilterDim, hiddenReasons, NO_FILTERS, reasonText, reveal, toggleChip, toggled } from "@/lib/graph/filters";
 import { FOCUS_OFF, focusDepths, focusOf } from "@/lib/graph/focus";
 import { activeNotes, agentOff, cameraAsk, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
@@ -483,7 +483,7 @@ export function GraphApp() {
     }
     initial.current ??= takeLaunch(deps, launches);
     void initial.current.then((launch) => {
-      if (mounted.current) void refreshGraphs(launch?.named ?? (kept && kept.length > 0 ? kept : null), false, launch?.gen ?? 0);
+      if (mounted.current) void refreshGraphs(reopenGraphs(launch?.named ?? null, kept), false, launch?.gen ?? 0);
     });
     const stop = watchLaunch(window, deps, launches, (launch) => void refreshGraphs(launch.named, true, launch.gen));
     return () => {

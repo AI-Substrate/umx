@@ -4,7 +4,7 @@
 // the URL, and nothing an agent sends reaches it. A picker changes the set only through `open`; a launch link only
 // through `launch`.
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { LeftOut } from "@/lib/graph-set";
+import { launchedKey, type LeftOut } from "@/lib/graph-set";
 import { setKey } from "@/lib/graph/keys";
 
 export type GraphSet = {
@@ -37,11 +37,12 @@ export function useGraphSet(): GraphSet {
   }, []);
   const launch = useCallback((aliases: string[], fresh: boolean) => {
     if (aliases.length === 0) return;
+    const wasCleared = cleared.current;
     if (fresh) {
       cleared.current = false;
       setLeftOut(null);
-      setKeyState(setKey(aliases));
-    } else if (!cleared.current) setKeyState((k) => k || setKey(aliases));
+    }
+    setKeyState((k) => launchedKey(k, aliases, fresh, wasCleared));
   }, []);
   const settle = useCallback((aliases: string[]) => setKeyState(setKey(aliases)), []);
   const aliases = useMemo(() => (key ? key.split(",") : []), [key]);

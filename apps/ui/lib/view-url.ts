@@ -111,3 +111,10 @@ export function readOpen(stored: string | null): string[] | null {
     return null;
   }
 }
+
+/** What a page load opens: a launch link's graphs, else the ones this tab kept (none kept on purpose leaves the canvas
+ * clear: the caller clears the set), else null for the first graph, as before. */
+export function reopenGraphs(named: readonly string[] | null, kept: readonly string[] | null): string[] | null {
+  if (named) return [...named];
+  return kept && kept.length > 0 ? [...kept] : null;
+}

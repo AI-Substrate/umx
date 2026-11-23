@@ -4,7 +4,7 @@
 // lib/graph-set. The sidebar shows what is open; the whole index is chosen in a dialog (G), as a draft that opens only
 // when the person says so, so checking a dozen graphs reads them once.
 import { Check, Layers, Lock, Search, X } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -42,6 +42,13 @@ export type Held = { counts: ReadonlyMap<string, number | null>; onApply: (alias
 
 export function GraphPicker(p: GraphPickerProps) {
   const total = p.graphs?.length ?? 0;
+  const trigger = useRef<HTMLButtonElement>(null);
+  const { onChoosing } = p;
+  // The dialog closes itself (dialog.close()); once it has, focus goes back to the button that opens it.
+  const closed = useCallback(() => {
+    onChoosing(false);
+    trigger.current?.focus();
+  }, [onChoosing]);
   return (
     <>
       <div className="flex items-center justify-between gap-2">
@@ -53,6 +60,7 @@ export function GraphPicker(p: GraphPickerProps) {
         ) : null}
       </div>
       <Button
+        ref={trigger}
         variant="outline"
         size="sm"
         className="w-full justify-between"
@@ -69,7 +77,7 @@ export function GraphPicker(p: GraphPickerProps) {
       </Button>
       {p.graphs?.length === 0 ? <p className="text-sm text-muted-foreground">No graphs are loaded or remembered. Run `umx graph load &lt;folder&gt;`.</p> : null}
       <OpenList open={p.open} onOpen={p.onOpen} held={p.held} loading={p.loading} theme={p.theme} />
-      {p.choosing && p.graphs ? <GraphDialog {...p} graphs={p.graphs} /> : null}
+      {p.choosing && p.graphs ? <GraphDialog {...p} graphs={p.graphs} onClosed={closed} /> : null}
     </>
   );
 }
@@ -134,14 +142,13 @@ const GROUPS: [PickGroup, string, string][] = [
 ];
 
 /** The whole index in a dialog: search, check and uncheck into a draft, then open it (or clear the canvas). */
-function GraphDialog(p: GraphPickerProps & { graphs: GraphSummary[] }) {
+function GraphDialog(p: GraphPickerProps & { graphs: GraphSummary[]; onClosed: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<string[]>(() => [...p.open]);
   const [note, setNote] = useState<string | null>(null);
-  const { onChoosing } = p;
 
   useEffect(() => {
     const d = ref.current;
@@ -155,7 +162,7 @@ function GraphDialog(p: GraphPickerProps & { graphs: GraphSummary[] }) {
   const changed = draft.join(",") !== p.open.join(",");
   const full = draft.length >= MAX_OPEN;
 
-  const close = () => onChoosing(false);
+  const close = () => ref.current?.close();
   const apply = () => {
     if (changed) p.onOpen(draft);
     close();
@@ -202,6 +209,7 @@ function GraphDialog(p: GraphPickerProps & { graphs: GraphSummary[] }) {
       ref={ref}
       onKeyDown={onKey}
       onCancel={(e) => e.preventDefault()}
+      onClose={p.onClosed}
       onClick={(e) => e.target === ref.current && close()}
       aria-labelledby="graph-dialog-title"
       className="m-auto flex h-[min(46rem,calc(100dvh-3rem))] w-[min(60rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border bg-card p-0 text-foreground shadow-md backdrop:bg-background/70 backdrop:backdrop-blur-[2px] motion-safe:animate-[picker-in_160ms_cubic-bezier(0.22,1,0.36,1)]"
