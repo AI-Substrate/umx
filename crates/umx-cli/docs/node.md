@@ -214,13 +214,14 @@ the removing session in the entry's own `by_session`; see `umx docs get evidence
 - Nothing matching: `evidence_not_found`, with the node's pointers as candidates. Removing one that is already in
   the trail reports `already_removed` and changes nothing, so a clean-up can run twice.
 - The action may come first: `umx node evidence remove <node> <pointer> --reason <why>` is the same.
-- `remove --redact` (F183, usage 175) is for a pointer that should never have been written. It removes every
+- `remove --redact` (F183, usage 219) is for a pointer that should never have been written. It removes every
   pointer in this graph with the same source (the named node's, every other node's, live or in a trail, and on
   edges). Each one becomes a trail entry with only `kind`, `redacted: true`, when, who and the new reason. The reply
   gives counts, never the pointer or ids, and warns `redacted_in_files_only`: git history, other graphs and copies
   still hold it. It is refused with `evidence_redact_blocked`, changing nothing, while the source or a selector's
-  text would remain anywhere in the graph's files (see `umx docs get evidence`). The candidates name each record
-  and a place, never the text or a custom field's name: edit those, then redact again. `--reason` may not hold any
+  quoted text would remain anywhere in the graph's files (see `umx docs get evidence`). The candidates name each record
+  and a place, never the text or a custom field's name, and its next opens the first: edit those, then redact again. A pointer a
+  plain remove already put in the trail is redacted the same way (copy it from `list --removed`). `--reason` may not hold any
   part of the pointer or look like a secret. `--at` does not apply.
 
 ## umx node status <node> <status> --reason <why>

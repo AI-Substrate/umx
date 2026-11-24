@@ -3484,11 +3484,29 @@ pub fn redacted_in_files_only(id: Id) -> Problem {
 
 /// F183: the pointer's text is also somewhere a redact never rewrites; `blocking` names each record and place (the
 /// candidates' id and title), never the text. Nothing changed.
-pub fn evidence_redact_blocked(graph: &ValidName, blocking: Vec<Candidate>) -> Problem {
+pub fn evidence_redact_blocked(
+    graph: &ValidName,
+    blocking: Vec<Candidate>,
+    first: RedactBlocker,
+) -> Problem {
+    let fix = match first {
+        RedactBlocker::Node(id) => Command::new("node get").address(graph, id),
+        RedactBlocker::Edge(id) => Command::new("edge show").address(graph, id),
+        RedactBlocker::File => Command::new("check").word("--graph").name(graph),
+    };
     Problem::new("evidence_redact_blocked")
         .with("n", Slot::Count(blocking.len() as u64))
         .with("graph", name(graph))
+        .with("fix", Slot::Command(fix))
         .candidates(blocking)
+}
+
+/// The record the first blocking place of a refused redact is in: the refusal's runnable next opens it.
+#[derive(Clone, Copy, Debug)]
+pub enum RedactBlocker {
+    Node(Id),
+    Edge(Id),
+    File,
 }
 
 /// A batch `evidence remove` line with `"missing": "skip"` whose pointer matches nothing on the node.

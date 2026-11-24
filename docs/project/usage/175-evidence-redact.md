@@ -2,10 +2,11 @@
 id: 175
 title: Redact a sensitive evidence pointer with umx node evidence remove --redact
 route: build
-status: current
+status: superseded
 source: F183, plan 170 (the project manager 2026-11-12; security's ruling on scope, trail shape, refusals and the reply)
 reqs: [req-126]
 supersedes: none
+superseded_by: 219
 ---
 ## Do
 Use `umx node evidence <node> remove '<pointer>' --redact --reason "<why>"` only when the pointer itself must not stay in the graph, for example a path or quote that holds a credential, a private name or client text. Copy the pointer from `umx node evidence <node> list` or `list --removed`. The node must hold it, live, in its trail or cited by one of its status moves (`node get` shows those in `status_history`).

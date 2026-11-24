@@ -1427,3 +1427,99 @@ fn a_redact_reads_escaped_and_non_ascii_active_lines() {
     }
     assert_eq!(redact_files(&w), before);
 }
+
+/// A node with `title` and `note`, and no evidence.
+fn noted(w: &mut World, title: &str, note: &str) -> String {
+    w.svc
+        .node_add(
+            &ctx(),
+            NodeAddRequest {
+                kind: "problem".into(),
+                title: title.into(),
+                note: Some(note.into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .value
+        .node
+        .id
+        .to_text()
+}
+
+fn line_of(w: &World, id: &str) -> String {
+    String::from_utf8(nodes_file(w))
+        .unwrap()
+        .lines()
+        .find(|l| l.contains(id))
+        .unwrap()
+        .to_string()
+}
+
+const PROFILE: &str = "https://www.example.com/in/jo-bloggs";
+
+/// A section heading is structure, not a secret: a common heading word elsewhere in the graph does not block, and a
+/// pointer a plain remove left in the trail is scrubbed there; nothing else changes.
+#[test]
+fn a_redact_matches_the_source_not_a_common_section_heading() {
+    let mut w = world();
+    let pointer = format!("{PROFILE}#section=Experience");
+    let a = node(&mut w, &[pointer.as_str()]);
+    let other = noted(&mut w, "Experience at Acme", "Experience matters");
+    remove(&mut w, &a, &pointer, Some("stale"), None).unwrap();
+    assert!(
+        file_text(&w).contains("jo-bloggs"),
+        "a plain remove keeps it in the trail"
+    );
+    let other_before = line_of(&w, &other);
+    let edges_before = redact_files(&w)[1].clone();
+
+    let done = redact(&mut w, &a, &pointer, "a personal profile").unwrap();
+    assert_eq!((done.pointers, done.nodes, done.edges), (1, 1, 0));
+    assert!(!file_text(&w).contains("jo-bloggs"), "{}", file_text(&w));
+    assert_eq!(
+        line_of(&w, &other),
+        other_before,
+        "an unrelated node keeps its bytes"
+    );
+    assert_eq!(redact_files(&w)[1], edges_before);
+    let node: Value = serde_json::from_str(&line_of(&w, &a)).unwrap();
+    let trail = node["evidence_removed"].as_array().unwrap();
+    assert_eq!(trail.len(), 1, "{trail:?}");
+    assert_eq!(trail[0]["redacted"], json!(true));
+    assert_eq!(trail[0]["reason"], json!("a personal profile"));
+    assert!(trail[0].get("removed").is_none(), "{trail:?}");
+    assert_eq!(node["title"], json!("Approval delays"));
+    assert_eq!(node["evidence"], json!([]));
+}
+
+/// The source itself elsewhere still blocks; the refusal names the record and field, and its next opens that record.
+#[test]
+fn a_redact_names_where_the_source_is_held_elsewhere() {
+    let mut w = world();
+    let pointer = format!("{PROFILE}#section=Experience");
+    let a = node(&mut w, &[pointer.as_str()]);
+    let held = noted(&mut w, "Contact", &format!("see {PROFILE} for more"));
+    let before = redact_files(&w);
+    let p = redact(&mut w, &a, &pointer, "a personal profile").unwrap_err();
+    assert_eq!(blocked(&p), [(held.clone(), "note".to_string())]);
+    assert_eq!(
+        p.slot("fix").as_deref(),
+        Some(format!("umx node get umx:demo/{held}").as_str())
+    );
+    assert!(!format!("{p:?}").contains("jo-bloggs"), "{p:?}");
+    assert_eq!(redact_files(&w), before);
+}
+
+/// A heading that looks like a secret is still a needle (fail closed on what matters).
+#[test]
+fn a_redact_still_checks_a_secret_shaped_section_heading() {
+    let mut w = world();
+    // Built at run time so no token-shaped literal is committed.
+    let secret = format!("{}_{}", "ghp", "Y8kP2mQ7vT4nR1sW6xZ3cB9dF5gH0jL2aE7u");
+    let pointer = format!("docs/keys.md#section={secret}");
+    let a = node(&mut w, &[pointer.as_str()]);
+    let held = noted(&mut w, "Keys", &format!("rotated {secret}"));
+    let p = redact(&mut w, &a, &pointer, "it named a key").unwrap_err();
+    assert_eq!(blocked(&p), [(held, "note".to_string())]);
+}
