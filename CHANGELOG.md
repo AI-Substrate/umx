@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/AI-Substrate/umx/compare/v0.5.1...v0.5.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* keep the graph view up while the daemon is busy ([b4a0bd2](https://github.com/AI-Substrate/umx/commit/b4a0bd2642ee3cf91e9190669599df2f1f44d0de))
+
 ## [0.5.1](https://github.com/AI-Substrate/umx/compare/v0.5.0...v0.5.1) (2026-11-24)
 
 
