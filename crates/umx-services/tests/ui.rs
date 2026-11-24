@@ -141,15 +141,7 @@ impl World {
         let graphs: Vec<String> = graphs.iter().map(|g| g.to_string()).collect();
         let w = self
             .ui
-            .begin_wait(
-                self.svc.graph(),
-                epoch,
-                since,
-                1000,
-                &graphs,
-                &Default::default(),
-                false,
-            )
+            .begin_wait(epoch, since, 1000, &graphs, &Default::default(), false)
             .unwrap();
         let answer = self.ui.poll(&w);
         self.ui.end_wait(&w);
@@ -289,7 +281,6 @@ fn a_wait_returns_only_events_for_the_graphs_it_names_and_seq_still_advances() {
     let graphs = vec!["a".to_string()];
     let waiter =
         w.ui.begin_wait(
-            w.svc.graph(),
             Some(epoch.as_str()),
             got.seq,
             1000,
@@ -307,7 +298,6 @@ fn a_wait_returns_only_events_for_the_graphs_it_names_and_seq_still_advances() {
     let revs = [("gone".to_string(), 3)].into();
     let gone =
         w.ui.begin_wait(
-            w.svc.graph(),
             Some(epoch.as_str()),
             got.seq,
             1000,
@@ -359,44 +349,20 @@ fn a_fifth_waiter_is_refused_and_a_closed_channel_answers_at_once() {
     let graphs = vec!["a".to_string()];
     let waiters: Vec<_> = (0..4)
         .map(|_| {
-            w.ui.begin_wait(
-                w.svc.graph(),
-                None,
-                0,
-                25_000,
-                &graphs,
-                &Default::default(),
-                false,
-            )
-            .unwrap()
+            w.ui.begin_wait(None, 0, 25_000, &graphs, &Default::default(), false)
+                .unwrap()
         })
         .collect();
     let err =
-        w.ui.begin_wait(
-            w.svc.graph(),
-            None,
-            0,
-            25_000,
-            &graphs,
-            &Default::default(),
-            false,
-        )
-        .unwrap_err();
+        w.ui.begin_wait(None, 0, 25_000, &graphs, &Default::default(), false)
+            .unwrap_err();
     assert_eq!(err.code, "ui_waiters_busy");
     w.ui.end_wait(&waiters[0]);
-    let fifth = w.ui.begin_wait(
-        w.svc.graph(),
-        None,
-        0,
-        25_000,
-        &graphs,
-        &Default::default(),
-        false,
-    );
+    let fifth =
+        w.ui.begin_wait(None, 0, 25_000, &graphs, &Default::default(), false);
     assert!(fifth.is_ok(), "a slot frees when a wait ends");
     let epoch = w.ui.epoch();
     let quiet = w.ui.begin_wait(
-        w.svc.graph(),
         Some(epoch.as_str()),
         0,
         25_000,
@@ -406,16 +372,8 @@ fn a_fifth_waiter_is_refused_and_a_closed_channel_answers_at_once() {
     );
     assert_eq!(quiet.unwrap_err().code, "ui_waiters_busy");
     let err =
-        w.ui.begin_wait(
-            w.svc.graph(),
-            None,
-            0,
-            25_001,
-            &graphs,
-            &Default::default(),
-            false,
-        )
-        .unwrap_err();
+        w.ui.begin_wait(None, 0, 25_001, &graphs, &Default::default(), false)
+            .unwrap_err();
     assert_eq!(err.code, "usage_invalid");
     for waiter in &waiters {
         w.ui.end_wait(waiter);
@@ -423,7 +381,6 @@ fn a_fifth_waiter_is_refused_and_a_closed_channel_answers_at_once() {
     drop(waiters);
     let waiter =
         w.ui.begin_wait(
-            w.svc.graph(),
             Some(epoch.as_str()),
             0,
             25_000,
@@ -469,25 +426,10 @@ fn a_supervisor_wait_is_counted_apart_and_ui_no_view_names_what_brings_a_view_up
     assert_eq!(send(&mut w, true), detach, "nothing runs: start one");
     let none: Vec<String> = Vec::new();
     let sup =
-        w.ui.begin_wait(
-            w.svc.graph(),
-            None,
-            0,
-            25_000,
-            &none,
-            &Default::default(),
-            true,
-        )
-        .unwrap();
-    let second = w.ui.begin_wait(
-        w.svc.graph(),
-        None,
-        0,
-        25_000,
-        &none,
-        &Default::default(),
-        true,
-    );
+        w.ui.begin_wait(None, 0, 25_000, &none, &Default::default(), true)
+            .unwrap();
+    let second =
+        w.ui.begin_wait(None, 0, 25_000, &none, &Default::default(), true);
     assert_eq!(
         second.unwrap_err().code,
         "ui_waiters_busy",
@@ -496,16 +438,8 @@ fn a_supervisor_wait_is_counted_apart_and_ui_no_view_names_what_brings_a_view_up
     assert!(!w.ui.view_open(), "a supervisor is not a view");
     let views: Vec<_> = (0..4)
         .map(|_| {
-            w.ui.begin_wait(
-                w.svc.graph(),
-                None,
-                0,
-                25_000,
-                &none,
-                &Default::default(),
-                false,
-            )
-            .unwrap()
+            w.ui.begin_wait(None, 0, 25_000, &none, &Default::default(), false)
+                .unwrap()
         })
         .collect();
     for v in &views {
@@ -694,7 +628,6 @@ fn quiesce_discards_pending_events_for_wait_replies() {
     let (mut w, epoch) = ready();
     let waiter =
         w.ui.begin_wait(
-            w.svc.graph(),
             Some(epoch.as_str()),
             0,
             1000,
@@ -706,16 +639,8 @@ fn quiesce_discards_pending_events_for_wait_replies() {
     w.send(&ctx(), clear()).unwrap();
     assert_eq!(w.ui.poll(&waiter).unwrap().events.len(), 1);
     let fresh =
-        w.ui.begin_wait(
-            w.svc.graph(),
-            None,
-            0,
-            1000,
-            &graphs,
-            &Default::default(),
-            false,
-        )
-        .unwrap();
+        w.ui.begin_wait(None, 0, 1000, &graphs, &Default::default(), false)
+            .unwrap();
     let reset = w.ui.poll(&fresh).unwrap();
     assert!(reset.reset && reset.events.len() == 1);
     // Closed: a current-epoch waiter with an event queued, no epoch, a wrong epoch, and a cursor ahead of a
@@ -737,7 +662,6 @@ fn quiesce_discards_pending_events_for_wait_replies() {
         });
         let waiter =
             w.ui.begin_wait(
-                w.svc.graph(),
                 epoch_given.as_deref(),
                 since,
                 1000,

@@ -120,20 +120,10 @@ impl Daemon {
         // reconnected) looks at once and frees its slot, then asks again for a moment.
         let asked = Instant::now();
         let begun = loop {
+            // No services lock: a wait reads no graph, so it never queues behind the writer.
             let begun = {
-                let Ok(services) = self.services.read() else {
-                    return Envelope::fail(command, internal("writer_stopped"));
-                };
                 let mut ui = self.ui.lock().unwrap_or_else(|e| e.into_inner());
-                ui.begin_wait(
-                    services.graph(),
-                    epoch,
-                    since,
-                    timeout_ms,
-                    graphs,
-                    revs,
-                    supervisor,
-                )
+                ui.begin_wait(epoch, since, timeout_ms, graphs, revs, supervisor)
             };
             match begun {
                 Err(p) if p.code == "ui_waiters_busy" && asked.elapsed() < BUSY_RECHECK => {

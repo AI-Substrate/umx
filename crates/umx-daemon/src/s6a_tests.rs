@@ -391,3 +391,46 @@ fn a_raw_ui_open_naming_a_secured_graph_is_refused_and_never_kept() {
     assert_eq!(got.data["events"][0]["command"]["left_out"], 1, "{events}");
     let _ = fs::remove_dir_all(&root);
 }
+
+/// A write job holding the services lock for seconds (a load, or the writer's back-to-back embed applies) never
+/// delays a wait: `umx ui`'s supervisor answers at its own timeout, so the view stays up.
+#[test]
+fn a_wait_answers_while_a_write_holds_the_lock() {
+    let (d, root, epoch) = daemon("held");
+    let (held, release) = std::sync::mpsc::channel::<()>();
+    let holder = {
+        let services = Arc::clone(&d.services);
+        std::thread::spawn(move || {
+            let _guard = services.write().unwrap();
+            held.send(()).unwrap();
+            std::thread::sleep(Duration::from_secs(3));
+        })
+    };
+    release.recv().unwrap();
+    for supervisor in [true, false] {
+        let asked = Instant::now();
+        let reply = d.handle(&op(
+            Op::UiWait {
+                epoch: Some(epoch.clone()),
+                since: 0,
+                timeout_ms: 100,
+                graphs: if supervisor {
+                    Vec::new()
+                } else {
+                    vec!["g".into()]
+                },
+                revs: Default::default(),
+                supervisor,
+            },
+            None,
+        ));
+        assert!(reply.errors.is_empty(), "{}", reply.to_json());
+        assert!(
+            asked.elapsed() < Duration::from_secs(1),
+            "supervisor {supervisor}: the wait took {:?}",
+            asked.elapsed()
+        );
+    }
+    holder.join().unwrap();
+    let _ = fs::remove_dir_all(root);
+}

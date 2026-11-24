@@ -3,6 +3,7 @@
 //! std only: a blocking accept and one thread per connection, so an idle daemon sleeps in the kernel
 //! and uses no CPU (k-1, req-06). There is no TCP or UDP listener anywhere (req-45, SEC-1).
 
+use fair::FairLock;
 use std::fs::{self, DirBuilder, Metadata, Permissions};
 use std::io::{Read, Write};
 use std::net::Shutdown;
@@ -13,13 +14,14 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 mod doctor;
 mod embed_worker;
 #[cfg(test)]
 mod f72_tests;
+mod fair;
 #[cfg(test)]
 mod hold_bench;
 mod models;
@@ -699,7 +701,7 @@ pub(crate) static LONGEST_UNIT_HOLD_US: std::sync::atomic::AtomicU64 =
 /// embed worker's vectors go in between, a shard file per lock hold and only while no client job waits (or after
 /// [`WRITES_BEFORE_APPLY`] of them), so a write never waits behind the embed backlog (ws004 s25a).
 struct Writer {
-    services: Arc<RwLock<umx_services::Services>>,
+    services: Arc<FairLock<umx_services::Services>>,
     ok: Arc<AtomicBool>,
     config: Arc<umx_services::ConfigServices>,
     jobs: embed_worker::Queue,
@@ -1173,7 +1175,7 @@ struct Daemon {
     /// which has the same pid (`umx daemon restart`).
     started_ms: u64,
     mode: &'static str,
-    services: Arc<RwLock<umx_services::Services>>,
+    services: Arc<FairLock<umx_services::Services>>,
     config: Arc<umx_services::ConfigServices>,
     /// Set while graph folders are closed by an invalid config (the key or file to name).
     config_closed: Option<String>,
@@ -1249,7 +1251,7 @@ fn warm_local(
 /// as a write would; embeds and similarity rebuilds are queued and local models warmed as for `graph load`. A graph
 /// that does not reload is logged here and reported by `daemon status` and `umx doctor`; never fatal.
 fn reload(
-    services: &Arc<RwLock<umx_services::Services>>,
+    services: &Arc<FairLock<umx_services::Services>>,
     config_closed: bool,
     ok: &AtomicBool,
     jobs: &embed_worker::Queue,
@@ -1442,7 +1444,7 @@ impl Daemon {
         let embedders = Arc::new(embedders);
         let embeds = !composed.embedding().instances().is_empty();
         let ui = composed.graph().ui_channel();
-        let services = Arc::new(RwLock::new(composed));
+        let services = Arc::new(FairLock::new(composed));
         let config_writes = Arc::clone(&config_services);
         let (tx, rx) = channel::<Job>();
         let queue = Arc::new((

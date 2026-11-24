@@ -7,7 +7,8 @@
 //! `$UMX_HOME/run/ui.json` (pid, start time, port, the daemon's start id, PROTOCOL; never a code). It keeps the
 //! server's stdin lifeline; it waits on the daemon as its one
 //! supervisor wait, and ends (the server's group with it) when the daemon's start id changes or the daemon is
-//! unreachable for about 5 s, or the server stops (an idle detached view stops itself after 30 min with no tab
+//! unreachable for about 5 s or reachable but silent for 60 s (slow or busy keeps the view), or the server stops
+//! (an idle detached view stops itself after 30 min with no tab
 //! polling). An agent's `umx ui open --raise` reaches it as an event: with a tab connected that tab shows it; else it
 //! opens a tab with a fresh single-use launch code (60 s, D5) and the graphs. The view has no per-run token: a plain
 //! open (no graphs named) is the bare URL, and the server keeps the view to this machine's browsers by Host, Origin
@@ -44,8 +45,12 @@ const POLL: Duration = Duration::from_millis(250);
 /// How long each of the supervisor's waits is held, so it sees a stopped server within about this.
 const HOLD_MS: u64 = 2_000;
 
-/// The daemon unreachable this long ends the view (security D2).
+/// The daemon unreachable this long ends the view (security D2): its socket refuses or is gone.
 const DAEMON_GONE: Duration = Duration::from_secs(5);
+
+/// A daemon that is reachable but answers nothing this long ends the view too (review B3: a suspended daemon). A
+/// slow or busy one (a long write, a refusal) keeps the view until then.
+const DAEMON_SILENT: Duration = Duration::from_secs(60);
 
 /// How long the view's tabs get to hear why it ends before its server stops (ui-expert N1).
 const ENDING_GRACE: Duration = Duration::from_millis(1_500);
@@ -288,6 +293,8 @@ pub(crate) struct Parts<'a> {
     pub poll: Duration,
     /// How long a server told why it ends gets to tell its tabs.
     pub grace: Duration,
+    /// How long a reachable daemon may answer nothing before the view ends ([`DAEMON_SILENT`]).
+    pub silent: Duration,
 }
 
 /// `umx ui` (and the background one `--detach` starts): composes the host, starts and supervises the view, calls
@@ -306,6 +313,7 @@ pub fn ui(config: &Config, build: &Build, run: &UiRun, ready: impl FnOnce(&UiRea
         daemon: &daemon,
         poll: POLL,
         grace: ENDING_GRACE,
+        silent: DAEMON_SILENT,
     };
     let launch = match (app_dir(config), node(config)) {
         (Err(issue), _) | (_, Err(issue)) => {
@@ -454,13 +462,19 @@ fn watch(
     let host = parts.host;
     let mut since = first.seq;
     let mut answered = Instant::now();
+    // Since when every call found no daemon at all (connect refused, socket gone); none while it is reachable.
+    let mut gone: Option<Instant> = None;
     loop {
         if !host.running(server) {
             return ("the view's server stopped", None);
         }
-        // The call ends with what is left of the liveness budget, so a daemon that accepts and never answers ends
-        // the view near DAEMON_GONE too (review B3); the hold is well inside it.
-        let left = DAEMON_GONE.saturating_sub(answered.elapsed()).max(MIN_CALL);
+        // The call ends with what is left of the silence budget, so a daemon that accepts and never answers ends the
+        // view near `silent` (review B3); one call never outlasts DAEMON_GONE, and the hold is well inside it.
+        let left = parts
+            .silent
+            .saturating_sub(answered.elapsed())
+            .min(DAEMON_GONE)
+            .max(MIN_CALL);
         let hold = HOLD_MS.min(left.as_millis() as u64 / 2);
         match parts.daemon.wait(Some(&first.epoch), since, hold, left) {
             Ok(w) if w.epoch != first.epoch => {
@@ -471,19 +485,30 @@ fn watch(
             }
             Ok(w) => {
                 answered = Instant::now();
+                gone = None;
                 since = w.seq;
                 for graphs in &w.raises {
                     // A failed raise leaves the view as it is; the agent's own reply already went.
                     let _ = open(host, server, url, graphs, false);
                 }
             }
-            Err(_) if answered.elapsed() >= DAEMON_GONE => {
-                return (
-                    "the daemon stopped answering, so the view closed",
-                    Some(UiEnd::Unreachable),
-                );
+            Err(e) => {
+                // Unreachable ends the view after DAEMON_GONE; slow or refusing only after `silent`.
+                let unreachable = e.code() == "daemon_not_running";
+                let since_gone = if unreachable {
+                    *gone.get_or_insert_with(Instant::now)
+                } else {
+                    gone = None;
+                    Instant::now()
+                };
+                if since_gone.elapsed() >= DAEMON_GONE || answered.elapsed() >= parts.silent {
+                    return (
+                        "the daemon stopped answering, so the view closed",
+                        Some(UiEnd::Unreachable),
+                    );
+                }
+                std::thread::sleep(parts.poll);
             }
-            Err(_) => std::thread::sleep(parts.poll),
         }
     }
 }
@@ -968,7 +993,7 @@ mod tests {
     fn run_with(
         host: &FakeUiHost,
         state: &FakeLocalState,
-        daemon: &Script,
+        daemon: &dyn Daemon,
         node: &str,
         run: &UiRun,
     ) -> (Envelope, Option<(String, Value)>) {
@@ -979,6 +1004,7 @@ mod tests {
             daemon,
             poll: Duration::from_millis(1),
             grace: Duration::ZERO,
+            silent: DAEMON_SILENT,
         };
         let env = serve(
             &parts,
@@ -1141,6 +1167,7 @@ mod tests {
             daemon: &daemon,
             poll: Duration::from_millis(1),
             grace: Duration::ZERO,
+            silent: DAEMON_SILENT,
         };
         serve(
             &parts,
@@ -1227,7 +1254,57 @@ mod tests {
         assert!(started.elapsed() >= DAEMON_GONE);
     }
 
-    /// Review B3: a daemon that keeps accepting but stops answering (suspended, say) ends the view near 5 s,
+    /// A reachable daemon that answers late (a write holding its lock) or refuses for a while keeps the view: past
+    /// DAEMON_GONE of failed waits the view is still up, and ends only when the daemon restarts.
+    #[test]
+    fn a_daemon_that_answers_late_but_is_reachable_keeps_the_view() {
+        struct Late(std::sync::atomic::AtomicUsize);
+        impl Daemon for Late {
+            fn wait(
+                &self,
+                _epoch: Option<&str>,
+                _since: u64,
+                _hold: u64,
+                within: Duration,
+            ) -> Result<Waited, Issue> {
+                let n = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let epoch = match n {
+                    0 => "e1",
+                    1..=3 => {
+                        std::thread::sleep(within.min(Duration::from_secs(2)));
+                        return Err(Issue::fill(
+                            Code::Internal,
+                            &[("code", Fill::word("reply_timed_out"))],
+                        ));
+                    }
+                    4 => return Err(Issue::new(Code::UiWaitersBusy)),
+                    _ => "restarted",
+                };
+                Ok(Waited {
+                    epoch: epoch.into(),
+                    ..Waited::default()
+                })
+            }
+        }
+        let host = FakeUiHost::new();
+        let state = FakeLocalState::new().with_absent_ok(true);
+        let daemon = Late(std::sync::atomic::AtomicUsize::new(0));
+        let run = UiRun {
+            no_open: true,
+            ..UiRun::default()
+        };
+        let started = Instant::now();
+        let (end, _) = run_with(&host, &state, &daemon, "/fake/node", &run);
+        assert!(started.elapsed() >= DAEMON_GONE, "{:?}", started.elapsed());
+        assert!(
+            end.errors[0].message().contains("the daemon restarted"),
+            "{}",
+            end.to_json()
+        );
+        assert_eq!(host.watch().endings(), [UiEnd::Restarted]);
+    }
+
+    /// Review B3: a daemon that keeps accepting but stops answering (suspended, say) ends the view near its silence budget (5 s here),
     /// through the real socket client: the first wait is answered (the start id), every later one is accepted and
     /// left hanging, either silent or after the wait's space heartbeat.
     #[test]
@@ -1278,6 +1355,7 @@ mod tests {
                 daemon: &daemon,
                 poll: Duration::from_millis(20),
                 grace: Duration::ZERO,
+                silent: DAEMON_GONE,
             };
             let run = UiRun {
                 no_open: true,

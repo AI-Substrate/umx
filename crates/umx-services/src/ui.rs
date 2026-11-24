@@ -279,11 +279,11 @@ impl UiChannel {
     /// (`ui_waiters_busy`); a named secured graph is included. `supervisor`: `umx ui`'s supervisor's wait, counted
     /// apart (at most [`MAX_SUPERVISOR_WAITS`]) and never an open view (ws009 M1b2). A graph that is not loaded is waited on too, never
     /// refused: one the view follows answers overflow once (its log's revision, or 0 with no log this epoch). Every
-    /// `begin_wait` that succeeds needs one [`Self::end_wait`].
+    /// `begin_wait` that succeeds needs one [`Self::end_wait`]. It reads no graph, so the daemon calls it without the
+    /// services lock and a view's wait never queues behind a write.
     #[allow(clippy::too_many_arguments)]
     pub fn begin_wait(
         &mut self,
-        store: &GraphStore,
         epoch: Option<&str>,
         since: u64,
         timeout_ms: u64,
@@ -303,7 +303,7 @@ impl UiChannel {
                 "ui",
             ));
         }
-        let graphs = store.ui_graphs(graphs)?;
+        let graphs = GraphStore::ui_graphs(graphs)?;
         if supervisor {
             if self.supervisors >= MAX_SUPERVISOR_WAITS {
                 return Err(problems::ui_waiters_busy());

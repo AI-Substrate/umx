@@ -4,8 +4,9 @@
 //! and list settings did not change meanwhile. If anything did, it starts again.
 
 use crate::Job;
+use crate::fair::FairLock;
+use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};
-use std::sync::{Arc, RwLock};
 use umx_core::Problem;
 use umx_services::Services;
 use umx_services::SimilarityJob;
@@ -33,7 +34,7 @@ pub(crate) enum Rebuilt {
 
 /// Rebuilds `alias`'s lists, starting from `first` when the caller already took the snapshot.
 pub(crate) fn rebuild(
-    services: &RwLock<Services>,
+    services: &FairLock<Services>,
     writer: &Sender<Job>,
     alias: &str,
     mut first: Option<SimilarityJob>,
@@ -75,7 +76,7 @@ pub(crate) fn rebuild(
 /// Starts a background rebuild for each graph whose stored lists did not match at load; outcomes go to the daemon's
 /// stderr (its log), as the embed worker's do.
 pub(crate) fn spawn_rebuilds(
-    services: &Arc<RwLock<Services>>,
+    services: &Arc<FairLock<Services>>,
     writer: &Sender<Job>,
     aliases: Vec<String>,
 ) {

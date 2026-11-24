@@ -146,7 +146,7 @@ impl GraphStore {
     /// The graphs a view's wait names, each once; a named secured graph is included (it is named). One that is not
     /// loaded is kept, never refused (architect): an unload answers its waits with overflow, and the view
     /// may name a graph it has just seen unloaded.
-    pub(crate) fn ui_graphs(&self, graphs: &[String]) -> Result<Vec<String>, Problem> {
+    pub(crate) fn ui_graphs(graphs: &[String]) -> Result<Vec<String>, Problem> {
         let mut out: Vec<String> = Vec::new();
         for alias in graphs {
             if umx_core::ValidName::alias(alias).is_none() {

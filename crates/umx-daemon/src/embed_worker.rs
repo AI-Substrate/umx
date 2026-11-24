@@ -5,12 +5,13 @@
 //! delays a write. Pacing and batching are umx-services' (`Pacer`, `settle`, `batches`).
 
 use crate::Job;
+use crate::fair::FairLock;
 use crate::query_embed::QueryLanes;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use umx_core::ports::{EmbedError, Embedder, GraphDir};
 use umx_services::embedding::{Counted, Instance, embed_counted};
@@ -125,7 +126,7 @@ pub(crate) type FolderAllows = Arc<dyn Fn(&GraphDir, &str) -> bool + Send + Sync
 /// is no longer this one (secured, reembedded or unloaded since planning) and of graphs whose folder config narrows
 /// it away. Holds the shared lock only while it reads.
 fn sendable(
-    services: &RwLock<Services>,
+    services: &FairLock<Services>,
     allows: &FolderAllows,
     instance: &Instance,
     batch: Vec<Planned>,
@@ -314,7 +315,7 @@ impl Group {
 /// unplanned and the round reads on, at most once through the queue, so one instance's wait never hides another's work
 /// (R201-2). The flag is true when the queue held only such jobs: plan again when a wait ends or work arrives.
 fn plan_round(
-    services: &RwLock<Services>,
+    services: &FairLock<Services>,
     queue: &Queue,
     allows: &FolderAllows,
     drain: &Drain,
@@ -428,7 +429,7 @@ fn instance_for(s: &Services, allows: &FolderAllows, alias: &str) -> Option<Inst
 }
 
 pub(crate) fn spawn(
-    services: Arc<RwLock<Services>>,
+    services: Arc<FairLock<Services>>,
     queue: Queue,
     writer: Sender<Job>,
     allows: FolderAllows,
@@ -442,7 +443,7 @@ pub(crate) fn spawn(
 /// when fewer batches are ready than slots are free, start calls where an instance has a free slot, is not paced or
 /// paused and has no query waiting, then sleep until something changes.
 fn dispatch(
-    services: &RwLock<Services>,
+    services: &FairLock<Services>,
     queue: &Queue,
     writer: &Sender<Job>,
     allows: &FolderAllows,
