@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/AI-Substrate/umx/compare/v0.5.0...v0.5.1) (2026-11-24)
+
+
+### Features
+
+* **ui:** a node's panel shows its spines, and toggles them with the sidebar ([a6d4636](https://github.com/AI-Substrate/umx/commit/a6d4636291ecce1354111a58761ce31765c3f653))
+
 ## [0.5.0](https://github.com/AI-Substrate/umx/compare/v0.4.1...v0.5.0) (2026-11-23)
 
 
