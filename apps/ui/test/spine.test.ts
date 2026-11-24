@@ -1,7 +1,7 @@
 // The spine view (Jordan's brief part 2): the view lays a graph out by umx's placements (`node list --columns
 // spine:<name>`), earliest band on the left, and reads a graph's spines and placements through the two read verbs.
 import { describe, expect, it, vi } from "vitest";
-import { fanOf, type Place, shownSpine, spineLayout, SPREAD, stack } from "@/lib/graph/spine-layout";
+import { fanOf, nodeOnSpines, type Place, shownSpine, spineLayout, type SpineRead, spineReadsDue, SPREAD, stack, toggleSpine } from "@/lib/graph/spine-layout";
 import { listSpines, loadSpinePlaces } from "@/lib/spine";
 import { createUmx, UMX_PROTOCOL, type Exec } from "@/lib/umx";
 
@@ -57,6 +57,74 @@ describe("laying a graph out along a spine", () => {
     expect(shownSpine(spines, "gone")).toBe("weeks");
     expect(shownSpine([{ name: "a", main: false }], undefined)).toBe("a");
     expect(shownSpine([], undefined)).toBeNull();
+  });
+});
+
+describe("how a node sits on each of its graph's spines (node panel)", () => {
+  const spines = [
+    { name: "days", title: "Days", clock: "calendar" as const, main: true },
+    { name: "steps", title: "Steps", clock: "order" as const, main: false },
+    { name: "phases", title: "Phases", clock: "order" as const, main: false },
+  ];
+  const days = new Map<string, Place>([
+    ["d0", place(0, "field", true)],
+    ["d1", place(1, "field", true)],
+    ["n", place(1, "link")],
+    ["early", place(-1, "field")],
+    ["loose", place(null, "not_placed")],
+  ]);
+  const steps = new Map<string, Place>([
+    ["s0", place(0, "field", true)],
+    ["n", place(0, "rule")],
+    ["late", place(5, "evidence")],
+  ]);
+  const reads = (name: string) => (name === "days" ? { state: "ready" as const, places: days } : name === "steps" ? { state: "ready" as const, places: steps } : { state: "loading" as const, places: null });
+
+  it("names the anchor of the node's band and how umx placed it, on every spine, in the graph's order", () => {
+    const rows = nodeOnSpines(spines, "n", "days", reads);
+    expect(rows.map((r) => [r.name, r.shown, r.state, r.place?.by ?? null, r.anchors])).toEqual([
+      ["days", true, "ready", "link", ["d1"]],
+      ["steps", false, "ready", "rule", ["s0"]],
+      ["phases", false, "loading", null, []],
+    ]);
+  });
+
+  it("says when a node is not on a spine, is an anchor, or sits outside every anchor's band", () => {
+    const [d] = nodeOnSpines(spines.slice(0, 1), "loose", null, reads);
+    expect([d.place, d.shown]).toEqual([null, false]);
+    expect(nodeOnSpines(spines.slice(0, 1), "d1", null, reads)[0]).toMatchObject({ place: { anchor: true }, anchors: [] });
+    expect(nodeOnSpines(spines.slice(0, 1), "early", null, reads)[0]).toMatchObject({ anchors: [], side: "before" });
+    expect(nodeOnSpines(spines.slice(1, 2), "late", null, reads)[0]).toMatchObject({ anchors: [], side: "after" });
+    expect(nodeOnSpines(spines.slice(0, 1), "elsewhere", null, reads)[0].place).toBeNull();
+  });
+
+  it("one toggle for the sidebar and the panel: another spine switches, the shown one goes to none and stays none", () => {
+    const list = [{ name: "days", main: true }, { name: "steps", main: false }];
+    let pick: string | null | undefined;
+    expect(shownSpine(list, pick)).toBe("days");
+    pick = toggleSpine(shownSpine(list, pick), "steps");
+    expect(shownSpine(list, pick)).toBe("steps");
+    pick = toggleSpine(shownSpine(list, pick), "steps");
+    expect(pick).toBeNull();
+    expect(shownSpine(list, pick)).toBeNull();
+    pick = toggleSpine(shownSpine(list, pick), "days");
+    expect(shownSpine(list, pick)).toBe("days");
+  });
+});
+
+describe("when a spine is read again", () => {
+  const read = (at: number, loading = false): SpineRead => ({ at, loading, places: new Map(), supported: true });
+  const wanted = [["a", "days"], ["a", "steps"], ["b", "days"]] as const;
+
+  it("reads each wanted spine once, and again only after a live change to its own graph", () => {
+    const reads = new Map([["a/days", read(0)], ["a/steps", read(0)], ["b/days", read(0)]]);
+    expect(spineReadsDue(wanted, reads, new Map())).toEqual([]);
+    expect(spineReadsDue(wanted, reads, new Map([["b", 1]]))).toEqual([["b", "days"]]);
+    expect(spineReadsDue(wanted, new Map([["a/days", read(0)]]), new Map())).toEqual([["a", "steps"], ["b", "days"]]);
+  });
+
+  it("never starts a second read of a spine already being read", () => {
+    expect(spineReadsDue([["a", "days"]], new Map([["a/days", read(0, true)]]), new Map([["a", 2]]))).toEqual([]);
   });
 });
 

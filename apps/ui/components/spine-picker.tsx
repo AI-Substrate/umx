@@ -2,7 +2,7 @@
 // The spine view's control (Jordan's brief part 2): per open graph with declared spines, None or one spine. A graph
 // shows its main spine (else its first) until the person picks; None returns it to the force layout.
 import { CalendarDays, ListOrdered } from "lucide-react";
-import { SPREAD } from "@/lib/graph/spine-layout";
+import { SPREAD, type SpineState } from "@/lib/graph/spine-layout";
 import type { SpineInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,7 @@ export type SpineRow = {
   spines: SpineInfo[] | undefined;
   shown: string | null;
   /** Placements are being read, or this umx cannot give them (older than `node list --columns spine:<name>`). */
-  state: "ready" | "loading" | "unsupported" | "failed" | "gone";
+  state: SpineState;
 };
 
 export type SpinePanel = {
@@ -38,7 +38,7 @@ export function SpinePicker({ rows, multi, onPick, spread, onSpread }: SpinePane
             </Chip>
             {r.spines!.map((s) => (
               <Chip key={s.name} on={r.shown === s.name} onClick={() => onPick(r.alias, s.name)} title={`${s.title}: ${s.cover.total - s.cover.notPlaced} of ${s.cover.total} nodes placed${s.main ? " · main spine" : ""}`} testId="spine-chip">
-                {s.clock === "calendar" ? <CalendarDays className="size-3" aria-hidden /> : <ListOrdered className="size-3" aria-hidden />}
+                <SpineIcon clock={s.clock} />
                 {s.name}
               </Chip>
             ))}
@@ -76,6 +76,11 @@ export function SpinePicker({ rows, multi, onPick, spread, onSpread }: SpinePane
       <p className="text-[11px] text-muted-foreground">Earliest on the left. Nodes the spine does not place sit on a shelf below.</p>
     </div>
   );
+}
+
+/** A spine's kind, as the sidebar and the node panel both show it: a calendar for time, a numbered list for order. */
+export function SpineIcon({ clock }: { clock: "calendar" | "order" }) {
+  return clock === "calendar" ? <CalendarDays className="size-3 shrink-0" aria-hidden /> : <ListOrdered className="size-3 shrink-0" aria-hidden />;
 }
 
 function Chip({ on, onClick, title, children, testId }: { on: boolean; onClick: () => void; title: string; children: React.ReactNode; testId?: string }) {

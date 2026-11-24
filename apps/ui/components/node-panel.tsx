@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CircleAlert, ExternalLink, Loader2, Sparkles, X 
 import { useMemo } from "react";
 import { EntitySection, type EntityView } from "@/components/entity-section";
 import { HitList, type Placement } from "@/components/hit-list";
+import { NodeSpines, type NodeSpinesView } from "@/components/node-spines";
 import { Segmented } from "@/components/segmented";
 import { IdText, TextOrLink, Value } from "@/components/text";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,8 @@ type Props = {
   /** Its shadow connections (ws009 M1c): far node, graph and score, best first, and umx's notes for graphs not
    * compared; null while shadows are off. */
   shadows?: { rows: { key: string; title: string; graph: string; score: number }[]; notes: string[] } | null;
+  /** How the node sits on each spine its graph declares, with toggles shared with the sidebar's Spine chips. */
+  spines?: NodeSpinesView | null;
 };
 
 /** Where a neighbour is on the canvas (plan 133): its key when its graph is open, and how to name its graph. */
@@ -275,7 +278,7 @@ export function NeighbourList({
   );
 }
 
-export function NodePanel({ open, detail, error, loading, theme, onClose, onPick, hiddenIds, focus, similar, removed = false, graph = null, links, unlabelled = 0, entity = null, shadows = null }: Props) {
+export function NodePanel({ open, detail, error, loading, theme, onClose, onPick, hiddenIds, focus, similar, removed = false, graph = null, links, unlabelled = 0, entity = null, shadows = null, spines = null }: Props) {
   const node = removed ? undefined : detail?.node;
   const fields = node ? Object.entries(node).filter(([k]) => !STANDARD.has(k)) : [];
   const evidence = Array.isArray(node?.evidence) ? (node.evidence as Evidence[]) : [];
@@ -369,6 +372,11 @@ export function NodePanel({ open, detail, error, loading, theme, onClose, onPick
             {typeof node.note === "string" && node.note !== "" ? (
               <Section title="Note">
                 <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{node.note}</p>
+              </Section>
+            ) : null}
+            {spines ? (
+              <Section title="Spines">
+                <NodeSpines {...spines} />
               </Section>
             ) : null}
             {fields.length > 0 ? (

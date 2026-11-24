@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { CanvasPalette, GroupInfo } from "@/components/graph-canvas";
 import { AgentStrip, type OpenBox, type StripEntry } from "@/components/agent-strip";
 import { NodePanel } from "@/components/node-panel";
+import type { NodeSpinesView } from "@/components/node-spines";
 import { SelectionShare } from "@/components/selection-share";
 import { Segmented } from "@/components/segmented";
 import { hintItems, Hints, type Placement } from "@/components/hit-list";
@@ -81,7 +82,7 @@ import type { EntityView } from "@/components/entity-section";
 import { addMany, closePanel, escape, noticeAfterPrune, noticeShown, type RemovalNotice, removeFromSelection, MAX_SELECTION, noSelection, pickOne, type Selection, toggleOne } from "@/lib/selection";
 import { type SimilarState, similarAsked, similarFor, similarReplied } from "@/lib/similar";
 import type { ApiError, GraphSummary, NodeDetail, ScopeSummary, SearchMode, SearchResult, Snapshot, SpineInfo, SpinePlaces } from "@/lib/types";
-import { type Place, shownSpine, SPREAD, type SpineAxis, spineLayout } from "@/lib/graph/spine-layout";
+import { nodeOnSpines, type Place, shownSpine, SPREAD, type SpineAxis, spineLayout, type SpineRead, spineReadsDue, type SpineState, toggleSpine } from "@/lib/graph/spine-layout";
 import { cn, number } from "@/lib/utils";
 
 const GraphCanvas = dynamic(() => import("@/components/graph-canvas"), { ssr: false });
@@ -191,6 +192,8 @@ type View = {
   nudge: Nudge | null;
   /** One more for each live change applied. */
   data: number;
+  /** Live changes applied, per graph (alias), so a read of one graph waits only for that graph's changes. */
+  changes?: ReadonlyMap<string, number>;
   /** An agent's open (ws009 M1b1): the nodes kept where they were in the layout, and the frame and camera the new
    * canvas takes from the one before (or, for an Undo, from before the open). */
   keep?: Map<string, { x: number; y: number }>;
@@ -213,8 +216,12 @@ function graphNames(aliases: readonly string[]): string {
 /** `renames`: a rename being followed (plan 215), former alias to live alias, so the selection keeps its nodes. */
 type Merge = { wanted: string; frame: Extent; camera: CameraState | null; positions: Positions | null; then: Then | null; renames?: ReadonlyMap<string, string> };
 
-/** One spine's placements as read for the open graph (spine view): `data` is the live change count it was read at. */
-type SpineRead = { data: number; loading: boolean; places: Map<string, Place> | null; supported: boolean; failed?: boolean; gone?: boolean };
+
+const NO_CHANGES: ReadonlyMap<string, number> = new Map();
+
+function spineState(r: SpineRead | undefined): SpineState {
+  return !r || r.loading ? "loading" : r.failed ? "failed" : r.gone ? "gone" : r.supported ? "ready" : "unsupported";
+}
 
 const total = (snaps: readonly Snapshot[], k: "totalNodes" | "totalEdges") => snaps.reduce((n, s) => n + s[k], 0);
 
@@ -1030,6 +1037,7 @@ export function GraphApp() {
                 index: indexGraph(v.graph, prev.ranks),
                 nudge: { n, fresh: outcome.fresh },
                 data: prev.data + 1,
+                changes: new Map(prev.changes).set(alias, (prev.changes?.get(alias) ?? 0) + 1),
               }
             : prev,
         );
@@ -1463,8 +1471,13 @@ export function GraphApp() {
         }
       : null;
   // Spines (spine view): each open graph's declared spines, the one it shows (the person's pick, else its main or
-  // first), and where umx places its nodes on it, read again after each live change.
-  const [spineLists, setSpineLists] = useState<ReadonlyMap<string, SpineInfo[]>>(new Map());
+  // first), and where umx places its nodes on it, read again after each live change to that graph. A list that could
+  // not be read is "failed" (asked again when the graph is next opened).
+  const [spineLists, setSpineLists] = useState<ReadonlyMap<string, SpineInfo[] | "failed">>(new Map());
+  const spinesOf = useCallback((a: string) => {
+    const l = spineLists.get(a);
+    return Array.isArray(l) ? l : undefined;
+  }, [spineLists]);
   const [spinePlaces, setSpinePlaces] = useState<ReadonlyMap<string, SpineRead>>(new Map());
   const spineAsked = useRef(new Set<string>());
   useEffect(() => {
@@ -1473,26 +1486,37 @@ export function GraphApp() {
       spineAsked.current.add(a);
       api<{ spines: SpineInfo[] }>(`/api/graphs/${encodeURIComponent(a)}/spines`)
         .then((r) => setSpineLists((m) => new Map(m).set(a, r.spines)))
-        .catch(() => setSpineLists((m) => new Map(m).set(a, [])));
+        .catch(() => {
+          spineAsked.current.delete(a);
+          setSpineLists((m) => new Map(m).set(a, "failed"));
+        });
     }
   }, [shown]);
-  const spineShown = useMemo(() => new Map(shown.map((a) => [a, shownSpine(spineLists.get(a), spinePicks.has(a) ? spinePicks.get(a)! : undefined)])), [shown, spineLists, spinePicks]);
-  const dataNow = view?.data ?? 0;
+  const spineShown = useMemo(() => new Map(shown.map((a) => [a, shownSpine(spinesOf(a), spinePicks.has(a) ? spinePicks.get(a)! : undefined)])), [shown, spinesOf, spinePicks]);
+  const changesNow = view?.changes ?? NO_CHANGES;
+  // The node panel's graph: while it is open, every spine of that graph is read (once per spine, again after a live
+  // change), so the panel can say how the node sits on each; the others are read only while shown.
+  const panelGraph = selected ? aliasOfKey(selected) : null;
+  const spineWanted = useMemo(() => {
+    const out: [string, string][] = [];
+    for (const [a, name] of spineShown) if (name) out.push([a, name]);
+    if (panelGraph) for (const s of spinesOf(panelGraph) ?? []) if (spineShown.get(panelGraph) !== s.name) out.push([panelGraph, s.name]);
+    return out;
+  }, [spineShown, spinesOf, panelGraph]);
   useEffect(() => {
-    for (const [a, name] of spineShown) {
-      if (!name) continue;
+    for (const [a, name] of spineReadsDue(spineWanted, spinePlaces, changesNow)) {
       const key = `${a}/${name}`;
       const had = spinePlaces.get(key);
-      if (had && (had.data === dataNow || had.loading)) continue;
-      setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: true, places: had?.places ?? null, supported: had?.supported ?? true }));
+      const at = changesNow.get(a) ?? 0;
+      setSpinePlaces((m) => new Map(m).set(key, { at, loading: true, places: had?.places ?? null, supported: had?.supported ?? true }));
       api<SpinePlaces>(`/api/graphs/${encodeURIComponent(a)}/spines/${encodeURIComponent(name)}`)
         .then((r) => {
           const places = new Map(r.places.map(([id, band, by, anchor]) => [id, { band, by, anchor: anchor === 1 }]));
-          setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places, supported: r.supported, gone: r.gone }));
+          setSpinePlaces((m) => new Map(m).set(key, { at, loading: false, places, supported: r.supported, gone: r.gone }));
         })
-        .catch(() => setSpinePlaces((m) => new Map(m).set(key, { data: dataNow, loading: false, places: null, supported: true, failed: true })));
+        .catch(() => setSpinePlaces((m) => new Map(m).set(key, { at, loading: false, places: null, supported: true, failed: true })));
     }
-  }, [spineShown, spinePlaces, dataNow]);
+  }, [spineWanted, spinePlaces, changesNow]);
   // The placements the canvas lays out now, by graph: only those read and supported.
   const spineNow = useMemo(() => {
     const out = new Map<string, ReadonlyMap<string, Place>>();
@@ -1502,6 +1526,28 @@ export function GraphApp() {
     }
     return out;
   }, [spineShown, spinePlaces]);
+  const viewGraph = view?.graph;
+  const nodeSpines = useMemo(() => {
+    if (!selected || !panelGraph) return null;
+    const list = spineLists.get(panelGraph);
+    const shownNow = spineShown.get(panelGraph) ?? null;
+    const rows: NodeSpinesView["rows"] = list === "failed" ? "failed" : list
+      ? nodeOnSpines(list, unq(selected).id, shownNow, (name) => {
+          const r = spinePlaces.get(`${panelGraph}/${name}`);
+          // A refresh after a live change keeps the last placements on show until the new ones land.
+          return { state: r?.loading && r.places ? "ready" : spineState(r), places: r?.places ?? null };
+        })
+      : null;
+    return {
+      rows,
+      anchor: (id: string) => {
+        const key = qid(panelGraph, id);
+        return { key, title: viewGraph?.hasNode(key) ? String(viewGraph.getNodeAttribute(key, "label")) : id };
+      },
+      onToggle: (name: string) => setSpinePicks((m) => new Map(m).set(panelGraph, toggleSpine(shownNow, name))),
+      onPick: pickNode,
+    };
+  }, [selected, panelGraph, spineLists, spineShown, spinePlaces, viewGraph, pickNode]);
   const [spineAxes, setSpineAxes] = useState<SpineAxis[]>([]);
   const spineShape = useRef("");
   // The force layout's positions, kept while a spine is shown so none puts each node back where it was laid out.
@@ -1818,7 +1864,7 @@ export function GraphApp() {
               rows: shown.map((a) => {
                 const name = spineShown.get(a) ?? null;
                 const r = name ? spinePlaces.get(`${a}/${name}`) : undefined;
-                return { alias: a, spines: spineLists.get(a), shown: name, state: !r || r.loading ? "loading" : r.failed ? "failed" : r.gone ? "gone" : r.supported ? "ready" : "unsupported" };
+                return { alias: a, spines: spinesOf(a), shown: name, state: spineState(r) };
               }),
               multi,
               onPick: (a, name) => setSpinePicks((m) => new Map(m).set(a, name)),
@@ -2069,6 +2115,7 @@ export function GraphApp() {
               unlabelled={unlabelled}
               entity={entityView}
               shadows={shadowPanel}
+              spines={nodeSpines}
               similar={{
                 loading: similarNow?.loading ?? false,
                 result: similarNow?.result ?? null,

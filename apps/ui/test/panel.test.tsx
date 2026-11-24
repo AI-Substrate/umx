@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodePanel } from "@/components/node-panel";
+import { NodeSpines } from "@/components/node-spines";
+import type { NodeOnSpine } from "@/lib/graph/spine-layout";
 import { copyText, IdText, idLike, Value } from "@/components/text";
 import type { Theme } from "@/lib/graph/colors";
 import { HIDDEN_VALUE } from "@/lib/secret-flags";
@@ -151,5 +153,47 @@ describe("a status move's evidence in Status history (plan 192)", () => {
     expect(html).not.toContain(P);
     expect(html).not.toContain("sk-live-");
     expect(html).toContain("Ship the pilot");
+  });
+});
+
+describe("the node panel's Spines block", () => {
+  const row = (over: Partial<NodeOnSpine>): NodeOnSpine => ({ name: "days", title: "Days", clock: "calendar", main: true, shown: false, state: "ready", place: null, anchors: [], side: null, ...over });
+  const anchor = (id: string) => ({ key: `g/${id}`, title: `Title ${id}` });
+  const render = (rows: NodeOnSpine[] | null | "failed") => renderToStaticMarkup(<NodeSpines rows={rows} anchor={anchor} onToggle={() => {}} onPick={() => {}} />);
+
+  it("lists each spine as a toggle with its kind, the anchor by title and how the node was placed, or not on it", () => {
+    const html = render([
+      row({ shown: true, place: { band: 2, by: "link", anchor: false }, anchors: ["a2"] }),
+      row({ name: "steps", title: "Steps", clock: "order", main: false }),
+    ]);
+    expect(html.match(/data-testid="node-spine-toggle"/g)).toHaveLength(2);
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain("lucide-calendar-days");
+    expect(html).toContain("lucide-list-ordered");
+    expect(html).toContain("Title a2");
+    expect(html).toContain("by a link");
+    expect(html).toContain("Not on this spine.");
+    expect(html).not.toContain("node-spines-nowhere");
+  });
+
+  it("says in one line when the node is on none of them, and when the graph declares none", () => {
+    const html = render([row({}), row({ name: "steps", clock: "order" })]);
+    expect(html.match(/On none of its graph/g)).toHaveLength(1);
+    expect(html).not.toContain("Not on this spine.");
+    expect(html.match(/data-testid="node-spine-toggle"/g)).toHaveLength(2);
+    expect(render([])).toContain("declares no spines");
+  });
+
+  it("says the spines could not be read when listing them failed, never that the graph has none", () => {
+    const html = render("failed");
+    expect(html).toContain("node-spines-failed");
+    expect(html).toContain("could not be read");
+    expect(html).not.toContain("declares no spines");
+  });
+
+  it("names an anchor as one, and a node outside every anchor's band by its side", () => {
+    expect(render([row({ place: { band: 0, by: "field", anchor: true } })])).toContain("An anchor, by its own field");
+    expect(render([row({ place: { band: -1, by: "evidence", anchor: false }, side: "before" })])).toContain("before the first anchor, by its evidence");
   });
 });

@@ -403,6 +403,15 @@ The choice is kept across a reload in the tab's session storage beside the open 
 never in the fragment. A umx older than the `spine:<name>` column says so instead of laying the graph out, as does a
 spine the graph no longer declares.
 
+A clicked node's panel has a Spines section: every spine its graph declares, with the same calendar (time) or
+numbered-list (order) icon as the sidebar, and how the node sits on each: the anchor of its band by title (click it to
+select that anchor), or that it is an anchor itself, or that it sits before the first or after the last anchor, and
+how umx placed it (by its own field, a link, its evidence, or the spine's rule); else "Not on this spine". A node on
+none of them says so in one line. Each spine there is a toggle on the same pick as the sidebar's chips: one shown
+spine per graph, another switches to it, and clicking the shown one puts it away (None). The panel reads each spine of
+the node's graph once while it is open, and again only after a live change to that graph, not on every click. When
+the graph's spines cannot be listed, the panel says so rather than that it has none.
+
 ## Edges
 
 Every edge has a head at its target, so it reads from source to target. Into a node with more than 20 drawn incoming

@@ -143,3 +143,68 @@ export function shownSpine(spines: readonly { name: string; main: boolean }[] | 
   if (picked !== undefined && spines?.some((s) => s.name === picked)) return picked;
   return (spines?.find((s) => s.main) ?? spines?.[0])?.name ?? null;
 }
+
+/** A spine's toggle, in the sidebar or the node panel: picking the shown spine puts it away (none), any other shows it. */
+export function toggleSpine(shown: string | null, name: string): string | null {
+  return shown === name ? null : name;
+}
+
+/** Where one spine's placements stand for a graph: read, being read, or why not. */
+export type SpineState = "ready" | "loading" | "unsupported" | "failed" | "gone";
+
+/** How one node sits on one spine, for the node panel: its place (null while unread or not on the spine) and the
+ * anchors of its band (umx ids), and where its band falls when no anchor is in it. */
+export type NodeOnSpine = {
+  name: string;
+  title: string;
+  clock: "calendar" | "order";
+  main: boolean;
+  shown: boolean;
+  state: SpineState;
+  place: Place | null;
+  anchors: string[];
+  side: "before" | "after" | "between" | null;
+};
+
+/**
+ * How node `id` sits on each declared spine of its graph, in the order the graph lists them. `read(name)` gives a
+ * spine's state and, once read, its placements; `shown` is the spine the graph shows now (null for none).
+ */
+export function nodeOnSpines(
+  spines: readonly { name: string; title: string; clock: "calendar" | "order"; main: boolean }[],
+  id: string,
+  shown: string | null,
+  read: (name: string) => { state: SpineState; places: ReadonlyMap<string, Place> | null },
+): NodeOnSpine[] {
+  return spines.map((s) => {
+    const { state, places } = read(s.name);
+    const p = state === "ready" ? places?.get(id) : undefined;
+    const place = p && p.band !== null ? p : null;
+    const anchors: string[] = [];
+    let side: NodeOnSpine["side"] = null;
+    if (place && places) {
+      let [lo, hi] = [Infinity, -Infinity];
+      for (const [k, q] of places) {
+        if (!q.anchor || q.band === null) continue;
+        lo = Math.min(lo, q.band);
+        hi = Math.max(hi, q.band);
+        if (q.band === place.band && k !== id) anchors.push(k);
+      }
+      if (!place.anchor && anchors.length === 0 && lo <= hi) side = place.band! < lo ? "before" : place.band! > hi ? "after" : "between";
+      anchors.sort();
+    }
+    return { name: s.name, title: s.title, clock: s.clock, main: s.main, shown: shown === s.name, state, place, anchors, side };
+  });
+}
+
+/** One spine's placements as read for an open graph: `at` is that graph's live change count it was read at. */
+export type SpineRead = { at: number; loading: boolean; places: Map<string, Place> | null; supported: boolean; failed?: boolean; gone?: boolean };
+
+/** The spine reads to start now: each wanted [graph, spine] not read yet, or read before its own graph's latest live
+ * change; never one already in flight. A change in another open graph leaves a graph's reads alone. */
+export function spineReadsDue(wanted: readonly (readonly [string, string])[], reads: ReadonlyMap<string, SpineRead>, changes: ReadonlyMap<string, number>): [string, string][] {
+  return wanted.filter(([a, name]) => {
+    const had = reads.get(`${a}/${name}`);
+    return !had || (!had.loading && had.at !== (changes.get(a) ?? 0));
+  }) as [string, string][];
+}
