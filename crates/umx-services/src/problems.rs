@@ -268,6 +268,7 @@ pub const CODES: &[&str] = &[
     "evidence_appended",
     "evidence_field_invalid",
     "evidence_field_kept",
+    "evidence_sources_field_kept",
     "edge_exists_differs",
     "edge_not_found",
     "edge_would_duplicate",
@@ -2988,6 +2989,24 @@ pub fn evidence_field_kept(id: Id) -> Problem {
     Problem::new("evidence_field_kept")
         .with("id", Slot::Id(id))
         .with("fix", Slot::Command(Command::new("edge show").id(id)))
+}
+
+/// A node or edge that holds its own `evidence_sources` field (written before umx reserved the name): kept, and
+/// the fix removes it.
+pub fn evidence_sources_field_kept(id: Id, edge: bool) -> Problem {
+    let verb = if edge { "edge edit" } else { "node edit" };
+    Problem::new("evidence_sources_field_kept")
+        .with("id", Slot::Id(id))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new(verb)
+                    .id(id)
+                    .word("--unset")
+                    .word("evidence_sources"),
+            ),
+        )
+        .subject(id.to_text())
 }
 
 /// The next names `umx edge edit <id> --set <field>=<value>` for the first differing field (plan 205; F134's

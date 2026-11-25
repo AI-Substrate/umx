@@ -650,6 +650,10 @@ Nothing is dropped:
   that custom field with `locator_field_kept`, and every write keeps it as it is; rename it by hand in
   nodes.jsonl. No write sets `locator` or a `locator_*` name as a custom field: `--set locator=...` is
   `locator_field_invalid`, and nothing changes.
+- A node's or edge's own custom field named `evidence_sources` (written before umx reserved the name for `umx
+  query`) loads as that custom field with `evidence_sources_field_kept`, and `--columns all` shows it; `umx query`
+  reads the sources from the record's evidence instead. Remove it with `umx node edit <id> --unset
+  evidence_sources` (or `umx edge edit`); `--set` of the name is `reserved_name`.
 
 `graph load` and `graph list` show `kept_lines`: lines in the files that are not in the graph (earlier lines of
 repeated ids and dangling edges), so `nodes`, `edges` and `kept_lines` add up to every record line on disk.
@@ -659,7 +663,7 @@ repeated ids and dangling edges), so `nodes`, `edges` and `kept_lines` add up to
 lists what the files hold now, one row per finding: `kind` (`unsorted_file`, `duplicate_id`, `dangling_edge`, `unknown_key`,
 `provenance_key_invalid` for a malformed provenance value, kept and not used, `duplicate_prov_key` for
 two provenance records with one key, both kept with the lower id in use,
-`duplicate_locator`, `locator_not_normalised`, `locator_field_kept`,
+`duplicate_locator`, `locator_not_normalised`, `locator_field_kept`, `evidence_sources_field_kept`,
 `edge_reserved_field_in_use` for an edge with its own `updated` or `updated_by` field, which `umx edge edit` will
 not overwrite (rename it in edges.jsonl),
 `date_not_a_date` for a node's or edge's date field whose stored value is not a date in years 0001 to 9999 (subject

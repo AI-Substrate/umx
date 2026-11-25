@@ -78,6 +78,11 @@ that would otherwise widen to every node. `std` as a variable or a property is a
   whose tags leave `x` out. For "nodes without `x`" write `n.tags IS NULL OR NOT 'x' IN n.tags`, which says so
   and keeps the same rows if `NOT` ever follows openCypher's three-valued rule (where null stays null and the row
   is dropped).
+- `n.evidence_sources` and `r.evidence_sources` list each evidence pointer's source as written, without its
+  selector, in pointer order; null when there is none (as `n.tags`). Removed and redacted pointers and a status
+  move's evidence are not in it. Reading it decodes the record's line, as `n.note` does; nothing is read from the
+  cited file. A record's own field of that name, stored before umx reserved it, is not read here
+  (`evidence_sources_field_kept`). See "Who cites a source" in `umx docs get evidence`.
 - Resource nodes (`umx docs get resource`) answer `n.locator_kind`, `n.locator_source`, `n.locator_format`,
   `n.locator_hash`, `n.locator_length` and `n.locator_seq_max` (null on a plain node). `n.locator` is not a
   property: it reads null with `query_unknown_property`.
@@ -214,7 +219,7 @@ nodes left out (unlike node list's, which count the rows its filters kept; `umx 
 A row names each column whose cell holds a value umx's secret check flags, as a read names a flagged field:
 `"secret_suspected": ["field:t"]` on the row, and `secret_suspected` among the list's columns. A column is flagged
 when anything inside its cell is: a node's title (by the read rule, so an allow clears it), a string (a list's items,
-a map projection's keys and values), an edge's text-quote selectors, or the graph node's title. A stored node cell
+a map projection's keys and values, so each of `n.evidence_sources`), an edge's text-quote selectors, or the graph node's title. A stored node cell
 with a flagged title also carries its own `"secret_suspected": ["field:title"]`, but the row decides: hide the whole
 flagged column. `--human` prints each flagged column as `[secret suspected, hidden]`.
 

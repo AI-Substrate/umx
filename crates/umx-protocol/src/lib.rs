@@ -229,12 +229,14 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// check count now holds them; `Op::Check`'s `source_budget` (doctor's byte budget) and data.sources' `skipped`,
 /// `bytes` and `too_large` (`source_too_large` rows), and new code `doctor_graph_sources_unchecked` (hint);
 /// relative evidence and locator paths may start with `..` and reach anywhere in the graph's git repo (usage 223).
+/// 103: `evidence_sources` is reserved on nodes and edges (`n.evidence_sources` in `umx query`); new code
+/// `evidence_sources_field_kept` (warning) for a record that already holds its own field of that name (usage 224).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 102;
+pub const PROTOCOL: u32 = 103;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -243,7 +245,7 @@ pub const PROTOCOL: u32 = 102;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (102, 0x462d_2465_7afc_3372);
+const WIRE_FINGERPRINT: (u32, u64) = (103, 0x02d3_892c_82fb_a930);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -3465,6 +3467,10 @@ catalogue! {
     EvidenceFieldKept => "evidence_field_kept", Warning, 0,
         "an edge has a custom field named evidence that is not an evidence list; it is kept as written and never read as evidence",
         "Edge <id> has a custom evidence field that is not an evidence list; it is kept and not read as evidence.",
+        "<fix>";
+    EvidenceSourcesFieldKept => "evidence_sources_field_kept", Warning, 0,
+        "a node or edge holds its own custom field named evidence_sources, a name umx now reserves for the sources umx query derives from its evidence; the field is kept as written and may be removed with --unset, and umx query reads the derived list, not the field",
+        "Record <id> has its own evidence_sources field; it is kept, and umx query reads the sources from its evidence instead.",
         "<fix>";
     FieldKindMismatch => "field_kind_mismatch", Warning, 0,
         "a value does not fit its field's kind; it was stored as given",

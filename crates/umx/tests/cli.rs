@@ -2442,6 +2442,16 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 home.umx(&["edge", "add", &a, "blocks", &b, "--evidence", "notes.md#L1"])
             }
         }
+        Code::EvidenceSourcesFieldKept => {
+            // A node's own `evidence_sources`, written before umx reserved the name: kept on load, warned.
+            let path = home.graph();
+            let id = home.add("problem", "One");
+            home.ok(&["node", "edit", &id, "--set", "cites=x"]);
+            let nodes = Path::new(&path).join("nodes.jsonl");
+            let text = fs::read_to_string(&nodes).unwrap();
+            fs::write(&nodes, text.replace("\"cites\"", "\"evidence_sources\"")).unwrap();
+            home.umx(&["graph", "load", &path])
+        }
         Code::EdgeExistsDiffers => {
             home.graph();
             let (a, b) = (home.add("problem", "One"), home.add("decision", "Two"));

@@ -35,7 +35,11 @@ fn columns_all(columns: Option<&[String]>) -> bool {
 fn node_custom_columns<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let custom: BTreeSet<&str> = names
         .into_iter()
-        .filter(|c| *c != "copy" && !umx_core::name::RESERVED_NODE_FIELDS.contains(c))
+        // `evidence_sources` is reserved for `umx query` only: no list computes it, so a node's own stays a column.
+        .filter(|c| {
+            *c != "copy"
+                && (*c == "evidence_sources" || !umx_core::name::RESERVED_NODE_FIELDS.contains(c))
+        })
         .collect();
     custom.into_iter().map(String::from).collect()
 }

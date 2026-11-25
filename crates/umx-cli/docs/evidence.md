@@ -83,6 +83,31 @@ several). Each pointer is a source, `#`, and a selector:
 - Each piece is stored on the node as `{ source, selector, kind, fidelity, hash, hash_state }`, with `length` and
   `seq_max` when the source was read. Adding the same pointer twice keeps one, and keeps its stored hash.
 
+## Who cites a source
+
+`umx query` reads `n.evidence_sources` and `r.evidence_sources`: each live pointer's source as written, without
+its selector (`umx docs get query`). Name the graphs, or `--all` for every loaded open one:
+
+    umx query "MATCH (n) WHERE 'calls/3-nov.vtt' IN n.evidence_sources RETURN n.graph AS g, n.id AS id, n.type AS type, n.title AS title" --all
+    umx query "MATCH ()-[r]->() WHERE 'calls/3-nov.vtt' IN r.evidence_sources RETURN r.graph AS g, r.id AS id" --graph a,b
+
+- **Any source under a prefix.** The subset has no `any(...)`; UNWIND the list instead:
+
+      umx query "MATCH (n) UNWIND n.evidence_sources AS s WITH n, s WHERE s STARTS WITH 'root:repo/FY27/' RETURN DISTINCT n.graph AS g, n.id AS id, n.title AS title" --all
+
+- **Through a resource node.** A pointer that cites the file's resource node (`umx:<graph>/<id>`) names the node,
+  not the file. Find those in two hops:
+
+      umx query "MATCH (f) WHERE f.locator_source = 'calls/3-nov.vtt' MATCH (n) WHERE f.address IN n.evidence_sources RETURN n.graph AS g, n.id AS id, n.title AS title" --all
+
+  It matches the address as umx writes it (`umx:<alias>/<full id>`); a pointer written under another alias of
+  the same graph is not found this way.
+- Sources match as written: `docs/a.md` and `root:repo/docs/a.md` are two sources, and a removed or redacted
+  pointer is not listed (`umx node evidence <node> list --removed` shows the trail). A status move's evidence is
+  not listed either, as it is not in `evidence_kinds`.
+- Secured graphs keep their rules: `--all` skips them unless they are named. A source that looks like a secret
+  flags its column (`secret_suspected`), as any query string does.
+
 ## Source hashes
 
 When a write adds a pointer (`node add --evidence`, `node note`, `node status --evidence`, `node evidence add`,

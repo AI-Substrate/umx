@@ -1970,3 +1970,217 @@ fn a_cited_file_grown_past_the_cap_only_grew() {
     assert_eq!(env.data["sources"]["grew"], 1);
     assert_eq!(env.data["sources"]["bytes"], 6);
 }
+
+/// Who cites a source, in one query across graphs: `n.evidence_sources` and `r.evidence_sources` list each pointer's
+/// source as written (null with none), prefix matching goes through UNWIND and STARTS WITH, a resource node cited by
+/// address is found in two hops through its `locator_source`, and a source that looks like a secret flags its column.
+#[test]
+fn a_query_finds_who_cites_a_source_across_graphs() {
+    let mut home = Home::new("who-cites");
+    home.start();
+    for alias in ["one", "two"] {
+        let path = home.path.join(alias).display().to_string();
+        home.ok(&["graph", "new", &path, "--alias", alias]);
+    }
+    let node = |graph: &str, title: &str, extra: &[&str]| {
+        let mut args = vec![
+            "node", "add", "--graph", graph, "--type", "problem", "--title", title,
+        ];
+        args.extend_from_slice(extra);
+        home.ok(&args).data["node"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let a = node(
+        "one",
+        "Alpha",
+        &["--evidence", "docs/x.md#L2", "--evidence", "calls/t1.md#L1"],
+    );
+    let plain = node("one", "Plain", &[]);
+    node("two", "Bravo", &["--evidence", "calls/t1.md#L4"]);
+    node("two", "Delta", &["--evidence", "calls/t2.md#L1"]);
+    let edge = home
+        .ok(&[
+            "edge",
+            "add",
+            &a,
+            "blocks",
+            &plain,
+            "--graph",
+            "one",
+            "--evidence",
+            "calls/t1.md#L3",
+        ])
+        .data["edge"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let both = ["--graph", "one,two"];
+    let rows = |q: &str| {
+        let (env, exit) = home.query(q, &both);
+        assert_eq!(exit, 0, "{}", env.to_json());
+        query_rows(&env)
+    };
+
+    assert_eq!(
+        rows(
+            "MATCH (n) WHERE 'calls/t1.md' IN n.evidence_sources RETURN n.graph AS g, n.title AS t ORDER BY g"
+        ),
+        [["one", "Alpha"], ["two", "Bravo"]]
+    );
+    assert_eq!(
+        rows(
+            "MATCH ()-[r]->() WHERE 'calls/t1.md' IN r.evidence_sources RETURN r.graph AS g, r.id AS id"
+        ),
+        [["one", edge.as_str()]]
+    );
+    let q = format!(
+        "MATCH (n) WHERE n.id IN ['{a}', '{plain}'] RETURN n.title AS t, n.evidence_sources AS s ORDER BY t"
+    );
+    assert_eq!(
+        rows(&q),
+        [["Alpha", "[docs/x.md,calls/t1.md]"], ["Plain", "null"]]
+    );
+    assert_eq!(
+        rows(
+            "MATCH (n) UNWIND n.evidence_sources AS s WITH n, s WHERE s STARTS WITH 'calls/' \
+             RETURN DISTINCT n.graph AS g, n.title AS t ORDER BY g, t"
+        ),
+        [["one", "Alpha"], ["two", "Bravo"], ["two", "Delta"]]
+    );
+
+    let resource = home
+        .ok(&[
+            "node",
+            "add",
+            "--graph",
+            "two",
+            "--type",
+            "transcript",
+            "--locator",
+            "calls/t9.md",
+        ])
+        .data["node"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    node(
+        "one",
+        "Echo",
+        &["--evidence", &format!("umx:two/{resource}#L1")],
+    );
+    assert_eq!(
+        rows(
+            "MATCH (f) WHERE f.locator_source = 'calls/t9.md' MATCH (n) WHERE f.address IN n.evidence_sources \
+             RETURN n.graph AS g, n.title AS t"
+        ),
+        [["one", "Echo"]]
+    );
+
+    let token = format!("AKIA{}", "Q7Z3X9K2Q7Z3SRCS");
+    let (env, exit) = home.umx(&[
+        "node",
+        "add",
+        "--graph",
+        "two",
+        "--type",
+        "problem",
+        "--title",
+        "Foxtrot",
+        "--evidence",
+        &format!("keys/{token}.md#L1"),
+    ]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    let q = "MATCH (n) WHERE n.title = 'Foxtrot' RETURN n.evidence_sources AS s, n.title AS t";
+    let (env, _) = home.query(q, &both);
+    assert_eq!(
+        env.data["rows"][0]["secret_suspected"],
+        json!(["field:s"]),
+        "{}",
+        env.to_json()
+    );
+    let shown = home.human(&["query", q, "--graph", "one,two"]);
+    assert!(
+        !shown.contains("AKIA") && shown.contains("Foxtrot"),
+        "{shown}"
+    );
+}
+
+/// A node's and an edge's own `evidence_sources`, stored before umx reserved the name: kept on load with
+/// `evidence_sources_field_kept` (and in `umx check`), shown by `--columns all`, shadowed in `umx query` by the
+/// derived list, and removable with `--unset`; `--set` stays refused.
+#[test]
+fn a_stored_evidence_sources_field_is_kept_and_can_be_unset() {
+    let mut home = Home::new("kept-sources");
+    let path = home.graph();
+    let a = add_node(
+        &home,
+        "Alpha",
+        &["--evidence", "calls/t1.md#L1", "--set", "cites=old"],
+    );
+    let b = home.add("decision", "Bravo");
+    let edge = edge_id(&home.ok(&["edge", "add", &a, "blocks", &b, "--set", "cites=old"]));
+    for file in ["nodes.jsonl", "edges.jsonl"] {
+        let file = Path::new(&path).join(file);
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(text.contains("\"cites\""), "{text}");
+        fs::write(&file, text.replace("\"cites\"", "\"evidence_sources\"")).unwrap();
+    }
+    let loaded = home.ok(&["graph", "load", &path]);
+    let mut kept: Vec<String> = issues(&loaded, Code::EvidenceSourcesFieldKept)
+        .iter()
+        .map(|i| i.next().to_owned())
+        .collect();
+    kept.sort();
+    assert_eq!(
+        kept,
+        [
+            format!("umx edge edit {edge} --unset evidence_sources"),
+            format!("umx node edit {a} --unset evidence_sources"),
+        ],
+        "{}",
+        loaded.to_json()
+    );
+    let (check, _) = home.umx(&["check", "--graph", "demo"]);
+    assert!(
+        check.to_json().contains("evidence_sources_field_kept"),
+        "{}",
+        check.to_json()
+    );
+
+    let listed = home.ok(&["node", "list", "--columns", "all"]);
+    let row = listed.data["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == json!(a))
+        .unwrap();
+    assert_eq!(row["evidence_sources"], "old", "{}", listed.to_json());
+    let (env, _) = home.query(
+        "MATCH (n) WHERE n.title = 'Alpha' RETURN n.evidence_sources AS s",
+        &[],
+    );
+    assert_eq!(query_rows(&env), [["[calls/t1.md]"]]);
+
+    let (env, exit) = home.umx(&["node", "edit", &a, "--set", "evidence_sources=new"]);
+    assert_eq!(exit, 1, "{}", env.to_json());
+    issue(&env, Code::ReservedName);
+    let (env, exit) = home.umx(&["node", "edit", &b, "--unset", "evidence_sources"]);
+    assert_eq!(exit, 1, "a node without its own field: {}", env.to_json());
+    issue(&env, Code::ReservedName);
+
+    home.ok(&["node", "edit", &a, "--unset", "evidence_sources"]);
+    home.ok(&["edge", "edit", &edge, "--unset", "evidence_sources"]);
+    let (env, exit) = home.umx(&["graph", "load", &path]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    assert!(
+        issues(&env, Code::EvidenceSourcesFieldKept).is_empty(),
+        "{}",
+        env.to_json()
+    );
+    for file in ["nodes.jsonl", "edges.jsonl"] {
+        let text = fs::read_to_string(Path::new(&path).join(file)).unwrap();
+        assert!(!text.contains("evidence_sources"), "{text}");
+    }
+}

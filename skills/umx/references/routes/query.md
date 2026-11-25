@@ -66,6 +66,14 @@ locality, trust or secret rules.
 
        umx node list --type problem --columns id,title,evidence_kinds
 
+- **usage 224**: who cites a source is one query across graphs: `n.evidence_sources` and `r.evidence_sources`
+  list each live pointer's source as written (no selector), null when none. Prefix: `UNWIND n.evidence_sources AS
+  s WITH n, s WHERE s STARTS WITH '<prefix>' RETURN DISTINCT ...` (there is no `any(...)`). A pointer citing a
+  resource node by address needs a second hop: `MATCH (f) WHERE f.locator_source = '<file>' MATCH (n) WHERE
+  f.address IN n.evidence_sources`. Put the source in `--param-str`, never paste it. See `umx docs get evidence`.
+
+       umx query "MATCH (n) WHERE \$src IN n.evidence_sources RETURN n.graph AS g, n.id AS id, n.title AS title" --param-str src=calls/3-nov.vtt --all
+
 - Rows from the graph's shape: `umx walk <node> --depth N` gives `depth`, `from`, `relation` and `edge` per
   node reached, and `umx path <from> <to>` gives `step`, `relation`, `way` and `edge` per step, all as list
   rows with `--limit` and `--offset` where they page (`umx docs get explore`).

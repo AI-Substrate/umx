@@ -645,6 +645,9 @@ enum Prop {
     Authored(FieldIds),
     Edited(FieldIds),
     EvidenceKinds,
+    /// Each live evidence pointer's source as written, in pointer order; null when there is none. Decoded from the
+    /// line, as `evidence` is.
+    EvidenceSources,
     /// `tags` (ws008 t2b): in a std graph the canonical list from its tag index, so `'x' IN n.tags` matches a
     /// hand-edited value as a tag filter does; in a graph without std an ordinary custom field.
     Tags(FieldIds),
@@ -680,6 +683,7 @@ impl Prop {
             "authored_by_session" => Prop::Authored(fields()),
             "edited_by_session" => Prop::Edited(fields()),
             "evidence_kinds" => Prop::EvidenceKinds,
+            "evidence_sources" => Prop::EvidenceSources,
             umx_core::tags::TAGS => Prop::Tags(fields()),
             _ => Prop::Custom(fields()),
         }
@@ -688,7 +692,9 @@ impl Prop {
     /// The work one read costs: a field decoded from the line costs `COLD_FIELD_COST`, a column read 1.
     fn cost(&self) -> u64 {
         match self {
-            Prop::Cold(_) | Prop::Locator { cold: true, .. } => COLD_FIELD_COST,
+            Prop::Cold(_) | Prop::Locator { cold: true, .. } | Prop::EvidenceSources => {
+                COLD_FIELD_COST
+            }
             _ => 1,
         }
     }
@@ -812,6 +818,10 @@ impl<S: Space> Provider<'_, '_, S> {
             Prop::Authored(fields) => n.authored_by_session().map_or_else(|| custom(fields), id),
             Prop::Edited(fields) => n.edited_by_session().map_or_else(|| custom(fields), id),
             Prop::EvidenceKinds => CypherValue::List(n.evidence_kinds().map(text).collect()),
+            Prop::EvidenceSources => match self.view.cold_field(part, ix, "evidence") {
+                Some(umx_core::Value::Array(list)) => evidence_sources(&list),
+                _ => CypherValue::Null,
+            },
             Prop::Tags(_) if self.view.graph(part).std_tags() => {
                 let tags = self.view.graph(part).tags_of(n);
                 if tags.is_empty() {
@@ -846,6 +856,22 @@ impl<S: Space> Provider<'_, '_, S> {
                 CypherValue::Null
             }
         }
+    }
+}
+
+/// `evidence_sources` (who cites a source): each pointer's `source` as stored, in pointer order, null when none
+/// has one, as a node with no tags reads null. A redacted entry has no source and adds nothing; removed pointers and
+/// status-move evidence live elsewhere and are never read here.
+fn evidence_sources(evidence: &[umx_core::Value]) -> CypherValue {
+    let sources: Vec<CypherValue> = evidence
+        .iter()
+        .filter_map(|e| e.get("source")?.as_str())
+        .map(|s| CypherValue::Str(s.into()))
+        .collect();
+    if sources.is_empty() {
+        CypherValue::Null
+    } else {
+        CypherValue::List(sources)
     }
 }
 
@@ -1262,6 +1288,7 @@ impl<S: Space> GraphProvider for Provider<'_, '_, S> {
         match prop {
             "address" => CypherValue::Str(address(self.view.alias(part), e.id())),
             "graph" => CypherValue::Str(self.view.alias(part).to_string()),
+            "evidence_sources" => evidence_sources(&e.evidence()),
             _ => e
                 .field(prop)
                 .map_or(CypherValue::Null, |v| cypher_value(&v)),

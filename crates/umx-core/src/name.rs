@@ -14,6 +14,8 @@ pub const RESERVED_NODE_FIELDS: &[&str] = &[
     "note",
     "evidence",
     "evidence_kinds",
+    // Read-only in `umx query`: each pointer's source, so a custom field of that name never shadows it.
+    "evidence_sources",
     // req-126: the trail of removed evidence (`umx node evidence remove`), kept among the custom fields in name
     // order like edge F75's stamps, so an older umx keeps it byte for byte.
     EVIDENCE_REMOVED,
@@ -56,6 +58,7 @@ pub const RESERVED_EDGE_FIELDS: &[&str] = &[
     "to_selector",
     "evidence",
     "evidence_kinds",
+    "evidence_sources",
     EVIDENCE_REMOVED,
     "std",
     "created",

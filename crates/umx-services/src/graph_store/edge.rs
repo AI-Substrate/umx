@@ -667,9 +667,11 @@ pub(crate) fn plan_edge_edit(
         }
     }
     for name in &req.unsets {
-        // A custom `evidence` that is not an evidence list is only a field (req-124): it may be removed.
+        // A custom `evidence` that is not an evidence list is only a field (req-124), and an `evidence_sources` stored
+        // before umx reserved the name is the edge's own: either may be removed.
         if RESERVED_EDGE_FIELDS.contains(&name.as_str())
-            && !(name == "evidence" && fields.contains_key(name))
+            && !(matches!(name.as_str(), "evidence" | "evidence_sources")
+                && fields.contains_key(name))
         {
             return Err(problems::reserved_name(name));
         }

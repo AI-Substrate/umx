@@ -951,6 +951,7 @@ pub(crate) fn standard_field(name: &str) -> bool {
             | "note"
             | "evidence"
             | "evidence_kinds"
+            | "evidence_sources"
             | "status_history"
             | "created"
             | "updated"

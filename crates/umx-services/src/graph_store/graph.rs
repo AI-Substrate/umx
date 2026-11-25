@@ -663,6 +663,11 @@ impl GraphStore {
                 .map(problems::evidence_field_kept),
         );
         rules.extend(
+            kept_evidence_sources(&graph)
+                .into_iter()
+                .map(|(id, edge)| problems::evidence_sources_field_kept(id, edge)),
+        );
+        rules.extend(
             unknown_keys(&meta)
                 .iter()
                 .map(|path| problems::unknown_key(&alias, GraphFile::Graph, path)),
@@ -1034,6 +1039,19 @@ impl GraphStore {
             subject: edge.to_text(),
             lines: Vec::new(),
         }));
+        rows.extend(kept_evidence_sources(&graph).into_iter().map(|(id, edge)| {
+            CheckRow {
+                kind: "evidence_sources_field_kept",
+                file: if edge {
+                    GraphFile::Edges
+                } else {
+                    GraphFile::Nodes
+                }
+                .into(),
+                subject: id.to_text(),
+                lines: Vec::new(),
+            }
+        }));
         if let Some(reserved) = &nodes.graph_id_node {
             rows.push(CheckRow {
                 kind: "node_id_is_graph_id",
@@ -1247,4 +1265,26 @@ impl GraphStore {
             })
             .collect()
     }
+}
+
+/// Nodes, then edges, that hold their own custom `evidence_sources` field (a name umx reserved after they were
+/// written), each with whether it is an edge. A graph whose nodes never name the field is not scanned for nodes.
+fn kept_evidence_sources(graph: &umx_graph::Graph) -> Vec<(Id, bool)> {
+    const NAME: &str = "evidence_sources";
+    let mut out = Vec::new();
+    if graph.field_id(NAME).is_some() {
+        out.extend(
+            graph
+                .nodes()
+                .filter(|n| n.custom_field(NAME).is_some())
+                .map(|n| (n.id(), false)),
+        );
+    }
+    out.extend(
+        graph
+            .edges()
+            .filter(|e| e.field(NAME).is_some())
+            .map(|e| (e.id(), true)),
+    );
+    out
 }

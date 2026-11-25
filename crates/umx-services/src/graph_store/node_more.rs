@@ -501,7 +501,11 @@ pub(crate) fn edit_node(
         }
     }
     for field in &req.unsets {
-        if RESERVED_NODE_FIELDS.contains(&field.as_str()) {
+        // A node's own `evidence_sources`, stored before umx reserved the name, may be removed (as an edge's prose
+        // `evidence`, req-124).
+        if RESERVED_NODE_FIELDS.contains(&field.as_str())
+            && !(field == "evidence_sources" && n.fields.contains_key(field))
+        {
             return Err(problems::reserved_name(field));
         }
         check_name(field, "field name", &|g| edit().word("--unset").name(g))?;

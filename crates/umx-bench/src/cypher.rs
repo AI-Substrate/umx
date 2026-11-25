@@ -117,6 +117,24 @@ const DATE_QUERIES: [(&str, &str); 3] = [
     ),
 ];
 
+/// Who cites a source: every node's evidence sources decoded from its line (a cold read, as `n.note`), by
+/// membership and by prefix, next to a plain note read for scale. On the plain fixture no node has evidence.
+const EVIDENCE_QUERIES: [(&str, &str); 3] = [
+    (
+        "sources-in",
+        "MATCH (n) WHERE 'transcripts/call-007.ndjson' IN n.evidence_sources RETURN count(*) AS hits",
+    ),
+    (
+        "sources-prefix",
+        "MATCH (n) UNWIND n.evidence_sources AS s WITH n, s WHERE s STARTS WITH 'transcripts/call-00' \
+         RETURN count(DISTINCT n) AS hits",
+    ),
+    (
+        "note-read",
+        "MATCH (n) WHERE n.note STARTS WITH 'zz' RETURN count(*) AS hits",
+    ),
+];
+
 /// Entries per similar_to list in the injected lists: the default k.
 const SIMILAR_K: usize = 10;
 
@@ -199,6 +217,14 @@ pub fn measure(runs: usize, fx: &Fixture) -> Value {
             "dates".to_string(),
             id.to_string(),
             "tm2".to_string(),
+            cypher.to_string(),
+        ));
+    }
+    for (id, cypher) in EVIDENCE_QUERIES {
+        queries.push((
+            "evidence".to_string(),
+            id.to_string(),
+            "scan".to_string(),
             cypher.to_string(),
         ));
     }
