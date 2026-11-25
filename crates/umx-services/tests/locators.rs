@@ -199,7 +199,7 @@ fn a_duplicate_locator_after_a_merge_loads_warns_and_is_checked() {
             ("locator_not_normalised", Some(theirs.as_str())),
         ]
     );
-    let check = w.svc.check(&ctx().graph("demo"), None, false).unwrap();
+    let check = w.svc.check(&ctx().graph("demo"), None, None).unwrap();
     let rows: Vec<(&str, &str)> = check
         .value
         .page
@@ -241,7 +241,7 @@ fn a_custom_field_named_locator_loads_kept_warned_and_checked() {
         .map(|w| (w.code, w.subject.as_deref()))
         .collect();
     assert_eq!(codes, [("locator_field_kept", Some(id.as_str()))]);
-    let check = w.svc.check(&ctx().graph("demo"), None, false).unwrap();
+    let check = w.svc.check(&ctx().graph("demo"), None, None).unwrap();
     assert!(
         check
             .value
@@ -596,7 +596,7 @@ fn a_kept_locator_field_blocks_a_locator_and_unset_clears_it() {
 }
 
 /// Locator text is checked as an evidence source is (security S1 and a later review): absolute paths name the root:
-/// form, .. and URL credentials are refused, an unknown root says how to add it, and a source that looks like a secret
+/// form, .. past the repo and URL credentials are refused, an unknown root says how to add it, and a source that looks like a secret
 /// is held (secret_suspected).
 #[test]
 fn locator_text_is_checked_as_evidence_sources_are() {
@@ -618,8 +618,11 @@ fn locator_text_is_checked_as_evidence_sources_are() {
             .contains("--locator root:<name>/<path>"),
         "{outside:?}"
     );
+    // usage 223: a leading `..` may reach anywhere in the graph's repo (here /work), never past its top.
+    assert_eq!(refused(&mut w, "../../x.md").code, "evidence_outside_roots");
+    assert!(add(&mut w, "demo", "../x.md").is_ok());
     for text in [
-        "../x.md",
+        "docs/../../x.md",
         "https://user:pass@example.com/a",
         "docs/a\u{202E}dm.exe",
     ] {

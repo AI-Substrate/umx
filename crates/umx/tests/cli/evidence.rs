@@ -1852,3 +1852,121 @@ fn a_secured_graphs_former_alias_reads_as_unloaded_in_evidence() {
     assert_eq!(shown(&loaded), shown(&unloaded));
     assert!(!shown(&loaded).2, "{}", loaded.to_json());
 }
+
+/// Usage 220 (PROTOCOL 102): plain `umx check` reads the cited files again and warns about a changed and a missing
+/// one, with exit 0; `--sources` is accepted and gives the same reply; doctor's graph check counts them.
+#[test]
+fn plain_check_warns_about_changed_and_missing_cited_files_and_doctor_counts_them() {
+    let mut home = Home::new("check-src");
+    let path = home.graph();
+    let dir = Path::new(&path);
+    fs::write(dir.join("notes.md"), "first\n").unwrap();
+    fs::write(dir.join("brief.md"), "brief\n").unwrap();
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Cited",
+        "--evidence",
+        "notes.md#L1",
+        "--evidence",
+        "brief.md#L1",
+    ]);
+    let (clean, exit) = home.umx(&["check"]);
+    assert_eq!((clean.status, exit), (Status::Ok, 0), "{}", clean.to_json());
+    assert_eq!(clean.data["sources"]["checked"], 2, "{}", clean.to_json());
+
+    fs::write(dir.join("notes.md"), "edited\n").unwrap();
+    fs::remove_file(dir.join("brief.md")).unwrap();
+    let (found, exit) = home.umx(&["check"]);
+    assert_eq!(
+        (found.status, exit),
+        (Status::Warning, 0),
+        "{}",
+        found.to_json()
+    );
+    let codes: Vec<&str> = found.warnings.iter().map(|w| w.code()).collect();
+    assert_eq!(
+        codes,
+        ["source_changed", "source_missing"],
+        "{}",
+        found.to_json()
+    );
+    let rows: Vec<(&str, &str)> = found.data["sources"]["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["kind"].as_str().unwrap(), r["place"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("source_changed", "evidence:1"),
+            ("source_missing", "evidence:2")
+        ]
+    );
+    assert_eq!(
+        found.data["sources"]["graphs"],
+        json!([{ "graph": "demo", "changed": 1, "missing": 1, "skipped": 0 }])
+    );
+
+    let (alias, exit) = home.umx(&["check", "--sources"]);
+    assert_eq!(
+        (alias.data["sources"].clone(), exit),
+        (found.data["sources"].clone(), 0)
+    );
+
+    let (doctor, _) = home.umx(&["doctor"]);
+    let problems = doctor
+        .warnings
+        .iter()
+        .find(|i| i.code() == "doctor_graph_problems")
+        .unwrap_or_else(|| panic!("{}", doctor.to_json()));
+    assert_eq!(
+        problems.message(),
+        "Graph demo has 2 problems in its files or the files it cites."
+    );
+    assert!(
+        !doctor.to_json().contains("doctor_graph_sources"),
+        "{}",
+        doctor.to_json()
+    );
+}
+
+/// Review #74 note 1: a file cited small that grew past the 256 MiB cap is read only up to its stored length, so
+/// check reports it grew (a row, no warning), never missing. The file is sparse: nothing is written past the cite.
+#[test]
+fn a_cited_file_grown_past_the_cap_only_grew() {
+    let mut home = Home::new("grown-cap");
+    let path = home.graph();
+    let file = Path::new(&path).join("grown.md");
+    fs::write(&file, "cited\n").unwrap();
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Cited",
+        "--evidence",
+        "grown.md#L1",
+    ]);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_len(256 * 1024 * 1024 + 1)
+        .unwrap();
+    let (env, exit) = home.umx(&["check"]);
+    assert_eq!((env.status, exit), (Status::Ok, 0), "{}", env.to_json());
+    assert_eq!(
+        env.data["sources"]["rows"][0]["kind"],
+        "source_grew",
+        "{}",
+        env.to_json()
+    );
+    assert_eq!(env.data["sources"]["grew"], 1);
+    assert_eq!(env.data["sources"]["bytes"], 6);
+}

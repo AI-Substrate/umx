@@ -6,6 +6,18 @@ edge, in id order. Commit `graph.json`, `nodes.jsonl`, `edges.jsonl`, `embedding
 batch used `--idempotency-key`) and `.gitignore`; the
 `.umx-tmp-*` line keeps writes in progress out (`umx check` reports `gitignore_line_missing` if it goes).
 
+## Before you commit and push
+
+Check the graph first:
+
+    umx check --graph demo
+
+Besides the graph's own files, the check reads every local file the graph cites again. Fix what it reports before
+you commit. For `source_changed`, read what cites the file and check it still holds, then accept the file as it is
+now with `umx node evidence <node> refresh <pointer>` (or `refresh --at <i>`) or `umx resource refresh <node>`.
+For `source_missing`, restore the file, or fix or remove the pointer. Then commit and push. A refresh changes the
+graph's files too, so commit after it.
+
 ## Unload before git changes the files
 
 The daemon does not notice when git changes a loaded graph's files. After a checkout, pull, merge or rebase,

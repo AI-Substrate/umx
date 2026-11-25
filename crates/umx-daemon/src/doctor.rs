@@ -901,7 +901,7 @@ fn config_row(
 }
 
 /// Each graph the daemon has loaded: its folder resolves inside the roots and still holds graph.json, and `check`
-/// finds nothing in its files.
+/// finds nothing in its files or the files it cites (usage 220: changed and missing cited files are in its count).
 fn graphs(config: &Config, build: &Build, services: &umx_services::Services, rows: &mut Vec<Row>) {
     let list = Request::op(
         Op::GraphList {
@@ -926,7 +926,12 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
     if graphs.is_empty() {
         rows.push(Row::ok("graphs", "none loaded"));
     }
-    let totals = named_check(config, build, graphs);
+    // Usage 220: one byte budget for reading cited files over the whole run; past it they are not checked.
+    let mut budget = config.doctor_source_budget;
+    let totals = named_check(config, build, graphs, budget);
+    if let Some((_, read)) = &totals {
+        budget = budget.saturating_sub(*read);
+    }
     for g in graphs {
         let (Some(alias), Some(path)) = (g["alias"].as_str(), g["path"].as_str()) else {
             continue;
@@ -962,14 +967,15 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
         // answer, no count) is reported as not checked, never as clean (B1). Its next runs the check, which says why.
         // F113: the count comes from the one check that named every loaded graph; when that check is refused, each
         // graph is checked on its own, as before, so the one that fails is the one reported.
-        let total = totals
+        let counted = totals
             .as_ref()
-            .and_then(|t| t.get(alias).copied())
+            .and_then(|(t, _)| t.get(alias).copied())
             .or_else(|| {
                 let check = Request::op(
                     Op::Check {
                         lint: false,
                         sources: false,
+                        source_budget: Some(budget),
                         kind: None,
                         offset: None,
                     },
@@ -977,10 +983,15 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
                     None,
                     build.clone(),
                 );
-                ask(&config.socket, &check)
-                    .filter(|r| r.errors.is_empty())
-                    .and_then(|r| r.data["total"].as_u64())
+                let reply = ask(&config.socket, &check).filter(|r| r.errors.is_empty())?;
+                budget =
+                    budget.saturating_sub(reply.data["sources"]["bytes"].as_u64().unwrap_or(0));
+                let total = reply.data["total"].as_u64()?;
+                let (found, skipped) = sources_count(&reply.data, alias);
+                Some((total + found, skipped))
             });
+        let total = counted.map(|(n, _)| n);
+        let skipped = counted.map_or(0, |(_, s)| s);
         rows.push(match total {
             Some(0) => Row::ok("graph check", alias),
             Some(n) => Row::found(
@@ -997,21 +1008,20 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
                 Issue::fill(Code::DoctorGraphUnchecked, &[("graph", graph.clone())]),
             ),
         });
-        rows.push(sources_row(alias, graph.clone()));
+        if skipped > 0 {
+            rows.push(Row::found(
+                "graph sources",
+                alias,
+                Issue::fill(
+                    Code::DoctorGraphSourcesUnchecked,
+                    &[("graph", graph.clone()), ("count", Fill::count(skipped))],
+                ),
+            ));
+        }
         if let Some(row) = std_row(config, build, alias, graph) {
             rows.push(row);
         }
     }
-}
-
-/// Usage 220: each loaded graph's hint that doctor never reads the files it cites (that streams every file), with
-/// `umx check --graph <graph> --sources` as the command that does. Nothing is asked or read for it.
-fn sources_row(alias: &str, graph: Fill) -> Row {
-    Row::found(
-        "graph sources",
-        alias,
-        Issue::fill(Code::DoctorGraphSources, &[("graph", graph)]),
-    )
 }
 
 /// ws008 t5: a hint for a loaded graph made without std, whose next is adopt-std's dry run. Asked by `ontology show`
@@ -1036,15 +1046,20 @@ fn std_row(config: &Config, build: &Build, alias: &str, graph: Fill) -> Option<R
     })
 }
 
+/// Each graph's check count and the cited files the budget left unread, by alias.
+type Counts = std::collections::BTreeMap<String, (u64, u64)>;
+
 /// F113: each loaded graph's check count from one `umx check` that names every graph `graph list` returned, so links
 /// between loaded graphs resolve whatever their visibility (D53). Doctor names them only to count: its output carries
 /// counts, never a row's subject, and its next is the explicit `umx check --graph <name>` (security ruling b). None
 /// when there are fewer than two graphs, or the check is refused or gives no per-graph counts.
+/// With the counts, the cited-file bytes the check read (usage 220), taken from doctor's budget.
 fn named_check(
     config: &Config,
     build: &Build,
     graphs: &[Value],
-) -> Option<std::collections::BTreeMap<String, u64>> {
+    budget: u64,
+) -> Option<(Counts, u64)> {
     let aliases: Vec<&str> = graphs
         .iter()
         .filter_map(|g| g["alias"].as_str())
@@ -1057,6 +1072,7 @@ fn named_check(
         Op::Check {
             lint: false,
             sources: false,
+            source_budget: Some(budget),
             kind: None,
             offset: None,
         },
@@ -1066,12 +1082,33 @@ fn named_check(
     );
     let reply = ask(&config.socket, &check).filter(|r| r.errors.is_empty())?;
     let counted = reply.data["graphs"].as_array()?;
-    Some(
-        counted
-            .iter()
-            .filter_map(|g| Some((g["graph"].as_str()?.to_owned(), g["total"].as_u64()?)))
-            .collect(),
-    )
+    let read = reply.data["sources"]["bytes"].as_u64().unwrap_or(0);
+    let totals = counted
+        .iter()
+        .filter_map(|g| {
+            let graph = g["graph"].as_str()?;
+            let (found, skipped) = sources_count(&reply.data, graph);
+            Some((graph.to_owned(), (g["total"].as_u64()? + found, skipped)))
+        })
+        .collect();
+    Some((totals, read))
+}
+
+/// Usage 220: a graph's changed and missing cited files from check's `data.sources.graphs` (added to its count),
+/// and those the budget left unread.
+fn sources_count(data: &Value, graph: &str) -> (u64, u64) {
+    let n = |g: &Value, k: &str| g[k].as_u64().unwrap_or(0);
+    data["sources"]["graphs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|g| g["graph"].as_str() == Some(graph))
+        .fold((0, 0), |(found, skipped), g| {
+            (
+                found + n(g, "changed") + n(g, "missing"),
+                skipped + n(g, "skipped"),
+            )
+        })
 }
 
 /// The registry rows (F72), from the running daemon's status: whether it could use this machine's graph registry

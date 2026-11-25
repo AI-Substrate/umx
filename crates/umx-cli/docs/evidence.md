@@ -16,8 +16,13 @@ several). Each pointer is a source, `#`, and a selector:
     umx node note 01JC8XA4H7 --append "Raised in the call" --evidence 'calls/3-nov.vtt#seq=120-140' --evidence-kind room
 
 - **Sources.** A path relative to the graph's folder, an absolute path inside it, a path under a source root
-  (`root:<name>/<path>`, below), an `http(s)` URL or a umx address. Paths may not use `..` or start with `~`;
-  `file://` is refused (`evidence_outside_roots`). URLs are stored, never fetched. A umx address may end in a
+  (`root:<name>/<path>`, below), an `http(s)` URL or a umx address. Paths may not start with `~`, and `file://`
+  is refused (`evidence_outside_roots`). Relative paths may reach anywhere in the graph's repo (usage 223): a path
+  relative to the graph folder may start with `..` parts (`../../x/sources/a.ndjson`) when the graph is in a git
+  repo inside the roots (the folder `root:repo` names). It is resolved there with symlinks followed, and refused
+  with `evidence_outside_roots` when it climbs past the repo's top, a symlink leads out, or the graph is in no repo.
+  A `..` after another part, or in an absolute path, is refused. The pointer is stored as written; hashing, check
+  and refresh read it the same way. URLs are stored, never fetched. A umx address may end in a
   `?repo=<git url>` hint after its selectors (`umx:launch/<id>#L3-L4?repo=https://...`); it is kept on the
   stored source, never fetched. In any other source, `?repo=` is just text.
 - **Selectors.** `seq=<from>-<to>`, `L<from>-L<to>` (or `L<n>`), `section=<heading>/<subheading>` (a heading
@@ -97,13 +102,15 @@ found, so you can tell later whether the file changed (usage 220):
   fetched, nothing leaves the machine); `missing` (no file there); `unreadable` (a folder, or the system refused);
   `outside` (a symlink that leads out of the roots: never read); `too_large` (over 256 MiB: not read past it).
 - A local file that cannot be hashed never refuses the write: the pointer is stored with that state and the write
-  warns `source_not_hashed`, whose next is `umx check --graph <graph> --sources`.
-- `umx check --sources` reads each file again and reports `source_changed` and `source_missing` (see
-  `umx docs get graph`). To accept what a file holds now, run `umx node evidence <node> refresh '<pointer>'`,
+  warns `source_not_hashed`, whose next is `umx check --graph <graph>`.
+- Every `umx check` reads each file again and warns `source_changed` and `source_missing` (see
+  `umx docs get graph`). Changed means the first stored-`length` bytes hash differently, or the file is now shorter;
+  a file that only had bytes added after them is not changed (a `source_grew` row, no warning), so a transcript
+  that is still growing keeps its citations. Run it before you commit and push a graph (`umx docs get git`). To accept what a file holds now, run `umx node evidence <node> refresh '<pointer>'`,
   `refresh --at <i>` or `refresh --all` (every pointer; a refresh with none of these is refused). It hashes them
   again and writes the node only if a hash key changed, without changing its `updated`. It also hashes a pointer
   stored before umx hashed sources. A state without a hash (`missing`, `outside`, ...) is recorded as accepted
-  (`hash_accepted`), so `check --sources` leaves it out until it changes. A pointer whose `root:` is not usable on
+  (`hash_accepted`), so `check` leaves it out until it changes. A pointer whose `root:` is not usable on
   this machine is not read and keeps its stored hash, with `source_not_refreshed`. The reply lists each pointer with
   `changed` and `read`, and `hashed` lists every local source it read.
 - **Pointers you did not write.** A refresh reads the file each pointer names and writes its hash and length into

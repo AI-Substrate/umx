@@ -153,6 +153,7 @@ fn provenance_opt_in_reaches_each_read_and_raw_writes_are_refused() {
         umx_protocol::Op::Check {
             lint: false,
             sources: false,
+            source_budget: None,
             kind: None,
             offset: None,
         },

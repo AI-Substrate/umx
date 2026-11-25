@@ -130,7 +130,13 @@ pub struct Config {
     pub service_sandbox: bool,
     /// This process's effective uid, read once (the daemon's owner checks, launchd's `gui/<uid>` domain).
     pub uid: Option<u32>,
+    /// The bytes of cited files one `umx doctor` run reads (usage 220): [`DOCTOR_SOURCE_BUDGET`], or less with
+    /// `UMX_DOCTOR_SOURCE_BUDGET` (tests); never more.
+    pub doctor_source_budget: u64,
 }
+
+/// The most bytes of cited files one `umx doctor` run reads.
+pub const DOCTOR_SOURCE_BUDGET: u64 = 256 * 1024 * 1024;
 
 /// The service tool when `UMX_SERVICE_TOOL` is not set.
 pub fn default_service_tool() -> &'static str {
@@ -199,6 +205,7 @@ impl Config {
             service_tool: default_service_tool().to_owned(),
             service_sandbox: false,
             uid: umx_adapter_system::effective_uid(),
+            doctor_source_budget: DOCTOR_SOURCE_BUDGET,
             home,
             run_dir,
             socket,
@@ -388,6 +395,10 @@ impl Config {
             flowspace3_dir,
             service_tool: tool.unwrap_or_else(|| default_service_tool().to_owned()),
             service_sandbox,
+            doctor_source_budget: std::env::var("UMX_DOCTOR_SOURCE_BUDGET")
+                .ok()
+                .and_then(|b| b.trim().parse().ok())
+                .map_or(DOCTOR_SOURCE_BUDGET, |b: u64| b.min(DOCTOR_SOURCE_BUDGET)),
             ..Config::at(home, json)
                 .secrets_env(secrets_env)
                 .search_path(search_path)

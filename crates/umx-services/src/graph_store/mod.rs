@@ -124,8 +124,8 @@ pub(crate) use search::ReadScope;
 pub use secrets::{GraphKey, SecretAllowed, edge_secret_flags};
 pub use settings::GraphSet;
 pub use source_state::{
-    EvidenceRefreshed, RefreshPick, Refreshed, ResourceRefreshed, SOURCES_PAGE, SourceFinding,
-    SourceRow, SourcesChecked,
+    EvidenceRefreshed, GraphSources, RefreshPick, Refreshed, ResourceRefreshed, SOURCES_PAGE,
+    SourceFinding, SourceRow, SourcesChecked,
 };
 pub use spine::{
     InTheWay, InTheWayKind, SpineCandidate, SpineHint, SpineHints, SpineLine, SpineProposal,

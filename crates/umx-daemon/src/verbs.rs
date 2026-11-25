@@ -2781,9 +2781,10 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
         }
         Op::Check {
             lint,
-            sources,
             kind,
             offset,
+            source_budget,
+            ..
         } => {
             let request = match lint_request(*lint, kind.as_deref(), *offset) {
                 Ok(request) => request,
@@ -2791,7 +2792,7 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             };
             reply(
                 command,
-                services.check(&ctx, request.as_ref(), *sources),
+                services.check(&ctx, request.as_ref(), *source_budget),
                 check_json,
             )
         }
@@ -3805,14 +3806,10 @@ fn retry(op: &Op) -> Command {
             })
         }
         Op::Check {
-            lint,
-            sources,
-            kind,
-            offset,
+            lint, kind, offset, ..
         } => {
             let c = Command::new("check");
             let c = if *lint { c.word("--lint") } else { c };
-            let c = if *sources { c.word("--sources") } else { c };
             let c = match kind.as_deref().and_then(umx_services::LintKind::parse) {
                 Some(k) => c.word("--kind").word(k.as_str()),
                 None => c,
@@ -5283,7 +5280,8 @@ fn spine_json(p: &SpineProposal) -> Value {
     v
 }
 
-/// `umx check`'s data: its rows, `graphs` for a list or scope, `spines`, and `lint` with `--lint` (F139).
+/// `umx check`'s data: its rows, `graphs` for a list or scope, `spines`, `sources` (usage 220), and `lint` with
+/// `--lint` (F139).
 fn check_json(checked: &umx_services::Checked) -> Value {
     let page = &checked.page;
     // F113: with a list or scope, each row names the graph it was found in, and `graphs` counts each one.
@@ -5317,9 +5315,7 @@ fn check_json(checked: &umx_services::Checked) -> Value {
     if let Some(lint) = &checked.lint {
         v["lint"] = lint_json(lint);
     }
-    if let Some(sources) = &checked.sources {
-        v["sources"] = sources_json(sources);
-    }
+    v["sources"] = sources_json(&checked.sources);
     v["spines"] = json!(
         checked
             .spines
@@ -5354,6 +5350,17 @@ fn sources_json(sources: &umx_services::SourcesChecked) -> Value {
         "unchecked": sources.unchecked,
         "changed": sources.changed,
         "missing": sources.missing,
+        "grew": sources.grew,
+        "too_large": sources.too_large,
+        "skipped": sources.skipped,
+        "bytes": sources.bytes,
+        "graphs": sources
+            .graphs
+            .iter()
+            .map(|g| {
+                json!({ "graph": g.graph, "changed": g.changed, "missing": g.missing, "skipped": g.skipped })
+            })
+            .collect::<Vec<_>>(),
     })
 }
 

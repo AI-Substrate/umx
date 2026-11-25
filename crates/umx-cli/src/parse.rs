@@ -999,6 +999,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             return Ok(Op::Check {
                 lint,
                 sources,
+                source_budget: None,
                 kind,
                 offset,
             }

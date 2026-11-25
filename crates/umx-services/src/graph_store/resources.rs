@@ -210,7 +210,7 @@ pub(crate) fn checked_locator(
             problems::locator_absolute(fix.word("--locator").word(form))
         }
     })?;
-    if locator.source.starts_with("root:") {
+    if locator.source.starts_with("root:") || locator.source.starts_with("..") {
         sources.check(dir, &[pointer(&locator.source)])?;
     }
     let mut locator = locator;

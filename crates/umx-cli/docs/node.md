@@ -223,7 +223,7 @@ the removing session in the entry's own `by_session`; see `umx docs get evidence
   and a place, never the text or a custom field's name: edit those, then redact again. `--reason` may not hold any
   part of the pointer or look like a secret. `--at` does not apply.
 - `refresh '<pointer>'`, `refresh --at <n>` or `refresh --all` (usage 220) hashes the named pointer's source again,
-  or every pointer's, and keeps what it holds now: the way to accept a `source_changed` from `umx check --sources`.
+  or every pointer's, and keeps what it holds now: the way to accept a `source_changed` from `umx check`.
   One of the three is required: a shared graph may hold pointers you did not write, so a refresh never reads every
   file unasked. The reply lists each pointer (`changed`, `read`) and `hashed`, every local source read. See
   `umx docs get evidence`.

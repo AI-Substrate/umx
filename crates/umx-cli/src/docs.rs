@@ -38,7 +38,7 @@ const TOPICS: &[Topic] = &[
     Topic {
         name: "git",
         title: "Graphs in git",
-        summary: "Committing a graph folder: stable bytes and diffs, unloading before git changes the files, merging two branches' edits, duplicate_id and dangling_edge, umx check.",
+        summary: "Committing a graph folder: stable bytes and diffs, unloading before git changes the files, merging two branches' edits, duplicate_id and dangling_edge, umx check before you commit and push.",
         markdown: || include_str!("../docs/git.md").to_owned(),
     },
     Topic {

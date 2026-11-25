@@ -62,8 +62,8 @@ pub use graph_store::{
 };
 pub use graph_store::{EvidenceAdded, EvidenceListed, EvidenceRemoved, EvidenceRow, Redacted};
 pub use graph_store::{
-    EvidenceRefreshed, RefreshPick, Refreshed, ResourceRefreshed, SOURCES_PAGE, SourceFinding,
-    SourceRow, SourcesChecked,
+    EvidenceRefreshed, GraphSources, RefreshPick, Refreshed, ResourceRefreshed, SOURCES_PAGE,
+    SourceFinding, SourceRow, SourcesChecked,
 };
 pub use graph_store::{FolderState, GraphForgotten, IndexRow, Moved, PrimarySet, Renamed};
 pub use graph_store::{GraphKey, edge_secret_flags};
@@ -1285,9 +1285,15 @@ impl Services {
         }
     }
 
-    /// `umx check`, with `--lint` (F139) when `lint` is given and `--sources` (usage 220) when `sources`.
-    pub fn check(&self, ctx: &Ctx, lint: Option<&LintRequest>, sources: bool) -> Outcome<Checked> {
-        self.graph.check(ctx, lint, sources)
+    /// `umx check`, with `--lint` (F139) when `lint` is given. It always reads the cited files again (usage 220),
+    /// stopping after `source_budget` bytes when one is given (doctor's).
+    pub fn check(
+        &self,
+        ctx: &Ctx,
+        lint: Option<&LintRequest>,
+        source_budget: Option<u64>,
+    ) -> Outcome<Checked> {
+        self.graph.check(ctx, lint, source_budget)
     }
 
     pub fn graph_unload(&mut self, ctx: &Ctx, alias: &str) -> Outcome<GraphUnloaded> {

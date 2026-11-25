@@ -1320,6 +1320,7 @@ impl SourceReader for FakeSourceReader {
         root: &GraphDir,
         path: &str,
         transcript: Option<umx_core::source_hash::Transcript>,
+        prefix: Option<u64>,
     ) -> Result<umx_core::source_hash::SourceDigest, SourceError> {
         self.check_path(root, path)?;
         let mut at = root.clone();
@@ -1340,11 +1341,15 @@ impl SourceReader for FakeSourceReader {
             None if self.open => Vec::new(),
             None => return Err(SourceError::Missing),
         };
-        if bytes.len() as u64 > umx_core::source_hash::SOURCE_MAX_BYTES {
+        let max = umx_core::source_hash::SOURCE_MAX_BYTES;
+        let prefix = prefix.filter(|n| *n <= max);
+        if prefix.is_none() && bytes.len() as u64 > max {
             return Err(SourceError::TooLarge);
         }
         self.digests.fetch_add(1, Ordering::SeqCst);
-        Ok(umx_core::source_hash::digest(&bytes, transcript))
+        Ok(umx_core::source_hash::digest_read(
+            &bytes, transcript, prefix,
+        ))
     }
 }
 

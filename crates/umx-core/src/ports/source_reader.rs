@@ -1,7 +1,7 @@
 //! SourceReader port (c-port-source-reader; req-47, workshop 010): the files evidence and resources cite. S1 of
 //! workstream 006 needs only confinement: a source root must canonicalise to an existing folder inside the roots,
 //! and a path under it must not lead out (security ruling ws006 S1). [`SourceReader::digest`] reads one file, as
-//! a stream, to hash it when a reference is added and when `umx check --sources` looks again (usage 220): only the
+//! a stream, to hash it when a reference is added and when `umx check` looks again (usage 220): only the
 //! digest leaves the port, never the bytes.
 
 use crate::ports::GraphDir;
@@ -58,11 +58,15 @@ pub trait SourceReader: Send + Sync {
     /// The digest of the file at `path` under the canonical `root`, read as a stream and never kept: confined as
     /// [`check_path`](SourceReader::check_path) confines (`OutsideRoots`, nothing read), then `Missing` when
     /// nothing is there, `NotFile` for a folder, `TooLarge` past [`crate::source_hash::SOURCE_MAX_BYTES`] (never
-    /// streamed past it), `Io` when the system refuses.
+    /// streamed past it), `Io` when the system refuses. With `prefix` (at most the cap), only the first
+    /// `min(prefix, length)` bytes are read, whatever the file's size: `hash` and `seq_max` cover them, the digest's
+    /// `prefix` hashes them when the file holds that many, and `length` is the file's (a check comparing with a
+    /// stored hash and length, usage 220).
     fn digest(
         &self,
         root: &GraphDir,
         path: &str,
         transcript: Option<Transcript>,
+        prefix: Option<u64>,
     ) -> Result<SourceDigest, SourceError>;
 }

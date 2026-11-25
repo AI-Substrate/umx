@@ -70,8 +70,8 @@ pub struct Checked {
     pub spines: Vec<(String, super::SpineLine)>,
     /// `--lint` (F139): what the lint found in the checked graphs; None without `--lint`.
     pub lint: Option<super::lint::Lint>,
-    /// `--sources` (usage 220): cited files that changed or cannot be read; None without `--sources`.
-    pub sources: Option<super::source_state::SourcesChecked>,
+    /// Usage 220: the checked graphs' cited files that changed or cannot be read. Every check reads them.
+    pub sources: super::source_state::SourcesChecked,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -811,7 +811,8 @@ impl GraphStore {
     }
 
     /// `umx check`: reads the selected graph's files from disk (the truth, req-01), not the working copy, and lists
-    /// repeated ids (req-67) and unknown graph.json keys. Lines are as the files hold them now.
+    /// repeated ids (req-67) and unknown graph.json keys. Lines are as the files hold them now. It also reads again
+    /// every local file the graph's nodes cite (usage 220) and warns `source_changed` and `source_missing`.
     ///
     /// F113: with `--graph a,b` or `--scope`, every graph in scope is checked, and the whole list or scope is the
     /// named set (d-20, d-21), so links between them resolve whatever their visibility. Each checked graph whose
@@ -821,7 +822,7 @@ impl GraphStore {
         &self,
         ctx: &Ctx,
         lint: Option<&super::lint::LintRequest>,
-        sources: bool,
+        source_budget: Option<u64>,
     ) -> Outcome<Checked> {
         let single = ctx.scope.is_none() && !ctx.graph.as_deref().is_some_and(|g| g.contains(','));
         if single {
@@ -840,11 +841,8 @@ impl GraphStore {
                 warnings.extend(hints);
                 found
             });
-            let sources = sources.then(|| {
-                let (found, hints) = self.check_sources(&[(alias.as_str(), &read)]);
-                warnings.extend(hints);
-                found
-            });
+            let (sources, found) = self.check_sources(&[(alias.as_str(), &read)], source_budget);
+            warnings.extend(found);
             let total = rows.len();
             return Ok(Done {
                 value: Checked {
@@ -901,12 +899,9 @@ impl GraphStore {
             warnings.extend(hints);
             found
         });
-        let sources = sources.then(|| {
-            let checked: Vec<_> = read.iter().map(|(a, g, _)| (*a, g)).collect();
-            let (found, hints) = self.check_sources(&checked);
-            warnings.extend(hints);
-            found
-        });
+        let checked: Vec<_> = read.iter().map(|(a, g, _)| (*a, g)).collect();
+        let (sources, found) = self.check_sources(&checked, source_budget);
+        warnings.extend(found);
         // As node list does: a saved scope's member and copy warnings, and secured graphs left out
         // (graph-addressing-expert N3).
         warnings.extend(self.scope_warnings(&scope)?);

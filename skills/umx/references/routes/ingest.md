@@ -51,17 +51,22 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    words, dates and versions are not flagged; one that warns holds a random part or a named key. Long camelCase
    or PascalCase names such as column names are not flagged either (usage 164); `UTCFor`-style acronym runs still are.
 
-9. **usage 106**: a source outside the graph's folder is cited through a source root, never `..` or an
-   absolute path. Files in the same git repository as the graph: `root:repo/<path>`, no setup. Anything else:
+9. **usage 106**: a source outside the graph's folder is cited through a source root, never an absolute path.
+   Files in the same git repository as the graph: `root:repo/<path>`, no setup, or (**usage 223**) a relative path
+   starting with `..` (`../../x/sources/a.ndjson`), which may reach anywhere in the repo and never past its top
+   (`evidence_outside_roots`; a graph in no repo refuses `..`). Anything else:
    ask the human for the folder (it must be inside the roots), add it once with `umx root add <name> <folder>`,
    then cite `root:<name>/<path>#<selector>`. `root_unknown` names the missing root; `umx root list` shows each
    root and whether it can be used now.
 10. **usage 220**: a cited local file (evidence or locator) is hashed when it is cited: `hash`, `length`,
    `seq_max` for a transcript, and `hash_state`. A missing or unreadable file still writes, with
-   `source_not_hashed`. Later, `umx check --graph <alias> --sources` reports `source_changed` and `source_missing`;
+   `source_not_hashed`. Later, every `umx check --graph <alias>` warns `source_changed` (edited within the stored
+   length, or shorter) and `source_missing`; a file that only grew is not flagged;
    check what cites a changed file still holds, then accept it with `umx node evidence <node> refresh --at <i>` or
    `umx resource refresh <node>` (a bare refresh is refused; `--all` lists what it read in `hashed`, so check it on a
    graph someone else wrote). URLs and `umx:` sources are never fetched.
+11. **usage 222**: before you commit and push the graph, run `umx check --graph <alias>`, fix or refresh what it
+   reports (`umx node evidence <node> refresh <pointer>`, `umx resource refresh <node>`), then commit.
 
 New types or relations the source needs: declare them as you go (usage 007).
 

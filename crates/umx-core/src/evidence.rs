@@ -150,8 +150,18 @@ fn check_source(source: &str, graph: &GraphDir) -> Result<(), PointerError> {
     if source.contains('\0') || source.contains('\\') {
         return Err(PointerError::Invalid("the path has a NUL or backslash"));
     }
-    if source.starts_with('~') || source.split('/').any(|part| part == "..") {
+    if source.starts_with('~') {
         return Err(PointerError::OutsideRoots);
+    }
+    // A relative path may climb with leading `..` parts (usage 223): the write then confines it to the graph's git
+    // repo. A `..` anywhere else, or in an absolute path, is refused.
+    match climb(source) {
+        Some((ups, _)) if ups > 0 && source.starts_with('/') => {
+            return Err(PointerError::OutsideRoots);
+        }
+        Some((_, "")) => return Err(PointerError::Invalid("the path is empty")),
+        Some(_) => {}
+        None => return Err(PointerError::OutsideRoots),
     }
     if source.starts_with('/') {
         let inside = GraphDir::parse(source).is_ok_and(|p| p.is_within(graph));
@@ -160,6 +170,23 @@ fn check_source(source: &str, graph: &GraphDir) -> Result<(), PointerError> {
         }
     }
     Ok(())
+}
+
+/// A relative path's leading `..` parts and the rest after them (`./` and empty parts skipped): `../../x/a.md` is
+/// `(2, "x/a.md")`. None when a `..` comes after another part, which is never resolved.
+pub fn climb(path: &str) -> Option<(usize, &str)> {
+    let mut ups = 0;
+    let mut rest = path;
+    loop {
+        let (part, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        match part {
+            ".." => ups += 1,
+            "" | "." if rest.contains('/') => {}
+            _ => break,
+        }
+        rest = tail;
+    }
+    (!rest.split('/').any(|p| p == "..")).then_some((ups, rest))
 }
 
 /// `<name>/<path>` after `root:`.
@@ -336,9 +363,18 @@ mod tests {
 
     #[test]
     fn escapes_and_file_urls_are_outside_roots() {
+        // A leading `..` parses (usage 223); the write confines it to the graph's repo.
+        assert_eq!(
+            ok("../../x/sources/a.ndjson#seq=1")["source"],
+            "../../x/sources/a.ndjson"
+        );
+        assert_eq!(climb("./../../x/a.md"), Some((2, "x/a.md")));
+        assert_eq!(climb("x/a.md"), Some((0, "x/a.md")));
+        assert_eq!(climb("../x/../a.md"), None);
         for p in [
-            "../x.md#L1",
             "a/../../x.md#L1",
+            "/work/../x.md#L1",
+            "/../x.md#L1",
             "/etc/passwd#L1",
             "/work/repo/graphs/x#L1",
             "file:///work/repo/graph/a.md#L1",

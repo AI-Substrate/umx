@@ -1175,7 +1175,7 @@ mod cross_graph_reads {
             resolved.target,
             Some(umx_services::Target::Node(virtual_node))
         );
-        let check = w.svc.check(&ctx().graph("collision"), None, false).unwrap();
+        let check = w.svc.check(&ctx().graph("collision"), None, None).unwrap();
         let row = check
             .value
             .page
@@ -3016,7 +3016,7 @@ mod external_edges {
         let adjacent = neighbours(&w, "demo", a);
         let checked = w
             .svc
-            .check(&ctx().graph("demo"), None, false)
+            .check(&ctx().graph("demo"), None, None)
             .unwrap()
             .value
             .page
@@ -3029,7 +3029,7 @@ mod external_edges {
         assert_eq!(neighbours(&w, "demo", a), adjacent);
         assert_eq!(
             w.svc
-                .check(&ctx().graph("demo"), None, false)
+                .check(&ctx().graph("demo"), None, None)
                 .unwrap()
                 .value
                 .page
@@ -3137,7 +3137,7 @@ mod external_edges {
         assert_eq!(neighbours(&w, "demo", a)[0].state, Some("edge_broken"));
         assert!(
             w.svc
-                .check(&ctx().graph("demo"), None, false)
+                .check(&ctx().graph("demo"), None, None)
                 .unwrap()
                 .value
                 .page
@@ -5433,7 +5433,7 @@ fn a_repeated_id_loads_with_a_warning_and_every_line_survives_writes() {
             Some("umx check --graph demo")
         )
     );
-    let rows = fresh.check(&ctx(), None, false).unwrap().value.page.rows;
+    let rows = fresh.check(&ctx(), None, None).unwrap().value.page.rows;
     assert_eq!(
         (
             rows[0].kind,
@@ -5496,7 +5496,7 @@ fn a_repeated_id_loads_with_a_warning_and_every_line_survives_writes() {
     assert_eq!(text.lines().count(), original_lines + 2);
 
     // umx check reads the files as they are now: the writes put nodes.jsonl in order.
-    let rows = fresh.check(&ctx(), None, false).unwrap().value.page.rows;
+    let rows = fresh.check(&ctx(), None, None).unwrap().value.page.rows;
     assert_eq!(rows.len(), 1);
     assert_eq!(
         (
@@ -5646,7 +5646,7 @@ fn unknown_ontology_keys_survive_a_load_and_a_write() {
     assert_eq!(codes(&done.notes), ["unknown_key", "unknown_key"]);
     let keys: Vec<_> = done.notes.iter().map(|p| p.slot("key").unwrap()).collect();
     assert_eq!(keys, ["ontology.descriptions", "ontology.types.colour"]);
-    let rows = fresh.check(&ctx(), None, false).unwrap().value.page.rows;
+    let rows = fresh.check(&ctx(), None, None).unwrap().value.page.rows;
     assert_eq!(rows.len(), 2);
     fresh.ontology_add_status(&ctx(), "parked", None).unwrap();
     let after: serde_json::Value =
@@ -6032,7 +6032,7 @@ fn a_dangling_edge_is_kept_reported_and_left_out_until_its_node_returns() {
         Some(0),
         "not an edge of the loaded graph"
     );
-    let rows = fresh.check(&ctx(), None, false).unwrap().value.page.rows;
+    let rows = fresh.check(&ctx(), None, None).unwrap().value.page.rows;
     assert_eq!(
         (rows[0].kind, rows[0].lines.clone()),
         ("dangling_edge", vec![dangling_line])
@@ -6223,7 +6223,7 @@ fn the_embedding_policy_and_unknown_embedding_keys_survive_a_load_and_a_write() 
         Some("embedding.colour")
     );
     assert_eq!(
-        fresh.check(&ctx(), None, false).unwrap().value.page.rows[0].subject,
+        fresh.check(&ctx(), None, None).unwrap().value.page.rows[0].subject,
         "embedding.colour"
     );
     fresh.ontology_add_status(&ctx(), "parked", None).unwrap();
@@ -6415,7 +6415,7 @@ fn a_cut_off_write_whose_files_changed_is_a_recovery_conflict_on_load_and_in_che
     add_under(&mut w.svc, "Child", parent).unwrap();
     w.files.fail_sync(false);
     w.files.tamper_for_tests(&g, GraphFile::Nodes, b"pulled\n");
-    let rows = w.svc.check(&ctx(), None, false).unwrap().value.page.rows;
+    let rows = w.svc.check(&ctx(), None, None).unwrap().value.page.rows;
     assert_eq!(rows.len(), 1);
     assert_eq!(
         (rows[0].kind, rows[0].file.clone()),
@@ -7266,7 +7266,7 @@ mod symmetric {
             (done.value.graph.edges, done.value.graph.kept_lines),
             (1, 1)
         );
-        let rows = fresh.check(&ctx(), None, false).unwrap().value.page.rows;
+        let rows = fresh.check(&ctx(), None, None).unwrap().value.page.rows;
         assert_eq!(
             (rows[0].kind, rows[0].lines.clone()),
             ("symmetric_duplicate", vec![reversed_line])

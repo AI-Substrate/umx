@@ -123,7 +123,7 @@ pub struct Locator {
     /// locator stored before umx hashed sources. Kept as text so a state a newer umx adds loads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hash_state: Option<String>,
-    /// A refresh accepted `hash_state` without a hash (usage 220): `check --sources` skips it while it holds.
+    /// A refresh accepted `hash_state` without a hash (usage 220): `umx check` skips it while it holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hash_accepted: Option<bool>,
     #[serde(flatten)]
@@ -263,10 +263,11 @@ pub fn normalise(text: &str) -> Result<(LocatorKind, String), SourceError> {
                 "a root name is lower snake case and at most 32 characters",
             ));
         }
-        let path = relative_path(path, SourceError::OutsideRoots)?;
+        let path = relative_path(path, SourceError::OutsideRoots, false)?;
         return Ok((kind, alloc::format!("root:{name}/{path}")));
     }
-    Ok((kind, relative_path(text, SourceError::Absolute)?))
+    // A graph-folder path may climb with leading `..` (usage 223); the write confines it to the graph's repo.
+    Ok((kind, relative_path(text, SourceError::Absolute, true)?))
 }
 
 /// A character that can hide or reorder what a reader sees (security, N2): controls (C0, DEL, C1), bidi
@@ -303,7 +304,7 @@ pub fn repo_path(text: &str) -> Result<String, SourceError> {
     if text == "." {
         return Ok(text.to_string());
     }
-    relative_path(text, SourceError::Absolute)
+    relative_path(text, SourceError::Absolute, false)
 }
 
 /// `text` without its leading `./` parts.
@@ -319,13 +320,14 @@ fn strip_dots(mut text: &str) -> &str {
 /// form. Absolute and home paths are refused, and so is a first part holding `:` (a scheme, a drive, or `root:`
 /// behind a `./`; graph-addressing-expert). A leading `/` is `rooted`: absolute in
 /// the graph folder, outside the root in a root.
-fn relative_path(path: &str, rooted: SourceError) -> Result<String, SourceError> {
+/// `up` lets the path start with `..` parts, kept as written.
+fn relative_path(path: &str, rooted: SourceError, up: bool) -> Result<String, SourceError> {
     let path = strip_dots(path);
     if path.starts_with('/') {
         return Err(rooted);
     }
-    let path = normal_path(path)?;
-    let first = path.split('/').next().unwrap_or_default();
+    let path = normal_path(path, up)?;
+    let first = path.split('/').find(|p| *p != "..").unwrap_or_default();
     if first.starts_with('~') {
         return Err(SourceError::OutsideRoots);
     }
@@ -337,17 +339,19 @@ fn relative_path(path: &str, rooted: SourceError) -> Result<String, SourceError>
     Ok(path)
 }
 
-/// Joins a relative path's parts with one `/`, dropping empty and `.` parts; `..` is refused.
-fn normal_path(path: &str) -> Result<String, SourceError> {
+/// Joins a relative path's parts with one `/`, dropping empty and `.` parts; `..` is refused, except leading ones
+/// when `up`.
+fn normal_path(path: &str, up: bool) -> Result<String, SourceError> {
     let mut parts = Vec::new();
     for part in path.split('/') {
         match part {
             "" | "." => {}
+            ".." if up && parts.iter().all(|p| *p == "..") => parts.push(part),
             ".." => return Err(SourceError::OutsideRoots),
             part => parts.push(part),
         }
     }
-    if parts.is_empty() {
+    if parts.iter().all(|p| *p == "..") {
         return Err(SourceError::Invalid("the path is empty"));
     }
     Ok(parts.join("/"))
@@ -409,6 +413,7 @@ mod tests {
             ("docs/brief.md", File, "docs/brief.md"),
             ("./docs//brief.md", File, "docs/brief.md"),
             ("docs/./brief.md", File, "docs/brief.md"),
+            ("./../..//x/a.md", File, "../../x/a.md"),
             ("transcripts/", Folder, "transcripts"),
             ("root:repo/specs/a.md", File, "root:repo/specs/a.md"),
             ("root:repo/specs//./a.md", File, "root:repo/specs/a.md"),
@@ -443,7 +448,9 @@ mod tests {
         for (text, err) in [
             ("/abs/path.md", SourceError::Absolute),
             ("file:///etc/passwd", SourceError::Absolute),
-            ("../outside.md", SourceError::OutsideRoots),
+            // usage 223: leading `..` parses (the write confines it to the graph's repo); any other `..` is refused.
+            ("../a/../x", SourceError::OutsideRoots),
+            ("../~/x", SourceError::OutsideRoots),
             ("docs/../../x", SourceError::OutsideRoots),
             ("~/notes.md", SourceError::OutsideRoots),
             ("root:acme/../x", SourceError::OutsideRoots),

@@ -123,7 +123,10 @@ Job: get from an error to a working command, or settle what a merge left in a gr
 13. **usage 145**: `secured_shards_remain` (a graph tightened from open still has its old `embeddings/` and `similar/`
    files in its folder): report the warning and its listed paths to the person and stop. Never delete or commit
    them, rewrite history, or set the graph back to open. umx re-embeds into the cache by itself.
-14. **usage 188**: before sharing a graph, run `umx check --graph <alias> --lint`: read-only hints for orphans,
+14. **usage 222**: before you commit and push a graph, run `umx check --graph <alias>` and fix or refresh what it
+   reports; it also warns `source_changed` and `source_missing` for cited files (`umx docs get git`). In
+   `umx doctor` they count in `doctor_graph_problems`.
+   **usage 188**: before sharing a graph, run `umx check --graph <alias> --lint`: read-only hints for orphans,
    proposed nodes holding an `entity_key`, words from this machine's lint terms file, "lacks no" titles and
    `raised_in` links whose evidence sits elsewhere. `data.lint.rows` names each node and place; follow each
    hint's next, and page a kind with `--kind <kind> --offset <n>`. Never put credentials in the terms file.

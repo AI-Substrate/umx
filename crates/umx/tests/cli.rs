@@ -1876,7 +1876,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
                     let plain = home.add("problem", "Plain");
                     home.umx(&["resource", "show", &plain])
                 }
-                Code::LocatorInvalid => add("../outside.md"),
+                Code::LocatorInvalid => add("docs/../../outside.md"),
                 _ => add("/etc/hosts"),
             }
         }
@@ -2733,7 +2733,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
             let path = home.graph();
             source_cited(&home, &path);
             fs::write(Path::new(&path).join("notes.md"), "edited\n").unwrap();
-            home.umx(&["check", "--sources"])
+            home.umx(&["check"])
         }
         Code::SourceNotRefreshed => {
             home.graph();
@@ -2759,7 +2759,7 @@ fn trigger(code: Code) -> (Envelope, u8) {
             let path = home.graph();
             source_cited(&home, &path);
             fs::remove_file(Path::new(&path).join("notes.md")).unwrap();
-            home.umx(&["check", "--sources"])
+            home.umx(&["check"])
         }
         Code::SpineNameUnknown => {
             home.graph();
@@ -3322,9 +3322,10 @@ fn trigger(code: Code) -> (Envelope, u8) {
             fs::remove_dir_all(&path).unwrap();
             home.umx(&["doctor"])
         }
-        Code::DoctorGraphSources => {
-            home.graph();
-            home.umx(&["doctor"])
+        Code::DoctorGraphSourcesUnchecked => {
+            let path = home.graph();
+            source_cited(&home, &path);
+            home.umx_with(&["doctor"], &[("UMX_DOCTOR_SOURCE_BUDGET", "0")])
         }
         Code::DoctorGraphNotStd => {
             home.start();

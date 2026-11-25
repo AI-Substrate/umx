@@ -1,6 +1,6 @@
 //! Source hashes (usage 220): when a write adds an evidence pointer or a resource locator whose source is a local
 //! file, umx stores the file's sha256, its length in bytes and, for a transcript, the highest sequence number it
-//! holds, so `umx check --sources` can tell later whether the file changed. Pure: the SourceReader port streams the
+//! holds, so `umx check` can tell later whether the file changed. Pure: the SourceReader port streams the
 //! bytes into a [`Digester`]; nothing here reads a file, and nothing keeps its content.
 
 use crate::models::FileHasher;
@@ -60,7 +60,7 @@ impl HashState {
         HashState::ALL.into_iter().find(|s| s.as_str() == text)
     }
 
-    /// A local file umx tried to read: `check --sources` reads it again.
+    /// A local file umx tried to read: `umx check` reads it again.
     pub fn is_local(self) -> bool {
         self != HashState::Remote
     }
@@ -99,11 +99,17 @@ pub struct SourceDigest {
     pub length: u64,
     /// For a transcript only: see [`Transcript`]. None when no line held a number.
     pub seq_max: Option<u64>,
+    /// The `sha256:<hex>` of the first `prefix` bytes, when a prefix was asked for and the file holds that many:
+    /// what a check compares with a stored hash, so a file that only grew is not changed (usage 220). A reader asked
+    /// for a prefix reads only those bytes: `hash` and `seq_max` then cover them, and `length` is the file's.
+    pub prefix: Option<String>,
 }
 
 /// Takes a source's bytes in any chunks, holding at most one line (up to [`SEQ_LINE_MAX`]) of a transcript.
 pub struct Digester {
     hasher: FileHasher,
+    /// The bytes still to go into the prefix hash, and that hash; None when no prefix was asked for.
+    prefix: Option<(u64, FileHasher)>,
     length: u64,
     transcript: Option<Transcript>,
     line: Vec<u8>,
@@ -113,8 +119,14 @@ pub struct Digester {
 
 impl Digester {
     pub fn new(transcript: Option<Transcript>) -> Digester {
+        Digester::with_prefix(transcript, None)
+    }
+
+    /// As [`new`](Digester::new), also hashing the first `prefix` bytes apart (see [`SourceDigest::prefix`]).
+    pub fn with_prefix(transcript: Option<Transcript>, prefix: Option<u64>) -> Digester {
         Digester {
             hasher: FileHasher::default(),
+            prefix: prefix.map(|n| (n, FileHasher::default())),
             length: 0,
             transcript,
             line: Vec::new(),
@@ -125,6 +137,11 @@ impl Digester {
 
     pub fn update(&mut self, bytes: &[u8]) {
         self.hasher.update(bytes);
+        if let Some((left, h)) = &mut self.prefix {
+            let take = (*left).min(bytes.len() as u64) as usize;
+            h.update(&bytes[..take]);
+            *left -= take as u64;
+        }
         self.length += bytes.len() as u64;
         if self.transcript.is_none() {
             return;
@@ -195,19 +212,48 @@ impl Digester {
             hash: alloc::format!("sha256:{}", self.hasher.hex()),
             length: self.length,
             seq_max: self.seq_max,
+            prefix: self
+                .prefix
+                .and_then(|(left, h)| (left == 0).then(|| alloc::format!("sha256:{}", h.hex()))),
         }
     }
 }
 
 /// The digest of `bytes` read at once (the fake reader and tests).
 pub fn digest(bytes: &[u8], transcript: Option<Transcript>) -> SourceDigest {
-    let mut d = Digester::new(transcript);
+    digest_prefix(bytes, transcript, None)
+}
+
+/// What a reader returns for `bytes` asked with `prefix` (the fake reader): with a prefix only the first
+/// `min(prefix, length)` bytes are read, so `hash` and `seq_max` cover those, `prefix` hashes them when there were
+/// that many, and `length` is the whole file's.
+pub fn digest_read(
+    bytes: &[u8],
+    transcript: Option<Transcript>,
+    prefix: Option<u64>,
+) -> SourceDigest {
+    let Some(n) = prefix else {
+        return digest(bytes, transcript);
+    };
+    let read = &bytes[..(n.min(bytes.len() as u64) as usize)];
+    let mut d = digest_prefix(read, transcript, prefix);
+    d.length = bytes.len() as u64;
+    d
+}
+
+/// [`digest`] with the first `prefix` bytes also hashed apart.
+pub fn digest_prefix(
+    bytes: &[u8],
+    transcript: Option<Transcript>,
+    prefix: Option<u64>,
+) -> SourceDigest {
+    let mut d = Digester::with_prefix(transcript, prefix);
     d.update(bytes);
     d.finish()
 }
 
 /// Sets a stored evidence pointer's hash keys: `hash_state` always, `hash`, `length` and `seq_max` when it was read.
-/// `accepted` (a refresh) records a state without a hash as seen, so `check --sources` stops reporting it until it
+/// `accepted` (a refresh) records a state without a hash as seen, so `umx check` stops reporting it until it
 /// changes; a write never sets it.
 pub fn stamp_pointer(
     pointer: &mut Value,

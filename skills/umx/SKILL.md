@@ -65,6 +65,8 @@ umx repo fails if a built verb has no home here or a route names a verb umx does
    (`person`, `organisation`, `team`, `meeting`, `decision`, `document`; `works_for`, `member_of`, `attended`,
    `raised_by`) and declare only what std lacks. `umx doctor` names a loaded graph made without std
    (`doctor_graph_not_std`) and its next, `umx ontology adopt-std --graph <graph> --dry-run`.
+6. Before you commit and push a graph, run `umx check --graph <graph>` and fix or refresh what it reports (a
+   changed or missing cited file too), then commit (usage 222, `umx docs get git`).
 
 ## Where the routes come from
 

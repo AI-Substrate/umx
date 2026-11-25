@@ -16,7 +16,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use umx_core::config::REPO_ROOT;
-use umx_core::evidence::root_source;
+use umx_core::evidence::{climb, root_source};
 use umx_core::locator::{Locator, LocatorKind};
 use umx_core::ports::{GraphDir, SourceError, SourceReader};
 use umx_core::source_hash::{HashState, SourceDigest, Transcript, pointer_state, stamp_pointer};
@@ -46,7 +46,7 @@ pub(crate) struct SourceCheck {
 
 type Read = Result<SourceDigest, SourceError>;
 /// What one check read, by canonical root, path and transcript format.
-pub(crate) type Reads = BTreeMap<(String, String, Option<u8>), Read>;
+pub(crate) type Reads = BTreeMap<(String, String, Option<u8>, Option<u64>), Read>;
 
 /// Where a local source is, for the port: its canonical root and the path under it.
 pub(crate) enum Place {
@@ -54,6 +54,16 @@ pub(crate) enum Place {
     Remote,
     /// Its `root:` is not usable on this machine (unknown, or not a folder): nothing was read.
     RootUnavailable,
+    /// A `..` path that climbs out of the graph's git repo: never read.
+    Outside,
+}
+
+/// Why a `..` path has no place in the graph's repo.
+enum Climb {
+    /// The graph is not in a git repo inside the roots (or it is not usable here): `..` is not allowed.
+    NoRepo,
+    /// It climbs past the repo's top.
+    Outside,
 }
 
 /// A source that names something on the network or in a graph: never read.
@@ -69,11 +79,20 @@ impl SourceCheck {
     /// `dir` is the graph's folder. Other sources were checked when they were parsed.
     pub(crate) fn check(&self, dir: &GraphDir, pointers: &[Value]) -> Result<(), Problem> {
         for p in pointers {
-            let Some((name, path)) = p
-                .get("source")
-                .and_then(Value::as_str)
-                .and_then(root_source)
-            else {
+            let Some(source) = p.get("source").and_then(Value::as_str) else {
+                continue;
+            };
+            // Usage 223: a relative path that climbs stays inside the graph's repo, symlinks resolved.
+            if let Some((ups, rest)) = climb(source).filter(|(ups, _)| *ups > 0) {
+                let (root, path) = self
+                    .climb(dir, ups, rest)
+                    .map_err(|_| problems::evidence_outside_roots())?;
+                self.reader
+                    .check_path(&root, &path)
+                    .map_err(|_| problems::evidence_outside_roots())?;
+                continue;
+            }
+            let Some((name, path)) = root_source(source) else {
                 continue;
             };
             let root = self.root(name, dir)?;
@@ -87,6 +106,35 @@ impl SourceCheck {
             })?;
         }
         Ok(())
+    }
+
+    /// Where a relative path with `ups` leading `..` parts lands (usage 223): under the canonical top of the git repo
+    /// holding the graph folder (as `root:repo` finds it), as a path with no `..`, or why it has no place there.
+    fn climb(&self, dir: &GraphDir, ups: usize, rest: &str) -> Result<(GraphDir, String), Climb> {
+        let top = self
+            .roots
+            .as_deref()
+            .and_then(|r| r.repo_top(dir))
+            .ok_or(Climb::NoRepo)?;
+        let top = self
+            .reader
+            .canonical_root(&top)
+            .map_err(|_| Climb::NoRepo)?;
+        let here = self.reader.canonical_root(dir).map_err(|_| Climb::NoRepo)?;
+        let inner = match here.as_str().strip_prefix(top.as_str()) {
+            Some(inner) if inner.is_empty() || inner.starts_with('/') => inner,
+            _ => return Err(Climb::NoRepo),
+        };
+        let mut parts: Vec<&str> = inner.split('/').filter(|p| !p.is_empty()).collect();
+        if ups > parts.len() {
+            return Err(Climb::Outside);
+        }
+        parts.truncate(parts.len() - ups);
+        parts.extend(rest.split('/').filter(|p| !p.is_empty() && *p != "."));
+        if parts.is_empty() {
+            return Err(Climb::Outside);
+        }
+        Ok((top, parts.join("/")))
     }
 
     /// The canonical folder of a root, checked inside the roots now.
@@ -124,6 +172,17 @@ impl SourceCheck {
                 Err(_) => Place::RootUnavailable,
             };
         }
+        // A hand-edited file may hold what a write refuses: an absolute path never climbs (as on write).
+        if source.starts_with('/') && source.split('/').any(|p| p == "..") {
+            return Place::Outside;
+        }
+        if let Some((ups, rest)) = climb(source).filter(|(ups, _)| *ups > 0) {
+            return match self.climb(dir, ups, rest) {
+                Ok((root, path)) => Place::Local(root, path),
+                Err(Climb::NoRepo) => Place::RootUnavailable,
+                Err(Climb::Outside) => Place::Outside,
+            };
+        }
         let path = match source.strip_prefix(dir.as_str()) {
             Some(rest) if rest.starts_with('/') => rest.trim_start_matches('/'),
             _ => source,
@@ -134,16 +193,18 @@ impl SourceCheck {
         }
     }
 
-    /// Reads `source` (once per check, however often it is asked) and says what it found; None when its root is
-    /// not usable on this machine, so nothing was read.
+    /// Reads `source` (once per check and `prefix`, however often it is asked) and says what it found; None when its
+    /// root is not usable on this machine, so nothing was read. `prefix` also hashes the first that many bytes.
     pub(crate) fn read(
         &self,
         dir: &GraphDir,
         source: &str,
+        prefix: Option<u64>,
     ) -> Option<(HashState, Option<SourceDigest>)> {
         let (root, path) = match self.place(dir, source) {
             Place::Local(root, path) => (root, path),
             Place::Remote => return Some((HashState::Remote, None)),
+            Place::Outside => return Some((HashState::Outside, None)),
             Place::RootUnavailable => return None,
         };
         let transcript = Transcript::of(source);
@@ -151,12 +212,13 @@ impl SourceCheck {
             root.as_str().to_string(),
             path.clone(),
             transcript.map(|t| t as u8),
+            prefix,
         );
         let read = self.read.borrow().get(&key).cloned();
         let read = match read {
             Some(r) => r,
             None => {
-                let r = self.reader.digest(&root, &path, transcript);
+                let r = self.reader.digest(&root, &path, transcript, prefix);
                 self.read.borrow_mut().insert(key, r.clone());
                 r
             }
@@ -179,7 +241,7 @@ impl SourceCheck {
                 continue;
             };
             let (state, digest) = self
-                .read(dir, &source)
+                .read(dir, &source, None)
                 .unwrap_or((HashState::Unreadable, None));
             stamp_pointer(p, state, digest.as_ref(), false);
         }
@@ -215,7 +277,7 @@ impl SourceCheck {
         match locator.kind {
             LocatorKind::Folder => Some((HashState::Remote, None)),
             LocatorKind::Url => Some((HashState::Remote, None)),
-            LocatorKind::File => self.read(dir, &locator.source),
+            LocatorKind::File => self.read(dir, &locator.source, None),
         }
     }
 
@@ -261,4 +323,46 @@ fn stamp_locator(
     locator.hash_accepted =
         (accepted && !folder && !matches!(state, HashState::Hashed | HashState::Remote))
             .then_some(true);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Repo;
+
+    impl SourceRoots for Repo {
+        fn root_folder(&self, _: &str) -> Option<GraphDir> {
+            None
+        }
+        fn repo_top(&self, _: &GraphDir) -> Option<GraphDir> {
+            GraphDir::parse("/work/repo").ok()
+        }
+    }
+
+    /// Security note on #74: a graph file edited by hand to hold `/../x` (refused on write) is refused on read too.
+    #[test]
+    fn an_absolute_path_with_dotdot_is_outside_on_read() {
+        let at = |p: &str| GraphDir::parse(p).unwrap();
+        let reader = umx_fakes::FakeSourceReader::new(at("/work"));
+        reader.add_folder(at("/work/repo/graphs/g"));
+        let check = SourceCheck {
+            reader: Arc::new(reader),
+            roots: Some(Arc::new(Repo)),
+            graph_roots: Vec::new(),
+            graph: ValidName::alias("demo").unwrap(),
+            read: Rc::default(),
+        };
+        let dir = at("/work/repo/graphs/g");
+        for source in ["/../x.md", "/work/repo/graphs/g/../../x.md"] {
+            assert!(
+                matches!(check.place(&dir, source), Place::Outside),
+                "{source}"
+            );
+        }
+        assert!(matches!(
+            check.place(&dir, "../../x.md"),
+            Place::Local(_, ref p) if p == "x.md"
+        ));
+    }
 }

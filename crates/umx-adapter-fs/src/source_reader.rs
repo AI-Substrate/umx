@@ -94,6 +94,7 @@ impl SourceReader for FsSourceReader {
         root: &GraphDir,
         path: &str,
         transcript: Option<Transcript>,
+        prefix: Option<u64>,
     ) -> Result<SourceDigest, SourceError> {
         self.check_path(root, path)?;
         let missing = |e: &std::io::Error, op: &str| match e.kind() {
@@ -110,7 +111,9 @@ impl SourceReader for FsSourceReader {
         if !meta.is_file() {
             return Err(SourceError::NotFile);
         }
-        if meta.len() > SOURCE_MAX_BYTES {
+        // With a prefix under the cap only that many bytes are read, so a file that grew past the cap is still compared.
+        let limit = prefix.filter(|n| *n <= SOURCE_MAX_BYTES);
+        if limit.is_none() && meta.len() > SOURCE_MAX_BYTES {
             return Err(SourceError::TooLarge);
         }
         let mut f = fs::OpenOptions::new()
@@ -118,18 +121,25 @@ impl SourceReader for FsSourceReader {
             .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
             .open(&file)
             .map_err(|e| missing(&e, "open file"))?;
-        if !f.metadata().map_err(|e| io("stat file", &e))?.is_file() {
+        let opened = f.metadata().map_err(|e| io("stat file", &e))?;
+        if !opened.is_file() {
             return Err(SourceError::NotFile);
         }
-        let mut digester = Digester::new(transcript);
+        let mut digester = Digester::with_prefix(transcript, prefix);
         let mut buf = vec![0u8; 64 * 1024];
         loop {
-            match f.read(&mut buf) {
+            let want = limit.map_or(buf.len(), |n| {
+                (n - digester.length()).min(buf.len() as u64) as usize
+            });
+            if want == 0 {
+                break;
+            }
+            match f.read(&mut buf[..want]) {
                 Ok(0) => break,
                 Ok(n) => {
                     digester.update(&buf[..n]);
                     // A file that grew past the cap since the stat is not read further.
-                    if digester.length() > SOURCE_MAX_BYTES {
+                    if limit.is_none() && digester.length() > SOURCE_MAX_BYTES {
                         return Err(SourceError::TooLarge);
                     }
                 }
@@ -137,7 +147,11 @@ impl SourceReader for FsSourceReader {
                 Err(e) => return Err(io("read file", &e)),
             }
         }
-        Ok(digester.finish())
+        let mut d = digester.finish();
+        if limit.is_some() {
+            d.length = d.length.max(opened.len());
+        }
+        Ok(d)
     }
 }
 
@@ -199,8 +213,32 @@ mod tests {
             .unwrap();
         let src = root.join("src").unwrap();
         assert_eq!(
-            port.digest(&src, "big.ndjson", Some(Transcript::Ndjson)),
+            port.digest(&src, "big.ndjson", Some(Transcript::Ndjson), None),
             Err(SourceError::TooLarge)
+        );
+    }
+
+    /// A file cited small that grew past the cap: a prefix read takes only the stored bytes, and its length is the
+    /// file's (review #74 note 1).
+    #[test]
+    fn a_prefix_read_of_a_file_grown_past_the_cap_reads_only_the_prefix() {
+        let (port, root, _outside, _guard) = source_reader();
+        let big = std::path::Path::new(root.as_str()).join("src/grown.md");
+        fs::write(&big, b"cited\n").unwrap();
+        let src = root.join("src").unwrap();
+        let cited = port.digest(&src, "grown.md", None, None).unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&big)
+            .unwrap()
+            .set_len(SOURCE_MAX_BYTES + 1)
+            .unwrap();
+        let now = port
+            .digest(&src, "grown.md", None, Some(cited.length))
+            .unwrap();
+        assert_eq!(
+            (now.prefix, now.length),
+            (Some(cited.hash), SOURCE_MAX_BYTES + 1)
         );
     }
 

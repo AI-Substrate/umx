@@ -114,12 +114,25 @@ pub fn sr_c7_a_file_is_digested<P: SourceReader, G>(
     let want = digest(TRANSCRIPT.as_bytes(), Some(Transcript::Ndjson));
     assert_eq!(want.seq_max, Some(9));
     assert_eq!(
-        port.digest(&src, "t.ndjson", Some(Transcript::Ndjson)),
+        port.digest(&src, "t.ndjson", Some(Transcript::Ndjson), None),
         Ok(want)
     );
     assert_eq!(
-        port.digest(&src, "./t.ndjson", None),
+        port.digest(&src, "./t.ndjson", None, None),
         Ok(digest(TRANSCRIPT.as_bytes(), None))
+    );
+    let head = digest(&TRANSCRIPT.as_bytes()[..10], None).hash;
+    let read = port.digest(&src, "t.ndjson", None, Some(10)).unwrap();
+    assert_eq!(
+        (read.prefix, read.hash, read.length),
+        (Some(head.clone()), head, TRANSCRIPT.len() as u64)
+    );
+    let past = TRANSCRIPT.len() as u64 + 1;
+    assert_eq!(
+        port.digest(&src, "t.ndjson", None, Some(past))
+            .unwrap()
+            .prefix,
+        None
     );
 }
 
@@ -130,21 +143,21 @@ pub fn sr_c8_a_digest_reads_nothing_it_may_not<P: SourceReader, G>(
     let src = at(&root, "src");
     for path in ["../file.txt", "link_out/x.md", "dangling", "/etc/passwd"] {
         assert_eq!(
-            port.digest(&src, path, None),
+            port.digest(&src, path, None, None),
             Err(SourceError::OutsideRoots),
             "{path}"
         );
     }
     for path in ["missing.md", "sub/new.md", "link_in/none.md"] {
         assert_eq!(
-            port.digest(&src, path, None),
+            port.digest(&src, path, None, None),
             Err(SourceError::Missing),
             "{path}"
         );
     }
     for path in ["sub", "link_in"] {
         assert_eq!(
-            port.digest(&src, path, None),
+            port.digest(&src, path, None, None),
             Err(SourceError::NotFile),
             "{path}"
         );

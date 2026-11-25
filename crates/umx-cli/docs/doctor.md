@@ -33,9 +33,11 @@ It checks, in this order:
   that does not list its graphs is `doctor_graphs_unlisted`. A loaded graph made without std (`graph new --no-std`,
   or made before std) gets the hint `doctor_graph_not_std`, whose next is
   `umx ontology adopt-std --graph <graph> --dry-run`; it changes neither the verdict nor the exit code, and is
-  asked only about the graphs `umx graph list` returned. Doctor never reads the files a graph cites: each loaded
-  graph gets the hint `doctor_graph_sources`, whose next is `umx check --graph <graph> --sources` (which reads them
-  and says which changed); it changes neither the verdict nor the exit code. With the daemon down, graphs are not checked (the
+  asked only about the graphs `umx graph list` returned. The check reads the files each graph cites again, so a
+  changed or missing cited file (`source_changed`, `source_missing`) counts in `doctor_graph_problems` like any
+  other finding. Doctor reads at most 256 MiB of cited files per run; a graph whose cited files were not all read
+  gets the hint `doctor_graph_sources_unchecked` (not checked, never clean), whose next is
+  `umx check --graph <graph>`. With the daemon down, graphs are not checked (the
   daemon reloads the remembered ones when it starts);
 - the service (`umx daemon install`): not installed is information; installed but not loaded, loaded with no
   daemon running, a daemon started by hand running instead, or the umx binary it runs gone are each a finding;

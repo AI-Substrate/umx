@@ -13,13 +13,14 @@ it with ordinary edges. umx never fetches a URL; it reads a local file only to h
     umx node add --type legislation --locator root:acme/acts/2026.pdf     # a root this machine set
 
 - A source takes one of four forms:
-  - a path relative to the graph folder (no `..`, no `~`);
+  - a path relative to the graph folder (no `~`); it may start with `..` parts to reach anywhere in the graph's
+    git repo (usage 223, as evidence does; `umx docs get evidence`);
   - `root:repo/<path>`, a file elsewhere in the git repo that holds the graph folder;
   - `root:<name>/<path>`, a file in a source root this machine set with `umx root add` (see
     `umx docs get evidence`);
   - an http(s) URL, stored and shown but never fetched.
 - An absolute path or `file:` URL is refused with `locator_absolute`: committed files never hold one. Its `next`
-  shows the `root:` form to use. Text that is no form at all, or holds `..`, `~`, a URL user or password, or a
+  shows the `root:` form to use. Text that is no form at all, or holds `..` after another part, `~`, a URL user or password, or a
   control, bidi or zero-width character, is refused with `locator_invalid`.
 - Without `--title`, the title is the source's last part (a file or folder name, else a URL's host).
 - The node `type` is yours to choose (`document`, `transcript`, `legislation`, `url`, ...). The locator's `kind`
@@ -53,9 +54,9 @@ without a locator is `not_a_resource`.
     umx resource refresh 01JD7K2M3N
 
 Hashes the locator's source again and keeps what it holds now: the way to accept a `source_changed` that
-`umx check --sources` reported. It writes the node only when the hash, length, `seq_max` or `hash_state` changed
+`umx check` reported. It writes the node only when the hash, length, `seq_max` or `hash_state` changed
 (`data.changed`), and never changes its `updated`. `data.hashed` names the source it read. A state without a hash
-(`missing`, `outside`, ...) is recorded as accepted, so `check --sources` leaves it out until it changes. A locator
+(`missing`, `outside`, ...) is recorded as accepted, so `check` leaves it out until it changes. A locator
 whose `root:` is not usable on this machine is not read and keeps its stored hash, with `source_not_refreshed`. A
 node without a locator is `not_a_resource`. As with evidence, a shared graph's locator may name a file you did not
 choose: look at `umx resource show <node>` before you refresh it.

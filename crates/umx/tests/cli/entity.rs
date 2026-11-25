@@ -267,7 +267,10 @@ fn doctor_reads_links_between_loaded_graphs() {
         .iter()
         .find(|i| i.code() == "doctor_graph_problems")
         .unwrap();
-    assert_eq!(found.message(), "Graph d2 has 1 problems in its files.");
+    assert_eq!(
+        found.message(),
+        "Graph d2 has 1 problems in its files or the files it cites."
+    );
     assert_eq!(found.next(), "umx check --graph d2");
 }
 

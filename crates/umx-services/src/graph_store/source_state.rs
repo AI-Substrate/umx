@@ -1,12 +1,14 @@
-//! Whether cited files changed (usage 220). `umx check --sources` reads again every local file a node cites (its
+//! Whether cited files changed (usage 220). Every `umx check` reads again every local file a node cites (its
 //! evidence, its locator) that umx tried to hash when the reference was added, and reports `source_changed` (the
-//! hash differs, or a file that could not be read then can be now) and `source_missing` (it cannot be read now). It
-//! is read-only and never refuses: findings are data plus one hint per graph and kind. A pointer stored before umx
+//! hash differs, or a file that could not be read then can be now) and `source_missing` (it cannot be read now).
+//! The stored hash is compared over the stored length: a file that only had bytes added after it is `source_grew`,
+//! a row and never a warning; a shorter file, or one edited within that length, is changed. It
+//! is read-only and never refuses: findings are data plus one warning per graph and kind (exit 0). A pointer stored before umx
 //! hashed sources has no `hash_state` and is not read; a URL or `umx:` source is never read.
 //!
 //! `umx node evidence <node> refresh <pointer> | --at <n> | --all` and `umx resource refresh <node>` accept what a file
 //! holds now: they store its hash again, or record a state without one (missing, outside...) as accepted, which
-//! `check --sources` then leaves out until it changes. A reference whose `root:` is not usable here is left as it was.
+//! `check` then leaves out until it changes. A reference whose `root:` is not usable here is left as it was.
 //! Refreshing is bookkeeping (req-77): it does not change the node's `updated`.
 
 use super::evidence_edit::{EvidenceRow, names, pointer_text, pointer_to_match};
@@ -27,6 +29,10 @@ pub const SOURCES_PAGE: usize = 100;
 pub enum SourceFinding {
     Changed,
     Missing,
+    /// The file holds its stored bytes and more after them: fine, a row only, never a warning.
+    Grew,
+    /// The file is over the size umx reads and its stored bytes could not be compared: a row only, counted apart.
+    TooLarge,
 }
 
 impl SourceFinding {
@@ -34,6 +40,8 @@ impl SourceFinding {
         match self {
             SourceFinding::Changed => "source_changed",
             SourceFinding::Missing => "source_missing",
+            SourceFinding::Grew => "source_grew",
+            SourceFinding::TooLarge => "source_too_large",
         }
     }
 }
@@ -61,6 +69,25 @@ pub struct SourcesChecked {
     /// Every changed and every missing file found, beyond the rows' page too.
     pub changed: usize,
     pub missing: usize,
+    /// Cited files that only grew (their first stored `length` bytes hash as stored): rows, never warnings.
+    pub grew: usize,
+    /// Cited files over the size umx reads whose stored bytes could not be compared: rows, never warnings.
+    pub too_large: usize,
+    /// Cited files not read because a budget (doctor's) ran out: not checked, never clean.
+    pub skipped: usize,
+    /// The bytes read.
+    pub bytes: u64,
+    /// Each checked graph's counts, in check order, for doctor's per-graph count.
+    pub graphs: Vec<GraphSources>,
+}
+
+/// One checked graph's changed and missing cited files, and those a budget left unread.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GraphSources {
+    pub graph: String,
+    pub changed: usize,
+    pub missing: usize,
+    pub skipped: usize,
 }
 
 /// What a node's stored reference said, for comparing with what its file holds now.
@@ -90,14 +117,24 @@ fn stored_locator(l: &Locator) -> Option<Stored> {
     })
 }
 
-/// The finding, if any, for a reference stored as `old` whose file reads as `now`.
+/// The finding, if any, for a reference stored as `old` whose file reads as `now`. Grow-safe: a file longer than
+/// its stored length whose first stored-length bytes hash as stored only grew; shorter, or a different hash, changed.
 fn compare(old: &Stored, now: HashState, digest: Option<&SourceDigest>) -> Option<SourceFinding> {
     match (now, digest) {
-        (HashState::Hashed, Some(d)) => (old.state != HashState::Hashed
-            || old.hash.as_deref() != Some(d.hash.as_str()))
-        .then_some(SourceFinding::Changed),
+        (HashState::Hashed, Some(_)) if old.state != HashState::Hashed => {
+            Some(SourceFinding::Changed)
+        }
+        (HashState::Hashed, Some(d)) => match old.length {
+            Some(length) if d.length > length => Some(match d.prefix == old.hash {
+                true => SourceFinding::Grew,
+                false => SourceFinding::Changed,
+            }),
+            Some(length) if d.length < length => Some(SourceFinding::Changed),
+            _ => (old.hash.as_deref() != Some(d.hash.as_str())).then_some(SourceFinding::Changed),
+        },
         (HashState::Remote, _) => None,
         (now, _) if old.accepted && old.state == now => None,
+        (HashState::TooLarge, _) => Some(SourceFinding::TooLarge),
         _ => Some(SourceFinding::Missing),
     }
 }
@@ -117,17 +154,21 @@ fn fix(graph: &ValidName, row: &SourceRow) -> Command {
                 .word("--at")
                 .count(at.parse().unwrap_or(1))
         }
-        (_, SourceFinding::Missing) => Command::new("node evidence")
-            .address(graph, row.id)
-            .word("list"),
+        (_, SourceFinding::Missing | SourceFinding::Grew | SourceFinding::TooLarge) => {
+            Command::new("node evidence")
+                .address(graph, row.id)
+                .word("list")
+        }
     }
 }
 
 impl GraphStore {
-    /// `check --sources` over the checked graphs (see the module docs).
+    /// The source check over the checked graphs (see the module docs). With `budget` (doctor's), reading stops once
+    /// that many bytes were read: every source left is counted in `skipped`, never as clean.
     pub(crate) fn check_sources(
         &self,
         graphs: &[(&str, &Graph)],
+        budget: Option<u64>,
     ) -> (SourcesChecked, Vec<Problem>) {
         let mut out = SourcesChecked::default();
         let mut hints = Vec::new();
@@ -136,12 +177,24 @@ impl GraphStore {
             let sources = self.source_check(alias);
             let dir = self.get(alias).dir.clone();
             let mut found: Vec<SourceRow> = Vec::new();
+            let mut skipped = 0;
             let mut look = |id: Id, place: String, source: &str, old: Stored| {
-                let Some((now, digest)) = sources.read(&dir, source) else {
+                if budget.is_some_and(|b| out.bytes >= b) {
+                    skipped += 1;
+                    return;
+                }
+                // A stored hash is compared over the stored length only (grow-safe), and only those bytes are read.
+                let prefix = (old.state == HashState::Hashed)
+                    .then_some(old.length)
+                    .flatten();
+                let Some((now, digest)) = sources.read(&dir, source, prefix) else {
                     out.unchecked += 1;
                     return;
                 };
                 out.checked += 1;
+                if let Some(d) = &digest {
+                    out.bytes += prefix.map_or(d.length, |n| n.min(d.length));
+                }
                 if let Some(kind) = compare(&old, now, digest.as_ref()) {
                     found.push(SourceRow {
                         graph: graph.as_str().to_string(),
@@ -171,27 +224,45 @@ impl GraphStore {
                     }
                 }
             }
-            for kind in [SourceFinding::Changed, SourceFinding::Missing] {
+            let count = |k| found.iter().filter(|r| r.kind == k).count();
+            out.graphs.push(GraphSources {
+                graph: graph.as_str().to_string(),
+                changed: count(SourceFinding::Changed),
+                missing: count(SourceFinding::Missing),
+                skipped,
+            });
+            out.skipped += skipped;
+            for kind in [
+                SourceFinding::Changed,
+                SourceFinding::Missing,
+                SourceFinding::Grew,
+                SourceFinding::TooLarge,
+            ] {
                 let rows: Vec<SourceRow> =
                     found.iter().filter(|r| r.kind == kind).cloned().collect();
                 let Some(first) = rows.first() else {
                     continue;
                 };
-                let make = match kind {
-                    SourceFinding::Changed => problems::source_changed,
-                    SourceFinding::Missing => problems::source_missing,
-                };
-                hints.push(make(
-                    &graph,
-                    rows.len(),
-                    first.id,
-                    &first.place,
-                    fix(&graph, first),
-                ));
+                let (count, place, fix) = (rows.len(), first.place.as_str(), fix(&graph, first));
                 match kind {
-                    SourceFinding::Changed => out.changed += rows.len(),
-                    SourceFinding::Missing => out.missing += rows.len(),
+                    SourceFinding::Changed => {
+                        hints.push(problems::source_changed(
+                            &graph, count, first.id, place, fix,
+                        ));
+                    }
+                    SourceFinding::Missing => {
+                        hints.push(problems::source_missing(
+                            &graph, count, first.id, place, fix,
+                        ));
+                    }
+                    SourceFinding::Grew | SourceFinding::TooLarge => {}
                 }
+                *match kind {
+                    SourceFinding::Changed => &mut out.changed,
+                    SourceFinding::Missing => &mut out.missing,
+                    SourceFinding::Grew => &mut out.grew,
+                    SourceFinding::TooLarge => &mut out.too_large,
+                } += rows.len();
                 out.rows.extend(rows.into_iter().take(SOURCES_PAGE));
             }
         }
@@ -286,7 +357,7 @@ impl GraphStore {
             let before = p.clone();
             let mut read = true;
             if let Some(source) = p.get("source").and_then(Value::as_str).map(String::from) {
-                match sources.read(&dir, &source) {
+                match sources.read(&dir, &source, None) {
                     Some((state, digest)) => {
                         if state != HashState::Remote && !hashed.contains(&source) {
                             hashed.push(source);

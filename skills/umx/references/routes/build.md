@@ -307,5 +307,9 @@ that load normalizes and the next write removes without erasing records.
 On `copy_ambiguous`, name a loaded copy in the endpoint address; never treat it as an unchecked unloaded
 graph. Symmetric declaration applies to external ends immediately, while keeping reverse lines and unknown fields.
 
+**usage 222**: before you commit and push a graph, run `umx check --graph <alias>`. It also reads every cited
+file again: fix what it reports, and for `source_changed` check what cites the file still holds, then accept it
+with `umx node evidence <node> refresh <pointer>` or `umx resource refresh <node>`. Then commit (`umx docs get git`).
+
 The practice behind these steps (what earns a node, enriching, promises vs answers, fixing edges, evidence kinds
 for mixed ranges): `umx docs get building`.

@@ -1,4 +1,4 @@
-//! Usage 220: a cited local file is hashed when the reference is added; `check --sources` says which changed; refresh
+//! Usage 220: a cited local file is hashed when the reference is added; `check` says which changed; refresh
 //! accepts the file as it is now. Over the fake source reader in its closed mode, so a file nobody wrote is missing.
 
 use serde_json::Value;
@@ -9,8 +9,8 @@ use umx_core::source_hash::{Transcript, digest};
 use umx_core::{Id, Problem};
 use umx_fakes::{FakeClock, FakeGraphFiles, FakeIds, FakeLocalState, FakeSourceReader};
 use umx_services::{
-    BatchLine, BatchOp, BatchRequest, Ctx, NodeAddRequest, Ports, RefreshPick, Services,
-    SourceFinding, SourceRoots,
+    BatchLine, BatchOp, BatchRequest, Ctx, GraphSources, NodeAddRequest, Ports, RefreshPick,
+    Services, SourceFinding, SourceRoots,
 };
 
 const TRANSCRIPT: &[u8] = b"{\"seq\":1,\"t\":\"hi\"}\n{\"seq\":42,\"t\":\"bye\"}\n";
@@ -106,8 +106,8 @@ fn evidence(w: &World, id: Id) -> Vec<Value> {
 }
 
 fn sources_check(w: &World) -> (umx_services::SourcesChecked, Vec<Problem>) {
-    let done = w.svc.check(&ctx().graph("demo"), None, true).unwrap();
-    (done.value.sources.unwrap(), done.notes)
+    let done = w.svc.check(&ctx().graph("demo"), None, None).unwrap();
+    (done.value.sources, done.notes)
 }
 
 #[test]
@@ -187,7 +187,8 @@ fn a_missing_file_warns_and_the_write_goes_ahead() {
         .iter()
         .find(|(k, _)| *k == "fix")
         .map(|(_, v)| format!("{v:?}"));
-    assert!(fix.unwrap().contains("--sources"));
+    let fix = fix.unwrap();
+    assert!(fix.contains("check") && !fix.contains("--sources"), "{fix}");
     let ev = evidence(&w, id);
     assert_eq!(
         (&ev[0]["hash"], &ev[0]["hash_state"]),
@@ -247,6 +248,15 @@ fn check_reports_changed_and_missing_sources_and_refresh_accepts_them() {
         ]
     );
     assert_eq!((found.changed, found.missing), (2, 1));
+    assert_eq!(
+        found.graphs,
+        [GraphSources {
+            graph: "demo".into(),
+            changed: 2,
+            missing: 1,
+            skipped: 0
+        }]
+    );
 
     let refreshed = w
         .svc
@@ -409,4 +419,182 @@ fn a_refreshed_missing_state_is_accepted_until_it_changes() {
         [(SourceFinding::Changed, "evidence:2")],
         "it changed again"
     );
+}
+
+/// Grow-safe check: the stored hash is compared over the stored length. An appended file is `source_grew` (a row,
+/// no warning); an edit within the stored bytes, or a shorter file, is `source_changed`; a gone file warns.
+#[test]
+fn check_compares_over_the_stored_length_so_an_appended_file_only_grew() {
+    let mut w = world();
+    w.sources.write_file(path("docs/a.md"), b"line one\n");
+    w.sources.write_file(path("docs/b.md"), b"line one\n");
+    w.sources.write_file(path("docs/c.md"), b"line one\n");
+    w.sources.write_file(path("docs/d.md"), b"line one\n");
+    let (id, _) = add(
+        &mut w,
+        &[
+            "docs/a.md#L1",
+            "docs/b.md#L1",
+            "docs/c.md#L1",
+            "docs/d.md#L1",
+        ],
+        None,
+    );
+    w.sources
+        .write_file(path("docs/a.md"), b"line one\nline two\n");
+    w.sources
+        .write_file(path("docs/b.md"), b"line 1!!\nline two\n");
+    w.sources.write_file(path("docs/c.md"), b"line\n");
+    w.sources.remove_file(&path("docs/d.md"));
+    let (found, warnings) = sources_check(&w);
+    assert_eq!(codes(&warnings), ["source_changed", "source_missing"]);
+    let rows: Vec<_> = found
+        .rows
+        .iter()
+        .map(|r| (r.kind, r.id, r.place.as_str()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (SourceFinding::Changed, id, "evidence:2"),
+            (SourceFinding::Changed, id, "evidence:3"),
+            (SourceFinding::Missing, id, "evidence:4"),
+            (SourceFinding::Grew, id, "evidence:1"),
+        ]
+    );
+    assert_eq!((found.changed, found.missing, found.grew), (2, 1, 1));
+    assert_eq!(
+        found.graphs,
+        [GraphSources {
+            graph: "demo".into(),
+            changed: 2,
+            missing: 1,
+            skipped: 0
+        }]
+    );
+}
+
+/// Doctor's byte budget: once spent, every cited file left is skipped (not checked, never clean); plain check has none.
+#[test]
+fn a_source_budget_skips_what_is_left_and_plain_check_reads_all() {
+    let mut w = world();
+    add(
+        &mut w,
+        &["docs/brief.md#L1", "calls/3-nov.ndjson#seq=1-2"],
+        None,
+    );
+    let none = w
+        .svc
+        .check(&ctx().graph("demo"), None, Some(0))
+        .unwrap()
+        .value
+        .sources;
+    assert_eq!((none.checked, none.skipped, none.bytes), (0, 2, 0));
+    assert_eq!(none.graphs[0].skipped, 2);
+    let one = w
+        .svc
+        .check(&ctx().graph("demo"), None, Some(1))
+        .unwrap()
+        .value
+        .sources;
+    assert_eq!((one.checked, one.skipped), (1, 1));
+    let (all, _) = sources_check(&w);
+    assert_eq!((all.checked, all.skipped), (2, 0));
+    assert_eq!(all.bytes, 8 + TRANSCRIPT.len() as u64);
+}
+
+/// Usage 223: the git repo top a graph sits in, or none.
+struct Repo(Option<GraphDir>);
+
+impl SourceRoots for Repo {
+    fn root_folder(&self, _: &str) -> Option<GraphDir> {
+        None
+    }
+    fn repo_top(&self, _: &GraphDir) -> Option<GraphDir> {
+        self.0.clone()
+    }
+}
+
+/// A graph at /work/repo/graphs/g, in a repo at /work/repo when `in_repo`; /work/repo/x/sources/a.ndjson exists,
+/// /work/outside.md is outside the repo, and /work/repo/graphs/g/out links to it.
+fn repo_world(in_repo: bool) -> (Arc<FakeSourceReader>, Services) {
+    let at = |p: &str| GraphDir::parse(p).unwrap();
+    let sources = Arc::new(FakeSourceReader::new(at("/work")));
+    sources.add_folder(at("/work/repo/graphs/g"));
+    sources.write_file(at("/work/repo/x/sources/a.ndjson"), TRANSCRIPT);
+    sources.write_file(at("/work/outside.md"), b"out\n");
+    sources.add_link(at("/work/repo/x/out.md"), at("/work/outside.md"));
+    let repo = Repo(in_repo.then(|| at("/work/repo")));
+    let mut svc = Services::new(Ports {
+        files: Arc::new(FakeGraphFiles::new(at("/work"))),
+        vector_cache: Arc::new(FakeGraphFiles::new(at("/cache"))),
+        vector_cache_root: at("/cache"),
+        clock: Arc::new(FakeClock::default()),
+        ids: Arc::new(FakeIds::new()),
+        state: Arc::new(FakeLocalState::new()),
+        scopes: Arc::new(FakeLocalState::new()),
+        registry: Arc::new(FakeLocalState::new().with_absent_ok(true)),
+        sources: sources.clone(),
+        allows: Arc::new(FakeLocalState::new()),
+        lint_terms: Arc::new(FakeLocalState::new().with_absent_ok(true)),
+    })
+    .with_source_roots(Arc::new(repo));
+    svc.graph_new(&ctx(), "/work/repo/graphs/g", "demo", None, false, None)
+        .unwrap();
+    (sources, svc)
+}
+
+fn add_to(svc: &mut Services, pointer: &str) -> Result<(Id, Vec<Problem>), Problem> {
+    svc.node_add(
+        &ctx(),
+        NodeAddRequest {
+            kind: "document".into(),
+            title: "Cited".into(),
+            evidence: vec![EvidencePointer::from(pointer)],
+            ..Default::default()
+        },
+    )
+    .map(|d| (d.value.node.id, d.notes))
+}
+
+#[test]
+fn a_relative_path_may_climb_inside_the_graphs_repo_and_is_hashed_and_checked() {
+    let (sources, mut svc) = repo_world(true);
+    let (id, warnings) = add_to(&mut svc, "../../x/sources/a.ndjson#seq=1-2").unwrap();
+    assert_eq!(codes(&warnings), Vec::<&str>::new());
+    let (_, node) = svc.node_get(&ctx(), &id.to_text()).unwrap().value;
+    assert_eq!(node.evidence[0]["source"], "../../x/sources/a.ndjson");
+    assert_eq!(
+        node.evidence[0]["hash"],
+        digest(TRANSCRIPT, Some(Transcript::Ndjson)).hash.as_str()
+    );
+
+    let check = svc.check(&ctx().graph("demo"), None, None).unwrap();
+    assert_eq!(
+        (check.value.sources.checked, check.value.sources.rows.len()),
+        (1, 0)
+    );
+    sources.write_file(
+        GraphDir::parse("/work/repo/x/sources/a.ndjson").unwrap(),
+        b"edited\n",
+    );
+    let check = svc.check(&ctx().graph("demo"), None, None).unwrap();
+    assert_eq!(codes(&check.notes), ["source_changed"]);
+    let refreshed = svc
+        .node_evidence_refresh(&ctx(), &id.to_text(), Some(RefreshPick::At(1)))
+        .unwrap()
+        .value;
+    assert!(refreshed.rows[0].changed);
+}
+
+#[test]
+fn a_climb_past_the_repo_a_symlink_out_or_no_repo_is_refused() {
+    let (_, mut svc) = repo_world(true);
+    for pointer in ["../../../outside.md#L1", "../../x/out.md#L1"] {
+        let e = add_to(&mut svc, pointer).unwrap_err();
+        assert_eq!(e.code, "evidence_outside_roots", "{pointer}");
+    }
+    let (_, mut svc) = repo_world(false);
+    let e = add_to(&mut svc, "../../x/sources/a.ndjson#seq=1").unwrap_err();
+    assert_eq!(e.code, "evidence_outside_roots");
 }

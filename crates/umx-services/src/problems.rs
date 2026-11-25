@@ -52,8 +52,6 @@ pub const HINTS: &[&str] = &[
     "lint_raised_in_evidence",
     "lint_truncated",
     "lint_terms_unusable",
-    "source_changed",
-    "source_missing",
     "along_not_placed",
     "along_by_rule",
     "batch_use_ref_field",
@@ -3208,15 +3206,12 @@ pub fn source_not_refreshed(graph: &ValidName, count: usize) -> Problem {
         .with("count", Slot::Count(count as u64))
 }
 
-/// `umx check --graph <graph> --sources`.
+/// `umx check --graph <graph>`, which reads the cited files again (usage 220).
 pub fn check_sources(graph: &ValidName) -> Command {
-    Command::new("check")
-        .word("--graph")
-        .name(graph)
-        .word("--sources")
+    Command::new("check").word("--graph").name(graph)
 }
 
-/// Usage 220 `check --sources`: cited files whose hash differs from the one stored (or that can be read now and
+/// Usage 220 `check`: cited files whose hash differs from the one stored (or that can be read now and
 /// could not be when cited). `place` is `evidence:<i>` or `locator`; `fix` accepts the first.
 pub fn source_changed(
     graph: &ValidName,
@@ -3233,7 +3228,7 @@ pub fn source_changed(
         .with("fix", Slot::Command(fix))
 }
 
-/// Usage 220 `check --sources`: cited local files that cannot be read now.
+/// Usage 220 `check`: cited local files that cannot be read now.
 pub fn source_missing(
     graph: &ValidName,
     count: usize,

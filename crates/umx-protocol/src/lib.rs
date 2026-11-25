@@ -222,12 +222,19 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 101: PRD 002 search-10: a search whose meaning leg ran in a space with calibrated strength cuts carries each row's
 /// `strength` (`strong`, `fair`, `weak`, `exact` or null) and that space's `floors[].strength_run`; the hint
 /// `no_strong_match` (no match strong, fair or exact), first of the hints and kept under the hint cap.
+/// 102: plain check reads cited files (usage 220): every `Op::Check` reads them and gives `data.sources`, with
+/// `graphs` (each checked graph's `changed` and `missing`) and `grew`; the stored hash is compared over the stored
+/// length, so a file that only grew is a `source_grew` row, never a warning; `sources` is accepted and changes nothing;
+/// `source_changed` and `source_missing` are warnings (exit 0); `doctor_graph_sources` is removed, as doctor's graph
+/// check count now holds them; `Op::Check`'s `source_budget` (doctor's byte budget) and data.sources' `skipped`,
+/// `bytes` and `too_large` (`source_too_large` rows), and new code `doctor_graph_sources_unchecked` (hint);
+/// relative evidence and locator paths may start with `..` and reach anywhere in the graph's git repo (usage 223).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 101;
+pub const PROTOCOL: u32 = 102;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -236,7 +243,7 @@ pub const PROTOCOL: u32 = 101;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (101, 0x59fe_e88b_26d2_70bc);
+const WIRE_FINGERPRINT: (u32, u64) = (102, 0x462d_2465_7afc_3372);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1652,13 +1659,17 @@ pub enum Op {
     },
     /// `umx check`: what the graph's files hold that needs a person (req-67). `lint` (`--lint`, F139) adds `data.lint`:
     /// read-only findings in the checked graphs, a page of at most 100 per graph and kind from `offset`; `kind` runs
-    /// one kind. `sources` (`--sources`, usage 220) adds `data.sources`: the cited files that changed or cannot be
-    /// read. Without them it is the plain check, `{"op": "check"}` as before.
+    /// one kind. Every check gives `data.sources` (PROTOCOL 102): the cited files that changed or cannot be read.
+    /// `sources` (`--sources`) is accepted and changes nothing, so commands written for PROTOCOL 99 still run.
     Check {
         #[serde(default, skip_serializing_if = "is_false")]
         lint: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         sources: bool,
+        /// Doctor's byte budget for reading cited files; past it the rest are counted in `data.sources.skipped`.
+        /// Not a CLI flag: `umx check` reads every cited file.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_budget: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kind: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3588,12 +3599,12 @@ catalogue! {
         "a refresh did not read references whose root: is not set or not usable on this machine; their stored hashes are kept as they were",
         "<count> cited files in <graph> were not read: their root is not usable on this machine, so their stored hashes are kept.",
         "umx root list";
-    SourceChanged => "source_changed", Hint, 0,
-        "check --sources found cited files whose hash differs from the one stored, or that can be read now and could not be when cited; data.sources lists them",
+    SourceChanged => "source_changed", Warning, 0,
+        "check found cited files whose first stored-length bytes hash differently, that are shorter than stored, or that can be read now and could not be when cited; data.sources lists them",
         "<count> cited files in <graph> changed since umx hashed them; the first is <id> at <place>. Check what cites it still holds, then refresh it.",
         "<fix>";
-    SourceMissing => "source_missing", Hint, 0,
-        "check --sources found cited local files that cannot be read now; data.sources lists them with what reading them gave",
+    SourceMissing => "source_missing", Warning, 0,
+        "check found cited local files that cannot be read now; data.sources lists them with what reading them gave",
         "<count> cited files in <graph> cannot be read now; the first is <id> at <place>. Restore the file or fix what cites it.",
         "<fix>";
     // ws008 TM5 (req-149): declared spines.
@@ -3645,8 +3656,8 @@ catalogue! {
         "Evidence pointer does not parse: <reason>.",
         "umx docs get evidence";
     EvidenceOutsideRoots => "evidence_outside_roots", Error, 1,
-        "an evidence path leaves the graph's folder or its source root (.., ~, an absolute path elsewhere, a symlink that leads out) or uses file://",
-        "Evidence paths must stay inside the graph's folder, or inside the source root they name.",
+        "an evidence path leaves the graph's folder or its source root (.., ~, an absolute path elsewhere, a symlink that leads out) or uses file://; a leading .. may reach anywhere in the graph's git repo, never past its top",
+        "Evidence paths must stay inside the graph's folder, its git repo (a leading ..), or the source root they name.",
         "umx docs get evidence";
     // ws006 S1: source roots in evidence (req-47).
     RootUnknown => "root_unknown", Error, 1,
@@ -3868,8 +3879,8 @@ catalogue! {
         "Graph <graph> folder <path> <what>.",
         "umx graph unload <graph>";
     DoctorGraphProblems => "doctor_graph_problems", Warning, 5,
-        "umx doctor: umx check finds repeated ids, dangling edges or unknown keys in a loaded graph's files",
-        "Graph <graph> has <count> problems in its files.",
+        "umx doctor: umx check finds repeated ids, dangling edges or unknown keys in a loaded graph's files, or cited files that changed or cannot be read",
+        "Graph <graph> has <count> problems in its files or the files it cites.",
         "umx check --graph <graph>";
     DoctorGraphNotReloaded => "doctor_graph_not_reloaded", Warning, 5,
         "umx doctor: a graph the registry says was loaded did not reload when the daemon started",
@@ -3888,11 +3899,11 @@ catalogue! {
         "umx doctor: a loaded graph does not use std; ontology adopt-std moves it onto std v1, dry run first",
         "Graph <graph> does not use std. ontology adopt-std moves it onto std v1; its dry run writes nothing.",
         "umx ontology adopt-std --graph <graph> --dry-run";
-    // Usage 220: cited files that changed or cannot be read; never changes doctor's verdict.
-    DoctorGraphSources => "doctor_graph_sources", Hint, 0,
-        "umx doctor: doctor never reads the files a loaded graph cites; check --sources reads them and says which changed",
-        "Doctor does not read the files graph <graph> cites. To see which changed, run check --sources.",
-        "umx check --graph <graph> --sources";
+    // Usage 220: doctor reads cited files up to a byte budget; the rest are not checked.
+    DoctorGraphSourcesUnchecked => "doctor_graph_sources_unchecked", Hint, 0,
+        "umx doctor: doctor's check stopped reading cited files at its byte budget, so these were not checked (not clean); umx check reads them all",
+        "Doctor read cited files up to its budget; <count> cited files in <graph> were not checked. umx check reads them all.",
+        "umx check --graph <graph>";
     // s10: the daemon as a per-user service (req-86).
     ServiceConflict => "service_conflict", Error, 1,
         "umx daemon install while a umx service is installed for another umx binary or UMX_HOME; nothing changed",
@@ -5716,6 +5727,7 @@ mod tests {
             Op::Check {
                 lint: true,
                 sources: true,
+                source_budget: Some(1),
                 kind: s("terms"),
                 offset: Some(100),
             },
