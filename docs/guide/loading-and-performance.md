@@ -36,8 +36,11 @@ An idle daemon sleeps until the next graph is due, and uses no CPU.
 
 The daemon remembers every graph you load, in this machine's graph registry (`~/.umx/registry/graphs.toml`), and
 loads them again whenever it starts (an upgrade, `umx daemon restart`, `just dev`, the service bringing it back),
-in the order you loaded them and under the same aliases, before it answers its first command. Background
-embedding that was in progress runs again as each graph loads.
+in the order you loaded them and under the same aliases. It answers at once and reloads them one by one behind
+it (`umx daemon status` shows how many still wait in `registry.reloading`). A command that names its graph runs
+straight away, loading that graph first if it still waits; one that names no graph, or covers graphs beside the
+named one (`--all`, `graph load`, the entity commands, `neighbours`), waits until all are back.
+Background embedding that was in progress runs again as each graph loads.
 
 A graph that cannot come back (its folder is gone or outside the roots, a newer umx wrote it, or the folder now
 holds another graph) stays unloaded and never stops the daemon starting. `umx doctor` reports it as

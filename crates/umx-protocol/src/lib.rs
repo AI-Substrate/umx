@@ -217,12 +217,14 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// refresh <pointer> | --at <n> | --all`) and `Op::ResourceRefresh` (`umx resource refresh <node>`), whose replies
 /// list `hashed`; new codes `source_not_hashed` and `source_not_refreshed` (warnings), `source_changed`,
 /// `source_missing` and `doctor_graph_sources` (hints).
+/// 100: the daemon serves while it reloads the remembered graphs: `daemon status`'s `registry.reloading` (graphs still
+/// waiting); new codes `doctor_service_throttled` and `doctor_service_path` (warnings).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 99;
+pub const PROTOCOL: u32 = 100;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -231,7 +233,7 @@ pub const PROTOCOL: u32 = 99;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (99, 0xb719_93d0_b1bb_f5c0);
+const WIRE_FINGERPRINT: (u32, u64) = (100, 0x1baf_a39b_ea53_57aa);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -3992,6 +3994,14 @@ catalogue! {
         "umx doctor: the service runs another umx binary or UMX_HOME than this command",
         "The service runs <program> with UMX_HOME <home>; this is <this>.",
         "umx daemon status";
+    DoctorServiceThrottled => "doctor_service_throttled", Warning, 5,
+        "umx doctor: the service asks launchd to throttle the daemon (ProcessType Background), capping its CPU and disk I/O",
+        "The umx service is throttled (ProcessType Background), so starts and embedder sign-ins are slow.",
+        "umx daemon install";
+    DoctorServicePath => "doctor_service_path", Warning, 5,
+        "umx doctor: the service's environment cannot find az or azd, which a configured embedder signs in with",
+        "The umx service runs with <reason>.",
+        "umx daemon install";
     // F77: the /umx agent skill in ~/.agents/skills/umx, compared by fingerprint with the one this umx was built with.
     // ws012 s9 (D76a Q10): agents run the pinned line, so it carries -y; without it the installer stops to ask.
     DoctorSkillOutOfDate => "doctor_skill_out_of_date", Warning, 5,

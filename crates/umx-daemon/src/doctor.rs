@@ -317,7 +317,20 @@ fn checks(config: &Config, build: &Build, skill: Skill<'_>, services: &Services)
         registry_rows(reply, &mut rows);
         graphs(config, build, &probe, &mut rows);
     }
-    service_rows(config, service, up.as_ref(), &mut rows);
+    // The hosted instances that sign in through `az` (then `azd`): the service's PATH must find one of them.
+    let signers: Vec<String> = all
+        .instances()
+        .iter()
+        .filter(|i| i.kind == "azure_openai")
+        .filter(|i| {
+            resolved
+                .value(&format!("{}.{}.auth", umx_core::config::INSTANCES, i.name))
+                .and_then(umx_core::config::ConfigValue::as_text)
+                != Some("api_key")
+        })
+        .map(|i| i.name.clone())
+        .collect();
+    service_rows(config, service, up.as_ref(), &signers, &mut rows);
     rows.extend(skill_row(config, build, skill, umx_compose::skill_reads()));
     rows
 }
@@ -447,6 +460,7 @@ fn service_rows(
     config: &Config,
     service: Result<ServiceState, umx_core::ports::ServiceError>,
     up: Option<&Envelope>,
+    signers: &[String],
     rows: &mut Vec<Row>,
 ) {
     // The tool in use is the subject, so an override (UMX_SERVICE_TOOL) shows in every service row.
@@ -500,6 +514,9 @@ fn service_rows(
         Row::ok("service", tool)
     };
     rows.push(row);
+    if let Some(s) = &spec {
+        rows.extend(service_env_rows(s, tool, signers));
+    }
     // Information: the service runs another umx binary or UMX_HOME than this command.
     let this = crate::service::this_spec(config).ok();
     let differs = match (&spec, &this) {
@@ -521,6 +538,49 @@ fn service_rows(
             ),
         ));
     }
+}
+
+/// The installed service's environment: a launchd ProcessType of Background throttles the daemon's CPU and disk I/O
+/// (starts that take minutes, hosted sign-ins that time out); a service with no PATH, or one where neither `az` nor
+/// `azd` is found while an instance in `signers` signs in with them, cannot embed. `umx daemon install` rewrites both.
+fn service_env_rows(
+    spec: &umx_core::ports::ServiceSpec,
+    tool: &str,
+    signers: &[String],
+) -> Vec<Row> {
+    let mut rows = Vec::new();
+    if spec.background {
+        rows.push(Row::found(
+            "service",
+            tool,
+            Issue::new(Code::DoctorServiceThrottled),
+        ));
+    }
+    let reason = match (&spec.path, signers.first()) {
+        (None, _) => Some("no PATH, so it finds no programs such as az or azd".to_owned()),
+        (Some(path), Some(name)) if !["az", "azd"].iter().any(|p| on_path(p, path)) => {
+            Some(format!(
+                "a PATH where neither az nor azd is found, and embedder {name} signs in with them"
+            ))
+        }
+        _ => None,
+    };
+    if let Some(reason) = reason {
+        rows.push(Row::found(
+            "service",
+            tool,
+            Issue::fill(Code::DoctorServicePath, &[("reason", Fill::text(&reason))]),
+        ));
+    }
+    rows
+}
+
+/// Whether `program` is an executable file in one of `path`'s folders. Only stats files.
+fn on_path(program: &str, path: &str) -> bool {
+    path.split(':').any(|dir| {
+        fs::metadata(Path::new(dir).join(program))
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    })
 }
 
 /// The daemon rows. Returns the daemon's status reply when one answers. `service_pid` is the service's daemon, if the
@@ -1122,6 +1182,48 @@ mod tests {
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    /// A throttled service, or one whose PATH cannot find az or azd for an embedder that signs in with them, is
+    /// flagged; one installed as umx installs it now, with a PATH that finds az, is not.
+    #[test]
+    fn a_throttled_service_or_one_without_az_on_its_path_is_flagged() {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = temp("service-path");
+        let az = bin.join("az");
+        fs::write(&az, b"#!/bin/sh\n").unwrap();
+        fs::set_permissions(&az, Permissions::from_mode(0o755)).unwrap();
+        let spec = |path: Option<String>, background: bool| umx_core::ports::ServiceSpec {
+            program: "/opt/umx".into(),
+            home: "/h".into(),
+            log: "/h/daemon.log".into(),
+            path,
+            background,
+        };
+        let codes = |s: &umx_core::ports::ServiceSpec, signers: &[String]| -> Vec<String> {
+            service_env_rows(s, "launchctl", signers)
+                .iter()
+                .filter_map(|r| r.issue.as_ref().map(|i| i.code().to_owned()))
+                .collect()
+        };
+        let azure = ["azure".to_owned()];
+        let found = Some(bin.display().to_string());
+        assert!(codes(&spec(found.clone(), false), &azure).is_empty());
+        assert_eq!(
+            codes(&spec(found.clone(), true), &azure),
+            ["doctor_service_throttled"]
+        );
+        assert_eq!(codes(&spec(None, false), &[]), ["doctor_service_path"]);
+        let empty = Some(temp("service-path-empty").display().to_string());
+        assert_eq!(
+            codes(&spec(empty.clone(), false), &azure),
+            ["doctor_service_path"]
+        );
+        assert!(
+            codes(&spec(empty, false), &[]).is_empty(),
+            "no embedder signs in with az"
+        );
+        let _ = fs::remove_dir_all(&bin);
     }
 
     #[test]

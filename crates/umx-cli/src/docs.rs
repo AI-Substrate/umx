@@ -414,9 +414,17 @@ service for another `UMX_HOME` is left alone. A daemon started by hand replaces 
 in_place`): the same pid, the same window, the same flags and environment, running the umx binary at the path it
 was started from, so an upgraded binary at that path runs. It rereads the config, so it is what to run after
 `config_restart_needed`. Commands sent during the restart may fail with `daemon_not_running`; run them again.
-Every graph that was loaded comes back, in load order and under the same alias, before the new daemon answers
-(any start does this, not only restart); one that cannot (its folder gone, say) is listed in `umx daemon status`
-under `registry.not_reloaded` and reported by `umx doctor`. See `umx docs get graph`, After a daemon restart.
+Every graph that was loaded comes back, in load order and under the same alias (any start does this, not only
+restart). The daemon answers at once and reloads them one by one behind it: `umx daemon status` shows how many
+still wait in `registry.reloading` (0 when all are back) and lists each that came back under `registry.reloaded`.
+Meanwhile a command that names its graphs (`--graph`, `--scope`) runs now, and a named graph still waiting is
+loaded next, ahead of the rest. These wait until all are back, up to 60 s, then fail with `daemon_busy` (run
+them again): a command that names no graph (an unnamed search, a node address with no `--graph`; `UMX_GRAPH`
+alone does not count), `--all` and `--include-named`, `graph new` and `graph load`, the entity commands, and
+`neighbours` unless `--entities off`, since they cover graphs beside the named one. `umx daemon status`, `graph
+list` (the graphs back so far) and the config commands never wait. A graph that
+cannot come back (its folder gone, say) is listed in `umx daemon status` under `registry.not_reloaded` and
+reported by `umx doctor`. See `umx docs get graph`, After a daemon restart.
 An embed round in progress is dropped and runs again when each graph loads. With no daemon running it fails
 with `daemon_not_running` and starts nothing, even when a service is installed but stopped. When the service
 cannot be inspected it fails with `service_failed` and changes nothing. When the daemon has already applied its
@@ -473,8 +481,12 @@ A socket left behind by a killed daemon is removed on the next start.
 Instead of starting it by hand, install the daemon as a per-user service: a launchd agent on macOS
 (`~/Library/LaunchAgents/dev.umx.daemon.plist`) or a systemd user unit on Linux
 (`~/.config/systemd/user/umx.service`). It then starts now and at every login, comes back within seconds if it
-crashes, and writes its output to `$UMX_HOME/daemon.log`. It runs this umx binary with this `UMX_HOME`. No root
-is needed.
+crashes, and writes its output to `$UMX_HOME/daemon.log`. It runs this umx binary with this `UMX_HOME` and
+the `PATH` of the shell that installed it, so it finds `az` and `azd` as that shell does, and at normal priority
+(launchd `ProcessType` `Standard`). No root is needed. `umx doctor` warns `doctor_service_throttled` for a
+service installed to run throttled (`ProcessType` `Background`, which made starts take minutes and `az` sign-ins
+time out) and `doctor_service_path` for one with no `PATH`, or whose `PATH` finds neither `az` nor `azd` while an
+embedder signs in with them: run `umx daemon install` again from your usual shell.
 
     umx daemon install     # install and start it; run it again after upgrading umx to run the new build
     umx daemon status      # service.installed, service.loaded and service.pid say how it is doing

@@ -9,7 +9,8 @@ supersedes: none
 ---
 ## Do
 - After `umx daemon restart`, `just dev`, a stop then start, or a service restart, carry on: every graph that was
-  loaded comes back before the daemon answers, in the same load order and under the same alias.
+  loaded comes back, in the same load order and under the same alias. Since 221 the daemon answers while they
+  come back: a command naming its graph runs at once; one naming none waits until all are back.
 - Name the graph you mean (`--graph <alias>` or an address). A named graph that unloaded when idle (30 minutes by
   default) or did not come back after a restart is loaded for that command, with a `graph_loaded_on_demand`
   hint. Read the hint; the command ran.

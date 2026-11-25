@@ -713,6 +713,9 @@ struct Writer {
     next_apply: std::sync::atomic::AtomicU64,
     /// The views' channel: each lock hold hands it what its writes changed (ws009 S5a).
     ui: UiFeed,
+    /// The start-up reload's rows still to load, in load order, and what requests see of it.
+    reload: std::cell::RefCell<std::collections::VecDeque<umx_core::registry::Row>>,
+    reloading: Arc<Reloading>,
 }
 
 /// The views' channel and what wakes their waits, shared by the daemon and the writer.
@@ -780,6 +783,10 @@ impl Writer {
                     Err(TryRecvError::Disconnected) => open = false,
                 }
             }
+            // The start-up reload, one graph per step, only while no client job waits.
+            if writes.is_empty() && self.reload_step() {
+                continue;
+            }
             let owed = guarded(&self.ok, || self.read().similar_owed()).unwrap_or(false);
             let quiet = owed && self.drain.quiet(&self.jobs);
             match schedule.pick(now(), !writes.is_empty(), !units.is_empty(), owed, quiet) {
@@ -830,6 +837,90 @@ impl Writer {
                 None if open => self.unload_due(),
                 None => {}
             }
+        }
+    }
+
+    /// Reloads the next waiting start-up row; false when the reload has finished.
+    fn reload_step(&self) -> bool {
+        if self.reloading.left().is_none() {
+            return false;
+        }
+        let row = self.reload.borrow_mut().pop_front();
+        self.reload_rows(row.into_iter().collect());
+        true
+    }
+
+    /// A request missed a graph still waiting in the start-up reload: those rows load now, ahead of the rest, through
+    /// the reload path, so the load order (and with it d-21's primary) is the registry's, as if nothing waited. Earlier
+    /// waiting copies of a wanted graph come too, in order. What else the miss needs, the on-demand path loads after.
+    fn reload_wanted(&self, miss: &Miss) {
+        if self.reloading.left().is_none() {
+            return;
+        }
+        let wants: Box<dyn Fn(&umx_core::registry::Row) -> bool> = match miss {
+            Miss::Alias(alias) => {
+                let alias = alias.clone();
+                Box::new(move |r| r.alias == alias)
+            }
+            Miss::Aliases(list) => {
+                let list = list.clone();
+                Box::new(move |r| list.contains(&r.alias))
+            }
+            Miss::Scope(name) => {
+                let folders: Vec<String> = guarded(&self.ok, || {
+                    self.read()
+                        .graph()
+                        .scope_load_plan(name)
+                        .map(|rows| rows.into_iter().map(|r| r.folder).collect())
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+                Box::new(move |r| folders.contains(&r.folder))
+            }
+        };
+        let mut queue = self.reload.borrow_mut();
+        let ids: Vec<umx_core::Id> = queue.iter().filter(|r| wants(r)).map(|r| r.id).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let (take, keep): (Vec<_>, Vec<_>) = queue.drain(..).partition(|r| ids.contains(&r.id));
+        *queue = keep.into();
+        drop(queue);
+        self.reload_rows(take);
+    }
+
+    /// Reloads `rows`, one lock hold each, as `graph load` would (warm, embeds, rebuilds), and logs each that did not
+    /// reload. When none waits any more, the reload finishes (index details, F80's marks) and waiting requests go on.
+    fn reload_rows(&self, rows: Vec<umx_core::registry::Row>) {
+        for row in rows {
+            #[cfg(test)]
+            reload_gate(&row.folder);
+            let failed = guarded(&self.ok, || {
+                let mut s = self.write();
+                let failed = s.reload_row(&umx_services::Ctx::new("daemon"), row, None);
+                warm_local(&s, &*self.warm_allows, &self.warms);
+                embed_worker::enqueue(&self.jobs, s.take_embed_jobs());
+                let rebuilds = s.take_similarity_rebuilds();
+                drop(s);
+                similarity::spawn_rebuilds(&self.services, &self.rebuild_tx, rebuilds);
+                failed
+            })
+            .flatten();
+            if let Some(n) = failed {
+                eprintln!(
+                    "umx daemon: graph {} at {} did not reload ({})",
+                    n.alias, n.folder, n.code
+                );
+            }
+        }
+        let left = self.reload.borrow().len();
+        if left > 0 {
+            self.reloading.set(Some(left));
+        } else if self.reloading.left().is_some() {
+            guarded(&self.ok, || {
+                self.write().reload_finish(true);
+            });
+            self.reloading.set(None);
         }
     }
 
@@ -1000,6 +1091,7 @@ impl Writer {
             }
             Job::LoadRemembered(miss, request, reply) => {
                 let command = request.command.clone();
+                self.reload_wanted(&miss);
                 let env = guarded(&self.ok, || {
                     let mut services = self.write();
                     let ctx = verbs::ctx(&request);
@@ -1215,6 +1307,11 @@ struct Daemon {
     /// O(nodes) hash once per change (ws004 s34b); `embeddings status` and `similarity pairs`' copies share it (s36).
     /// Lock order, everywhere: the services read hold first, then this mutex; never this mutex first.
     vectors_digests: Mutex<umx_services::DigestMemo>,
+    /// The start-up reload the writer runs while the daemon serves.
+    reloading: Arc<Reloading>,
+    /// Jobs sent to the writer by requests (tests: a request has reached the writer's queue).
+    #[cfg(test)]
+    writer_jobs: AtomicUsize,
     /// Runs between a `similarity pairs` copy and its compute, with no lock held (tests: a write must not wait).
     #[cfg(test)]
     pairs_hook: Mutex<Option<PairsHook>>,
@@ -1246,10 +1343,128 @@ fn warm_local(
     }
 }
 
-/// Reloads the graphs this machine's registry lists as loaded (F72), before the daemon says it is ready, so a restart
-/// (in place, stop then start, or the service) brings them back. Nothing else runs yet, so it holds the services lock
-/// as a write would; embeds and similarity rebuilds are queued and local models warmed as for `graph load`. A graph
-/// that does not reload is logged here and reported by `daemon status` and `umx doctor`; never fatal.
+/// Test gates on the start-up reload, by graph folder: the writer waits at a closed one before it reloads that row,
+/// as a slow disk would make it wait.
+#[cfg(test)]
+pub(crate) type ReloadGate = Arc<(Mutex<bool>, Condvar)>;
+
+#[cfg(test)]
+pub(crate) static RELOAD_GATES: Mutex<Vec<(String, ReloadGate)>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn reload_gate(folder: &str) {
+    let gate = RELOAD_GATES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|(f, _)| f == folder)
+        .map(|(_, g)| Arc::clone(g));
+    if let Some(gate) = gate {
+        let open = gate.0.lock().unwrap_or_else(|e| e.into_inner());
+        drop(gate.1.wait_while(open, |open| !*open));
+    }
+}
+
+/// How long a request that needs every remembered graph waits for the start-up reload before `daemon_busy`: well
+/// inside the CLI's 120 s read limit.
+const RELOAD_WAIT: Duration = Duration::from_secs(60);
+
+/// The start-up reload as requests see it: how many remembered graphs still wait for the writer, and a wake for the
+/// requests waiting for none to. The writer owns the rows themselves.
+pub(crate) struct Reloading {
+    left: Mutex<Option<usize>>,
+    done: Condvar,
+}
+
+impl Reloading {
+    /// `left` rows to reload; with `running` false there is no reload to wait for.
+    fn new(left: usize, running: bool) -> Reloading {
+        Reloading {
+            left: Mutex::new(running.then_some(left)),
+            done: Condvar::new(),
+        }
+    }
+
+    /// How many graphs still wait, or None once the reload has finished.
+    fn left(&self) -> Option<usize> {
+        *self.left.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn set(&self, left: Option<usize>) {
+        *self.left.lock().unwrap_or_else(|e| e.into_inner()) = left;
+        if left.is_none() {
+            self.done.notify_all();
+        }
+    }
+
+    /// Waits at most `wait` for the reload to finish; true when it has.
+    fn wait(&self, wait: Duration) -> bool {
+        let left = self.left.lock().unwrap_or_else(|e| e.into_inner());
+        let (left, _) = self
+            .done
+            .wait_timeout_while(left, wait, |left| left.is_some())
+            .unwrap_or_else(|e| e.into_inner());
+        left.is_none()
+    }
+}
+
+/// Whether a request is answered while the start-up reload runs. The lifecycle, config, root and scope-list
+/// requests, `graph list` (the graphs back so far), `graph scan` and `graph forget` run now, as does a request that
+/// names its graphs (`--graph`, `--scope`): a named graph still waiting is loaded first, through the on-demand path.
+/// The rest wait for the reload, because they would act on the graphs loaded so far:
+/// - a request naming no graph (an unnamed search, a node address with no `--graph`), and `--all` or
+///   `--include-named`, which cover every loaded graph; `UMX_GRAPH` alone does not count as naming one, since it is
+///   set on every request whatever the command covers;
+/// - `graph new` and `graph load`, whose alias check sees only graphs in memory, so one could take the alias of a
+///   graph still waiting and the registry would drop that graph;
+/// - the entity verbs and `neighbours` (unless `--entities off`), which walk every loaded open graph beside the named
+///   one.
+fn answers_while_reloading(request: &Request) -> bool {
+    if request.is_lifecycle() {
+        return true;
+    }
+    if let Some(op) = &request.op {
+        if op.is_config()
+            || matches!(
+                op,
+                Op::GraphList { .. }
+                    | Op::GraphScan { .. }
+                    | Op::GraphForget { .. }
+                    | Op::RootAdd { .. }
+                    | Op::RootList
+                    | Op::RootRemove { .. }
+                    | Op::ScopeList
+                    | Op::ScopeShow { .. }
+                    | Op::UiWait { .. }
+                    | Op::EmbeddingsProbe { .. }
+            )
+        {
+            return true;
+        }
+        let walks_every_graph = matches!(
+            op,
+            Op::GraphNew { .. }
+                | Op::GraphLoad { .. }
+                | Op::EntityShow { .. }
+                | Op::EntityLink { .. }
+                | Op::EntityUnlink { .. }
+                | Op::EntityDeny { .. }
+                | Op::EntityUndeny { .. }
+        ) || matches!(
+            op,
+            Op::Neighbours { entities, .. } if *entities != Some(umx_protocol::Entities::Off)
+        );
+        if walks_every_graph {
+            return false;
+        }
+    }
+    !request.all && !request.include_named && (request.graph.is_some() || request.scope.is_some())
+}
+
+/// Reloads the graphs this machine's registry lists as loaded (F72) in one hold, before the daemon serves. Only when an
+/// invalid config fails every row at once; otherwise the writer reloads them one by one ([`Writer::reload_step`]).
+/// Embeds and similarity rebuilds are queued and local models warmed as for `graph load`. A graph that does not
+/// reload is logged here and reported by `daemon status` and `umx doctor`; never fatal.
 fn reload(
     services: &Arc<FairLock<umx_services::Services>>,
     config_closed: bool,
@@ -1464,15 +1679,34 @@ impl Daemon {
             );
         }
         let writer_ok = Arc::new(AtomicBool::new(true));
-        reload(
-            &services,
-            config.config_closed.is_some(),
-            &writer_ok,
-            &queue,
-            &tx,
-            &*folder_allows(&config_services),
-            &queries,
-        );
+        // The daemon serves first. Only the rows to reload are read here (one small file); the writer loads
+        // them one graph per lock hold while no client job waits. An invalid config fails every row at once, so that
+        // reload runs here as before.
+        let rows = if config.config_closed.is_some() {
+            reload(
+                &services,
+                true,
+                &writer_ok,
+                &queue,
+                &tx,
+                &*folder_allows(&config_services),
+                &queries,
+            );
+            Vec::new()
+        } else {
+            guarded(&writer_ok, || {
+                let mut s = services.write().unwrap_or_else(|e| e.into_inner());
+                let rows = s.reload_begin();
+                if let Some(why) = &s.graph().reload_report().unreadable {
+                    eprintln!(
+                        "umx daemon: the graph registry cannot be used ({why}); nothing reloaded"
+                    );
+                }
+                rows
+            })
+            .unwrap_or_default()
+        };
+        let reloading = Arc::new(Reloading::new(rows.len(), config.config_closed.is_none()));
         let ui = UiFeed {
             channel: Arc::new(Mutex::new(ui)),
             wake: Arc::new(Condvar::new()),
@@ -1497,6 +1731,8 @@ impl Daemon {
             drain,
             next_apply: std::sync::atomic::AtomicU64::new(0),
             ui: ui.clone(),
+            reload: std::cell::RefCell::new(rows.into()),
+            reloading: Arc::clone(&reloading),
         };
         std::thread::spawn(move || writer.run(rx));
         let build_now: BuildNow = {
@@ -1529,6 +1765,9 @@ impl Daemon {
             ui_wake: ui.wake,
             ui_replies: Arc::new(AtomicUsize::new(0)),
             vectors_digests: Mutex::new(umx_services::DigestMemo::new()),
+            reloading,
+            #[cfg(test)]
+            writer_jobs: AtomicUsize::new(0),
             #[cfg(test)]
             pairs_hook: Mutex::new(None),
         }
@@ -1669,6 +1908,8 @@ impl Daemon {
         stop: bool,
     ) -> Envelope {
         let (tx, rx) = channel();
+        #[cfg(test)]
+        self.writer_jobs.fetch_add(1, Ordering::SeqCst);
         let sent = {
             let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
             let sent = writer.as_ref().is_some_and(|w| w.send(job(tx)).is_ok());
@@ -1685,9 +1926,18 @@ impl Daemon {
     }
 
     fn handle(&self, request: &Request) -> Envelope {
-        let reply = self.dispatch(request);
-        // Hints in catalogue order, at most MAX_HINTS of them (ws002 X1), once for the whole reply.
-        let reply = self.flag_candidates(self.on_demand(request, reply).settle_hints());
+        let reply = if answers_while_reloading(request) || self.reloading.wait(RELOAD_WAIT) {
+            let reply = self.dispatch(request);
+            // Hints in catalogue order, at most MAX_HINTS of them (ws002 X1), once for the whole reply.
+            self.flag_candidates(self.on_demand(request, reply).settle_hints())
+        } else {
+            busy(
+                request
+                    .op
+                    .as_ref()
+                    .map_or(request.command.as_str(), |op| op.command()),
+            )
+        };
         if request.client == self.build {
             reply
         } else {
@@ -2487,6 +2737,7 @@ impl Daemon {
                 "code": g.code,
             })).collect::<Vec<_>>(),
             "primary_restored": r.primary_restored,
+            "reloading": self.reloading.left().unwrap_or(0),
         })
     }
 

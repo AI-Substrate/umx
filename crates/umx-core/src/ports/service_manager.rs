@@ -14,6 +14,14 @@ pub struct ServiceSpec {
     pub home: String,
     /// Where the service's output goes: `$UMX_HOME/daemon.log`.
     pub log: String,
+    /// The PATH the service runs with, given to it as `PATH`: the installing shell's, so `az` and `azd` are found (a
+    /// service otherwise gets a bare PATH, or none). Each entry is [`unit_safe`]. None when a service file written
+    /// before umx set it is read back.
+    pub path: Option<String>,
+    /// Read back only: the installed service file asks to be throttled (a launchd `ProcessType` of `Background`, or
+    /// a systemd idle CPU or I/O scheduling class), which caps the daemon's CPU and disk I/O. umx never writes it;
+    /// installing again clears it.
+    pub background: bool,
 }
 
 /// Whether the service is installed and running.

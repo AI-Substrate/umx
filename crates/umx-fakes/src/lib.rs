@@ -1764,9 +1764,14 @@ impl ServiceManager for FakeServiceManager {
     }
 
     fn install(&self, spec: &ServiceSpec) -> Result<(), ServiceError> {
-        for path in [&spec.program, &spec.home, &spec.log] {
+        let dirs = spec.path.iter().flat_map(|p| p.split(':'));
+        for path in [&spec.program, &spec.home, &spec.log]
+            .into_iter()
+            .map(String::as_str)
+            .chain(dirs)
+        {
             if !unit_safe(path) {
-                return Err(ServiceError::BadPath(path.clone()));
+                return Err(ServiceError::BadPath(path.to_owned()));
             }
         }
         let mut slot = self.slot();

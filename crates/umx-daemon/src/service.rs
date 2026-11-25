@@ -1,6 +1,6 @@
 //! `umx daemon install|uninstall|service` and the service part of `umx daemon status` (req-86). They run in the
 //! binary, not through the daemon, so they work with it down. The service runs this umx binary (its canonical path) with this
-//! UMX_HOME, as `<umx> daemon start --service`.
+//! UMX_HOME and this shell's PATH, as `<umx> daemon start --service`.
 
 use std::path::Path;
 
@@ -30,7 +30,22 @@ pub(crate) fn this_spec(config: &Config) -> Result<ServiceSpec, Issue> {
         program: text(&program)?,
         home: text(&home)?,
         log: text(&home.join("daemon.log"))?,
+        path: service_path(&config.search_path),
+        background: false,
     })
+}
+
+/// The PATH the service gets: this shell's search path, so the service finds `az` and `azd` as this shell does
+/// (launchd gives an agent almost none). Entries a unit file cannot carry safely, or that are not absolute, are left
+/// out, as are repeats; None when nothing is left.
+fn service_path(dirs: &[std::path::PathBuf]) -> Option<String> {
+    let mut kept: Vec<&str> = Vec::new();
+    for dir in dirs.iter().filter_map(|d| d.to_str()) {
+        if umx_core::ports::unit_safe(dir) && !dir.contains(':') && !kept.contains(&dir) {
+            kept.push(dir);
+        }
+    }
+    (!kept.is_empty()).then(|| kept.join(":"))
 }
 
 pub(crate) fn issue(e: &ServiceError) -> Issue {

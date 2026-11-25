@@ -163,7 +163,25 @@ impl Home {
         let env = Envelope::from_json(line.as_bytes())
             .unwrap_or_else(|e| panic!("ready line {line:?}: {e}"));
         assert_eq!(env.check(), Ok(()));
+        self.reloaded();
         env
+    }
+
+    /// Waits until the daemon has reloaded the graphs the registry remembers: it serves while it reloads,
+    /// and tests read what came back.
+    fn reloaded(&self) {
+        let until = Instant::now() + self.limit();
+        loop {
+            let (status, _) = self.umx(&["daemon", "status"]);
+            if status.data["registry"]["reloading"].as_u64().unwrap_or(0) == 0 {
+                return;
+            }
+            assert!(
+                Instant::now() < until,
+                "the daemon never finished its reload"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
 
@@ -553,6 +571,15 @@ impl Home {
             .as_str()
             .unwrap_or_else(|| panic!("install did not report its program: {}", env.to_json()))
             .to_owned()
+    }
+
+    /// Rewrites the installed service file with `edit`.
+    fn service_file_edit(&self, edit: impl Fn(&str) -> String) {
+        let file = self.unit_file();
+        let text = fs::read_to_string(&file).unwrap();
+        let edited = edit(&text);
+        assert_ne!(edited, text, "the edit changed nothing");
+        fs::write(&file, edited).unwrap();
     }
 
     /// Makes the installed service run `program` instead, by editing its file.
@@ -3577,6 +3604,38 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 &edit,
             ])
         }
+        Code::DoctorServiceThrottled => {
+            let pid = home.start().data["pid"].to_string();
+            home.install();
+            home.service_state("pid", &pid);
+            home.service_file_edit(|text| {
+                text.replace("<string>Standard</string>", "<string>Background</string>")
+                    .replace(
+                        "Restart=on-failure",
+                        "IOSchedulingClass=idle\nRestart=on-failure",
+                    )
+            });
+            home.umx(&["doctor"])
+        }
+        Code::DoctorServicePath => {
+            let pid = home.start().data["pid"].to_string();
+            home.install();
+            home.service_state("pid", &pid);
+            // A service file written before umx set PATH.
+            home.service_file_edit(|text| {
+                let mut kept = Vec::new();
+                let mut lines = text.lines();
+                while let Some(line) = lines.next() {
+                    if line.trim() == "<key>PATH</key>" {
+                        lines.next();
+                    } else if !line.starts_with("Environment=\"PATH=") {
+                        kept.push(line);
+                    }
+                }
+                kept.join("\n") + "\n"
+            });
+            home.umx(&["doctor"])
+        }
         Code::DoctorServiceElsewhere => {
             let pid = home.start().data["pid"].to_string();
             home.install();
@@ -4824,6 +4883,7 @@ impl Home {
     }
 
     fn aliases(&self) -> Vec<String> {
+        self.reloaded();
         let list = self.ok(&["graph", "list"]);
         list.data["rows"]
             .as_array()

@@ -83,6 +83,14 @@ fn check_paths(spec: &ServiceSpec) -> Result<(), ServiceError> {
             return Err(ServiceError::BadPath(path.clone()));
         }
     }
+    if let Some(dir) = spec
+        .path
+        .iter()
+        .flat_map(|p| p.split(':'))
+        .find(|d| !unit_safe(d))
+    {
+        return Err(ServiceError::BadPath(dir.to_owned()));
+    }
     Ok(())
 }
 
@@ -204,7 +212,9 @@ impl Launchd {
 }
 
 /// The agent plist: runs `<program> daemon start --service` at login (RunAtLoad), again after a crash but not after
-/// a clean `umx daemon stop` (KeepAlive SuccessfulExit false), with UMX_HOME set and output appended to the log.
+/// a clean `umx daemon stop` (KeepAlive SuccessfulExit false), with UMX_HOME and PATH set and output appended to the
+/// log. ProcessType is Standard: Background throttles the daemon's CPU and disk I/O, which made a start take minutes
+/// and hosted embedder sign-ins time out.
 pub fn plist(label: &str, spec: &ServiceSpec) -> String {
     let x = |s: &str| {
         s.replace('&', "&amp;")
@@ -229,7 +239,7 @@ pub fn plist(label: &str, spec: &ServiceSpec) -> String {
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>UMX_HOME</key>
-		<string>{home}</string>
+		<string>{home}</string>{path}
 	</dict>
 	<key>RunAtLoad</key>
 	<true/>
@@ -241,7 +251,7 @@ pub fn plist(label: &str, spec: &ServiceSpec) -> String {
 	<key>ThrottleInterval</key>
 	<integer>2</integer>
 	<key>ProcessType</key>
-	<string>Background</string>
+	<string>Standard</string>
 	<key>StandardOutPath</key>
 	<string>{log}</string>
 	<key>StandardErrorPath</key>
@@ -252,10 +262,15 @@ pub fn plist(label: &str, spec: &ServiceSpec) -> String {
         program = x(&spec.program),
         home = x(&spec.home),
         log = x(&spec.log),
+        path = spec.path.as_deref().map_or_else(String::new, |p| format!(
+            "\n\t\t<key>PATH</key>\n\t\t<string>{}</string>",
+            x(p)
+        )),
     )
 }
 
-/// Reads back what [`plist`] wrote: the first ProgramArguments string, UMX_HOME and StandardOutPath.
+/// Reads back what [`plist`] wrote: the first ProgramArguments string, UMX_HOME, PATH, StandardOutPath, and whether
+/// ProcessType is Background (as umx once wrote).
 fn plist_spec(text: &str) -> Option<ServiceSpec> {
     let unx = |s: &str| {
         s.replace("&lt;", "<")
@@ -272,6 +287,8 @@ fn plist_spec(text: &str) -> Option<ServiceSpec> {
         program: after("ProgramArguments")?,
         home: after("UMX_HOME")?,
         log: after("StandardOutPath")?,
+        path: after("PATH"),
+        background: after("ProcessType").as_deref() == Some("Background"),
     })
 }
 
@@ -401,7 +418,7 @@ Description=umx daemon
 
 [Service]
 ExecStart=\"{program}\" daemon start --service
-Environment=\"UMX_HOME={home}\"
+Environment=\"UMX_HOME={home}\"{path}
 Restart=on-failure
 RestartSec=2
 StandardOutput=append:{log}
@@ -413,6 +430,10 @@ WantedBy=default.target
         program = spec.program,
         home = spec.home,
         log = spec.log,
+        path = spec
+            .path
+            .as_deref()
+            .map_or_else(String::new, |p| format!("\nEnvironment=\"PATH={p}\"")),
     )
 }
 
@@ -425,6 +446,16 @@ fn unit_spec(text: &str) -> Option<ServiceSpec> {
             .strip_suffix('"')?
             .to_owned(),
         log: line("StandardOutput=append:")?.to_owned(),
+        path: line("Environment=\"PATH=")
+            .and_then(|p| p.strip_suffix('"'))
+            .map(str::to_owned),
+        // systemd's throttle: an idle CPU or I/O scheduling class, which umx never writes.
+        background: text.lines().any(|l| {
+            matches!(
+                l.trim(),
+                "CPUSchedulingPolicy=idle" | "IOSchedulingClass=idle" | "IOSchedulingClass=3"
+            )
+        }),
     })
 }
 
@@ -597,6 +628,8 @@ exit 64
             program: "/Users/jo/.cargo/bin/umx".into(),
             home: "/Users/jo/.umx".into(),
             log: "/Users/jo/.umx/daemon.log".into(),
+            path: Some("/opt/homebrew/bin:/usr/bin:/bin".into()),
+            background: false,
         };
         assert_eq!(
             plist(Launchd::LABEL, &s),
@@ -618,6 +651,8 @@ exit 64
 	<dict>
 		<key>UMX_HOME</key>
 		<string>/Users/jo/.umx</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin</string>
 	</dict>
 	<key>RunAtLoad</key>
 	<true/>
@@ -629,7 +664,7 @@ exit 64
 	<key>ThrottleInterval</key>
 	<integer>2</integer>
 	<key>ProcessType</key>
-	<string>Background</string>
+	<string>Standard</string>
 	<key>StandardOutPath</key>
 	<string>/Users/jo/.umx/daemon.log</string>
 	<key>StandardErrorPath</key>
@@ -642,6 +677,15 @@ exit 64
         odd.program = "/a&b <c>/umx".into();
         assert!(plist(Launchd::LABEL, &odd).contains("<string>/a&amp;b &lt;c&gt;/umx</string>"));
         assert_eq!(plist_spec(&plist(Launchd::LABEL, &odd)), Some(odd));
+        // A plist written before PATH: no PATH read back, and the Background it asked for is flagged.
+        let old = plist(Launchd::LABEL, &s)
+            .replace(
+                "\t\t<key>PATH</key>\n\t\t<string>/opt/homebrew/bin:/usr/bin:/bin</string>\n",
+                "",
+            )
+            .replace("<string>Standard</string>", "<string>Background</string>");
+        let read = plist_spec(&old).unwrap();
+        assert_eq!((read.path, read.background), (None, true));
     }
 
     #[test]
@@ -650,6 +694,8 @@ exit 64
             program: "/home/jo/.cargo/bin/umx".into(),
             home: "/home/jo/.umx".into(),
             log: "/home/jo/.umx/daemon.log".into(),
+            path: Some("/home/jo/.local/bin:/usr/bin:/bin".into()),
+            background: false,
         };
         assert_eq!(
             unit(&s),
@@ -660,6 +706,7 @@ Description=umx daemon
 [Service]
 ExecStart=\"/home/jo/.cargo/bin/umx\" daemon start --service
 Environment=\"UMX_HOME=/home/jo/.umx\"
+Environment=\"PATH=/home/jo/.local/bin:/usr/bin:/bin\"
 Restart=on-failure
 RestartSec=2
 StandardOutput=append:/home/jo/.umx/daemon.log
@@ -669,7 +716,12 @@ StandardError=append:/home/jo/.umx/daemon.log
 WantedBy=default.target
 "
         );
-        assert_eq!(unit_spec(&unit(&s)), Some(s));
+        assert_eq!(unit_spec(&unit(&s)), Some(s.clone()));
+        let idle = unit(&s).replace(
+            "Restart=on-failure",
+            "IOSchedulingClass=idle\nRestart=on-failure",
+        );
+        assert!(unit_spec(&idle).unwrap().background);
     }
 
     #[test]

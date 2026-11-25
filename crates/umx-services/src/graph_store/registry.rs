@@ -389,6 +389,26 @@ impl GraphStore {
         }
     }
 
+    /// The alias graph `id` is loaded under from `folder`, if it is in memory from there.
+    pub fn loaded_from(&self, folder: &str, id: Id) -> Option<String> {
+        self.graphs
+            .iter()
+            .find(|(_, l)| l.dir.as_str() == folder && l.meta.id == id)
+            .map(|(alias, _)| alias.to_string())
+    }
+
+    /// Whether the registry still remembers `row` as loaded, under the same alias, folder and graph id: a reload row
+    /// that waited is skipped only when the registry says it was unloaded, forgotten or re-aliased since. A registry
+    /// that cannot be read now keeps the row: it came from the start-up read, as every row did before the daemon
+    /// served first, and the reload report says the later read failed (F103).
+    pub(crate) fn still_remembered(&self, row: &Row) -> bool {
+        self.read_registry().map_or(true, |registry| {
+            registry.rows.iter().any(|r| {
+                r.loaded && r.alias == row.alias && r.folder == row.folder && r.id == row.id
+            })
+        })
+    }
+
     /// Records one remembered row's reload: its load's warning codes, or the code it failed with.
     pub(crate) fn record_reload(
         &mut self,

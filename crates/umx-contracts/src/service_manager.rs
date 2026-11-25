@@ -18,6 +18,8 @@ pub fn spec() -> ServiceSpec {
         program: "/opt/umx bin/umx".to_string(),
         home: "/home/u/.umx".to_string(),
         log: "/home/u/.umx/daemon.log".to_string(),
+        path: Some("/opt/umx bin:/usr/bin:/bin".to_string()),
+        background: false,
     }
 }
 
@@ -102,6 +104,12 @@ pub fn sm_c6_an_unsafe_path_is_refused_and_changes_nothing<P: ServiceManager>(
         assert!(
             matches!(port.install(&s), Err(ServiceError::BadPath(_))),
             "{bad:?}"
+        );
+        let mut s = spec();
+        s.path = Some(format!("/usr/bin:{bad}"));
+        assert!(
+            matches!(port.install(&s), Err(ServiceError::BadPath(_))),
+            "PATH {bad:?}"
         );
     }
     assert_eq!(port.status().expect("status"), ServiceState::NotInstalled);

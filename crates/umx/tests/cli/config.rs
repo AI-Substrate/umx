@@ -822,6 +822,7 @@ fn doctor_sees_a_daemon_still_closed_after_its_config_was_fixed() {
     assert!(!codes.contains(&"doctor_daemon_down"), "{codes:?}");
     // The restart the finding asks for clears it: the daemon rereads the fixed config in place.
     home.ok(&["daemon", "restart"]);
+    home.reloaded();
     let (env, exit) = home.umx(&["doctor"]);
     assert_eq!(
         (exit, env.data["verdict"].as_str()),

@@ -24,6 +24,11 @@ Job: umx is not running, or you are new to it.
    themselves, and a named graph that unloaded when idle loads on demand (`graph_loaded_on_demand`). Don't reload
    by hand. A graph missing after a restart: `umx doctor` (`doctor_graph_not_reloaded` gives the load command);
    `umx graph unload <alias>` forgets it. A graph you unloaded stays unloaded until `umx graph load`.
+   **usage 221**: the daemon answers at once after a start and reloads them behind it; `umx daemon status`'s
+   `registry.reloading` is how many still wait. Name the graph (`--graph`, `--scope`) to run now; a command that
+   names none, `--all`, `graph load`/`new`, the entity commands and `neighbours` wait until all are back
+   (`daemon_busy` after 60 s: run it again). `doctor_service_throttled` or
+   `doctor_service_path`: tell the human to run `umx daemon install` again from their usual shell.
 4. **usage 031**: graph folders live under the daemon's roots, `$HOME` and `$TMPDIR` by default (on macOS
    `/tmp` is neither): `umx graph new ~/graphs/acme --alias acme`. `umx config show` prints the roots and
    where they came from. Don't ask to widen them (`umx config set roots`, `UMX_ROOTS`) unless the human

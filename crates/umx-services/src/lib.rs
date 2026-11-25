@@ -683,23 +683,60 @@ impl Services {
         ctx: &Ctx,
         refused: Option<&'static str>,
     ) -> &graph_store::ReloadReport {
-        for mut row in self.graph.reload_rows() {
-            let result = match refused {
-                Some(code) => Err(code),
-                None => self
-                    .load(ctx, &row.folder, Some(&row.alias), Some(row.id))
-                    .map(|done| {
-                        // ws006 S23 (review R6): a rename cut short before the registry loads under graph.json's
-                        // alias; the row is recorded, and refreshed, under the alias it loaded as.
-                        row.alias = done.value.graph.alias.clone();
-                        done.notes.iter().map(|w| w.code).collect()
-                    })
-                    .map_err(|p| p.code),
-            };
-            self.graph.record_reload(&row, result);
+        for row in self.reload_begin() {
+            self.reload_row(ctx, row, refused);
         }
-        // F80: while every folder is closed nothing came back, so the marks are kept for the next start.
-        if refused.is_none() {
+        self.reload_finish(refused.is_none())
+    }
+
+    /// The start-up reload in steps, so the daemon serves while it runs: the rows to reload, in load order (the
+    /// report starts again). Load each with [`Self::reload_row`], then call [`Self::reload_finish`].
+    pub fn reload_begin(&mut self) -> Vec<umx_core::registry::Row> {
+        self.graph.reload_rows()
+    }
+
+    /// Reloads one row [`Self::reload_begin`] gave, through the same path as `graph load`, and records it; the
+    /// failure, if it did not reload. Rows can wait while other writes run, so a row unloaded, forgotten or
+    /// re-aliased since is skipped and recorded nowhere, and one already in memory from its folder (a `graph load`
+    /// meanwhile) is recorded as reloaded without loading it again.
+    pub fn reload_row(
+        &mut self,
+        ctx: &Ctx,
+        mut row: umx_core::registry::Row,
+        refused: Option<&'static str>,
+    ) -> Option<graph_store::NotReloaded> {
+        let result = match refused {
+            Some(code) => Err(code),
+            None if self.graph.loaded_from(&row.folder, row.id).is_some() => {
+                if let Some(alias) = self.graph.loaded_from(&row.folder, row.id) {
+                    row.alias = alias;
+                }
+                Ok(Vec::new())
+            }
+            None if !self.graph.still_remembered(&row) => return None,
+            None => self
+                .load(ctx, &row.folder, Some(&row.alias), Some(row.id))
+                .map(|done| {
+                    // ws006 S23 (review R6): a rename cut short before the registry loads under graph.json's
+                    // alias; the row is recorded, and refreshed, under the alias it loaded as.
+                    row.alias = done.value.graph.alias.clone();
+                    done.notes.iter().map(|w| w.code).collect()
+                })
+                .map_err(|p| p.code),
+        };
+        let failed = result.as_ref().err().map(|code| graph_store::NotReloaded {
+            alias: row.alias.clone(),
+            folder: row.folder.clone(),
+            code,
+        });
+        self.graph.record_reload(&row, result);
+        failed
+    }
+
+    /// Ends the start-up reload: each reloaded row's index details, then the no-primary marks (F80). `settle` false
+    /// keeps the marks for the next start (while every folder is closed nothing came back).
+    pub fn reload_finish(&mut self, settle: bool) -> &graph_store::ReloadReport {
+        if settle {
             self.graph.refresh_reloaded();
             self.graph.restore_no_primary();
         }
