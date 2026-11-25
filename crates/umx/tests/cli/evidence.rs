@@ -148,6 +148,7 @@ fn a_redact_is_refused_while_the_text_sits_where_it_cannot_scrub() {
             at,
             removed: false,
             redact: true,
+            all: false,
         };
         let (env, exit) = raw(&home.socket(), &Request::op(op, None, None, older_cli()));
         assert_eq!(exit, 2, "{}", env.to_json());

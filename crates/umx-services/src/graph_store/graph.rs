@@ -70,6 +70,8 @@ pub struct Checked {
     pub spines: Vec<(String, super::SpineLine)>,
     /// `--lint` (F139): what the lint found in the checked graphs; None without `--lint`.
     pub lint: Option<super::lint::Lint>,
+    /// `--sources` (usage 220): cited files that changed or cannot be read; None without `--sources`.
+    pub sources: Option<super::source_state::SourcesChecked>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -815,7 +817,12 @@ impl GraphStore {
     /// named set (d-20, d-21), so links between them resolve whatever their visibility. Each checked graph whose
     /// links reach graphs the request did not name gets one `link_targets_unnamed`, a count only: it is the same
     /// for an unloaded, a hidden and an open target, and never names one (security ruling a).
-    pub fn check(&self, ctx: &Ctx, lint: Option<&super::lint::LintRequest>) -> Outcome<Checked> {
+    pub fn check(
+        &self,
+        ctx: &Ctx,
+        lint: Option<&super::lint::LintRequest>,
+        sources: bool,
+    ) -> Outcome<Checked> {
         let single = ctx.scope.is_none() && !ctx.graph.as_deref().is_some_and(|g| g.contains(','));
         if single {
             let alias = self.select(ctx, &[])?;
@@ -833,6 +840,11 @@ impl GraphStore {
                 warnings.extend(hints);
                 found
             });
+            let sources = sources.then(|| {
+                let (found, hints) = self.check_sources(&[(alias.as_str(), &read)]);
+                warnings.extend(hints);
+                found
+            });
             let total = rows.len();
             return Ok(Done {
                 value: Checked {
@@ -840,6 +852,7 @@ impl GraphStore {
                     graphs: Vec::new(),
                     spines: alloc::vec![(alias.clone(), self.spine_of(&alias))],
                     lint,
+                    sources,
                 },
                 notes: warnings,
             });
@@ -888,6 +901,12 @@ impl GraphStore {
             warnings.extend(hints);
             found
         });
+        let sources = sources.then(|| {
+            let checked: Vec<_> = read.iter().map(|(a, g, _)| (*a, g)).collect();
+            let (found, hints) = self.check_sources(&checked);
+            warnings.extend(hints);
+            found
+        });
         // As node list does: a saved scope's member and copy warnings, and secured graphs left out
         // (graph-addressing-expert N3).
         warnings.extend(self.scope_warnings(&scope)?);
@@ -903,6 +922,7 @@ impl GraphStore {
                 graphs,
                 spines,
                 lint,
+                sources,
             },
             notes: warnings,
         })

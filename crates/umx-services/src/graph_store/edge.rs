@@ -399,6 +399,7 @@ pub(crate) fn edge_evidence<'g>(
         .collect();
     let mut pointers = typed_evidence_pointers(dir, &given, sources, lookup)?;
     warnings.extend(check_evidence(&mut pointers, lookup));
+    warnings.extend(sources.warnings(&pointers));
     let mut unique = Vec::new();
     add_evidence(&mut unique, pointers);
     Ok(unique)
@@ -884,7 +885,7 @@ impl GraphStore {
             edge_evidence(
                 &self.get(&alias).dir,
                 given,
-                &self.source_check(),
+                &self.source_check(&alias),
                 &|a| open.get(a).copied(),
                 &mut warnings,
             )?

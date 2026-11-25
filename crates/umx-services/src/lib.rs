@@ -61,6 +61,10 @@ pub use graph_store::{
     EntityUnlinked,
 };
 pub use graph_store::{EvidenceAdded, EvidenceListed, EvidenceRemoved, EvidenceRow, Redacted};
+pub use graph_store::{
+    EvidenceRefreshed, RefreshPick, Refreshed, ResourceRefreshed, SOURCES_PAGE, SourceFinding,
+    SourceRow, SourcesChecked,
+};
 pub use graph_store::{FolderState, GraphForgotten, IndexRow, Moved, PrimarySet, Renamed};
 pub use graph_store::{GraphKey, edge_secret_flags};
 pub use graph_store::{
@@ -1243,9 +1247,9 @@ impl Services {
         }
     }
 
-    /// `umx check`, with `--lint` (F139) when `lint` is given.
-    pub fn check(&self, ctx: &Ctx, lint: Option<&LintRequest>) -> Outcome<Checked> {
-        self.graph.check(ctx, lint)
+    /// `umx check`, with `--lint` (F139) when `lint` is given and `--sources` (usage 220) when `sources`.
+    pub fn check(&self, ctx: &Ctx, lint: Option<&LintRequest>, sources: bool) -> Outcome<Checked> {
+        self.graph.check(ctx, lint, sources)
     }
 
     pub fn graph_unload(&mut self, ctx: &Ctx, alias: &str) -> Outcome<GraphUnloaded> {
@@ -1715,6 +1719,21 @@ impl Services {
     ) -> Outcome<EvidenceRemoved> {
         self.graph
             .node_evidence_remove(ctx, node, pointer, reason, at)
+    }
+
+    /// `umx node evidence <node> refresh <pointer> | --at <n> | --all` (usage 220).
+    pub fn node_evidence_refresh(
+        &mut self,
+        ctx: &Ctx,
+        node: &str,
+        pick: Option<RefreshPick<'_>>,
+    ) -> Outcome<EvidenceRefreshed> {
+        self.graph.node_evidence_refresh(ctx, node, pick)
+    }
+
+    /// `umx resource refresh <node>` (usage 220).
+    pub fn resource_refresh(&mut self, ctx: &Ctx, node: &str) -> Outcome<ResourceRefreshed> {
+        self.graph.resource_refresh(ctx, node)
     }
 
     pub fn node_evidence_redact(

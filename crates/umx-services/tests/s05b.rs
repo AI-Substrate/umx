@@ -320,7 +320,7 @@ fn note_appends_a_paragraph_and_evidence_in_one_write() {
     assert_eq!(
         n.evidence[0],
         json!({ "source": "transcripts/012.ndjson", "selector": { "seq": [120, 140] },
-                "kind": "room", "fidelity": "lossy", "hash": null,
+                "kind": "room", "fidelity": "lossy", "hash": EMPTY_SHA256, "hash_state": "hashed", "length": 0,
                 "by_session": n.edited_by_session.unwrap().to_text() })
     );
     assert_eq!(n.evidence[2]["selector"], json!({ "lines": [3, 9] }));
@@ -413,6 +413,10 @@ fn add_with(w: &mut World, evidence: &[&str], kind: Option<&str>) -> Result<Node
         .map(|d| d.value.node)
 }
 
+/// The open fake reads a file it was not told about as empty (usage 220).
+const EMPTY_SHA256: &str =
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
 #[test]
 fn add_stores_evidence_in_its_one_write() {
     let mut w = world();
@@ -424,7 +428,7 @@ fn add_stores_evidence_in_its_one_write() {
     assert_eq!(
         on.evidence[0],
         json!({ "source": "transcripts/012.ndjson", "selector": { "seq": [120, 140] },
-                "kind": "room", "fidelity": "lossy", "hash": null,
+                "kind": "room", "fidelity": "lossy", "hash": EMPTY_SHA256, "hash_state": "hashed", "length": 0,
                 "by_session": on.authored_by_session.unwrap().to_text() })
     );
     let plain = add_with(&mut w, &["notes/fin.md#L3"], None).unwrap();

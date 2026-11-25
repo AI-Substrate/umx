@@ -720,6 +720,34 @@ the place, never the term or the text. The file is a plain local file any proces
 words to keep out of graphs, not a place for credentials (`secret_suspected` covers those). It is never in a graph
 folder or in config, and never sent to the daemon over the socket.
 
+### umx check --sources
+
+    umx check --graph demo --sources
+    umx node evidence 01JC8XA4H7 refresh --at 2     # accept what the second pointer's file holds now
+    umx resource refresh 01JD7K2M3N                 # accept what a resource's file holds now
+
+`--sources` (usage 220) reads again every local file a checked graph's nodes cite, in their evidence and their
+`locator`, that umx tried to hash when the reference was added (see `umx docs get evidence`), and compares it with
+what was stored. It reads only and never refuses: each kind it finds gives one hint, with the count, the first node
+and place and a next, and `data.sources.rows` lists every finding (at most 100 per graph and kind): `graph`, `kind`,
+`id`, `place` (`evidence:<i>`, counted from 1, or `locator`), `state` (what reading the file gave now:
+`hashed`, `missing`, `unreadable`, `outside` or `too_large`), `old_length` and `new_length`. Never the source or
+its content.
+
+- `source_changed`: the file's sha256 differs from the one stored, or a file that could not be read when it was
+  cited can be read now. Check that what cites it still holds, then accept it with
+  `umx node evidence <node> refresh --at <i>` or `umx resource refresh <node>` (the hint's next).
+- `source_missing`: the file cannot be read now (gone, a folder, refused, a symlink out of the roots, or over
+  256 MiB). Restore it, or fix or remove the pointer. The next lists the node's pointers (`node evidence <node>
+  list`) or shows the resource. A refresh of it records that state as accepted, and it is left out until it changes.
+
+`data.sources` also gives `checked` (files read), `unchecked` (cited through a `root:` this machine does not set or
+cannot use: nothing read; `umx root add` it), `changed` and `missing` (the counts, beyond the page too). A URL or
+`umx:` source is never read, and a pointer stored before umx hashed sources (no `hash_state`) is left out until it
+is refreshed. Each file is read once per graph however many pointers cite it. Edge evidence is hashed when it is
+added but not checked yet. `umx doctor` never runs it (it would read every file): its hint `doctor_graph_sources`
+names this command for each loaded graph.
+
 A link to another graph is read only when that graph is named, unless it is open: a row `graph_not_loaded`
 (subject `<edge> <end> umx:<graph id>/<node>`) is the same for a graph that is not loaded and one whose visibility
 keeps it out of unnamed reads, and `link_targets_unnamed` (information) counts the links whose graphs the check did

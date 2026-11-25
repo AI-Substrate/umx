@@ -1716,6 +1716,7 @@ impl Run<'_, '_> {
             &lookup,
         )?;
         let mut warnings = check_evidence(&mut pointers, &lookup);
+        warnings.extend(self.sources.warnings(&pointers));
         let mut n = self.b.graph().node(id).expect("a resolved node").to_node();
         let mut r = row(line, "evidence add");
         r.id = Some(id);
@@ -2186,7 +2187,7 @@ impl GraphStore {
         let now = self.now();
         let files = self.ports.files.clone();
         let id_port = self.ports.ids.clone();
-        let sources = self.source_check();
+        let sources = self.source_check(&alias);
         let allows = self.secret_allows();
         // Evidence is checked against open graphs only (B1): a secured graph reads as not loaded.
         let open = self.open_aliases();

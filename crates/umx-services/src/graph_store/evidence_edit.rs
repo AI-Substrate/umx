@@ -378,14 +378,16 @@ impl GraphStore {
         let (alias, mut n) = self.node_for_change(ctx, node)?;
         let graphs = self.evidence_graphs(&alias);
         let lookup = |a: &str| graphs.get(a).copied();
+        let sources = self.source_check(&alias);
         let mut pointers = evidence_pointers(
             &self.get(&alias).dir,
             &[pointer.to_string()],
             evidence_kind,
-            &self.source_check(),
+            &sources,
             &lookup,
         )?;
         let mut warnings = check_evidence(&mut pointers, &lookup);
+        warnings.extend(sources.warnings(&pointers));
         let given = pointers[0].clone();
         let evidence_start = n.evidence.len();
         let added = add_evidence(&mut n.evidence, pointers) == 1;

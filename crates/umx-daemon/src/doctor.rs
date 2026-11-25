@@ -909,6 +909,7 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
                 let check = Request::op(
                     Op::Check {
                         lint: false,
+                        sources: false,
                         kind: None,
                         offset: None,
                     },
@@ -936,10 +937,21 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
                 Issue::fill(Code::DoctorGraphUnchecked, &[("graph", graph.clone())]),
             ),
         });
+        rows.push(sources_row(alias, graph.clone()));
         if let Some(row) = std_row(config, build, alias, graph) {
             rows.push(row);
         }
     }
+}
+
+/// Usage 220: each loaded graph's hint that doctor never reads the files it cites (that streams every file), with
+/// `umx check --graph <graph> --sources` as the command that does. Nothing is asked or read for it.
+fn sources_row(alias: &str, graph: Fill) -> Row {
+    Row::found(
+        "graph sources",
+        alias,
+        Issue::fill(Code::DoctorGraphSources, &[("graph", graph)]),
+    )
 }
 
 /// ws008 t5: a hint for a loaded graph made without std, whose next is adopt-std's dry run. Asked by `ontology show`
@@ -984,6 +996,7 @@ fn named_check(
     let check = Request::op(
         Op::Check {
             lint: false,
+            sources: false,
             kind: None,
             offset: None,
         },

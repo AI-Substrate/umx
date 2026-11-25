@@ -103,7 +103,8 @@ impl Format {
 }
 
 /// A resource node's locator, as stored: keys in workshop 010 9a's order, absent ones left out. `source` is stored
-/// normalised; `hash`, `length` and `seq_max` are what umx saw when it last read the source (S4), none for a URL.
+/// normalised; `hash`, `length` and `seq_max` are what umx saw when it last read the source (usage 220), none for a
+/// URL, and `hash_state` says why there is or is not a hash.
 /// Keys a newer umx added load and are written back after these, in name order (forward compatibility,
 /// graph-addressing-expert); an unknown kind is not a locator.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +119,13 @@ pub struct Locator {
     pub length: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq_max: Option<u64>,
+    /// Why the source has, or has not, a hash ([`crate::source_hash::HashState`]); none for a folder, and for a
+    /// locator stored before umx hashed sources. Kept as text so a state a newer umx adds loads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash_state: Option<String>,
+    /// A refresh accepted `hash_state` without a hash (usage 220): `check --sources` skips it while it holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash_accepted: Option<bool>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -146,6 +154,8 @@ impl Locator {
             hash: None,
             length: None,
             seq_max: None,
+            hash_state: None,
+            hash_accepted: None,
             extra: BTreeMap::new(),
         })
     }

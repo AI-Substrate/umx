@@ -1,9 +1,10 @@
 //! SourceReader contract. A factory returns a fresh port, the one (canonical) root it may use, a folder outside
 //! the roots, and a guard dropped after the clause. Layout under the root: `src/` (a source root) holding `a.md`,
-//! `sub/`, `link_in -> src/sub`, `link_out -> <outside>` and `dangling -> <outside>/missing`; a plain file
+//! `sub/`, `t.ndjson` (holding [`TRANSCRIPT`]), `link_in -> src/sub`, `link_out -> <outside>` and `dangling -> <outside>/missing`; a plain file
 //! `file.txt`; and `link_root -> <outside>`. `<outside>` exists.
 
 use umx_core::ports::{GraphDir, SourceError, SourceReader};
+use umx_core::source_hash::{Transcript, digest};
 
 pub const CLAUSES: &[&str] = &[
     "sr_c1_a_root_inside_is_canonical",
@@ -12,7 +13,12 @@ pub const CLAUSES: &[&str] = &[
     "sr_c4_dotdot_and_absolute_paths_are_refused",
     "sr_c5_a_symlink_out_is_refused",
     "sr_c6_a_missing_tail_is_fine",
+    "sr_c7_a_file_is_digested",
+    "sr_c8_a_digest_reads_nothing_it_may_not",
 ];
+
+/// `src/t.ndjson`'s bytes in the contract layout.
+pub const TRANSCRIPT: &str = "{\"seq\":1,\"text\":\"hello\"}\n{\"seq\":9,\"text\":\"bye\"}\n";
 
 fn at(root: &GraphDir, rel: &str) -> GraphDir {
     root.join(rel).expect("a path under the root")
@@ -97,6 +103,51 @@ pub fn sr_c6_a_missing_tail_is_fine<P: SourceReader, G>(
     let src = at(&root, "src");
     for path in ["a.md", "sub", "sub/new.md", "new/deeper/file.md", "a.md/x"] {
         assert_eq!(port.check_path(&src, path), Ok(()), "{path}");
+    }
+}
+
+pub fn sr_c7_a_file_is_digested<P: SourceReader, G>(
+    factory: impl Fn() -> (P, GraphDir, GraphDir, G),
+) {
+    let (port, root, _outside, _guard) = factory();
+    let src = at(&root, "src");
+    let want = digest(TRANSCRIPT.as_bytes(), Some(Transcript::Ndjson));
+    assert_eq!(want.seq_max, Some(9));
+    assert_eq!(
+        port.digest(&src, "t.ndjson", Some(Transcript::Ndjson)),
+        Ok(want)
+    );
+    assert_eq!(
+        port.digest(&src, "./t.ndjson", None),
+        Ok(digest(TRANSCRIPT.as_bytes(), None))
+    );
+}
+
+pub fn sr_c8_a_digest_reads_nothing_it_may_not<P: SourceReader, G>(
+    factory: impl Fn() -> (P, GraphDir, GraphDir, G),
+) {
+    let (port, root, _outside, _guard) = factory();
+    let src = at(&root, "src");
+    for path in ["../file.txt", "link_out/x.md", "dangling", "/etc/passwd"] {
+        assert_eq!(
+            port.digest(&src, path, None),
+            Err(SourceError::OutsideRoots),
+            "{path}"
+        );
+    }
+    for path in ["missing.md", "sub/new.md", "link_in/none.md"] {
+        assert_eq!(
+            port.digest(&src, path, None),
+            Err(SourceError::Missing),
+            "{path}"
+        );
+    }
+    for path in ["sub", "link_in"] {
+        assert_eq!(
+            port.digest(&src, path, None),
+            Err(SourceError::NotFile),
+            "{path}"
+        );
     }
 }
 

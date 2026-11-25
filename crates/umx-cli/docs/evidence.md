@@ -75,8 +75,41 @@ several). Each pointer is a source, `#`, and a selector:
   treat what it pointed at as exposed.
 - **Kinds.** `--evidence-kind` is `room`, `chat`, `screen`, `document` (the default) or `analyst`. Room and
   screen evidence is stored as `lossy` (it came through captions or capture); the others as `exact`.
-- Each piece is stored on the node as `{ source, selector, kind, fidelity, hash }`. `hash` stays null until umx
-  can read sources. Adding the same pointer twice keeps one.
+- Each piece is stored on the node as `{ source, selector, kind, fidelity, hash, hash_state }`, with `length` and
+  `seq_max` when the source was read. Adding the same pointer twice keeps one, and keeps its stored hash.
+
+## Source hashes
+
+When a write adds a pointer (`node add --evidence`, `node note`, `node status --evidence`, `node evidence add`,
+`edge add --evidence` and the same batch lines), umx reads its source if it is a local file and stores what it
+found, so you can tell later whether the file changed (usage 220):
+
+    {"source": "calls/3-nov.ndjson", "selector": {"seq": [120, 140]}, "kind": "room", "fidelity": "lossy",
+     "hash": "sha256:9f2c...", "hash_state": "hashed", "length": 1843302, "seq_max": 3511}
+
+- The file is found as the pointer names it: a path under the graph folder, or under its `root:` (the same
+  confinement as above). It is read as a stream; only the sha256, the length in bytes and, for a transcript, the
+  highest sequence number are kept, never the content. Each file is read once per write however many pointers cite
+  it. A file over 256 MiB is not read (`too_large`). Nothing is read on a read.
+- `seq_max`: for a `.ndjson` file, the largest whole-number `seq` among its lines (a line over 1 MiB is not read for
+  it); for a `.vtt` file, the number of cues (lines holding `-->`). Other files have none.
+- `hash_state` says why there is or is not a hash: `hashed`; `remote` (an `http(s)` URL or a `umx:` address: never
+  fetched, nothing leaves the machine); `missing` (no file there); `unreadable` (a folder, or the system refused);
+  `outside` (a symlink that leads out of the roots: never read); `too_large` (over 256 MiB: not read past it).
+- A local file that cannot be hashed never refuses the write: the pointer is stored with that state and the write
+  warns `source_not_hashed`, whose next is `umx check --graph <graph> --sources`.
+- `umx check --sources` reads each file again and reports `source_changed` and `source_missing` (see
+  `umx docs get graph`). To accept what a file holds now, run `umx node evidence <node> refresh '<pointer>'`,
+  `refresh --at <i>` or `refresh --all` (every pointer; a refresh with none of these is refused). It hashes them
+  again and writes the node only if a hash key changed, without changing its `updated`. It also hashes a pointer
+  stored before umx hashed sources. A state without a hash (`missing`, `outside`, ...) is recorded as accepted
+  (`hash_accepted`), so `check --sources` leaves it out until it changes. A pointer whose `root:` is not usable on
+  this machine is not read and keeps its stored hash, with `source_not_refreshed`. The reply lists each pointer with
+  `changed` and `read`, and `hashed` lists every local source it read.
+- **Pointers you did not write.** A refresh reads the file each pointer names and writes its hash and length into
+  the graph. A graph someone else shared may hold pointers to files you would not want described in a commit
+  (`root:repo/.env`, say). Read `umx node evidence <node> list` first, refresh the pointers you mean by text or
+  `--at`, and check `hashed` after an `--all`.
 
 A pointer that does not parse is refused with `evidence_pointer_invalid`, which says why. Nothing is written
 when any pointer is refused.
@@ -119,8 +152,8 @@ machine:
   leads out of the root is refused (`evidence_outside_roots`).
 - A pointer naming a root this machine does not set is refused with `root_unknown`, whose next is the
   `umx root add` to run. A teammate who pulls a graph citing `root:acme/...` adds their own `acme`.
-- The pointer is stored as written (`root:acme/transcripts/016.ndjson`), never expanded to a path. umx does not
-  read the file yet.
+- The pointer is stored as written (`root:acme/transcripts/016.ndjson`), never expanded to a path. umx reads the
+  file only to hash it (above).
 - `umx root remove acme` is allowed while evidence cites `acme`. Those pointers keep their spelling, but new
   citations of `acme` get `root_unknown` on this machine until it is added again.
 - `root list` and `root remove` report a machine config umx cannot trust or parse as that file's problem

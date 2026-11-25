@@ -2050,7 +2050,7 @@ mod provenance {
         assert!(g.node(duplicate_id).is_some());
         assert!(
             w.svc
-                .check(&ctx(), None)
+                .check(&ctx(), None, false)
                 .unwrap()
                 .value
                 .page

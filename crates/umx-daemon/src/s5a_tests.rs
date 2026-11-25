@@ -182,6 +182,7 @@ fn node_evidence(node: &str, action: EvidenceAction, pointer: Option<String>) ->
         at: None,
         removed: false,
         redact: false,
+        all: false,
     }
 }
 
@@ -221,9 +222,10 @@ fn writes(op: &Op) -> Writes {
         | Op::NodeEdit { .. }
         | Op::NodeNote { .. }
         | Op::NodeEvidence {
-            action: EvidenceAction::Add | EvidenceAction::Remove,
+            action: EvidenceAction::Add | EvidenceAction::Remove | EvidenceAction::Refresh,
             ..
         }
+        | Op::ResourceRefresh { .. }
         | Op::NodeStatus { .. }
         | Op::GraphSet { .. }
         | Op::Batch { dry_run: false, .. }

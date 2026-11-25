@@ -101,6 +101,8 @@ fn spelled(kind: LocatorKind, source: String) -> Locator {
         hash: None,
         length: None,
         seq_max: None,
+        hash_state: None,
+        hash_accepted: None,
         extra: Default::default(),
     }
 }
@@ -211,6 +213,8 @@ pub(crate) fn checked_locator(
     if locator.source.starts_with("root:") {
         sources.check(dir, &[pointer(&locator.source)])?;
     }
+    let mut locator = locator;
+    sources.hash_locator(dir, &mut locator);
     Ok(locator)
 }
 

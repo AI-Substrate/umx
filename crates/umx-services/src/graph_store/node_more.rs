@@ -15,6 +15,7 @@ use umx_core::locator::LOCATOR_FIELD;
 use umx_core::name::RESERVED_NODE_FIELDS;
 use umx_core::ontology::{FieldKind, nearest};
 use umx_core::ports::GraphDir;
+use umx_core::source_hash::HASH_KEYS;
 use umx_core::standard::STARTS_ON;
 use umx_core::status::{LABELS, StatusMove, inferred_label};
 use umx_core::tags::{TAGS, stored_tags};
@@ -105,7 +106,8 @@ pub(crate) fn status_evidence<'g>(
 ) -> Result<(Option<Value>, Vec<Problem>), Problem> {
     let pointers: Vec<String> = pointer.map(String::from).into_iter().collect();
     let mut pointers = evidence_pointers(dir, &pointers, evidence_kind, sources, lookup)?;
-    let warnings = super::resolve::check_evidence(&mut pointers, lookup);
+    let mut warnings = super::resolve::check_evidence(&mut pointers, lookup);
+    warnings.extend(sources.warnings(&pointers));
     Ok((pointers.into_iter().next(), warnings))
 }
 
@@ -209,6 +211,8 @@ pub(crate) fn typed_evidence_pointers<'g>(
         })
         .collect::<Result<Vec<Value>, Problem>>()?;
     sources.check(dir, &pointers)?;
+    let mut pointers = pointers;
+    sources.hash(dir, &mut pointers);
     Ok(pointers)
 }
 
@@ -224,13 +228,15 @@ pub(crate) fn add_evidence(to: &mut Vec<Value>, pointers: Vec<Value>) -> usize {
     added
 }
 
+/// Whether two pointers are one: every key but the session that added it and the source's hash keys, so a pointer
+/// added again keeps the one stored, hash and all (usage 220).
 pub(crate) fn same_evidence(left: &Value, right: &Value) -> bool {
+    let kept = |key: &str| key != "by_session" && !HASH_KEYS.contains(&key);
     match (left, right) {
         (Value::Object(a), Value::Object(b)) => {
-            a.keys().filter(|key| key.as_str() != "by_session").count()
-                == b.keys().filter(|key| key.as_str() != "by_session").count()
+            a.keys().filter(|key| kept(key)).count() == b.keys().filter(|key| kept(key)).count()
                 && a.iter()
-                    .filter(|(key, _)| key.as_str() != "by_session")
+                    .filter(|(key, _)| kept(key))
                     .all(|(key, value)| b.get(key) == Some(value))
         }
         _ => left == right,
@@ -249,7 +255,8 @@ pub(crate) fn note_node<'g>(
         return Err(problems::usage_invalid("--append needs some text", "node"));
     }
     let mut pointers = typed_evidence_pointers(dir, &req.evidence, sources, lookup)?;
-    let warnings = check_evidence(&mut pointers, lookup);
+    let mut warnings = check_evidence(&mut pointers, lookup);
+    warnings.extend(sources.warnings(&pointers));
     let kept = node.note.trim_end_matches('\n');
     node.note = if kept.is_empty() {
         req.append
@@ -670,8 +677,8 @@ impl GraphStore {
     }
 
     /// `node edit --locator <x>` and `--unset locator` (ws006 S3b; decided with the graph-addressing-expert): the node
-    /// keeps its id and edges; a locator another node holds is `locator_in_use`; the new one starts with no hash or
-    /// length; `locator_changed` counts what cited the old source. `--unset locator` also clears a kept custom field
+    /// keeps its id and edges; a locator another node holds is `locator_in_use`; the new one is hashed as on add
+    /// (usage 220); `locator_changed` counts what cited the old source. `--unset locator` also clears a kept custom field
     /// of that name. A node holding a kept field cannot take a locator (`locator_field_invalid`). A new locator another
     /// visible graph holds is named (`resource_elsewhere`), as on add. Returns whether the node changed, and the
     /// warnings.
@@ -686,6 +693,7 @@ impl GraphStore {
         let graph = alias_name(alias);
         let l = self.get(alias);
         let top = self.source_repo_top(&l.dir);
+        let mut hash_warnings = Vec::new();
         let new = match (text, unset) {
             (Some(_), true) => {
                 return Err(problems::locator_invalid(
@@ -699,7 +707,9 @@ impl GraphStore {
                         "the node holds a kept custom field named locator (rename it first)",
                     ));
                 }
-                let locator = checked_locator(text, &l.dir, &self.source_check(), "node edit")?;
+                let sources = self.source_check(alias);
+                let locator = checked_locator(text, &l.dir, &sources, "node edit")?;
+                hash_warnings = sources.locator_warnings(&locator);
                 let names = named(&locator, &l.dir, top.as_ref());
                 match holder(&l.graph, &spellings(&names, &l.dir, top.as_ref())) {
                     Some(id) if id == n.id => return Ok((false, Vec::new())),
@@ -722,6 +732,7 @@ impl GraphStore {
             let (edges, evidence) = citations(&l.graph, n.id, &names, &l.dir, top.as_ref());
             problems::locator_changed(&graph, n.id, edges, evidence)
         }));
+        warnings.extend(hash_warnings);
         Ok((true, warnings))
     }
 
@@ -733,7 +744,7 @@ impl GraphStore {
         let evidence_start = n.evidence.len();
         let (evidence_added, mut warnings) = note_node(
             &self.get(&alias).dir,
-            &self.source_check(),
+            &self.source_check(&alias),
             &mut n,
             req,
             &self.now(),
@@ -797,7 +808,7 @@ impl GraphStore {
             &self.get(&alias).dir,
             req.evidence.as_deref(),
             req.evidence_kind.as_deref(),
-            &self.source_check(),
+            &self.source_check(&alias),
             &|a| open.get(a).copied(),
         )?;
         warnings.extend(evidence_warnings);

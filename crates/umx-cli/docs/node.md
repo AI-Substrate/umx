@@ -192,7 +192,7 @@ Adds a paragraph to the note and, in the same write, any evidence pointers (see 
     umx node note 01JC8XA4H7 --append "Raised in the call" --evidence 'calls/3-nov.vtt#seq=120-140' --evidence-kind room
     umx node note 01JC8XA4H7 --append "See section 2" --evidence 'docs/brief.md#L10-L24'
 
-## umx node evidence <node> list|add|remove
+## umx node evidence <node> list|add|remove|refresh
 
 One node's evidence pointers, one at a time (req-126; usage 144). `list` shows each live pointer with its
 position (`at`) and its text in canonical form; `--removed` lists the trail instead. `add` stores one pointer,
@@ -222,6 +222,14 @@ the removing session in the entry's own `by_session`; see `umx docs get evidence
   text would remain anywhere in the graph's files (see `umx docs get evidence`). The candidates name each record
   and a place, never the text or a custom field's name: edit those, then redact again. `--reason` may not hold any
   part of the pointer or look like a secret. `--at` does not apply.
+- `refresh '<pointer>'`, `refresh --at <n>` or `refresh --all` (usage 220) hashes the named pointer's source again,
+  or every pointer's, and keeps what it holds now: the way to accept a `source_changed` from `umx check --sources`.
+  One of the three is required: a shared graph may hold pointers you did not write, so a refresh never reads every
+  file unasked. The reply lists each pointer (`changed`, `read`) and `hashed`, every local source read. See
+  `umx docs get evidence`.
+
+    umx node evidence 01JC8XA4H7 refresh --at 2
+    umx node evidence 01JC8XA4H7 refresh --all
 
 ## umx node status <node> <status> --reason <why>
 

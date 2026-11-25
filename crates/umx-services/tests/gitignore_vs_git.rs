@@ -135,7 +135,7 @@ impl Umx {
             .tamper_for_tests(&g, GraphFile::GitIgnore, gitignore);
         let rows = self
             .svc
-            .check(&Ctx::new("tester"), None)
+            .check(&Ctx::new("tester"), None, false)
             .unwrap()
             .value
             .page

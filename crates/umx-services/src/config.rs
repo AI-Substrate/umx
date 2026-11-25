@@ -228,7 +228,10 @@ impl ConfigServices {
             SourceError::OutsideRoots => {
                 crate::problems::path_outside_roots(folder, &self.graph_roots())
             }
-            SourceError::NotFolder => {
+            SourceError::NotFolder
+            | SourceError::Missing
+            | SourceError::NotFile
+            | SourceError::TooLarge => {
                 crate::problems::root_unavailable(name, crate::problems::ROOT_NOT_FOLDER)
             }
             SourceError::Io(_) => {

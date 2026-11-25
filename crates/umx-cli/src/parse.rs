@@ -31,7 +31,7 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 28] = [
+const SWITCHES: [&str; 29] = [
     "--same-graph",
     "--raise",
     "--add",
@@ -56,6 +56,7 @@ const SWITCHES: [&str; 28] = [
     "--graphfile",
     "--redact",
     "--lint",
+    "--sources",
     "--related",
     "--no-related",
     "--std",
@@ -67,7 +68,7 @@ const SWITCHES: [&str; 28] = [
 /// command's `--help` topic. Not here: [`COMMON`]; `graph set`'s flags, which are umx-core's graph settings;
 /// the global `--json`, `--human` and `--help`.
 pub const FLAGS: &[(&str, &[&str])] = &[
-    ("check", &["--lint", "--kind", "--offset"]),
+    ("check", &["--lint", "--sources", "--kind", "--offset"]),
     (
         "neighbours",
         &[
@@ -290,6 +291,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
         ],
     ),
     ("resource show", &[]),
+    ("resource refresh", &[]),
     ("node note", &["--append", "--evidence", "--evidence-kind"]),
     (
         "node evidence",
@@ -299,6 +301,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--at",
             "--removed",
             "--redact",
+            "--all",
         ],
     ),
     (
@@ -486,7 +489,8 @@ impl Args {
         if args.one("--graph").is_some() && args.one("--scope").is_some() {
             return Err(fail("--graph and --scope cannot be used together"));
         }
-        let all = args.switches.iter().any(|s| s == "--all");
+        // `node evidence <node> refresh --all` is every pointer (usage 220), not every graph.
+        let all = command != "node evidence" && args.switches.iter().any(|s| s == "--all");
         if args.switches.iter().any(|s| s == "--include-named") && !all {
             return Err(fail("--include-named requires --all"));
         }
@@ -743,9 +747,10 @@ pub fn known(noun: &str, verb: &str) -> Option<&'static str> {
     Op::LABELS.contains(&label).then_some(label)
 }
 
-/// `umx node evidence <node> list|add|remove [<pointer>]` (req-126). The action may also come first
-/// (`node evidence remove <node> <pointer>`). Each action takes only its own flags; remove needs `--reason`, and
-/// `remove --redact` (F183) takes no `--at` (it scrubs every pointer with that source).
+/// `umx node evidence <node> list|add|remove|refresh [<pointer>]` (req-126; refresh usage 220). The action may also
+/// come first (`node evidence remove <node> <pointer>`). Each action takes only its own flags; remove needs
+/// `--reason`, and `remove --redact` (F183) takes no `--at` (it scrubs every pointer with that source). refresh takes
+/// a pointer, `--at`, or neither (every pointer).
 fn node_evidence(a: Args) -> Result<Parsed, Usage> {
     let fail = |what| Usage {
         command: "node evidence",
@@ -762,13 +767,13 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
         [node, action, rest @ ..] => (*node, EvidenceAction::parse(action), rest),
         _ => {
             return Err(fail(
-                "node evidence takes <node> list, <node> add <pointer> or <node> remove <pointer>",
+                "node evidence takes <node> list, <node> add <pointer>, <node> remove <pointer> or <node> refresh",
             ));
         }
     };
-    let action = action.ok_or(fail("the action is list, add or remove"))?;
+    let action = action.ok_or(fail("the action is list, add, remove or refresh"))?;
     let pointer = match (action, pointer) {
-        (EvidenceAction::List, []) => None,
+        (EvidenceAction::List | EvidenceAction::Refresh, []) => None,
         (EvidenceAction::List, _) => {
             return Err(fail("node evidence <node> list takes no pointer"));
         }
@@ -782,6 +787,7 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
     };
     let removed = a.switches.iter().any(|s| s == "--removed");
     let redact = a.switches.iter().any(|s| s == "--redact");
+    let all = a.switches.iter().any(|s| s == "--all");
     let reason = a.one("--reason");
     let at = a
         .one("--at")
@@ -812,6 +818,24 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
                 "node evidence <node> remove takes --reason, and --at or --redact",
             ));
         }
+        EvidenceAction::Refresh
+            if reason.is_some() || evidence_kind.is_some() || removed || redact =>
+        {
+            return Err(fail(
+                "node evidence <node> refresh takes a pointer, --at <n> or --all",
+            ));
+        }
+        EvidenceAction::Refresh
+            if usize::from(pointer.is_some()) + usize::from(at.is_some()) + usize::from(all)
+                != 1 =>
+        {
+            return Err(fail(
+                "node evidence <node> refresh takes one of a pointer, --at <n> or --all",
+            ));
+        }
+        _ if all && action != EvidenceAction::Refresh => {
+            return Err(fail("--all goes with node evidence <node> refresh only"));
+        }
         EvidenceAction::Remove if redact && at.is_some() => {
             return Err(fail(
                 "--redact scrubs every pointer with that source; drop --at",
@@ -828,6 +852,7 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
         at,
         removed,
         redact,
+        all,
     }
     .with(a))
 }
@@ -962,6 +987,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             a.positionals(0, "this command takes no arguments")?;
             // F139: --kind and --offset page --lint's findings.
             let lint = a.switches.iter().any(|s| s == "--lint");
+            let sources = a.switches.iter().any(|s| s == "--sources");
             let kind = a.one("--kind");
             let offset = a.number("--offset")?;
             if !lint && (kind.is_some() || offset.is_some()) {
@@ -970,7 +996,13 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                     what: "--kind and --offset go with --lint",
                 });
             }
-            return Ok(Op::Check { lint, kind, offset }.with(a));
+            return Ok(Op::Check {
+                lint,
+                sources,
+                kind,
+                offset,
+            }
+            .with(a));
         }
         ["neighbours", rest @ ..] => {
             let a = Args::new("neighbours", rest)?;
@@ -1353,6 +1385,13 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 .positionals(1, "name one resource node by id, prefix or address")?
                 .remove(0);
             Op::ResourceShow { node }.with(a)
+        }
+        "resource refresh" => {
+            let a = args()?;
+            let node = a
+                .positionals(1, "name one resource node by id, prefix or address")?
+                .remove(0);
+            Op::ResourceRefresh { node }.with(a)
         }
         "node get" => {
             let a = args()?;
@@ -2045,11 +2084,12 @@ trait With {
 
 impl With for Op {
     fn with(self, a: Args) -> Parsed {
+        let evidence = matches!(self, Op::NodeEvidence { .. });
         Parsed {
             op: self,
             graph: a.one("--graph"),
             scope: a.one("--scope"),
-            all: a.switches.iter().any(|s| s == "--all"),
+            all: !evidence && a.switches.iter().any(|s| s == "--all"),
             include_named: a.switches.iter().any(|s| s == "--include-named"),
             include_provenance: a.switches.iter().any(|s| s == "--provenance"),
             by: a.one("--by"),

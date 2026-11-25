@@ -783,7 +783,7 @@ fn every_node_holding_a_key_in_one_graph_is_joined() {
     );
     let mut checked: Vec<String> = w
         .svc
-        .check(&ctx().graph("demo"), None)
+        .check(&ctx().graph("demo"), None, false)
         .unwrap()
         .value
         .page

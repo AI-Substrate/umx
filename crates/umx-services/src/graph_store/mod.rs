@@ -34,6 +34,7 @@ mod search;
 mod secrets;
 mod settings;
 mod similar;
+mod source_state;
 mod sources;
 mod spine;
 mod spine_decl;
@@ -122,6 +123,10 @@ pub use scopes::{Scope, ScopeInfo, ScopeMemberInfo};
 pub(crate) use search::ReadScope;
 pub use secrets::{GraphKey, SecretAllowed, edge_secret_flags};
 pub use settings::GraphSet;
+pub use source_state::{
+    EvidenceRefreshed, RefreshPick, Refreshed, ResourceRefreshed, SOURCES_PAGE, SourceFinding,
+    SourceRow, SourcesChecked,
+};
 pub use spine::{
     InTheWay, InTheWayKind, SpineCandidate, SpineHint, SpineHints, SpineLine, SpineProposal,
     SpineSource, Unplaced, WhyNot,
@@ -461,11 +466,14 @@ impl GraphStore {
         self
     }
 
-    pub(crate) fn source_check(&self) -> sources::SourceCheck {
+    /// What a write to graph `alias` checks and hashes its sources with; one per write, so each file is read once.
+    pub(crate) fn source_check(&self, alias: &str) -> sources::SourceCheck {
         sources::SourceCheck {
             reader: Arc::clone(&self.ports.sources),
             roots: self.source_roots.clone(),
             graph_roots: self.roots.clone(),
+            graph: alias_name(alias),
+            read: Default::default(),
         }
     }
 

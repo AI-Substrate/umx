@@ -209,12 +209,20 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 98: neighbours inherits (ws008 E3, req-127): `Op::Neighbours`'s `entities` (`--entities on|off|confirmed`, None is
 /// on); neighbours rows' `via` and `match_status` when the reply groups, the list's `graphs` (the covered graphs);
 /// new code `entities_grouped` (hint).
+/// 99: source hashes (usage 220): a stored evidence pointer's `hash` (`sha256:<hex>`), `hash_state`
+/// (`hashed`, `remote`, `missing`, `unreadable`, `outside` or `too_large`), `length`, `seq_max` and
+/// `hash_accepted`, and a locator's `hash_state` and `hash_accepted`, set when the reference is added;
+/// `Op::Check`'s `sources` (`umx check --sources`) and check data's `sources` (`rows`, `checked`, `unchecked`,
+/// `changed`, `missing`); `EvidenceAction::Refresh` and `Op::NodeEvidence`'s `all` (`umx node evidence <node>
+/// refresh <pointer> | --at <n> | --all`) and `Op::ResourceRefresh` (`umx resource refresh <node>`), whose replies
+/// list `hashed`; new codes `source_not_hashed` and `source_not_refreshed` (warnings), `source_changed`,
+/// `source_missing` and `doctor_graph_sources` (hints).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 98;
+pub const PROTOCOL: u32 = 99;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -223,7 +231,7 @@ pub const PROTOCOL: u32 = 98;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (98, 0x52e1_11f9_08d7_2277);
+const WIRE_FINGERPRINT: (u32, u64) = (99, 0xb719_93d0_b1bb_f5c0);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1519,6 +1527,10 @@ pub enum Op {
     ResourceShow {
         node: String,
     },
+    /// `umx resource refresh <node>` (usage 220): hash the locator's source again and keep what it holds now.
+    ResourceRefresh {
+        node: String,
+    },
     /// `ontology add field --relation <r> <name>:<kind>` (F92): a custom field on the relation's edges.
     OntologyAddRelationField {
         relation: String,
@@ -1611,6 +1623,9 @@ pub enum Op {
         removed: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         redact: bool,
+        /// `refresh --all` (usage 220): every pointer; a refresh names one otherwise.
+        #[serde(default, skip_serializing_if = "is_false")]
+        all: bool,
     },
     NodeStatus {
         node: String,
@@ -1632,10 +1647,13 @@ pub enum Op {
     },
     /// `umx check`: what the graph's files hold that needs a person (req-67). `lint` (`--lint`, F139) adds `data.lint`:
     /// read-only findings in the checked graphs, a page of at most 100 per graph and kind from `offset`; `kind` runs
-    /// one kind. Without them it is the plain check, `{"op": "check"}` as before.
+    /// one kind. `sources` (`--sources`, usage 220) adds `data.sources`: the cited files that changed or cannot be
+    /// read. Without them it is the plain check, `{"op": "check"}` as before.
     Check {
         #[serde(default, skip_serializing_if = "is_false")]
         lint: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        sources: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kind: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2081,6 +2099,8 @@ pub enum EvidenceAction {
     List,
     Add,
     Remove,
+    /// Usage 220: hash the pointers' sources again.
+    Refresh,
 }
 
 impl EvidenceAction {
@@ -2089,6 +2109,7 @@ impl EvidenceAction {
             "list" => Some(EvidenceAction::List),
             "add" => Some(EvidenceAction::Add),
             "remove" => Some(EvidenceAction::Remove),
+            "refresh" => Some(EvidenceAction::Refresh),
             _ => None,
         }
     }
@@ -2271,6 +2292,7 @@ impl Op {
         "graph rename",
         "graph move",
         "ontology adopt-std",
+        "resource refresh",
     ];
 
     /// Labels only the graph view sends (ws009 S6): no CLI verb, so no example, help, flags row or skill home.
@@ -2370,6 +2392,7 @@ impl Op {
             Op::GraphRename { .. } => 78,
             Op::GraphMove { .. } => 79,
             Op::OntologyAdoptStd { .. } => 80,
+            Op::ResourceRefresh { .. } => 81,
         }]
     }
 
@@ -2450,9 +2473,10 @@ impl Op {
                 | Op::EntityDeny { .. }
                 | Op::EntityUndeny { .. }
                 | Op::NodeEvidence {
-                    action: EvidenceAction::Add | EvidenceAction::Remove,
+                    action: EvidenceAction::Add | EvidenceAction::Remove | EvidenceAction::Refresh,
                     ..
                 }
+                | Op::ResourceRefresh { .. }
                 | Op::GraphPrimary { .. }
                 | Op::GraphRename { .. }
                 | Op::GraphMove { .. }
@@ -3541,6 +3565,23 @@ catalogue! {
         "this machine's lint terms file does not parse, is newer, is over a limit or can be read by other users, so the term scan was skipped",
         "The lint terms file <file> cannot be used, so no term was looked for.",
         "umx docs get graph";
+    // Usage 220: source hashes.
+    SourceNotHashed => "source_not_hashed", Warning, 0,
+        "a write cited local files umx could not hash (missing: no file there; unreadable: a folder, or the system refused; outside: a symlink out of the roots); the reference is stored with that hash_state and the write went ahead",
+        "<count> cited files in <graph> could not be hashed (the first is <state>); the references are stored.",
+        "<fix>";
+    SourceNotRefreshed => "source_not_refreshed", Warning, 0,
+        "a refresh did not read references whose root: is not set or not usable on this machine; their stored hashes are kept as they were",
+        "<count> cited files in <graph> were not read: their root is not usable on this machine, so their stored hashes are kept.",
+        "umx root list";
+    SourceChanged => "source_changed", Hint, 0,
+        "check --sources found cited files whose hash differs from the one stored, or that can be read now and could not be when cited; data.sources lists them",
+        "<count> cited files in <graph> changed since umx hashed them; the first is <id> at <place>. Check what cites it still holds, then refresh it.",
+        "<fix>";
+    SourceMissing => "source_missing", Hint, 0,
+        "check --sources found cited local files that cannot be read now; data.sources lists them with what reading them gave",
+        "<count> cited files in <graph> cannot be read now; the first is <id> at <place>. Restore the file or fix what cites it.",
+        "<fix>";
     // ws008 TM5 (req-149): declared spines.
     SpineNameUnknown => "spine_name_unknown", Error, 1,
         "a spine declaration names a type, relation or field that is neither the graph's own (its ontology) nor std; nothing is written",
@@ -3833,6 +3874,11 @@ catalogue! {
         "umx doctor: a loaded graph does not use std; ontology adopt-std moves it onto std v1, dry run first",
         "Graph <graph> does not use std. ontology adopt-std moves it onto std v1; its dry run writes nothing.",
         "umx ontology adopt-std --graph <graph> --dry-run";
+    // Usage 220: cited files that changed or cannot be read; never changes doctor's verdict.
+    DoctorGraphSources => "doctor_graph_sources", Hint, 0,
+        "umx doctor: doctor never reads the files a loaded graph cites; check --sources reads them and says which changed",
+        "Doctor does not read the files graph <graph> cites. To see which changed, run check --sources.",
+        "umx check --graph <graph> --sources";
     // s10: the daemon as a per-user service (req-86).
     ServiceConflict => "service_conflict", Error, 1,
         "umx daemon install while a umx service is installed for another umx binary or UMX_HOME; nothing changed",
@@ -5595,6 +5641,7 @@ mod tests {
                 role: "content".into(),
             },
             Op::ResourceShow { node: "n".into() },
+            Op::ResourceRefresh { node: "n".into() },
             Op::OntologyAddRelationField {
                 relation: "r".into(),
                 field: "f".into(),
@@ -5643,6 +5690,7 @@ mod tests {
             },
             Op::Check {
                 lint: true,
+                sources: true,
                 kind: s("terms"),
                 offset: Some(100),
             },
@@ -5997,6 +6045,7 @@ mod tests {
                 at: Some(2),
                 removed: true,
                 redact: true,
+                all: true,
             },
             Op::GraphSpinePropose {
                 alias: "g".into(),
@@ -6166,6 +6215,7 @@ mod tests {
             Op::GraphMove { .. } => 88,
             Op::OntologyAdoptStd { .. } => 89,
             Op::OntologyAddTag { .. } => 90,
+            Op::ResourceRefresh { .. } => 91,
         }
     }
 
@@ -6311,7 +6361,7 @@ mod tests {
         let seen: std::collections::BTreeSet<usize> = ops.iter().map(variant).collect();
         assert_eq!(
             (seen.len(), ops.len()),
-            (91, 91),
+            (92, 92),
             "one sample per Op variant"
         );
         let now = (PROTOCOL, fnv1a(wire_samples().as_bytes()));

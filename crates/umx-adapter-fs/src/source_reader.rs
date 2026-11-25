@@ -1,11 +1,13 @@
 //! fs.source-reader (c-port-source-reader): confines evidence and resource sources to the roots (security ruling
 //! ws006 S1). Roots are canonicalised once, here, as in [`crate::FsGraphFiles`]; every check resolves symlinks on
-//! the real file system. Nothing is read.
+//! the real file system. `digest` reads one regular file as a stream (usage 220); nothing else is read.
 
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use umx_core::ports::{GraphDir, SourceError, SourceReader};
+use umx_core::source_hash::{Digester, SOURCE_MAX_BYTES, SourceDigest, Transcript};
 
 use crate::{dir_of, resolve};
 
@@ -86,6 +88,57 @@ impl SourceReader for FsSourceReader {
         }
         Ok(())
     }
+
+    fn digest(
+        &self,
+        root: &GraphDir,
+        path: &str,
+        transcript: Option<Transcript>,
+    ) -> Result<SourceDigest, SourceError> {
+        self.check_path(root, path)?;
+        let missing = |e: &std::io::Error, op: &str| match e.kind() {
+            ErrorKind::NotFound | ErrorKind::NotADirectory => SourceError::Missing,
+            _ => io(op, e),
+        };
+        let file = fs::canonicalize(Path::new(root.as_str()).join(path))
+            .map_err(|e| missing(&e, "resolve file"))?;
+        if !dir_of(file.clone()).is_some_and(|d| d.is_within(root)) {
+            return Err(SourceError::OutsideRoots);
+        }
+        // A fifo or device is never opened (it could block); O_NONBLOCK covers one swapped in after this check.
+        let meta = fs::metadata(&file).map_err(|e| missing(&e, "stat file"))?;
+        if !meta.is_file() {
+            return Err(SourceError::NotFile);
+        }
+        if meta.len() > SOURCE_MAX_BYTES {
+            return Err(SourceError::TooLarge);
+        }
+        let mut f = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+            .open(&file)
+            .map_err(|e| missing(&e, "open file"))?;
+        if !f.metadata().map_err(|e| io("stat file", &e))?.is_file() {
+            return Err(SourceError::NotFile);
+        }
+        let mut digester = Digester::new(transcript);
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            match f.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    digester.update(&buf[..n]);
+                    // A file that grew past the cap since the stat is not read further.
+                    if digester.length() > SOURCE_MAX_BYTES {
+                        return Err(SourceError::TooLarge);
+                    }
+                }
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(e) => return Err(io("read file", &e)),
+            }
+        }
+        Ok(digester.finish())
+    }
 }
 
 #[cfg(test)]
@@ -117,6 +170,11 @@ mod tests {
         fs::create_dir_all(&outside).unwrap();
         fs::write(work.join("src/a.md"), "a\n").unwrap();
         fs::write(work.join("file.txt"), "f\n").unwrap();
+        fs::write(
+            work.join("src/t.ndjson"),
+            umx_contracts::source_reader::TRANSCRIPT,
+        )
+        .unwrap();
         symlink(work.join("src/sub"), work.join("src/link_in")).unwrap();
         symlink(&outside, work.join("src/link_out")).unwrap();
         symlink(outside.join("missing"), work.join("src/dangling")).unwrap();
@@ -130,6 +188,22 @@ mod tests {
         )
     }
 
+    /// A file over the cap is refused from its size, before any byte is read (a sparse file: nothing is written).
+    #[test]
+    fn a_file_over_the_cap_is_too_large() {
+        let (port, root, _outside, _guard) = source_reader();
+        let big = std::path::Path::new(root.as_str()).join("src/big.ndjson");
+        fs::File::create(&big)
+            .unwrap()
+            .set_len(SOURCE_MAX_BYTES + 1)
+            .unwrap();
+        let src = root.join("src").unwrap();
+        assert_eq!(
+            port.digest(&src, "big.ndjson", Some(Transcript::Ndjson)),
+            Err(SourceError::TooLarge)
+        );
+    }
+
     umx_contracts::source_reader_contract!(
         source_reader;
         sr_c1_a_root_inside_is_canonical(),
@@ -138,5 +212,7 @@ mod tests {
         sr_c4_dotdot_and_absolute_paths_are_refused(),
         sr_c5_a_symlink_out_is_refused(),
         sr_c6_a_missing_tail_is_fine(),
+        sr_c7_a_file_is_digested(),
+        sr_c8_a_digest_reads_nothing_it_may_not(),
     );
 }

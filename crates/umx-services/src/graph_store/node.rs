@@ -523,6 +523,9 @@ pub(crate) fn draft_node<'g>(
         .as_deref()
         .map(|text| super::resources::checked_locator(text, dir, sources, "node add"))
         .transpose()?;
+    if let Some(l) = &locator {
+        warnings.extend(sources.locator_warnings(l));
+    }
     let parent = parent()?;
     let mut pointers = node_add_pointers(
         dir,
@@ -532,6 +535,7 @@ pub(crate) fn draft_node<'g>(
         lookup,
     )?;
     warnings.extend(check_evidence(&mut pointers, lookup));
+    warnings.extend(sources.warnings(&pointers));
     let mut evidence = Vec::new();
     add_evidence(&mut evidence, pointers);
     warnings.extend(super::time_check::anchor_warning(
@@ -914,7 +918,7 @@ impl GraphStore {
             }
             None => None,
         };
-        let sources = self.source_check();
+        let sources = self.source_check(&alias);
         let draft = draft_node(
             ctx,
             &graph,

@@ -37,6 +37,7 @@ pub mod settings;
 pub mod setup;
 pub mod similar;
 pub mod similarity;
+pub mod source_hash;
 pub mod spine;
 pub mod standard;
 pub mod status;

@@ -1196,6 +1196,21 @@ fn repeated_edge(home: &mut Home, path: &str) -> String {
     id
 }
 
+/// Usage 220: a node citing `notes.md` in the graph folder, hashed when cited.
+fn source_cited(home: &Home, path: &str) {
+    fs::write(Path::new(path).join("notes.md"), "first\n").unwrap();
+    home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "problem",
+        "--title",
+        "Cited",
+        "--evidence",
+        "notes.md#L1",
+    ]);
+}
+
 /// Every catalogue code, raised for real. A new code without a trigger here does not compile.
 fn trigger(code: Code) -> (Envelope, u8) {
     let mut home = Home::new(code.spec().code);
@@ -2673,6 +2688,52 @@ fn trigger(code: Code) -> (Envelope, u8) {
             f139_terms(&home, "not json", 0o600);
             home.umx(&["check", "--lint"])
         }
+        // Usage 220: source hashes.
+        Code::SourceNotHashed => {
+            home.graph();
+            home.umx(&[
+                "node",
+                "add",
+                "--type",
+                "problem",
+                "--title",
+                "Cited",
+                "--evidence",
+                "calls/none.vtt#seq=1-2",
+            ])
+        }
+        Code::SourceChanged => {
+            let path = home.graph();
+            source_cited(&home, &path);
+            fs::write(Path::new(&path).join("notes.md"), "edited\n").unwrap();
+            home.umx(&["check", "--sources"])
+        }
+        Code::SourceNotRefreshed => {
+            home.graph();
+            let acme = home.path.join("acme");
+            fs::create_dir_all(&acme).unwrap();
+            fs::write(acme.join("a.md"), "a\n").unwrap();
+            home.ok(&["root", "add", "acme", &acme.display().to_string()]);
+            let node = home.ok(&[
+                "node",
+                "add",
+                "--type",
+                "problem",
+                "--title",
+                "Cited",
+                "--evidence",
+                "root:acme/a.md#L1",
+            ]);
+            let id = node.data["node"]["id"].as_str().unwrap().to_owned();
+            home.ok(&["root", "remove", "acme"]);
+            home.umx(&["node", "evidence", &id, "refresh", "--all"])
+        }
+        Code::SourceMissing => {
+            let path = home.graph();
+            source_cited(&home, &path);
+            fs::remove_file(Path::new(&path).join("notes.md")).unwrap();
+            home.umx(&["check", "--sources"])
+        }
         Code::SpineNameUnknown => {
             home.graph();
             let file = home.ops_file(&tm5_decl("widget", "widget", false).to_string());
@@ -3232,6 +3293,10 @@ fn trigger(code: Code) -> (Envelope, u8) {
         Code::DoctorGraphFolder => {
             let path = home.graph();
             fs::remove_dir_all(&path).unwrap();
+            home.umx(&["doctor"])
+        }
+        Code::DoctorGraphSources => {
+            home.graph();
             home.umx(&["doctor"])
         }
         Code::DoctorGraphNotStd => {

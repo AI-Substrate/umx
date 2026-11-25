@@ -1012,6 +1012,7 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             at,
             removed,
             redact,
+            all,
         } => node_evidence(
             services,
             &ctx,
@@ -1021,8 +1022,17 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             pointer.as_deref(),
             evidence_kind.as_deref(),
             reason.as_deref(),
-            (*at, *removed, *redact),
+            (*at, *removed, *redact, *all),
         ),
+        Op::ResourceRefresh { node } => {
+            reply(command, services.resource_refresh(&ctx, node), |v| {
+                json!({
+                    "resource": node_json(&v.alias, &v.node),
+                    "changed": v.changed,
+                    "hashed": v.hashed,
+                })
+            })
+        }
         Op::EmbeddingsAllow { node, field } => {
             reply(command, services.embeddings_allow(&ctx, node, field), |v| {
                 json!({
@@ -1295,7 +1305,8 @@ fn redact_misuse(
     Some(umx_services::problems::usage_invalid(why, "evidence"))
 }
 
-/// `umx node evidence <node> list|add|remove` (req-126). A list is a read; add and remove reach here on the writer.
+/// `umx node evidence <node> list|add|remove|refresh` (req-126; refresh usage 220). A list is a read; add, remove and
+/// refresh reach here on the writer.
 /// `remove --redact` (F183) scrubs every pointer in the graph with that source and replies with counts only.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn node_evidence(
@@ -1307,15 +1318,55 @@ pub(crate) fn node_evidence(
     pointer: Option<&str>,
     evidence_kind: Option<&str>,
     reason: Option<&str>,
-    (at, removed, redact): (Option<usize>, bool, bool),
+    (at, removed, redact, all): (Option<usize>, bool, bool, bool),
 ) -> Envelope {
     use umx_protocol::EvidenceAction;
     if let Some(problem) = redact_misuse(action, at, redact) {
         return Envelope::fail(command, issue(&problem, command));
     }
+    if all && action != EvidenceAction::Refresh {
+        let problem =
+            umx_services::problems::usage_invalid("--all goes with refresh only", "evidence");
+        return Envelope::fail(command, issue(&problem, command));
+    }
     let p = match (action, pointer) {
         (EvidenceAction::List, _) => {
             return evidence_list(services, ctx, command, node, removed);
+        }
+        (EvidenceAction::Refresh, _) => {
+            let pick = match (pointer, at, all) {
+                (Some(p), None, false) => Some(umx_services::RefreshPick::Pointer(p)),
+                (None, Some(a), false) => Some(umx_services::RefreshPick::At(a)),
+                (None, None, true) => Some(umx_services::RefreshPick::All),
+                (None, None, false) => None,
+                _ => {
+                    let problem = umx_services::problems::usage_invalid(
+                        "refresh takes one of a pointer, --at <n> or --all",
+                        "evidence",
+                    );
+                    return Envelope::fail(command, issue(&problem, command));
+                }
+            };
+            return reply(
+                command,
+                services.node_evidence_refresh(ctx, node, pick),
+                |v| {
+                    let mut out = evidence_head(&v.alias, v.id);
+                    out["rows"] = v
+                        .rows
+                        .iter()
+                        .map(|r| {
+                            let mut row = evidence_row(&r.row);
+                            row["changed"] = json!(r.changed);
+                            row["read"] = json!(r.read);
+                            row
+                        })
+                        .collect();
+                    out["changed"] = json!(v.rows.iter().filter(|r| r.changed).count());
+                    out["hashed"] = json!(v.hashed);
+                    out
+                },
+            );
         }
         (_, Some(p)) => p,
         (_, None) => {
@@ -2691,12 +2742,21 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 v
             })
         }
-        Op::Check { lint, kind, offset } => {
+        Op::Check {
+            lint,
+            sources,
+            kind,
+            offset,
+        } => {
             let request = match lint_request(*lint, kind.as_deref(), *offset) {
                 Ok(request) => request,
                 Err(problem) => return Envelope::fail(command, issue(&problem, command)),
             };
-            reply(command, services.check(&ctx, request.as_ref()), check_json)
+            reply(
+                command,
+                services.check(&ctx, request.as_ref(), *sources),
+                check_json,
+            )
         }
         Op::NodeEvidence {
             node,
@@ -3308,6 +3368,7 @@ fn retry(op: &Op) -> Command {
             columns: cols,
         } => columns(node(Command::new("node get"), n, "<node>"), cols),
         Op::ResourceShow { node: n } => node(Command::new("resource show"), n, "<node>"),
+        Op::ResourceRefresh { node: n } => node(Command::new("resource refresh"), n, "<node>"),
         Op::NodeList {
             kind,
             status,
@@ -3642,12 +3703,13 @@ fn retry(op: &Op) -> Command {
         Op::NodeEvidence {
             node: n,
             action,
-            pointer: _,
+            pointer: given,
             evidence_kind,
             reason: _,
             at,
             removed,
             redact,
+            all,
         } => {
             let c = node(Command::new("node evidence"), n, "<node>");
             match action {
@@ -3668,6 +3730,16 @@ fn retry(op: &Op) -> Command {
                         .word("--reason")
                         .word("<reason>");
                     let c = if *redact { c.word("--redact") } else { c };
+                    number(c, "--at", at)
+                }
+                umx_protocol::EvidenceAction::Refresh => {
+                    let c = c.word("refresh");
+                    let c = if given.is_some() {
+                        c.word("<pointer>")
+                    } else {
+                        c
+                    };
+                    let c = if *all { c.word("--all") } else { c };
                     number(c, "--at", at)
                 }
             }
@@ -3695,9 +3767,15 @@ fn retry(op: &Op) -> Command {
                 name(c, v, "<kind>")
             })
         }
-        Op::Check { lint, kind, offset } => {
+        Op::Check {
+            lint,
+            sources,
+            kind,
+            offset,
+        } => {
             let c = Command::new("check");
             let c = if *lint { c.word("--lint") } else { c };
+            let c = if *sources { c.word("--sources") } else { c };
             let c = match kind.as_deref().and_then(umx_services::LintKind::parse) {
                 Some(k) => c.word("--kind").word(k.as_str()),
                 None => c,
@@ -5202,6 +5280,9 @@ fn check_json(checked: &umx_services::Checked) -> Value {
     if let Some(lint) = &checked.lint {
         v["lint"] = lint_json(lint);
     }
+    if let Some(sources) = &checked.sources {
+        v["sources"] = sources_json(sources);
+    }
     v["spines"] = json!(
         checked
             .spines
@@ -5210,6 +5291,33 @@ fn check_json(checked: &umx_services::Checked) -> Value {
             .collect::<Vec<_>>()
     );
     v
+}
+
+/// `data.sources` (usage 220): each cited file that changed or cannot be read, by graph, node id and place
+/// (`evidence:<i>` or `locator`), with what reading it gave now and both lengths; never the source or its content.
+fn sources_json(sources: &umx_services::SourcesChecked) -> Value {
+    let rows: Vec<Value> = sources
+        .rows
+        .iter()
+        .map(|r| {
+            json!({
+                "graph": r.graph,
+                "kind": r.kind.as_str(),
+                "id": r.id.to_text(),
+                "place": r.place,
+                "state": r.state.as_str(),
+                "old_length": r.old_length,
+                "new_length": r.new_length,
+            })
+        })
+        .collect();
+    json!({
+        "rows": rows,
+        "checked": sources.checked,
+        "unchecked": sources.unchecked,
+        "changed": sources.changed,
+        "missing": sources.missing,
+    })
 }
 
 /// `--lint`'s request from the wire (F139): `kind` and `offset` only with `lint`, and `kind` one umx knows.

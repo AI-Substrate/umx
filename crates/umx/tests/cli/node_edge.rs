@@ -1489,7 +1489,7 @@ fn resource_nodes_through_the_cli() {
     assert_eq!(first.data["node"]["title"], "brief.md");
     assert_eq!(
         first.data["node"]["locator"],
-        json!({ "kind": "file", "format": "markdown", "source": "docs/brief.md" })
+        json!({ "kind": "file", "format": "markdown", "source": "docs/brief.md", "hash_state": "missing" })
     );
     let (again, exit) = add(&home, "docs/brief.md");
     assert_eq!(exit, 0, "{}", again.to_json());
@@ -1587,7 +1587,7 @@ fn columns_locator_shows_the_locator_the_default_read_shows() {
     let whole = home.ok(&["node", "get", &brief]).data["node"]["locator"].clone();
     assert_eq!(
         whole,
-        json!({ "kind": "file", "format": "markdown", "source": "docs/brief.md" })
+        json!({ "kind": "file", "format": "markdown", "source": "docs/brief.md", "hash_state": "missing" })
     );
     let got = home.ok(&["node", "get", &brief, "--columns", "id,locator"]);
     assert_eq!(got.data["node"], json!({ "id": brief, "locator": whole }));

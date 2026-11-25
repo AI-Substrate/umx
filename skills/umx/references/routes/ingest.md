@@ -56,6 +56,12 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    ask the human for the folder (it must be inside the roots), add it once with `umx root add <name> <folder>`,
    then cite `root:<name>/<path>#<selector>`. `root_unknown` names the missing root; `umx root list` shows each
    root and whether it can be used now.
+10. **usage 220**: a cited local file (evidence or locator) is hashed when it is cited: `hash`, `length`,
+   `seq_max` for a transcript, and `hash_state`. A missing or unreadable file still writes, with
+   `source_not_hashed`. Later, `umx check --graph <alias> --sources` reports `source_changed` and `source_missing`;
+   check what cites a changed file still holds, then accept it with `umx node evidence <node> refresh --at <i>` or
+   `umx resource refresh <node>` (a bare refresh is refused; `--all` lists what it read in `hashed`, so check it on a
+   graph someone else wrote). URLs and `umx:` sources are never fetched.
 
 New types or relations the source needs: declare them as you go (usage 007).
 

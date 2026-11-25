@@ -51,6 +51,8 @@ pub const HINTS: &[&str] = &[
     "lint_raised_in_evidence",
     "lint_truncated",
     "lint_terms_unusable",
+    "source_changed",
+    "source_missing",
     "along_not_placed",
     "along_by_rule",
     "batch_use_ref_field",
@@ -297,6 +299,10 @@ pub const CODES: &[&str] = &[
     "lint_raised_in_evidence",
     "lint_truncated",
     "lint_terms_unusable",
+    "source_not_hashed",
+    "source_not_refreshed",
+    "source_changed",
+    "source_missing",
     "spine_name_unknown",
     "spine_main_taken",
     "spine_not_found",
@@ -3171,6 +3177,67 @@ pub fn lint_terms(graph: &ValidName, count: usize, first: Option<Id>, at: &str) 
             Slot::Command(Command::new("graph guide").name(graph)),
         ),
     }
+}
+
+/// Usage 220: a write cited local files umx could not hash (`state` is the first one's hash_state); it went ahead.
+pub fn source_not_hashed(
+    graph: &ValidName,
+    count: usize,
+    state: umx_core::source_hash::HashState,
+) -> Problem {
+    Problem::new("source_not_hashed")
+        .with("graph", name(graph))
+        .with("count", Slot::Count(count as u64))
+        .with("state", Slot::Word(state.as_str()))
+        .with("fix", Slot::Command(check_sources(graph)))
+}
+
+/// Usage 220: a refresh left references whose `root:` is not usable on this machine as they were.
+pub fn source_not_refreshed(graph: &ValidName, count: usize) -> Problem {
+    Problem::new("source_not_refreshed")
+        .with("graph", name(graph))
+        .with("count", Slot::Count(count as u64))
+}
+
+/// `umx check --graph <graph> --sources`.
+pub fn check_sources(graph: &ValidName) -> Command {
+    Command::new("check")
+        .word("--graph")
+        .name(graph)
+        .word("--sources")
+}
+
+/// Usage 220 `check --sources`: cited files whose hash differs from the one stored (or that can be read now and
+/// could not be when cited). `place` is `evidence:<i>` or `locator`; `fix` accepts the first.
+pub fn source_changed(
+    graph: &ValidName,
+    count: usize,
+    first: Id,
+    place: &str,
+    fix: Command,
+) -> Problem {
+    Problem::new("source_changed")
+        .with("graph", name(graph))
+        .with("count", Slot::Count(count as u64))
+        .with("id", Slot::Id(first))
+        .with("place", Slot::Os(SafeText::lossy(place)))
+        .with("fix", Slot::Command(fix))
+}
+
+/// Usage 220 `check --sources`: cited local files that cannot be read now.
+pub fn source_missing(
+    graph: &ValidName,
+    count: usize,
+    first: Id,
+    place: &str,
+    fix: Command,
+) -> Problem {
+    Problem::new("source_missing")
+        .with("graph", name(graph))
+        .with("count", Slot::Count(count as u64))
+        .with("id", Slot::Id(first))
+        .with("place", Slot::Os(SafeText::lossy(place)))
+        .with("fix", Slot::Command(fix))
 }
 
 /// F139: titles that say "lacks no".

@@ -1170,6 +1170,9 @@ pub struct FakeSourceReader {
     folders: Mutex<BTreeSet<GraphDir>>,
     files: Mutex<BTreeSet<GraphDir>>,
     links: Mutex<BTreeMap<GraphDir, GraphDir>>,
+    /// What `digest` reads: a file added without bytes reads as empty.
+    contents: Mutex<BTreeMap<GraphDir, Vec<u8>>>,
+    digests: AtomicUsize,
 }
 
 impl FakeSourceReader {
@@ -1181,10 +1184,13 @@ impl FakeSourceReader {
             folders,
             files: Mutex::default(),
             links: Mutex::default(),
+            contents: Mutex::default(),
+            digests: AtomicUsize::new(0),
         }
     }
 
-    /// Every path under the root is a folder that exists (stub mode).
+    /// Every path under the root is a folder that exists (stub mode), and `digest` reads any path it was not told
+    /// about as an empty file.
     pub fn open(root: GraphDir) -> FakeSourceReader {
         FakeSourceReader {
             open: true,
@@ -1207,6 +1213,25 @@ impl FakeSourceReader {
             self.add_folder(p);
         }
         self.files.lock().unwrap().insert(file);
+    }
+
+    /// Adds `file` holding `bytes`, or replaces what it holds.
+    pub fn write_file(&self, file: GraphDir, bytes: &[u8]) {
+        self.contents
+            .lock()
+            .unwrap()
+            .insert(file.clone(), bytes.to_vec());
+        self.add_file(file);
+    }
+
+    pub fn remove_file(&self, file: &GraphDir) {
+        self.contents.lock().unwrap().remove(file);
+        self.files.lock().unwrap().remove(file);
+    }
+
+    /// How many files `digest` has read.
+    pub fn digests(&self) -> usize {
+        self.digests.load(Ordering::SeqCst)
     }
 
     pub fn add_link(&self, link: GraphDir, target: GraphDir) {
@@ -1288,6 +1313,38 @@ impl SourceReader for FakeSourceReader {
             }
         }
         Ok(())
+    }
+
+    fn digest(
+        &self,
+        root: &GraphDir,
+        path: &str,
+        transcript: Option<umx_core::source_hash::Transcript>,
+    ) -> Result<umx_core::source_hash::SourceDigest, SourceError> {
+        self.check_path(root, path)?;
+        let mut at = root.clone();
+        for part in path.split('/').filter(|p| !p.is_empty() && *p != ".") {
+            at = at.join(part).map_err(|_| SourceError::OutsideRoots)?;
+        }
+        let at = self.resolve(&at);
+        if !at.is_within(root) {
+            return Err(SourceError::OutsideRoots);
+        }
+        let bytes = self.contents.lock().unwrap().get(&at).cloned();
+        let bytes = match bytes {
+            Some(b) => b,
+            None if self.files.lock().unwrap().contains(&at) => Vec::new(),
+            None if self.folders.lock().unwrap().contains(&at) => {
+                return Err(SourceError::NotFile);
+            }
+            None if self.open => Vec::new(),
+            None => return Err(SourceError::Missing),
+        };
+        if bytes.len() as u64 > umx_core::source_hash::SOURCE_MAX_BYTES {
+            return Err(SourceError::TooLarge);
+        }
+        self.digests.fetch_add(1, Ordering::SeqCst);
+        Ok(umx_core::source_hash::digest(&bytes, transcript))
     }
 }
 
@@ -2546,6 +2603,10 @@ mod tests {
         port.add_folder(at(&root, "src/sub"));
         port.add_file(at(&root, "src/a.md"));
         port.add_file(at(&root, "file.txt"));
+        port.write_file(
+            at(&root, "src/t.ndjson"),
+            umx_contracts::source_reader::TRANSCRIPT.as_bytes(),
+        );
         port.add_link(at(&root, "src/link_in"), at(&root, "src/sub"));
         port.add_link(at(&root, "src/link_out"), outside.clone());
         port.add_link(at(&root, "src/dangling"), at(&outside, "missing"));
@@ -2561,6 +2622,8 @@ mod tests {
         sr_c4_dotdot_and_absolute_paths_are_refused(),
         sr_c5_a_symlink_out_is_refused(),
         sr_c6_a_missing_tail_is_fine(),
+        sr_c7_a_file_is_digested(),
+        sr_c8_a_digest_reads_nothing_it_may_not(),
     );
 
     fn secrets() -> (FakeSecrets, ()) {

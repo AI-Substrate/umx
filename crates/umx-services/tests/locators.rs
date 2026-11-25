@@ -199,7 +199,7 @@ fn a_duplicate_locator_after_a_merge_loads_warns_and_is_checked() {
             ("locator_not_normalised", Some(theirs.as_str())),
         ]
     );
-    let check = w.svc.check(&ctx().graph("demo"), None).unwrap();
+    let check = w.svc.check(&ctx().graph("demo"), None, false).unwrap();
     let rows: Vec<(&str, &str)> = check
         .value
         .page
@@ -241,7 +241,7 @@ fn a_custom_field_named_locator_loads_kept_warned_and_checked() {
         .map(|w| (w.code, w.subject.as_deref()))
         .collect();
     assert_eq!(codes, [("locator_field_kept", Some(id.as_str()))]);
-    let check = w.svc.check(&ctx().graph("demo"), None).unwrap();
+    let check = w.svc.check(&ctx().graph("demo"), None, false).unwrap();
     assert!(
         check
             .value
@@ -498,7 +498,12 @@ fn node_edit_re_points_and_clears_a_locator_keeping_id_and_edges() {
     let l = moved.value.node.locator.as_ref().unwrap();
     assert_eq!(
         (l.source.as_str(), l.hash.as_deref(), l.length),
-        ("docs/brief-v2.md", None, None)
+        (
+            "docs/brief-v2.md",
+            Some("sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+            Some(0)
+        ),
+        "the new locator is hashed (the open fake reads it as empty)"
     );
     let changed = &moved.notes[0];
     assert_eq!(changed.code, "locator_changed");
