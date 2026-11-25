@@ -1,0 +1,471 @@
+{
+  "dd": {
+    "schema": "pij/prd"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PRD 003: Graph rules",
+        "status": "draft",
+        "updated": "2026-11-26",
+        "owner": "project lead",
+        "summary": "Rules say what a well-shaped graph looks like, as data. A rule is one row: nodes that match this pattern should have this field, or this edge. umx carries a central set with std, and each graph mixes in its own, adding rules and switching central ones off, all stored in that graph's graph.json. A rule that is not met never fails a write: umx warns and names the command that puts the graph back in shape. A hub is a rule whose fix needs no choice, so umx applies it and says so. This PRD also gives std's risk a likelihood, an impact, an owner held as an `owns` edge and a `mitigates` relation. Each row is the desired state; every row is `planned`, since none of it is built."
+      }
+    },
+    {
+      "name": "why",
+      "value": "umx already tells a writer when a graph is out of shape, and each case is written in Rust. `anchor_undated` says a meeting should have a start date. `segment_without_parent` says a segment should be part of a meeting. Both are one of two shapes: this kind of node should have this field, or this edge. A third case needs a code change and a release, and a graph cannot state its own.\n\nThe case that started this is the risk. A risk should be owned by a person, a team or an organisation in the graph, as an edge. Today nothing says so, and the docs show the owner held as text, which links to nothing.\n\nThe project lead ruled on 2026-11-26: rules are data; there are central rules, and a graph mixes in its own, which can add rules and delete central ones, stored with the graph; rules run on the writes that can break one (a node added or edited, an edge removed) and when `umx check --rules` is run; a broken rule is a warning with a suggested fix, never a failure; a hub is a rule that joins matching nodes itself; and a rule's pattern takes exact matches and regex.\n\nThe rules guide two things. They guide the graph's shape, the same way for every reader. And they guide the feedback an agent gets: each warning carries the next command to run, so an agent is led to a well-shaped graph one step at a time.\n\nThe first real user is an agent on a live engagement, which will build that engagement's risks with these rules once they ship (project lead, 2026-11-26)."
+    },
+    {
+      "name": "actors",
+      "value": [
+        {
+          "id": "a-agent",
+          "name": "external agent",
+          "need": "Be told, on the write that causes it, when a node is out of shape, with the one command that fixes it; and find everything out of shape in one call."
+        },
+        {
+          "id": "a-builder",
+          "name": "graph-building agent",
+          "need": "State what a well-shaped node looks like in this graph, and set up hubs that collect nodes, without a umx release."
+        },
+        {
+          "id": "a-operator",
+          "name": "the operator",
+          "need": "Trust that the same graph reads the same on every machine, and that umx never removes anything because of a rule."
+        }
+      ]
+    },
+    {
+      "name": "goals",
+      "value": [
+        {
+          "id": "g-1",
+          "goal": "A new rule is a row of data, in umx's central set or in a graph, with no code change."
+        },
+        {
+          "id": "g-2",
+          "goal": "A write that leaves a node out of shape still happens, and its reply names the command that fixes it."
+        },
+        {
+          "id": "g-3",
+          "goal": "A graph's rules are the central ones, less those it switched off, plus its own, and all of that is stored with the graph."
+        },
+        {
+          "id": "g-4",
+          "goal": "The same graph gives the same rule answers to every reader on every machine."
+        },
+        {
+          "id": "g-5",
+          "goal": "A hub collects the nodes that belong in it without the writer doing anything, and umx says each time it does."
+        },
+        {
+          "id": "g-6",
+          "goal": "A risk in a std graph has a likelihood, an impact, an owner who is a node, and things that mitigate it."
+        }
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        {
+          "id": "ng-1",
+          "text": "Rules that refuse a write. A rule only warns (project lead, 2026-11-26)."
+        },
+        {
+          "id": "ng-2",
+          "text": "Free expressions in rules: no Cypher, no scripts, no conditions between rules. The one expression is a bounded regex over a node's own text."
+        },
+        {
+          "id": "ng-3",
+          "text": "Hub layouts in the UI (an Obsidian-style fan, hubs by degree or by similarity). Those belong to a later UI PRD."
+        },
+        {
+          "id": "ng-4",
+          "text": "Rules in machine or repository config. They would give two readers of one graph different answers."
+        },
+        {
+          "id": "ng-5",
+          "text": "umx removing or editing anything because of a rule. A fill rule only ever adds the one edge it names."
+        },
+        {
+          "id": "ng-6",
+          "text": "Counts (at most one), patterns over a node's edges or neighbours, and rules across graphs. They wait for a real case."
+        },
+        {
+          "id": "ng-7",
+          "text": "Moving `anchor_undated` and `segment_without_parent` onto central rules. They are the same shapes, but it changes their codes and wants its own decision."
+        },
+        {
+          "id": "ng-8",
+          "text": "One rule set shared by several graphs. Each graph keeps its own copy; sharing is solved later if it becomes a problem (project lead, 2026-11-26)."
+        }
+      ]
+    },
+    {
+      "name": "requirements",
+      "value": [
+        {
+          "id": "rules-01",
+          "title": "A rule is one row of data",
+          "statement": "A rule has a name, a pattern for the nodes it is about, and exactly one thing those nodes should have: a field, or an edge. `field` names a field the node should hold. `edge` names a relation the node should have at least one edge of, with exactly one of `from` (the edge comes in from a node of one of these types), `to` (it goes out to a node of one of these types) or `to_node` (it goes out to this one node). There are no counts, no conditions between rules and no free expressions. The same row shape is used for umx's central rules and for a graph's own.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "The risk owner rule, a field rule and a hub rule are each written as one row with only these keys, and umx reads all three with no code written for any one of them.",
+          "source": "Project lead 2026-11-26 (rules as data; a new rule needs no code change)"
+        },
+        {
+          "id": "rules-02",
+          "title": "A pattern says which nodes a rule is about",
+          "statement": "A rule's `match` holds one or more keys, and a node must match every key given. `type`, `status` and `tag` each take a list and match any entry; a tag entry `facet:*` matches a whole facet. `field` maps field names to a value the node must hold exactly. `regex` maps `title`, `note` or a string field to a regular expression the text must match. A pattern reads only the node's own stored values: never its edges, another node, an embedding or the clock.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A rule matching open risks whose impact is high, and a rule matching nodes whose title starts `SEC-` and a number, each select exactly those nodes in a test graph.",
+          "source": "Project lead 2026-11-26 (patterns take exact matches and regex)"
+        },
+        {
+          "id": "rules-03",
+          "title": "A regex is bounded and reads the same everywhere",
+          "statement": "A rule's regex uses one dialect, with no look-around and no back-references, so a match takes time in proportion to the text and a pulled graph.json cannot hang umx. It is at most 256 characters, searches anywhere in the text unless anchored, and is case sensitive unless it says otherwise. A regex that does not compile is refused when the rule is added, naming the position, and nothing is written.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A rule with an invalid regex is refused with its position; a rule with a look-around is refused; a valid regex over 10,000 nodes is checked within the time `umx check` already allows.",
+          "source": "Project lead 2026-11-26 (regex allowed); design brief (no arbitrary expressions unless argued for)",
+          "note": "The brief asks for no arbitrary expressions. Regex is the one exception, ruled by the project lead so a hub can collect nodes by a naming pattern."
+        },
+        {
+          "id": "rules-04",
+          "title": "Central rules ship with std",
+          "statement": "umx carries a central set of rules as a data table beside std's types and relations, in the same row shape as a graph's own rules. A central rule is named `std:<name>`. The first central rules are part of std 1, so every std graph has them as soon as umx is updated, and a graph that is out of shape starts warning then. That is wanted: the graphs that exist are few enough to fix now. A graph without std has no central rules.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Adding a central rule is one new row in the table and no other change; a std 1 graph made before this umx gives the owner warning on its next risk add and lists its unowned risks under `umx check --rules`.",
+          "source": "Project lead 2026-11-26 (central rules; add to std 1 and let existing graphs start warning)",
+          "note": "An older umx reading a graph that uses the new std 1 names (`likelihood`, `impact`, `mitigates`) warns them off-vocabulary, with no `std_newer` notice, until it is updated."
+        },
+        {
+          "id": "rules-05",
+          "title": "A graph mixes in its own rules and can switch central ones off",
+          "statement": "A graph adds rules of its own and switches central rules off by name. Both are stored in that graph's graph.json and nowhere else: `rules` holds the graph's own rows and `rules_off` the names of the central rules it has switched off, each sorted by name and written only when used. The rules in force are std's rules, then the graph's rule sets (rules-28), then the graph's own, less every rule any of them switched off. They are worked out on each read and never written back. Machine and repository config never change them.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A graph with one rule of its own and one central rule switched off lists exactly the remaining central rules plus its own; two machines with different umx config get the same list; graph.json holds only the graph's own rows and the switched-off names.",
+          "source": "Project lead 2026-11-26 (mix-in adds and deletes central rules; stored with the graph); follows the std vocabulary merge of PRD 001",
+          "note": "To change a central rule a graph switches it off and adds its own. There is no override by name."
+        },
+        {
+          "id": "rules-06",
+          "title": "Rules are managed with umx rule",
+          "statement": "`umx rule list` shows the rules in force, std's first, each marked as std's or the graph's own, with switched-off central rules shown as off. `umx rule add <name>` declares a rule from flags for its pattern and its shape; `umx rule remove <name>` drops one of the graph's own; `umx rule off std:<name>` and `umx rule on std:<name>` switch a central rule. `umx rule show <name>` prints the rule and the nodes its pattern matches now, and `umx rule add ... --dry-run` prints the same and writes nothing. Adding a rule that is already there the same way writes nothing and says so. A name in a rule that is neither the graph's vocabulary nor std's is refused, with the command that declares it.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Each command above works as written on a std graph; a setup script that adds the same rules twice changes nothing the second time; `--dry-run` leaves graph.json byte for byte the same.",
+          "source": "Project lead 2026-11-26"
+        },
+        {
+          "id": "rules-07",
+          "title": "A rule is checked on the writes that can break it",
+          "statement": "After `umx node add` and `umx node edit`, umx checks the rules in force whose pattern matches the node as it now is. After `umx edge delete`, and after an `umx edge edit` that changes the relation, it checks the nodes at both ends, since removing a risk's last `owns` edge is the commonest way to break an edge rule. `umx batch` checks once, after the whole batch, so a batch that adds a risk and its owner edge together breaks nothing. A batch that leaves many nodes breaking one rule gives one warning for that rule with a count. No other write and no read checks rules.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Adding a risk with no owner warns; editing a node so it comes to match a rule it breaks warns; deleting a risk's only `owns` edge warns, naming the risk; a batch that adds a risk and its `owns` edge warns nothing.",
+          "source": "Project lead 2026-11-26 (rules run on a node add that breaks one; node edit also checks); prime review 2026-11-26 (edge delete and a relation change, both ends)"
+        },
+        {
+          "id": "rules-08",
+          "title": "umx check --rules lists everything out of shape",
+          "statement": "`umx check --rules` reads every node of the graph against the rules in force and lists each node that breaks one, with the rule and the command that would fix it, a page at a time, with a total. `--rule <name>` limits it to one rule. Plain `umx check` adds one line: how many nodes break a rule, with `umx check --rules` as its next command. Check never writes.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On a graph with three unowned risks, `umx check --rules` lists the three with their fix commands and a total of 3, and the graph's files are unchanged.",
+          "source": "Project lead 2026-11-26 (run check with the rules parameter)"
+        },
+        {
+          "id": "rules-09",
+          "title": "A broken rule is a warning, never a failure",
+          "statement": "A write that leaves a node breaking a rule is always made. The reply carries a warning with the code `rule_unmet`, the rule's name, the node, a message and a `next` command. The exit code is 0, as for every warning. A rule never refuses a write and never changes a node.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A node add that breaks two rules stores the node, exits 0 and carries two `rule_unmet` warnings, each naming its rule.",
+          "source": "Project lead 2026-11-26 (rules are not failures, they are warnings: the graph is a little out of shape, here is how to fix it)"
+        },
+        {
+          "id": "rules-10",
+          "title": "Every rule warning offers a runnable next action",
+          "statement": "The `next` of a `rule_unmet` warning is the command that would meet the rule, filled in as far as umx can know. For an edge rule it is the `umx edge add` with the node's real id and a placeholder for the one end the writer must choose; for a field rule, the `umx node edit --set` with a placeholder for the value; for a hub rule, the command that joins the node, with nothing left to fill in.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "The owner warning on a new risk carries `umx edge add <node> owns <the risk's id>` with the graph named; running it with a person's id in place of `<node>` clears the warning on the next check.",
+          "source": "Project lead 2026-11-26; PRD 001 (every warning names the command to run next)"
+        },
+        {
+          "id": "rules-11",
+          "title": "A rule reads as one fixed sentence",
+          "statement": "umx builds each rule's sentence from its parts, for example \"A risk should have an owns edge from a person, organisation or team.\" The same sentence is the warning's message, the row in `umx rule list` and the line in the graph guide. A rule's optional description is graph text: it is shown by `umx rule list` and the guide under an untrusted path and never placed in a message or a `next`.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "The owner rule prints the same sentence in the warning, in `umx rule list` and in `umx graph guide`; a rule description holding a command never appears in any `message` or `next`.",
+          "source": "Project lead 2026-11-26; PRD 001 (message and next never contain graph text)"
+        },
+        {
+          "id": "rules-12",
+          "title": "Every reader gets the same answer",
+          "statement": "Whether a node meets a rule depends only on the graph's own files and its std version. It never depends on the clock, an embedder, umx config or which other graphs are loaded. An edge whose far end is in another graph counts as meeting an edge rule whatever is loaded, since that end's type cannot be read the same way by every reader. A symmetric relation counts from either end. Provenance nodes are never checked.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "`umx check --rules` on one graph folder gives the same rows on two machines, one with a linked graph loaded and one without.",
+          "source": "Design brief (deterministic, the same answer for every reader)"
+        },
+        {
+          "id": "rules-13",
+          "title": "The guide shows the rules before an agent writes",
+          "statement": "`umx graph guide` lists the rules in force as their sentences, marked as std's or the graph's own, so an agent learns the graph's shape before its first write.",
+          "actor": "a-agent",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "The guide of a std graph with one hub rule lists the central rules and the hub rule.",
+          "source": "Project lead 2026-11-26 (rules guide the feedback an agent receives)"
+        },
+        {
+          "id": "rules-14",
+          "title": "Rules are kept by older umx or refused, never dropped",
+          "statement": "The first rule or switch-off a graph stores raises graph.json to a new format, so an older umx refuses to load the graph rather than drop its rules. A graph that declares none keeps its format. A graph holds at most 64 rules of its own. Stored rules umx could not have written (a hand edit) are refused at load with the reason, as a graph.json that does not read is.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "An older umx refuses a graph with a rule and names the format; a graph with no rules is written byte for byte as before.",
+          "source": "Follows the spines precedent of PRD 001 (graph.json format 6)"
+        },
+        {
+          "id": "rules-15",
+          "title": "A hub is a rule that umx applies itself",
+          "statement": "A rule whose shape is an edge to one named node may carry `fill`. Its fix has nothing left to choose, so umx makes the edge itself instead of warning. The named node is the hub; it is an ordinary node of any type, so a spine places it as it places any other node and it can sit on a spine. `fill` is refused on any other shape. There is no separate hub list or hub command.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "`umx rule add risk_register --type risk --edge part_of --to-node <hub> --fill` is accepted; `--fill` on a rule with `--from person` is refused.",
+          "source": "Project lead 2026-11-26 (hub fill is a rule; fill auto-joins nodes that belong in a hub)"
+        },
+        {
+          "id": "rules-16",
+          "title": "Creating a hub joins the nodes that already match, and lists them",
+          "statement": "Adding a fill rule adds the edge for every node its pattern matches that lacks one, in one write, all or nothing. The reply lists the nodes joined, with a total.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Adding a risk register rule to a graph with three risks adds three edges and lists the three risks.",
+          "source": "Design brief (creating a hub backfills the existing matching nodes and lists them)"
+        },
+        {
+          "id": "rules-17",
+          "title": "A new or edited node that belongs in a hub is joined, and told",
+          "statement": "When `umx node add`, `umx node edit` or `umx batch` leaves a node matching a fill rule with no edge to its hub, umx adds the edge in the same write. The reply carries the hint `rule_filled`, naming the rule and the hub, with a `next` that lists the hub's members, and the reply's data names the edge added.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Adding a risk to a graph with a risk register rule stores the node and its edge to the register in one write and returns the hint; editing a node's type to risk does the same.",
+          "source": "Design brief (node add tells you when a node was auto-added to a hub); Project lead 2026-11-26 (node edit also checks)",
+          "note": "`rule_filled` is a hint, not a warning. Nothing is out of shape and there is nothing to fix: umx did the fix. A hint is how umx says so without changing the reply's status, and it still names a next command. `rule_unmet` stays a warning."
+        },
+        {
+          "id": "rules-18",
+          "title": "An auto edge says which rule made it",
+          "statement": "Each edge a fill rule adds carries `filled_by` with the rule's name. Only umx sets it: a write that sets it by hand is refused. Edge lists show it and can filter on it.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "`umx edge list --where filled_by=risk_register` lists exactly the edges that rule added; `umx edge add ... --set filled_by=x` is refused.",
+          "source": "Design brief (auto edges are marked as auto-filled)"
+        },
+        {
+          "id": "rules-19",
+          "title": "umx never removes an auto edge",
+          "statement": "umx never deletes an edge a fill rule added: not when the rule is removed or switched off, not when the node is retyped or renamed out of the pattern, not on load and not on check. Removing a fill rule says how many of its edges remain and how to list them. Anyone may delete an auto edge by hand, as any edge.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "After a fill rule is removed, every edge it added is still in edges.jsonl with its `filled_by`.",
+          "source": "Design brief (umx never removes an auto edge itself)"
+        },
+        {
+          "id": "rules-20",
+          "title": "Fill happens at three moments and never behind your back",
+          "statement": "umx fills only when a fill rule is added, when a node is added or edited, and when `umx rule fill <name>` is run. It never fills on a read, on load, on check or on an edge write. So an auto edge deleted by hand is not put back: the delete warns `rule_unmet` once, and a matching node that arrives by a git merge is not joined until asked. Both show in `umx check --rules` as `rule_unmet`, whose next is `umx rule fill <name>`.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Deleting an auto edge and then reading, loading and checking the graph leaves it deleted; `umx rule fill risk_register` restores it.",
+          "source": "Project lead 2026-11-26"
+        },
+        {
+          "id": "rules-21",
+          "title": "A hub node cannot be deleted from under its rule",
+          "statement": "Deleting a node that a rule names as its hub is refused while the rule stands, with the command that removes the rule as its next. Nothing changes.",
+          "actor": "a-builder",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "Deleting the risk register node is refused and names `umx rule remove risk_register`.",
+          "source": "Follows `ontology_in_use` of PRD 001"
+        },
+        {
+          "id": "rules-22",
+          "title": "A risk has a likelihood and an impact",
+          "statement": "std gives `risk` the fields `likelihood` and `impact`, each one of `low`, `medium` or `high`.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On a std graph `umx node add --type risk --set likelihood=high --set impact=low` warns nothing, and `umx ontology show --std` lists both fields with their values.",
+          "source": "Project lead 2026-11-26 (core risk gains likelihood and impact, low|medium|high)"
+        },
+        {
+          "id": "rules-23",
+          "title": "A string field can declare its values",
+          "statement": "A string field may declare the values it takes: `umx ontology add field <type> <field>:string --values low,medium,high`. The vocabulary stays soft: a value outside the list is stored, with a warning that lists the declared values and whose next declares the new one. This is how std states a risk's likelihood and impact, and any graph may use it for its own fields.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Setting a risk's impact to `severe` stores it and warns with `low`, `medium` and `high` as candidates.",
+          "source": "Needed by rules-22; follows declared tag facets of PRD 001",
+          "note": "This is vocabulary, not shape, so it is a field's declaration and not a rule."
+        },
+        {
+          "id": "rules-24",
+          "title": "A risk's owner is an owns edge, checked by a central rule",
+          "statement": "std carries the central rule `risk_owned`: a risk should have an `owns` edge from a person, organisation or team. A risk added with none warns `rule_unmet` with the `umx edge add <node> owns <risk>` that links one. The docs stop showing a risk's owner as a text field.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Adding a risk on a std graph gives the owner warning; adding the `owns` edge from a person clears it; `umx rule off std:risk_owned` stops it for that graph; no umx doc declares `owner:string` on a risk.",
+          "source": "Project lead 2026-11-26 (link to entities, don't hold names as text)"
+        },
+        {
+          "id": "rules-25",
+          "title": "mitigates is a std relation",
+          "statement": "std has the relation `mitigates`, from any node to a `risk`. The expected end is soft, as for every std relation.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On a std graph `umx edge add <action> mitigates <risk>` warns nothing; `mitigates` to a node that is not a risk is stored with `relation_endpoint_unexpected`.",
+          "source": "Project lead 2026-11-26 (a built-in mitigates relation)"
+        },
+        {
+          "id": "rules-26",
+          "title": "Docs and the skill teach how to use rules",
+          "statement": "This work is not done until the docs and the umx skill teach it. The docs gain a rules topic that covers writing a rule, patterns and regex, switching a central rule off, setting up a hub, reading a rule warning and fixing a graph up with `umx check --rules`. The errors topic lists `rule_unmet` and `rule_filled`; the ontology topic covers declared values and the new risk fields and `mitigates`; the organise topic shows a risk's owner as an `owns` edge. The umx skill tells an agent to read the guide's rules before writing, to act on a rule warning's next, how to add a rule or a hub to a graph, and how to bring an existing graph into shape.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "`umx docs get rules` exists and every command in it runs as written; the skill's build and explore routes name rules, hubs and `umx check --rules`; the docs gate passes.",
+          "source": "Project lead rulings 2026-11-12 (docs are part of done) and 2026-11-26 (this work includes the skills and the documentation on how to use it)"
+        },
+        {
+          "id": "rules-27",
+          "title": "The graphs we have are brought into shape",
+          "statement": "When the central rules ship, each existing std graph is run through `umx check --rules` and fixed up: each risk gets its `owns` edge to a person, team or organisation node, or the graph switches the rule off on purpose. The docs give the steps, so any graph owner can do the same.",
+          "actor": "a-operator",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "For each graph the project keeps, `umx check --rules` lists no node breaking a central rule, or the graph's `rules_off` names the rule it chose to drop.",
+          "source": "Project lead 2026-11-26 (get the graphs we have fixed up, it is not too late)"
+        },
+        {
+          "id": "rules-28",
+          "title": "A graph can hold named rule sets, each one file in its folder",
+          "statement": "A rule set is one JSON file in the graph folder's `rules/` folder, named `<set>.json`, with the same two keys graph.json uses: `rules` (rows) and `rules_off` (names of rules to switch off, central ones included). umx reads every set file in that folder, in name order. A set's rule is named `<set>:<rule>`, so the graph can switch one off by name. The files are committed with the graph, so every reader gets the same rules. A set file may not hold a fill rule, since a hub names one node of one graph. A set file umx cannot read is reported with the reason and none of its rules are used.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A graph with `rules/risk_management.json` holding one rule and one switch-off of `std:risk_owned` lists that rule as `risk_management:<name>` and no longer warns for unowned risks; removing the file brings the central rule back.",
+          "source": "Project lead 2026-11-26 (named rule sets, as rules files next to the graph)"
+        },
+        {
+          "id": "rules-29",
+          "title": "Rule sets are copied into a graph, one graph at a time",
+          "statement": "`umx rule set add <file>` checks a set file as `umx rule add` checks a rule and copies it into the graph's `rules/` folder; `umx rule set list` lists the graph's sets with how many rules each holds; `umx rule set remove <set>` deletes the copy. umx copies and never links: a graph never reads a rules file outside its own folder, and a change to the file a set was copied from does not follow. Sharing one set between graphs is not solved here.",
+          "actor": "a-builder",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "Adding one set file to two graphs gives each its own copy; changing the original changes neither graph; `umx rule set remove` leaves the other graph untouched.",
+          "source": "Project lead 2026-11-26 (graph by graph; keep them individual; sharing can be solved later if it is an issue)"
+        }
+      ]
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "id": "q-01",
+          "question": "Is a hub a rule with `fill`, or its own `umx hub` noun?",
+          "default": "A rule with `fill`: one list, one format, one check.",
+          "status": "answered",
+          "answer": "A rule with `fill` (project lead, 2026-11-26)."
+        },
+        {
+          "id": "q-02",
+          "question": "Does a rule's pattern take exact matches only, or regex as well?",
+          "default": "Exact matches only.",
+          "status": "answered",
+          "answer": "Both regex and exact matches (project lead, 2026-11-26)."
+        },
+        {
+          "id": "q-03",
+          "question": "Does node edit check rules and join hubs, or only node add?",
+          "default": "Both: an edit changes what a pattern reads.",
+          "status": "answered",
+          "answer": "Node edit checks rules too (project lead, 2026-11-26)."
+        },
+        {
+          "id": "q-04",
+          "question": "Which relation joins a node to a hub? `part_of` is what the docs show, and it is also what spines read as inside, so a risk in a register would count as inside it.",
+          "default": "The rule names the relation, and the docs show `part_of`.",
+          "status": "answered",
+          "answer": "`part_of` is fine: a node can be part of many things (project lead, 2026-11-26). std gains no new relation for hubs. One care for the build: a hub that collects a spine's anchor type gives each anchor a second `part_of` parent, so a spine must not read a `filled_by` edge as the anchor's parent."
+        },
+        {
+          "id": "q-05",
+          "question": "Should a central rule ask every risk for a likelihood and an impact?",
+          "default": "No. The fields exist, and a graph that wants them required adds the rule itself.",
+          "status": "answered",
+          "answer": "No central rule. It is left to the agents, who set a graph up to ask for a rating by adding the rule to that graph (project lead, 2026-11-26)."
+        },
+        {
+          "id": "q-06",
+          "question": "Do the risk fields, `mitigates` and the central rules arrive as std 2, which a graph moves to with `umx ontology adopt-std`, or are they added to std 1?",
+          "default": "std 2, so no graph starts warning only because umx was updated.",
+          "status": "answered",
+          "answer": "Added to std 1, and existing graphs start warning. The graphs we have get fixed up now, while there are few (project lead, 2026-11-26). See rules-04 and rules-27."
+        },
+        {
+          "id": "q-07",
+          "question": "Are there rule sets beyond std's and the graph's own, such as a named risk-management set a graph can pull in?",
+          "default": "No, not in this PRD: two sets.",
+          "status": "answered",
+          "answer": "Yes. A set is a rules file in the graph's own `rules/` folder, copied in graph by graph and kept individual; sharing between graphs can be solved later if it is an issue (project lead, 2026-11-26). See rules-28 and rules-29."
+        }
+      ]
+    },
+    {
+      "name": "changelog",
+      "value": [
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "First draft, from the design note of the same day and the project lead's rulings while it was written. One PRD in three parts: the rules engine (rules-01 to rules-14), hubs as fill rules (rules-15 to rules-21) and the std risk additions (rules-22 to rules-25), with docs and the skill in rules-26 and the fix-up of existing graphs in rules-27. q-01 to q-07 answered. Named rule sets are rules-28 and rules-29. After the prime's review the same day: an edge delete and a relation change are checked too, at both ends (rules-07); `rule_filled` stays a hint, with the reason (rules-17); a hub is an ordinary node a spine can place (rules-15)."
+        }
+      ]
+    }
+  ]
+}
