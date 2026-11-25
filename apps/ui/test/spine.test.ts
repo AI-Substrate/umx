@@ -1,7 +1,7 @@
 // The spine view (Jordan's brief part 2): the view lays a graph out by umx's placements (`node list --columns
 // spine:<name>`), earliest band on the left, and reads a graph's spines and placements through the two read verbs.
 import { describe, expect, it, vi } from "vitest";
-import { fanOf, nodeOnSpines, type Place, shownSpine, spineLayout, type SpineRead, spineReadsDue, SPREAD, stack, toggleSpine } from "@/lib/graph/spine-layout";
+import { ANCHOR_LABEL_MAX, anchorLabels, fanOf, nodeOnSpines, type Place, rowsLabelled, shownSpine, spineLayout, type SpineRead, spineReadsDue, SPREAD, toggleSpine } from "@/lib/graph/spine-layout";
 import { listSpines, loadSpinePlaces } from "@/lib/spine";
 import { createUmx, UMX_PROTOCOL, type Exec } from "@/lib/umx";
 
@@ -44,8 +44,9 @@ describe("laying a graph out along a spine", () => {
   it("keeps each placed node in its band's column, a rule placement too, and shelves what is not placed below", () => {
     const half = (axis!.bands[1] - axis!.bands[0]) / 2;
     for (const [k, anchor] of [["p0", "a0"], ["p1", "a1"], ["r1", "a1"]]) expect(Math.abs(x(k) - x(anchor))).toBeLessThan(half);
-    expect(y("p1")).toBe(8);
-    expect(y("loose")).toBeLessThan(Math.min(...nodes.map((n) => n.y)));
+    expect(y("p1")).toBeGreaterThan(y("a1"));
+    expect(y("r1")).toBeLessThan(y("a1"));
+    expect(y("loose")).toBeLessThan(Math.min(...nodes.filter((n) => n.id !== "loose").map((n) => y(n.id))));
     expect(at.size).toBe(nodes.length);
   });
 
@@ -158,21 +159,22 @@ describe("spreading a spine out", () => {
     expect(at.size).toBe(nodes.length);
   });
 
-  it("fans a band too full for one column, and keeps every node on its own side of the line", () => {
+  it("fans a band too full for one column, keeps it in its band, and keeps the force layout's top above the line", () => {
     const { at, axis } = spineLayout("g", nodes, places);
     const xs = new Set(Array.from({ length: 30 }, (_, i) => at.get(`g/n${i}`)!.x));
     expect(xs.size).toBeGreaterThan(1);
     const half = (axis!.bands[1] - axis!.bands[0]) / 2;
     for (const x of xs) expect(Math.abs(x - axis!.bands[0])).toBeLessThan(half);
-    expect(at.get("g/top")!.y).toBe(100);
+    for (const x of xs) expect(x).not.toBe(axis!.bands[0]);
+    expect(at.get("g/top")!.y).toBeGreaterThan(axis!.y);
   });
 
   it("widens the bands and the gaps as the spread grows, and keeps the shelf below everything placed", () => {
     const narrow = spineLayout("g", nodes, places, 1);
     const wide = spineLayout("g", nodes, places, 3);
-    expect(wide.axis!.bands[1] - wide.axis!.bands[0]).toBeGreaterThan(1.5 * (narrow.axis!.bands[1] - narrow.axis!.bands[0]));
-    expect(minGap(wide.at)).toBeGreaterThanOrEqual(Math.sqrt(3) * gap - 1e-9);
-    expect(wide.at.get("g/top")!.y - wide.axis!.y).toBeCloseTo(3 * (100 - narrow.axis!.y));
+    expect(wide.axis!.x1 - wide.axis!.x0).toBeGreaterThan(1.5 * (narrow.axis!.x1 - narrow.axis!.x0));
+    expect(minGap(wide.at)).toBeGreaterThanOrEqual(3 * gap - 1e-9);
+    expect(wide.axis!.pitch).toBeCloseTo(3 * narrow.axis!.pitch);
     for (const { at } of [narrow, wide]) {
       const placed = Math.min(...[...at.entries()].filter(([k]) => !k.startsWith("g/loose")).map(([, p]) => p.y));
       for (let i = 0; i < 3; i++) expect(at.get(`g/loose${i}`)!.y).toBeLessThan(placed);
@@ -180,16 +182,91 @@ describe("spreading a spine out", () => {
     expect(spineLayout("g", nodes, places, 99).axis).toEqual(spineLayout("g", nodes, places, SPREAD.default).axis);
   });
 
-  it("fans a band wider as it fills and as the spread grows, never onto the anchor's own column", () => {
-    expect([fanOf(0, 1), fanOf(1, 1)]).toEqual([0, 1]);
-    for (const n of [2, 5, 15, 30]) for (const s of [0.5, 1, 4]) expect(fanOf(n, s) % 2).toBe(0);
-    expect(fanOf(15, 3)).toBeGreaterThan(fanOf(15, 1));
-    expect(fanOf(30, 1)).toBeGreaterThan(fanOf(5, 1));
+  it("fans a band into as many sub-columns as its rows need", () => {
+    expect([fanOf(0, 4), fanOf(1, 4), fanOf(4, 4), fanOf(5, 4), fanOf(30, 4)]).toEqual([0, 1, 1, 2, 8]);
+    expect(fanOf(30, 10)).toBeLessThan(fanOf(30, 4));
+  });
+});
+
+describe("a big spine graph", () => {
+  // 1,000 nodes over 30 bands of very uneven size (2 to about 150), all piled at the same few force positions, and
+  // 20 the spine does not place.
+  const big = (sizes: readonly number[], shelf = 0) => {
+    const nodes: { key: string; id: string; x: number; y: number }[] = [];
+    const places = new Map<string, Place>();
+    sizes.forEach((n, b) => {
+      nodes.push({ key: `g/a${b}`, id: `a${b}`, x: b, y: 0 });
+      places.set(`a${b}`, place(b, "field", true));
+      for (let i = 0; i < n; i++) {
+        nodes.push({ key: `g/n${b}.${i}`, id: `n${b}.${i}`, x: (i * 7) % 11, y: ((i * 13) % 17) - 8 });
+        places.set(`n${b}.${i}`, place(b, "link"));
+      }
+    });
+    for (let i = 0; i < shelf; i++) nodes.push({ key: `g/loose${i}`, id: `loose${i}`, x: i, y: 3 });
+    return { nodes, places };
+  };
+  const uneven = Array.from({ length: 30 }, (_, b) => Math.max(2, Math.round(150 / (1 + ((b * 7) % 30)) ** 0.9)));
+  const total = uneven.reduce((a, b) => a + b, 0);
+  const sizes = uneven.map((n) => Math.floor((n * 950) / total));
+  sizes[0] += 950 - sizes.reduce((a, b) => a + b, 0);
+  const box = (at: Map<string, { x: number; y: number }>, keep: (k: string) => boolean = () => true) => {
+    let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
+    for (const [k, p] of at) if (keep(k)) [x0, x1, y0, y1] = [Math.min(x0, p.x), Math.max(x1, p.x), Math.min(y0, p.y), Math.max(y1, p.y)];
+    return { w: x1 - x0, h: y1 - y0 };
+  };
+
+  it("never sets two of 1,000 nodes closer than a row, and gives the lane the canvas's shape", () => {
+    const { nodes, places } = big(sizes, 20);
+    expect(nodes.length).toBeGreaterThanOrEqual(1000);
+    const { at, axis } = spineLayout("g", nodes, places);
+    const pts = [...at.values()];
+    let least = Infinity;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) least = Math.min(least, Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y));
+    expect(least).toBeGreaterThanOrEqual(axis!.pitch - 1e-9);
+    const { w, h } = box(at);
+    expect(w / h).toBeGreaterThan(1);
+    expect(w / h).toBeLessThan(3.5);
+    // A tall canvas gets a taller lane.
+    const tall = box(spineLayout("g", nodes, places, 1, 0.8).at);
+    expect(tall.w / tall.h).toBeLessThan(w / h);
   });
 
-  it("stacks one side of the line off it, each where the force had it when there is room", () => {
-    expect(stack([1, 1, 1, 10], 0, 2, 1)).toEqual([2, 4, 6, 10]);
-    expect(stack([-1, -9], 0, 2, -1)).toEqual([-2, -9]);
+  it("grows the lane up and down as its bands fill, not only across", () => {
+    const lay = (bands: number[]) => {
+      const { nodes, places } = big(bands);
+      const laid = spineLayout("g", nodes, places);
+      return box(laid.at).h / laid.axis!.pitch;
+    };
+    // Rows high: ten times the nodes per band is more than twice the rows; one band of 400 among small ones stands tall.
+    expect(lay(Array(30).fill(40))).toBeGreaterThan(2 * lay(Array(30).fill(4)));
+    expect(lay([...Array(29).fill(4), 400])).toBeGreaterThan(10);
+  });
+
+  it("keeps neighbouring bands apart, however wide each fans", () => {
+    const { nodes, places } = big(sizes);
+    const { at } = spineLayout("g", nodes, places);
+    const xs = sizes.map((n, b) => {
+      const ps = [at.get(`g/a${b}`)!.x, ...Array.from({ length: n }, (_, i) => at.get(`g/n${b}.${i}`)!.x)];
+      return [Math.min(...ps), Math.max(...ps)];
+    });
+    for (let b = 1; b < xs.length; b++) expect(xs[b][0]).toBeGreaterThan(xs[b - 1][1]);
+  });
+
+  it("labels anchors left to right without two labels meeting, cutting each to the room before the next", () => {
+    const at = (key: string, x: number, width = 150) => ({ key, x, y: 100, size: 5, width });
+    // Roomy: each cut to the room before the next anchor, the last whole.
+    const roomy = anchorLabels([at("b", 200, 300), at("a", 0, 300), at("c", 400)], 12);
+    expect([...roomy.keys()].sort()).toEqual(["a", "b", "c"]);
+    expect(roomy.get("a")).toBe(200 - 5 - (0 + 5 + 3) - 8);
+    expect(roomy.get("c")).toBe(150);
+    // Crowded: a label runs on to ANCHOR_LABEL_MAX and the anchors under it go unlabelled.
+    const crowded = anchorLabels(Array.from({ length: 10 }, (_, i) => at(`k${i}`, i * 30, 400)), 12);
+    expect(crowded.get("k0")).toBe(ANCHOR_LABEL_MAX);
+    const drawn = [...crowded].map(([k, w]) => [Number(k.slice(1)) * 30 + 8, Number(k.slice(1)) * 30 + 8 + w]).sort((p, q) => p[0] - q[0]);
+    expect(drawn.length).toBeGreaterThan(1);
+    for (let i = 1; i < drawn.length; i++) expect(drawn[i][0]).toBeGreaterThanOrEqual(drawn[i - 1][1]);
+    // Other rows' labels wait until rows are a label apart on screen.
+    expect([rowsLabelled(10, 12), rowsLabelled(14, 12)]).toEqual([false, true]);
   });
 });
 

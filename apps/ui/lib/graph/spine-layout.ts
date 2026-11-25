@@ -8,25 +8,34 @@
 /** Where umx placed one node: its band (null when not placed), how, and whether it is one of the spine's anchors. */
 export type Place = { band: number | null; by: string; anchor: boolean };
 
-/** One graph's spine line, in graph coordinates, for the canvas to draw: from the first band to the last. */
-export type SpineAxis = { graph: string; y: number; x0: number; x1: number; bands: number[] };
+/** One graph's spine line, in graph coordinates, for the canvas to draw: from the first band to the last. `anchors` are
+ * the anchors' canvas keys (their labels come first), `pitch` the gap between two rows of a band (a label's height on
+ * screen at the zoom where every row can carry one). */
+export type SpineAxis = { graph: string; y: number; x0: number; x1: number; bands: number[]; anchors: string[]; pitch: number };
 
 type At = { x: number; y: number };
 
-/** The lane's width is at least this many times its height, so a spine reads left to right. */
-const MIN_ASPECT = 1.6;
-/** At spread 1, the least gap between two nodes of a band is the force layout's height over this. */
+/** The lane's width over its height when the canvas does not say: a wide browser canvas. */
+export const ASPECT = 1.8;
+/** At spread 1, the gap between two rows of a band is the force layout's height over this. */
 const ROWS = 24;
-/** Sub-columns of a band sit this many gaps apart at spread 1, room for a short label. */
-const FAN = 2.5;
+/** Sub-columns of a band sit this many row gaps apart at spread 1, room for a short label. */
+const FAN = 1.8;
+/** Bands sit this many sub-columns apart past their own width. */
+const GAP = 0.6;
 
-/** How many sub-columns a band of `n` nodes fans into at spread `s`: more as either grows, and an even number past one
- * node, so none sits on the anchor's own column and its edges to the anchor do not run along each other. */
-export function fanOf(n: number, s: number): number {
-  if (n <= 1) return n;
-  const k = Math.ceil(Math.sqrt((n * s) / 2));
-  return k + (k % 2);
+/** How many sub-columns a band of `n` nodes fans into when each holds at most `rows` of them (half above the line,
+ * half below). */
+export function fanOf(n: number, rows: number): number {
+  return n <= 1 ? n : Math.ceil(n / Math.max(2, rows));
 }
+
+/** How far a band's `k` sub-columns sit right of its anchor, in sub-columns: an odd number is moved half a column, so
+ * none sits on the anchor's own column and its edges to the anchor do not run along each other. */
+const shiftOf = (k: number) => (k % 2) / 2;
+
+/** A band's width in sub-columns: its fan (or its anchors side by side), the odd fan's shift and the gap to the next. */
+const spanOf = (k: number, anchors: number) => Math.max(k + shiftOf(k), anchors, 1) + GAP;
 
 /** The Spread slider (spine view): it widens the gap between bands and between the nodes of a band. */
 export const SPREAD = { min: 0.5, max: 4, step: 0.1, default: 1 } as const;
@@ -37,22 +46,39 @@ export function spreadOf(v: number | undefined): number {
 }
 
 /**
- * Ys for one side of the line, nearest the line first: each where the force layout had it, pushed out from `from`
- * (the line) and from the node before it so no two sit closer than `gap`. `dir` is 1 above the line, -1 below.
+ * The rows per side of the line that let Fit show the lane biggest, for bands of `sizes` nodes with `wide` anchors
+ * each and `shelf` nodes not placed, columns `col` apart and rows `row` apart, on a canvas `aspect` wide over high:
+ * the lane that needs the least zoom out to fit, so its rows are furthest apart on screen. Taller bands mean fewer
+ * sub-columns, so a big band grows the lane up and down as well as across, as far as the canvas's shape allows.
  */
-export function stack(ys: readonly number[], from: number, gap: number, dir: 1 | -1): number[] {
-  let prev = from;
-  return ys.map((y) => (prev = dir > 0 ? Math.max(y, prev + gap) : Math.min(y, prev - gap)));
+export function rowsFor(sizes: readonly number[], wide: readonly number[], shelf: number, col: number, row: number, aspect: number): number {
+  const most = Math.max(1, ...sizes);
+  let [best, least] = [1, Infinity];
+  for (let r = 1; r <= Math.ceil(most / 2); r++) {
+    const cols = sizes.reduce((sum, n, i) => sum + spanOf(fanOf(n, 2 * r), wide[i] ?? 0), 0);
+    const shelfRows = shelf > 0 ? 2 + Math.ceil(shelf / Math.max(1, Math.floor(cols))) : 0;
+    const zoom = Math.max((cols * col) / aspect, (2 * r + 1 + shelfRows) * row);
+    if (zoom < least) [best, least] = [r, zoom];
+  }
+  return best;
 }
 
 /**
  * Positions for one graph's nodes along a spine. `nodes` are the graph's nodes with their force-layout positions
- * (`key` the canvas key, `id` umx's id); `places` umx's placements by id; `spread` the Spread slider. Returns each
- * node's position and the axis. A band fans into sub-columns around its anchor, kept in the force layout's order across,
- * and no two of its nodes sit closer than the gap. A wider spread moves a band's nodes further off the line, apart from
- * each other, and fans each band wider.
+ * (`key` the canvas key, `id` umx's id); `places` umx's placements by id; `spread` the Spread slider; `aspect` the
+ * canvas's width over its height. Returns each node's position and the axis. Each band is a grid around its anchor:
+ * sub-columns kept in the force layout's order across, each node above or below the line as the force layout had it
+ * within its sub-column, one row gap apart, never on the line. The number of rows is picked so the whole lane has the
+ * canvas's shape; each band takes the width its sub-columns need, so neighbouring bands never meet. A wider spread
+ * moves rows and bands further apart.
  */
-export function spineLayout(graph: string, nodes: readonly { key: string; id: string; x: number; y: number }[], places: ReadonlyMap<string, Place>, spread: number = SPREAD.default): { at: Map<string, At>; axis: SpineAxis | null } {
+export function spineLayout(
+  graph: string,
+  nodes: readonly { key: string; id: string; x: number; y: number }[],
+  places: ReadonlyMap<string, Place>,
+  spread: number = SPREAD.default,
+  aspect: number = ASPECT,
+): { at: Map<string, At>; axis: SpineAxis | null } {
   const at = new Map<string, At>();
   if (nodes.length === 0) return { at, axis: null };
   const s = spreadOf(spread);
@@ -66,10 +92,9 @@ export function spineLayout(graph: string, nodes: readonly { key: string; id: st
   const h = Math.max(y1 - y0, 1);
   const cx = (x0 + x1) / 2;
   const cy = (y0 + y1) / 2;
-  // Spread pushes a band's nodes off the line by s and its bands and sub-columns apart by sqrt(s): the lane grows
-  // taller faster than wider, so at Fit a wide screen shows a wider spread bigger, not squashed.
-  const gap = (h / ROWS) * s;
-  const step = (h / ROWS) * FAN * Math.sqrt(s);
+  // Spread pushes rows apart by s and columns by sqrt(s): labels run across, so rows need the room more.
+  const row = (h / ROWS) * s;
+  const col = (h / ROWS) * FAN * Math.sqrt(s);
 
   const bands = [...new Set(nodes.map((n) => places.get(n.id)?.band).filter((b): b is number => typeof b === "number"))].sort((a, b) => a - b);
   const members = new Map<number, { key: string; x: number; y: number }[]>();
@@ -88,54 +113,87 @@ export function spineLayout(graph: string, nodes: readonly { key: string; id: st
       members.set(p.band, list);
     }
   }
-  const fans = new Map(bands.map((b) => [b, fanOf(members.get(b)?.length ?? 0, s)]));
-  const widest = Math.max(1, ...fans.values(), ...bands.map((b) => anchors.get(b)?.length ?? 0));
-  const w0 = Math.max(x1 - x0, h * MIN_ASPECT, 1);
-  const col = Math.max(bands.length > 0 ? (w0 / bands.length) * Math.sqrt(s) : w0, (widest + 1) * step);
-  const w = bands.length > 0 ? col * bands.length : w0;
+  const sizes = bands.map((b) => members.get(b)?.length ?? 0);
+  const wide = bands.map((b) => anchors.get(b)?.length ?? 0);
+  const ratio = Number.isFinite(aspect) && aspect > 0.2 && aspect < 20 ? aspect : ASPECT;
+  const rows = rowsFor(sizes, wide, shelf.length, col, row, ratio);
+  const spans = bands.map((_b, i) => spanOf(fanOf(sizes[i], 2 * rows), wide[i]));
+  const w = bands.length > 0 ? spans.reduce((a, b) => a + b, 0) * col : Math.max(x1 - x0, h * ratio, 1);
   const left = cx - w / 2;
-  const column = new Map(bands.map((b, i) => [b, left + (i + 0.5) * col]));
+  const column = new Map<number, number>();
+  bands.reduce((x, b, i) => (column.set(b, x + (spans[i] * col) / 2), x + spans[i] * col), left);
 
   for (const [band, keys] of anchors) {
     const mid = column.get(band)!;
     // More than one anchor in a band: side by side on the line.
-    keys.sort().forEach((k, i) => at.set(k, { x: mid + (i - (keys.length - 1) / 2) * step, y: cy }));
+    keys.sort().forEach((k, i) => at.set(k, { x: mid + (i - (keys.length - 1) / 2) * col, y: cy }));
   }
-  let low = y0;
+  let low = cy - row;
   for (const [band, list] of members) {
     const mid = column.get(band)!;
-    const k = fans.get(band)!;
-    // Kept in the order the force layout had them across, so neighbours stay near; then stacked off the line.
+    const k = fanOf(list.length, 2 * rows);
+    // Kept in the order the force layout had them across, so neighbours stay near; then split above and below.
     list.sort((a, b) => a.x - b.x || a.key.localeCompare(b.key));
     const size = Math.ceil(list.length / k);
     for (let j = 0; j < k; j++) {
-      const x = mid + (j - (k - 1) / 2) * step;
-      const part = list.slice(j * size, (j + 1) * size);
-      for (const dir of [1, -1] as const) {
-        const side = part.filter((n) => (dir > 0 ? n.y >= cy : n.y < cy)).sort((a, b) => dir * (a.y - b.y) || a.key.localeCompare(b.key));
-        const ys = stack(
-          side.map((n) => cy + (n.y - cy) * s),
-          cy,
-          gap,
-          dir,
-        );
-        side.forEach((n, i) => {
-          at.set(n.key, { x, y: ys[i] });
-          low = Math.min(low, ys[i]);
-        });
-      }
+      const x = mid + (j - (k - 1) / 2 + shiftOf(k)) * col;
+      const part = list.slice(j * size, (j + 1) * size).sort((a, b) => b.y - a.y || a.key.localeCompare(b.key));
+      const up = Math.ceil(part.length / 2);
+      // The upper half nearest the line first going up, the lower half going down, one row apart.
+      part.slice(0, up).reverse().forEach((n, i) => at.set(n.key, { x, y: cy + (i + 1) * row }));
+      part.slice(up).forEach((n, i) => {
+        const y = cy - (i + 1) * row;
+        at.set(n.key, { x, y });
+        low = Math.min(low, y);
+      });
     }
   }
   if (shelf.length > 0) {
     shelf.sort((a, b) => a.x - b.x || a.key.localeCompare(b.key));
-    const perRow = Math.max(1, Math.min(Math.ceil(Math.sqrt(shelf.length * MIN_ASPECT * 4)), Math.floor(w / step)));
-    const row = Math.max(h * 0.06, gap);
+    const perRow = Math.max(1, Math.floor(w / col));
     // Below the lane and anything stacked under it: the canvas's y grows upward.
-    shelf.forEach((n, i) => at.set(n.key, { x: left + ((i % perRow) + 0.5) * (w / perRow), y: low - h * 0.15 - Math.floor(i / perRow) * row }));
+    shelf.forEach((n, i) => at.set(n.key, { x: left + ((i % perRow) + 0.5) * (w / perRow), y: low - 2 * row - Math.floor(i / perRow) * row }));
   }
-  const axis = bands.length > 0 ? { graph, y: cy, x0: left, x1: left + w, bands: bands.map((b) => column.get(b)!) } : null;
+  const axis =
+    bands.length > 0
+      ? { graph, y: cy, x0: left, x1: left + w, bands: bands.map((b) => column.get(b)!), anchors: [...anchors.values()].flat().sort(), pitch: row }
+      : null;
   return { at, axis };
 }
+
+/** An anchor's label narrower than this (px) is not cut to fit before the next anchor: it runs past it, to at most
+ * ANCHOR_LABEL_MAX, and the anchors it passes go unlabelled. */
+export const ANCHOR_LABEL_MIN = 40;
+export const ANCHOR_LABEL_MAX = 180;
+
+/**
+ * The width (px) each anchor's label is drawn at, left to right along each line; an anchor left out gets no label.
+ * `anchors` are on screen: `x`, `y` the centre, `size` the drawn half-width, `width` the whole label's width. A label
+ * takes the room up to the next anchor on its line (`y` within a label's height) less `gap`; with less room than
+ * ANCHOR_LABEL_MIN it runs on, cut to ANCHOR_LABEL_MAX, and every anchor whose label would start under it is left out.
+ * No two drawn labels meet.
+ */
+export function anchorLabels(anchors: readonly { key: string; x: number; y: number; size: number; width: number }[], labelPx: number, gap = 8): Map<string, number> {
+  const out = new Map<string, number>();
+  const sorted = [...anchors].sort((a, b) => a.x - b.x || a.key.localeCompare(b.key));
+  const ends: { y: number; x: number }[] = [];
+  sorted.forEach((a, i) => {
+    const start = a.x + a.size + 3;
+    const end = ends.find((e) => Math.abs(e.y - a.y) < labelPx);
+    if (end && start < end.x + gap) return;
+    let j = i + 1;
+    while (j < sorted.length && Math.abs(sorted[j].y - a.y) >= labelPx) j++;
+    const room = j < sorted.length ? sorted[j].x - sorted[j].size - start - gap : Infinity;
+    const width = Math.min(a.width, room >= ANCHOR_LABEL_MIN ? room : ANCHOR_LABEL_MAX);
+    out.set(a.key, width);
+    if (end) end.x = start + width;
+    else ends.push({ y: a.y, x: start + width });
+  });
+  return out;
+}
+
+/** Whether a spine's rows are far enough apart on screen (`pitchPx`) for each to carry a label `labelPx` high. */
+export const rowsLabelled = (pitchPx: number, labelPx: number) => pitchPx >= labelPx + 2;
 
 /** The spine a graph shows: the person's pick (null for none), else its main spine, else its first. */
 export function shownSpine(spines: readonly { name: string; main: boolean }[] | undefined, picked: string | null | undefined): string | null {

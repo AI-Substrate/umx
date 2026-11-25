@@ -1572,12 +1572,15 @@ export function GraphApp() {
     }
     const axes: SpineAxis[] = [];
     if (layout.done && spineNow.size > 0) {
+      // The lane takes the canvas's shape, so Fit fills it.
+      const box = document.querySelector(".sigma-host")?.getBoundingClientRect();
+      const aspect = box && box.width > 0 && box.height > 0 ? box.width / box.height : undefined;
       for (const [alias, places] of spineNow) {
         const nodes: { key: string; id: string; x: number; y: number }[] = [];
         g.forEachNode((k, a) => {
           if (a.graph === alias) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y });
         });
-        const laid = spineLayout(alias, nodes, places, spread);
+        const laid = spineLayout(alias, nodes, places, spread, aspect);
         g.updateEachNodeAttributes((k, a) => {
           const p = laid.at.get(k);
           if (p) [a.x, a.y] = [p.x, p.y];

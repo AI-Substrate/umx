@@ -26,7 +26,7 @@ import { emphasis, SIMILAR_TO } from "@/lib/graph/focus";
 import { nodesInLasso } from "@/lib/selection";
 import { Lru } from "@/lib/lru";
 import { cn } from "@/lib/utils";
-import type { SpineAxis } from "@/lib/graph/spine-layout";
+import { anchorLabels, rowsLabelled, type SpineAxis } from "@/lib/graph/spine-layout";
 
 export type CanvasPalette = {
   theme: Theme;
@@ -844,7 +844,60 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     // cross one is skipped, so node labels win at 10k (ui-expert E1-N3). A hover's edge-label pass alone keeps
     // the last frame's boxes, as the node labels have not moved.
     let nodeLabels: LabelBox[] = [];
-    const newFrame = () => (nodeLabels = []);
+    // The spine view (no label soup at 1,000 nodes): each anchor's label is held first, cut to the room before the next
+    // anchor; any other label shows only once rows are a label apart on screen, and never over one already drawn.
+    const spineAnchors = new Set(spineAxes.flatMap((a) => a.anchors));
+    let anchorText = new Map<string, string>();
+    let anchorBoxes: LabelBox[] = [];
+    let rowsRoom = false;
+    let anchorsDue = false;
+    const shapeSize = (data: { size: number; shape?: unknown }) => data.size * extentOf(shapeAt(typeof data.shape === "string" ? data.shape : undefined)).halfWidth;
+    const newFrame = () => {
+      nodeLabels = [];
+      anchorsDue = spineAxes.length > 0;
+    };
+    // Each anchor's label width, and its cut text by width: measured once per label, not every frame.
+    const labelWidths = new Map<string, number>();
+    const cuts = new Map<string, { text: string; width: number }>();
+    // The widths anchorLabels gave, kept while the zoom (and so the anchors' spacing on screen) stays; a pan keeps them.
+    let widthsFor: { ratio: number; angle: number; widths: Map<string, number> } | null = null;
+    // Run at the frame's first label, once sigma has the frame's node data.
+    const holdAnchors = () => {
+      anchorsDue = false;
+      const { labelSize, labelWeight, labelFont: font } = sigma.getSettings();
+      const pitch = Math.min(...spineAxes.map((a) => Math.abs(sigma.graphToViewport({ x: a.x0, y: a.y }).y - sigma.graphToViewport({ x: a.x0, y: a.y + a.pitch }).y)));
+      rowsRoom = rowsLabelled(pitch, labelSize);
+      const ctx = sigma.getCanvases().labels.getContext("2d")!;
+      ctx.font = `${labelWeight} ${labelSize}px ${font}`;
+      const measure = (t: string) => {
+        let w = labelWidths.get(t);
+        if (w === undefined) labelWidths.set(t, (w = ctx.measureText(t).width));
+        return w;
+      };
+      const shown = [...spineAnchors].filter((k) => graph.hasNode(k) && !graph.getNodeAttribute(k, "hidden")).map((key) => {
+        const d = sigma.getNodeDisplayData(key)!;
+        const v = sigma.framedGraphToViewport(d);
+        const label = d.label ?? "";
+        return { key, x: v.x, y: v.y, size: shapeSize({ size: sigma.scaleSize(d.size), shape: (d as { shape?: unknown }).shape }), label, width: label === "" ? 0 : measure(label) };
+      }).filter((a) => a.label !== "");
+      const { ratio, angle } = sigma.getCamera().getState();
+      if (!widthsFor || widthsFor.ratio !== ratio || widthsFor.angle !== angle) widthsFor = { ratio, angle, widths: anchorLabels(shown, labelSize) };
+      [anchorText, anchorBoxes] = [new Map(), []];
+      for (const a of shown) {
+        const width = widthsFor.widths.get(a.key);
+        if (width === undefined) continue;
+        const id = `${a.label}\u0000${width}`;
+        let cut = cuts.get(id);
+        if (!cut) {
+          // Every zoom gives new widths: start over rather than keep each one.
+          if (cuts.size > 4 * spineAnchors.size + 64) cuts.clear();
+          const text = width >= a.width ? a.label : fitCallout(a.label, width, (t) => ctx.measureText(t).width, 400);
+          cuts.set(id, (cut = { text, width: measure(text) }));
+        }
+        anchorText.set(a.key, cut.text);
+        anchorBoxes.push(nodeLabelBox(a.x, a.y, a.size, labelSize, cut.width));
+      }
+    };
     sigma.on("beforeRender", newFrame);
     const meetsNodeLabel = (box: LabelBox) => nodeLabels.some((b) => overlaps(b, box));
     // Edge labels are this effect's own pass (plan 198, the UI expert's design note, section 2), on sigma's
@@ -952,8 +1005,22 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         if (zoomedOut && !data.forceLabel && heads.has(key)) return;
         // Beside the shape's right edge (a wide shape reaches past the node's radius).
         const at = { ...data, size: data.size * extentOf(shapeAt("shape" in data ? data.shape : undefined)).halfWidth };
+        if (anchorsDue) holdAnchors();
+        if (spineAxes.length > 0 && key !== selected) {
+          context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
+          if (spineAnchors.has(key)) {
+            const text = anchorText.get(key);
+            if (text === undefined) return;
+            at.label = text;
+          } else {
+            // A forced label (a neighbour of the selection, an agent's mark) skips the row rule, not the overlap test.
+            if ((!data.forceLabel && !rowsRoom) || !data.label) return;
+            const box = nodeLabelBox(at.x, at.y, at.size, settings.labelSize, context.measureText(data.label).width);
+            if (anchorBoxes.some((b) => overlaps(b, box)) || nodeLabels.some((b) => overlaps(b, box))) return;
+          }
+        }
         drawDiscNodeLabel(context, at, settings);
-        if (data.label) nodeLabels.push(nodeLabelBox(at.x, at.y, at.size, settings.labelSize, context.measureText(data.label).width));
+        if (at.label) nodeLabels.push(nodeLabelBox(at.x, at.y, at.size, settings.labelSize, context.measureText(at.label).width));
       },
       // Which nodes get labels goes by their nominal size, as on main, not by the size the Spacing slider draws.
       labelRenderedSizeThreshold: labelThreshold(graph.order) * nodeScale,
@@ -1012,6 +1079,8 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
             out.zIndex = 0;
           } else out.zIndex = Math.max(Number(out.zIndex ?? 0), 1) + 1;
         } else out.size = data.size * nodeScale;
+        // A spine's anchors are always offered a label; the label pass cuts each to the room it has.
+        if (spineAnchors.has(node) && out.label && out.color !== palette.dim) out.forceLabel = true;
         return out;
       },
       // Every edge's program, width and colour (plan 150): quiet relations thin in the structure colour, normal ones
@@ -1048,7 +1117,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       sigma.off("leaveNode", hoverLabels);
       cancelAnimationFrame(hoverFrame);
     };
-  }, [selected, selection, focused, groups, palette, graph, sigma, setSettings, offRelations, relationModes, symmetric, agentMarks, agentFocusNode, merge, placesNow, entities, proposedPairs, version, nodeScale, onUnlabelled]);
+  }, [selected, selection, focused, groups, palette, graph, sigma, setSettings, offRelations, relationModes, symmetric, agentMarks, agentFocusNode, merge, placesNow, entities, proposedPairs, version, nodeScale, onUnlabelled, spineAxes]);
 
   // Shadow connections (ws009 M1c, ui-expert point 1): a dotted straight line under the edges, 0.8 px with 2 px dots and
   // 4 px gaps, no arrow, in the structure colour (Console: chrome-hi; Instrument: ink), fading in with the score. A

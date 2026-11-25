@@ -77,8 +77,11 @@ first), and the Spine section lists each one with None. Where each node sits is 
 `umx node list --columns id,spine:<name>`: the spine is a line through the anchors, earliest band on the left (by
 date on a calendar spine, by step or chain on any other), each anchor on the line and every node placed in a band
 beside it, above or below the line as the force layout had it; nodes placed only by rule sit in the band the rule
-gives; nodes the spine does not place wait on a shelf below. None puts every node back where the force layout put
-it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
+gives; nodes the spine does not place wait on a shelf below. A band is a grid of rows and sub-columns, one row apart;
+the number of rows is picked so the whole spine fills the canvas at Fit, so a big band stands tall and each band is
+as wide as its sub-columns. Anchors are labelled first, each cut to the room before the next (crowded, every few
+bands); other nodes are labelled once rows are a label apart on screen, never over another label. None puts every
+node back where the force layout put it. Each open graph keeps its own spine, laid out in its own region. Cluster hulls are hidden while a spine is shown.
 The choice is kept across a reload in the tab's session storage beside the open graphs, only for graphs still open,
 never in the fragment. A umx older than the `spine:<name>` column says so instead of laying the graph out, as does a
 spine the graph no longer declares.
