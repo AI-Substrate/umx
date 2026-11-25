@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use umx_core::Id;
 use umx_core::ports::{EmbedError, Embedded, Embedder, GraphDir, Locality, ModelKey, TextKind};
+use umx_core::similarity::Strength;
 use umx_core::vectors::{TextHash, base64_decode};
 use umx_fakes::{FakeClock, FakeEmbedder, FakeGraphFiles, FakeIds, FakeLocalState};
 use umx_services::{
@@ -43,8 +44,14 @@ struct Recorded {
 impl Recorded {
     /// None when the vectors file is not committed yet.
     fn load() -> Option<Recorded> {
-        let tsv = std::fs::read_to_string(fixture_path("vectors/embeddinggemma-2@256+p1.rows.tsv"))
-            .ok()?;
+        let mut tsv =
+            std::fs::read_to_string(fixture_path("vectors/embeddinggemma-2@256+p1.rows.tsv"))
+                .ok()?;
+        // PRD 002 search-10: the off-topic queries' rows (offtopic.jsonl), recorded by floor-calibration --strength.
+        tsv += &std::fs::read_to_string(fixture_path(
+            "vectors/embeddinggemma-2_256+p1.offtopic.rows.tsv",
+        ))
+        .unwrap_or_default();
         let mut by_hash = BTreeMap::new();
         for line in tsv.lines().filter(|l| !l.is_empty()) {
             let mut parts = line.split('\t');
@@ -156,18 +163,12 @@ fn kind_slack(n: usize) -> f64 {
     0.05f64.max(1.0 / n as f64)
 }
 
-fn report(label: &str, embedder: Arc<dyn Embedder>, share: f64) -> Figures {
-    report_at(label, embedder, share, None)
-}
-
-/// [`report`] with the search floor set to `search_floor` through the machine-config override, or the model's
-/// calibrated floor when None.
-fn report_at(
-    label: &str,
+/// The s03 fixture as one graph `fixture`, embedded by `embedder`, with the search floor overridden to `search_floor`
+/// when given; with the fixture's node ids.
+fn fixture_graph(
     embedder: Arc<dyn Embedder>,
-    share: f64,
     search_floor: Option<f32>,
-) -> Figures {
+) -> (Services, BTreeMap<String, Id>) {
     let files = Arc::new(FakeGraphFiles::new(GraphDir::parse("/work").unwrap()));
     let ports = Ports {
         sources: std::sync::Arc::new(umx_fakes::FakeSourceReader::open(
@@ -225,6 +226,23 @@ fn report_at(
             svc.embed_apply(&vectors).unwrap();
         }
     }
+    (svc, ids)
+}
+
+fn report(label: &str, embedder: Arc<dyn Embedder>, share: f64) -> Figures {
+    report_at(label, embedder, share, None)
+}
+
+/// [`report`] with the search floor set to `search_floor` through the machine-config override, or the model's
+/// calibrated floor when None.
+fn report_at(
+    label: &str,
+    embedder: Arc<dyn Embedder>,
+    share: f64,
+    search_floor: Option<f32>,
+) -> Figures {
+    let (svc, ids) = fixture_graph(embedder, search_floor);
+    let ctx = Ctx::new("bench");
     let queries = fixture("queries.jsonl");
     let (mut word, mut vector, mut hybrid) = (0.0, 0.0, 0.0);
     let mut kinds: BTreeMap<String, (usize, f64, f64, f64)> = BTreeMap::new();
@@ -457,4 +475,199 @@ fn the_recorded_rows_match_the_current_model_and_text_form() {
         "the rows file is not the one recorded"
     );
     assert_eq!(meta["rows"], rows.iter().filter(|&&b| b == b'\n').count());
+}
+
+/// The measured strength record for the recorded key (floors.json, written by floor-calibration --strength).
+fn strength_record() -> serde_json::Value {
+    let path = format!(
+        "{}/../../docs/project/benchmarks/floor-calibration/floors.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let all: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    all["keys"]["embeddinggemma-2@256+p1"]["strength"].clone()
+}
+
+/// PRD 002 search-10 on the s03 fixture with its recorded production rows: paraphrase targets are labelled strong at
+/// exactly the share the strength measurement recorded for them (the same rows, population and rule), so at least one
+/// is; no written off-topic query (offtopic.jsonl, subjects no fixture node holds) has a strong or exact hit, and
+/// `no_strong_match` fires on exactly the share the measurement recorded, most of them; a word-only hit has no label.
+#[test]
+fn strength_labels_paraphrase_targets_strong_and_off_topic_queries_nothing() {
+    let recorded =
+        Arc::new(Recorded::load().expect("the recorded vectors are committed beside the fixture"));
+    let (svc, ids) = fixture_graph(recorded.clone(), None);
+    let ctx = Ctx::new("bench");
+    let record = strength_record();
+    let (mut strong, mut n) = (0usize, 0usize);
+    for q in fixture("queries.jsonl")
+        .iter()
+        .filter(|q| q["kind"] == "paraphrase")
+    {
+        let target = ids[q["relevant"][0].as_str().unwrap()];
+        let r = svc
+            .search(&ctx, q["text"].as_str().unwrap(), None, 1000)
+            .unwrap()
+            .value;
+        assert!(r.labelled, "a calibrated key labels its hits");
+        n += 1;
+        let label = r
+            .hits
+            .iter()
+            .find(|h| h.node.id == target)
+            .and_then(|h| h.strength);
+        if label == Some(Strength::Strong) {
+            strong += 1;
+            assert!(!r.no_strong_match);
+        }
+    }
+    let share = |v: &serde_json::Value| v.as_f64().expect("the measurement recorded it");
+    let want = share(&record["shipped"]["fixture"]["paraphrase"]["target_strong"]);
+    assert!(strong >= 1, "a paraphrase query labels its target strong");
+    assert!(
+        ((strong as f64 / n as f64) - want).abs() < 1e-4,
+        "{strong} of {n} paraphrase targets strong; the measurement recorded {want}"
+    );
+    let (mut fired, mut off) = (0usize, 0usize);
+    for q in fixture("offtopic.jsonl") {
+        let r = svc
+            .search(&ctx, q["text"].as_str().unwrap(), None, 10)
+            .unwrap()
+            .value;
+        assert!(
+            r.hits
+                .iter()
+                .all(|h| !matches!(h.strength, Some(Strength::Strong | Strength::Exact))),
+            "{}: a strong hit off topic",
+            q["id"]
+        );
+        off += 1;
+        fired += usize::from(r.no_strong_match);
+    }
+    let want = share(&record["shipped"]["fixture"]["off_topic_written"]["no_strong_match_fires"]);
+    assert!(
+        ((fired as f64 / off as f64) - want).abs() < 1e-4 && want >= 0.9,
+        "no_strong_match on {fired} of {off} off-topic queries; the measurement recorded {want}"
+    );
+    assert_eq!(recorded.misses(), vec![], "every query has a recorded row");
+    // A word-only hit is not labelled (umx-daemon's s08_tests checks an exact hit is `exact`).
+    let mut word_only = 0;
+    for q in fixture("queries.jsonl")
+        .iter()
+        .filter(|q| q["kind"] == "keyword")
+    {
+        let r = svc
+            .search(&ctx, q["text"].as_str().unwrap(), None, 1000)
+            .unwrap()
+            .value;
+        assert!(r.labelled);
+        for h in r.hits.iter().filter(|h| h.legs() == "word") {
+            assert_eq!(h.strength, None, "a word-only hit");
+            word_only += 1;
+        }
+    }
+    assert!(word_only > 0);
+}
+
+/// PRD 002 search-10 with --also: a hit's label is its best over the phrasings whose meaning leg found it, each
+/// measured against that phrasing's own population: two fixture queries on one target, the first labelling it below
+/// strong and the second strong, give it `strong` in either order; an off-topic main text does not drag down a target
+/// its --also labels strong.
+#[test]
+fn strength_with_also_is_the_best_over_phrasings_each_against_its_own_population() {
+    let recorded = Arc::new(Recorded::load().unwrap());
+    let (svc, ids) = fixture_graph(recorded, None);
+    let ctx = Ctx::new("bench");
+    // Each fixture query's own label for its target, by target.
+    let mut by_target: BTreeMap<Id, Vec<(String, Strength)>> = BTreeMap::new();
+    for q in fixture("queries.jsonl") {
+        let text = q["text"].as_str().unwrap().to_string();
+        let target = ids[q["relevant"][0].as_str().unwrap()];
+        let r = svc.search(&ctx, &text, None, 1000).unwrap().value;
+        if let Some(label) = r
+            .hits
+            .iter()
+            .find(|h| h.node.id == target)
+            .and_then(|h| h.strength)
+        {
+            by_target.entry(target).or_default().push((text, label));
+        }
+    }
+    let (target, weaker, strong) = by_target
+        .iter()
+        .find_map(|(t, labels)| {
+            let weaker = labels.iter().find(|(_, l)| *l < Strength::Strong)?;
+            let strong = labels.iter().find(|(_, l)| *l == Strength::Strong)?;
+            Some((*t, weaker.0.clone(), strong.0.clone()))
+        })
+        .expect("a target one query labels strong and another below strong");
+    for (main, also) in [(&weaker, &strong), (&strong, &weaker)] {
+        let r = svc
+            .search_phrasings(&ctx, main, std::slice::from_ref(also), None, 1000, None)
+            .unwrap()
+            .value;
+        let hit = r.hits.iter().find(|h| h.node.id == target).unwrap();
+        assert_eq!(hit.phrasings, vec![1, 2]);
+        assert_eq!(hit.strength, Some(Strength::Strong), "best over phrasings");
+    }
+    let off = fixture("offtopic.jsonl")[0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = svc
+        .search_phrasings(&ctx, &off, std::slice::from_ref(&strong), None, 1000, None)
+        .unwrap()
+        .value;
+    let hit = r.hits.iter().find(|h| h.node.id == target).unwrap();
+    assert_eq!(hit.strength, Some(Strength::Strong));
+    assert!(!r.no_strong_match);
+}
+
+/// PRD 002 search-10, the differential: a key with no strength cuts (the same rows under another model name, at the
+/// same floor) gives the same order, scores and count as the calibrated key, and differs only in having no labels
+/// and no hint; labelling never moves a hit.
+#[test]
+fn a_key_without_strength_cuts_differs_only_by_the_labels() {
+    let calibrated = Arc::new(Recorded::load().unwrap());
+    let floor = umx_core::similarity::floor(&calibrated.key, umx_core::similarity::Use::Search);
+    assert!(floor.calibrated());
+    let mut twin = Recorded::load().unwrap();
+    twin.key = ModelKey::new("embeddinggemma-uncalibrated", 256)
+        .unwrap()
+        .with_prompt_version(1);
+    assert!(umx_core::similarity::strength_cuts(&twin.key).is_none());
+    let (a, _) = fixture_graph(calibrated, None);
+    let (b, _) = fixture_graph(Arc::new(twin), Some(floor.value));
+    let ctx = Ctx::new("bench");
+    let off = fixture("offtopic.jsonl");
+    let texts = fixture("queries.jsonl")
+        .into_iter()
+        .chain(off)
+        .map(|q| q["text"].as_str().unwrap().to_string());
+    let shape = |r: &umx_services::HybridResult| {
+        let hits: Vec<_> = r
+            .hits
+            .iter()
+            .map(|h| {
+                (
+                    h.node.id,
+                    h.fused.to_bits(),
+                    h.vector.as_ref().map(|v| (v.rank, v.cosine.to_bits())),
+                    h.word.as_ref().map(|w| w.rank),
+                    h.exact.clone(),
+                )
+            })
+            .collect();
+        (hits, r.found)
+    };
+    let mut labels = 0;
+    for text in texts {
+        let ra = a.search(&ctx, &text, None, 30).unwrap().value;
+        let rb = b.search(&ctx, &text, None, 30).unwrap().value;
+        assert_eq!(shape(&ra), shape(&rb), "{text}");
+        assert!(!rb.labelled && !rb.no_strong_match && rb.strength_runs.is_empty());
+        assert!(rb.hits.iter().all(|h| h.strength.is_none()));
+        labels += ra.hits.iter().filter(|h| h.strength.is_some()).count();
+    }
+    assert!(labels > 0, "the calibrated side did label");
 }

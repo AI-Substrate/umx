@@ -1687,3 +1687,19 @@ fn a_tag_filter_narrows_the_vector_leg() {
     assert_eq!(all, want);
     assert_eq!(found(&["pets".into()]), vec![(tagged, "vector")]);
 }
+
+/// PRD 002 search-10, the hint's rule (embeddings-expert): `no_strong_match` fires only when no match is strong, fair
+/// or exact; a fair best hit, or an exact one, stops it; weak hits and unlabelled ones (word-only) do not.
+#[test]
+fn no_strong_match_fires_only_when_nothing_is_strong_fair_or_exact() {
+    use umx_core::similarity::Strength::{Exact, Fair, Strong, Weak};
+    use umx_services::no_strong_match;
+    assert!(no_strong_match(&[]));
+    assert!(no_strong_match(&[Some(Weak), None, Some(Weak)]));
+    assert!(
+        !no_strong_match(&[Some(Weak), Some(Fair)]),
+        "a fair hit stops it"
+    );
+    assert!(!no_strong_match(&[None, Some(Strong)]));
+    assert!(!no_strong_match(&[Some(Exact)]));
+}

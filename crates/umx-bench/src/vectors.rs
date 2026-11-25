@@ -18,7 +18,7 @@ use umx_core::vectors::{
 use umx_graph::Graph;
 
 pub const DIMS: usize = 256;
-const SPACE: &str = "bench-model@256";
+pub(crate) const SPACE: &str = "bench-model@256";
 const TOP: usize = 10;
 
 /// The field names of a node's vectors at `k`: the whole node, then title, note, f3, f4, ...
@@ -34,7 +34,7 @@ fn fields(k: usize) -> Vec<String> {
 }
 
 /// Every shard file of the fixture's vectors, by shard name, as `encode_shard` writes them.
-fn shards(ids: &[Id], k: usize, seed: u64) -> BTreeMap<String, Vec<u8>> {
+pub(crate) fn shards(ids: &[Id], k: usize, seed: u64) -> BTreeMap<String, Vec<u8>> {
     let mut rng = Rng(seed ^ 0x5EC7_0B10);
     let names = fields(k);
     let hash = TextHash::of("bench");

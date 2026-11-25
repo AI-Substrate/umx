@@ -174,7 +174,7 @@
           "id": "c-08",
           "kind": "add",
           "row": "../prds/002-search.dd.json#requirements/search-10",
-          "summary": "Strong, fair or weak against the graph's own background; a hint when nothing is strong.",
+          "summary": "Strong, fair or weak against the graph's own background; a hint when nothing is strong or fair.",
           "ruling": [
             "#rulings/r-03"
           ]

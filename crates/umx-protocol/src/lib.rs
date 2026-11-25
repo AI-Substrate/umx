@@ -219,12 +219,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// `source_missing` and `doctor_graph_sources` (hints).
 /// 100: the daemon serves while it reloads the remembered graphs: `daemon status`'s `registry.reloading` (graphs still
 /// waiting); new codes `doctor_service_throttled` and `doctor_service_path` (warnings).
+/// 101: PRD 002 search-10: a search whose meaning leg ran in a space with calibrated strength cuts carries each row's
+/// `strength` (`strong`, `fair`, `weak`, `exact` or null) and that space's `floors[].strength_run`; the hint
+/// `no_strong_match` (no match strong, fair or exact), first of the hints and kept under the hint cap.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 100;
+pub const PROTOCOL: u32 = 101;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -233,7 +236,7 @@ pub const PROTOCOL: u32 = 100;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (100, 0x1baf_a39b_ea53_57aa);
+const WIRE_FINGERPRINT: (u32, u64) = (101, 0x59fe_e88b_26d2_70bc);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -2526,10 +2529,15 @@ pub enum Kind {
 /// The most hints one reply lists, in catalogue order; when more were made, one `hints_truncated` follows them.
 pub const MAX_HINTS: usize = 8;
 
-/// Hints a reply lists whatever else the cap leaves out (PRD 002 search-13): the count of secured graphs a read left
-/// out, which is never silent (SEC-5), and a search cut by its limit. Hints raised once per graph rank ahead of both in
+/// Hints a reply lists whatever else the cap leaves out (PRD 002 search-13): a search with no strong match, which tells
+/// the caller to reword or stop (search-10), the count of secured graphs a read left out, which is never silent
+/// (SEC-5), and a search cut by its limit. Hints raised once per graph rank ahead of both in
 /// the catalogue and would otherwise fill the [`MAX_HINTS`] slots.
-pub const KEPT_HINTS: &[Code] = &[Code::SearchResultsCut, Code::SecuredGraphsSkipped];
+pub const KEPT_HINTS: &[Code] = &[
+    Code::NoStrongMatch,
+    Code::SearchResultsCut,
+    Code::SecuredGraphsSkipped,
+];
 
 /// One catalogue row.
 #[derive(Clone, Copy, Debug)]
@@ -2761,6 +2769,10 @@ catalogue! {
     GraphIdChanged => "graph_id_changed", Error, 1,
         "a remembered graph's folder now holds another graph id; it is not loaded under the remembered alias",
         "The folder <path> remembered for graph <alias> now holds another graph; it was not loaded as <alias>.",
+        "<fix>";
+    NoStrongMatch => "no_strong_match", Hint, 0,
+        "a search's meaning leg ran in a space with calibrated strength cuts and enough nodes to measure against, and no match it found (shown or not) is strong, fair or exact: every meaning hit is weak, or none passed the floor, so the graphs searched may not hold the subject. First of the hints, since it tells the caller to reword or stop (PRD 002 search-10)",
+        "No match is strong or fair for this query against the nodes searched; the graphs may not hold this subject. Reword it, add a phrasing with --also, or stop.",
         "<fix>";
     GraphLoadedOnDemand => "graph_loaded_on_demand", Hint, 0,
         "the command named a graph this machine remembers as loaded (it unloaded when idle, or did not reload at daemon start); the daemon loaded it and ran the command",
@@ -5409,7 +5421,8 @@ mod tests {
         let rank = |c: &str| Code::ALL.iter().position(|k| k.spec().code == c).unwrap();
         let mut env = Envelope::ok("search", json!({}))
             .hint(raw_issue("secured_graphs_skipped"))
-            .hint(raw_issue("search_results_cut"));
+            .hint(raw_issue("search_results_cut"))
+            .hint(raw_issue("no_strong_match"));
         for _ in 0..9 {
             env = env.hint(raw_issue("similarity_unavailable"));
         }
@@ -5429,9 +5442,11 @@ mod tests {
         let mut sorted = listed.clone();
         sorted.sort_by_key(|c| rank(c));
         assert_eq!(listed, sorted);
+        // PRD 002 search-10: no_strong_match is kept, and first, since it tells the caller to reword or stop.
         assert_eq!(
-            listed[..3],
+            listed[..4],
             [
+                "no_strong_match",
                 "graph_loaded_on_demand",
                 "alias_redirected",
                 "resource_elsewhere"
@@ -5441,7 +5456,7 @@ mod tests {
         let last = &env.hints[MAX_HINTS];
         assert_eq!(
             (last.code(), last.message()),
-            ("hints_truncated", "6 more hints were left out.")
+            ("hints_truncated", "7 more hints were left out.")
         );
         assert_eq!((env.status, env.check()), (Status::Ok, Ok(())));
     }
