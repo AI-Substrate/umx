@@ -182,7 +182,7 @@ impl core::fmt::Debug for ListedNode<'_> {
 }
 
 /// The kind a field has in this graph: declared on the type, else declared on any type, else fixed by its first
-/// use (the lowest node id holding it).
+/// use (the lowest node id holding it). A named type never borrows a placed std field from another type.
 pub(crate) fn field_kind(
     o: &Ontology,
     g: &Graph,
@@ -198,9 +198,13 @@ pub(crate) fn field_kind(
     type_name
         .and_then(|t| o.field_kind(t, field))
         .or_else(|| {
-            o.types
-                .iter()
-                .find_map(|t| t.fields.iter().find(|f| f.name == field).map(|f| f.kind))
+            o.types.iter().find_map(|t| {
+                let decl = t.fields.iter().find(|f| f.name == field)?;
+                let placed_elsewhere = type_name.is_some()
+                    && o.std_version().is_some()
+                    && umx_core::standard::fields_of_type(&t.name).any(|s| s.name == field);
+                (!placed_elsewhere).then_some(decl.kind)
+            })
         })
         .or_else(|| g.first_use(field).and_then(|v| kind_of(&v)))
 }
