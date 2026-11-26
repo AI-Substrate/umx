@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.6.0](https://github.com/AI-Substrate/umx/compare/v0.5.2...v0.6.0) (2026-11-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* plain umx check warns about changed and missing cited files
+* label search hits strong, fair or weak against the nodes searched (search-10)
+* the daemon answers at once and reloads remembered graphs behind it
+* hash a cited source when the reference is added
+
+### Features
+
+* add bounded graph rule management ([e766e17](https://github.com/AI-Substrate/umx/commit/e766e175405304c33cad02af7ac13ee1f2156295))
+* add graph hubs (umx hub set|list|show|fill|remove) ([cb826aa](https://github.com/AI-Substrate/umx/commit/cb826aa51ea16e789a904adb27d4d99809372268))
+* add password-protected LAN graph view ([777ce68](https://github.com/AI-Substrate/umx/commit/777ce687b025187e3c2b49dd822613eb26d8c993))
+* add soft declared values and std risk vocabulary ([16a1bd1](https://github.com/AI-Substrate/umx/commit/16a1bd134349527965d561ed7017cbb261086f09))
+* check graph rules softly on writes and in check --rules ([667a636](https://github.com/AI-Substrate/umx/commit/667a636635bd799aed53a314344f7ce4525bd4c4))
+* hash a cited source when the reference is added ([6ab311c](https://github.com/AI-Substrate/umx/commit/6ab311ce025c71e1e830ab1a53b80ca5163875b8))
+* label search hits strong, fair or weak against the nodes searched (search-10) ([87c9c27](https://github.com/AI-Substrate/umx/commit/87c9c2771817196881e056b001d6c9d5030ad0d6))
+* plain umx check warns about changed and missing cited files ([72433bd](https://github.com/AI-Substrate/umx/commit/72433bd352aa4e227fcda2d00a01414cb6699ed8))
+* **ui:** add deterministic hub layouts and real node spacing ([ee5703a](https://github.com/AI-Substrate/umx/commit/ee5703a7bfd483b0fca122ef1fc7e7c06e494c52))
+* **ui:** render declared hubs with band-constrained spine fans ([5185acf](https://github.com/AI-Substrate/umx/commit/5185acfa8544e37a762898dc0380998cf6f00ccc))
+* umx query reads n.evidence_sources and r.evidence_sources ([0a7efb7](https://github.com/AI-Substrate/umx/commit/0a7efb77b74977d4ccda1f42e88482d56805d93b))
+
+
+### Bug Fixes
+
+* compare LAN password bytes directly ([48b7fb4](https://github.com/AI-Substrate/umx/commit/48b7fb4da806539912749640265bd02eae698e2c))
+* keep placed std field kinds local to their types ([dcf2f9b](https://github.com/AI-Substrate/umx/commit/dcf2f9ba1a30176d3aea5be67423c5afa8c92a95))
+* the daemon answers at once and reloads remembered graphs behind it ([324f1f8](https://github.com/AI-Substrate/umx/commit/324f1f8e58186cce6e34971393f561a1f6d2ae6a))
+* **ui:** default to Normal and restore spine vertical spread ([53d14e5](https://github.com/AI-Substrate/umx/commit/53d14e52dbe36f921c5d88671707b4769fb3191d))
+* **ui:** keep hub state aligned with full fan geometry ([8ea1224](https://github.com/AI-Substrate/umx/commit/8ea1224fa79586eb70a633ec7888b46f1db8a9ba))
+* **ui:** make hub fans and controls visible ([3ee0636](https://github.com/AI-Substrate/umx/commit/3ee0636d622ea7179dfe0bdbcd91693e4586788d))
+* **ui:** preserve positions on regrouping and avoid pan reprocessing ([a9a3e78](https://github.com/AI-Substrate/umx/commit/a9a3e78643e4aa2f93a834bd3d6d6687a5c57e34))
+* **ui:** scale the spine layout to big graphs ([72afbd9](https://github.com/AI-Substrate/umx/commit/72afbd9db4ca17da3f0580094f019a6a106fa3ed))
+
+
+### Documentation
+
+* align hub layouts with declared hub model ([fdbe677](https://github.com/AI-Substrate/umx/commit/fdbe6776b19f038471bda29f9ba541e3069ce7a7))
+* PRD 003, a node too long to check is reported and passed over ([3f26a1e](https://github.com/AI-Substrate/umx/commit/3f26a1e2aaf0dce7d9a2d92c831e00713f47ac51))
+* PRD 003, declared field values are labels ([327a564](https://github.com/AI-Substrate/umx/commit/327a5640daff3d0439df5e92cef5bc98dbac80d6))
+* PRD 003, graph rules (first draft) ([abafab5](https://github.com/AI-Substrate/umx/commit/abafab595011310246dd52ab9f78a87e3a478d0e))
+* PRD 003, hubs are declared places where nodes gather ([7ba4963](https://github.com/AI-Substrate/umx/commit/7ba496301593e39c02879358263a94e174a4bfaa))
+* PRD 003, large graphs continue rather than refuse ([1b8cf10](https://github.com/AI-Substrate/umx/commit/1b8cf101f960a4ef91d032c5cde8ef91c6d67500))
+* PRD 003, meetings as hubs set up by the skill ([b15e0f9](https://github.com/AI-Substrate/umx/commit/b15e0f941c7d1364dc59fd1fc99e1113426c90ae))
+* PRD 003, rule add stores undeclared vocabulary and warns ([49c5979](https://github.com/AI-Substrate/umx/commit/49c59796fadc93b85f961b32d928a33215ef01b0))
+* PRD 003, rules nudge and never fence ([c172625](https://github.com/AI-Substrate/umx/commit/c172625ced3636fd1ebf1b7adce5f88bfed3c85a))
+* PRD 003, when an edit joins a hub and how the view gets hubs ([2d7e626](https://github.com/AI-Substrate/umx/commit/2d7e62693d9e65ecf180545848de65d2f71ef081))
+* **prd:** mark hub-07 shipped after protocol-108 live proof ([8acdb7f](https://github.com/AI-Substrate/umx/commit/8acdb7f14bc0ccba43c102a3fee1a7d17e2176a5))
+* **ui:** define hub layout requirements ([171b5d7](https://github.com/AI-Substrate/umx/commit/171b5d79479c3b10dc02e0ae50837a0797dff75b))
+* **ui:** record approved hub defaults and count ([1356d98](https://github.com/AI-Substrate/umx/commit/1356d986b88b9ceccbf468d301d7faa791156103))
+
 ## [0.5.2](https://github.com/AI-Substrate/umx/compare/v0.5.1...v0.5.2) (2026-11-24)
 
 
