@@ -133,7 +133,7 @@
         {
           "id": "rules-03",
           "title": "A regex is bounded and reads the same everywhere",
-          "statement": "A rule's regex uses one dialect, with no look-around and no back-references, so a match takes time in proportion to the text and a pulled graph.json cannot hang umx. It is at most 256 characters, searches anywhere in the text unless anchored, and is case sensitive unless it says otherwise. A regex that does not compile is refused when the rule is added, naming the position, and nothing is written.",
+          "statement": "A rule's regex uses one dialect, with no look-around and no back-references, so a match takes time in proportion to the text and a pulled graph.json cannot hang umx. It is at most 256 characters, searches anywhere in the text unless anchored, and is case sensitive unless it says otherwise. A regex that does not compile is refused when the rule is added, naming the position, and nothing is written. Matching has a fixed work limit, the same on every machine. A node whose text is too long for a rule's regex to finish inside that limit is not checked for that rule: it counts as not matching, the scan goes on past it, and it is always reported by id, in the fill reply, as its own kind of row in `umx check --rules`, and as a warning on the write that touches it. One long note never stops a rule from working on the rest of the graph.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
@@ -505,7 +505,7 @@
         {
           "date": "2026-11-26",
           "by": "rules designer",
-          "change": "From the engine seat's questions: a large graph is never refused for size, so backfill, `rule fill` and `check --rules` stop at the scan limit and continue from a resume point (rules-08, rules-16, rules-20); a stored regex over the size limit is skipped with a warning and the graph loads (rules-14, the prime's ruling)."
+          "change": "From the engine seat's questions: a large graph is never refused for size, so backfill, `rule fill` and `check --rules` stop at the scan limit and continue from a resume point (rules-08, rules-16, rules-20); a stored regex over the size limit is skipped with a warning and the graph loads (rules-14, the prime's ruling); a node too long for a regex to finish is reported as not checked and passed over, never a stop (rules-03)."
         }
       ]
     }
