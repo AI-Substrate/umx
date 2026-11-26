@@ -124,7 +124,7 @@ mod tests {
         let hub: Hub =
             serde_json::from_value(json!({"name":"meetings","type":"meeting","via":"raised_in"}))
                 .unwrap();
-        assert_eq!(stored_ok(&[hub.clone()]), Ok(()));
+        assert_eq!(stored_ok(core::slice::from_ref(&hub)), Ok(()));
         assert!(stored_ok(&[hub.clone(), hub]).is_err());
     }
 }

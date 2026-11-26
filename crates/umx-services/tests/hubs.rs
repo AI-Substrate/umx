@@ -145,7 +145,7 @@ fn hub_set_backfills_matches_in_one_write_and_refuses_a_patterned_type_hub() {
         .collect();
     add(&mut w, "question", "Not a risk", None);
     let hub = add(&mut w, "topic", "Risk register", None).node.id;
-    assert_eq!(codec::decode_graph(&before).unwrap().umx < 9, true);
+    assert!(codec::decode_graph(&before).unwrap().umx < 9);
     let mut req = set("risk_register", Some(hub), None, None);
     req.pattern = Some(json!({"type": ["risk"]}));
     let done = w.svc.hub_set(&ctx(), req.clone()).unwrap();
