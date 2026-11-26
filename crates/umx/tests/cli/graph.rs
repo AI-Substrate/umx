@@ -4552,8 +4552,14 @@ fn rule_commands_preserve_dry_run_bytes_and_follow_the_matching_page_next() {
         after
     );
     let listed = home.ok(&["rule", "list"]);
-    assert_eq!(listed.data["rows"][0]["source"], "graph");
-    assert_eq!(listed.data["rows"][0]["off"], false);
+    let local = listed.data["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["rule"]["name"] == "rated")
+        .unwrap();
+    assert_eq!(local["source"], "graph");
+    assert_eq!(local["off"], false);
     let first = home.ok(&["rule", "show", "rated", "--limit", "1"]);
     let next = issue(&first, Code::RuleMatchesCut).next().to_string();
     let second = home.ok(&next.split_whitespace().skip(1).collect::<Vec<_>>());
@@ -4585,7 +4591,9 @@ fn rule_commands_preserve_dry_run_bytes_and_follow_the_matching_page_next() {
         home.ok(&["rule", "remove", "rated"]).data["unchanged"],
         true
     );
-    assert_eq!(home.ok(&["rule", "list"]).data["total"], 0);
+    let remaining = home.ok(&["rule", "list"]);
+    assert_eq!(remaining.data["total"], 1);
+    assert_eq!(remaining.data["rows"][0]["rule"]["name"], "std:risk_owned");
     let meta =
         umx_protocol::parse_json(&fs::read_to_string(Path::new(&path).join("graph.json")).unwrap())
             .unwrap();

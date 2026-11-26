@@ -272,6 +272,7 @@ pub fn generate(seed: u64, nodes: usize) -> Real {
         rules: Vec::new(),
         rules_off: Vec::new(),
         hubs: Vec::new(),
+        rule_sets: Default::default(),
         umx: 1,
         id: id(counter),
         alias: "ruler".into(),

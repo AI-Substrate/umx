@@ -262,6 +262,7 @@ impl GraphStore {
                 edges_normalized,
                 feed,
                 stamps,
+                rule_sets_read,
                 ..
             } = self
                 .graphs
@@ -300,6 +301,8 @@ impl GraphStore {
                     touched,
                     stamps,
                     receipts: None,
+                    rule_set: None,
+                    rule_set_stamps: &rule_sets_read.stamps,
                 },
             )?;
             let changed = batch.commit().provenance_changed;

@@ -396,20 +396,24 @@ impl GraphStore {
             warnings.push(problems::std_entries_shown(&graph, std));
         }
         warnings.extend(self.role_hints(alias, None));
-        let mut rules: Vec<_> =
-            umx_core::rules::effective(self.central(&l.meta), &l.meta.rules, &l.meta.rules_off)
-                .into_iter()
-                .map(|rule| GuideRule {
-                    name: rule.name.clone(),
-                    source: if rule.name.starts_with("std:") {
-                        "std"
-                    } else {
-                        "graph"
-                    },
-                    sentence: rule.sentence().as_str().to_string(),
-                    description: rule.description.clone(),
-                })
-                .collect();
+        let mut rules: Vec<_> = umx_core::rules::effective(
+            self.central(&l.meta),
+            &l.meta.rule_sets,
+            &l.meta.rules,
+            &l.meta.rules_off,
+        )
+        .into_iter()
+        .map(|rule| GuideRule {
+            name: rule.name.clone(),
+            source: if rule.name.starts_with("std:") {
+                "std"
+            } else {
+                "graph"
+            },
+            sentence: rule.sentence().as_str().to_string(),
+            description: rule.description.clone(),
+        })
+        .collect();
         rules.sort_by(|a, b| (a.source != "std", &a.name).cmp(&(b.source != "std", &b.name)));
         Ok(Done {
             value: Guide {

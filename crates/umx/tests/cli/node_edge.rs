@@ -236,7 +236,7 @@ fn the_s05a_verbs_end_to_end() {
     let (found, _) = home.umx(&["node", "find", "aproval", "delays"]);
     assert_eq!(found.data["rows"][0]["id"].as_str(), Some(a.as_str()));
 
-    // req-08: a declared type and field give no warning and a typed value.
+    // req-08: a declared type and field give a typed value without vocabulary warnings.
     home.umx(&[
         "ontology",
         "add",
@@ -257,7 +257,11 @@ fn the_s05a_verbs_end_to_end() {
     ]);
     assert_eq!(
         (risk.status, risk.data["node"]["likelihood"].as_f64()),
-        (Status::Ok, Some(3.0))
+        (Status::Warning, Some(3.0))
+    );
+    assert_eq!(
+        risk.warnings.iter().map(Issue::code).collect::<Vec<_>>(),
+        ["rule_unmet"]
     );
     let (listed, _) = home.umx(&[
         "node",

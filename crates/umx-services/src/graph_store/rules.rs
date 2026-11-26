@@ -3,6 +3,7 @@
 use super::{GraphStore, alias_name, persist};
 use crate::problems;
 use crate::{Ctx, Done, Outcome};
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -52,7 +53,7 @@ impl CompileError {
     }
 }
 
-fn parse_patterns(rule: &Rule) -> Result<Vec<regex_syntax::hir::Hir>, Problem> {
+pub(super) fn parse_patterns(rule: &Rule) -> Result<Vec<regex_syntax::hir::Hir>, Problem> {
     rule.pattern
         .regex
         .values()
@@ -152,19 +153,52 @@ impl RuleMatcher {
         Some(())
     }
 
-    pub(super) fn matches_stored(&mut self, node: umx_graph::NodeRef<'_>) -> Option<bool> {
+    fn exact_stored(&self, node: umx_graph::NodeRef<'_>) -> bool {
         let pattern = &self.rule.pattern;
         if (!pattern.types.is_empty() && !pattern.types.iter().any(|t| t == node.kind()))
             || (!pattern.status.is_empty() && !pattern.status.iter().any(|s| s == node.status()))
         {
+            return false;
+        }
+        (pattern.tag.is_empty()
+            || node
+                .custom_field(umx_core::tags::TAGS)
+                .is_some_and(|value| {
+                    let tags = umx_core::tags::stored_tags(&value);
+                    pattern.tag.iter().any(|pattern| {
+                        umx_core::tags::Pattern::parse(pattern)
+                            .is_ok_and(|pattern| tags.iter().any(|tag| pattern.matches(tag)))
+                    })
+                }))
+            && pattern
+                .field
+                .iter()
+                .all(|(field, value)| node.custom_field(field).as_ref() == Some(value))
+    }
+
+    pub(super) fn upper_work(&self, node: umx_graph::NodeRef<'_>) -> u64 {
+        if !self.exact_stored(node) {
+            return 0;
+        }
+        let mut work = 1u64;
+        for (field, regex) in &self.regex {
+            let Some(text) = stored_text(node, field) else {
+                break;
+            };
+            let bytes = (text.len() as u64).saturating_add(1);
+            let cost = bytes
+                .saturating_mul(regex.states)
+                .saturating_add(if regex.dfa.is_some() { bytes } else { 0 });
+            work = work.saturating_add(cost).min(MAX_NODE_MATCH_WORK);
+        }
+        work
+    }
+
+    pub(super) fn matches_stored(&mut self, node: umx_graph::NodeRef<'_>) -> Option<bool> {
+        if !self.exact_stored(node) {
             return Some(false);
         }
-        if pattern.tag.is_empty() && pattern.field.is_empty() && pattern.regex.is_empty() {
-            let mut node_left = MAX_NODE_MATCH_WORK;
-            Self::charge(&mut node_left, &mut self.work_left, 1)?;
-            return Some(true);
-        }
-        self.matches(&node.to_node())
+        self.matches_regex(|field| stored_text(node, field))
     }
 
     /// None marks this node as not checked; a later, cheaper node may still be checked.
@@ -172,17 +206,28 @@ impl RuleMatcher {
         if !self.rule.pattern.matches_exact(node) {
             return Some(false);
         }
+        self.matches_regex(|field| match field {
+            "title" => Some(Cow::Borrowed(node.title.as_str())),
+            "note" => Some(Cow::Borrowed(node.note.as_str())),
+            _ => node
+                .fields
+                .get(field)
+                .and_then(Value::as_str)
+                .map(Cow::Borrowed),
+        })
+    }
+
+    fn matches_regex<'a>(
+        &mut self,
+        mut text: impl FnMut(&str) -> Option<Cow<'a, str>>,
+    ) -> Option<bool> {
         let mut node_left = MAX_NODE_MATCH_WORK;
         Self::charge(&mut node_left, &mut self.work_left, 1)?;
         for (field, regex) in &mut self.regex {
-            let text = match field.as_str() {
-                "title" => Some(node.title.as_str()),
-                "note" => Some(node.note.as_str()),
-                _ => node.fields.get(field).and_then(Value::as_str),
-            };
-            let Some(text) = text else {
+            let Some(text) = text(field) else {
                 return Some(false);
             };
+            let text = text.as_ref();
             let bytes = (text.len() as u64).saturating_add(1);
             let dfa_match = match &mut regex.dfa {
                 Some((dfa, cache)) => {
@@ -227,6 +272,29 @@ impl RuleMatcher {
     pub(super) fn can_check_more(&self) -> bool {
         self.work_left >= MAX_NODE_MATCH_WORK
     }
+
+    #[cfg(test)]
+    pub(super) fn use_vm_for_test(&mut self, field: &str) -> u64 {
+        for regex in self.regex.values_mut() {
+            regex.dfa = None;
+        }
+        self.regex[field].states
+    }
+}
+
+fn stored_text<'a>(node: umx_graph::NodeRef<'a>, field: &str) -> Option<Cow<'a, str>> {
+    if field == "title" {
+        return Some(Cow::Borrowed(node.title()));
+    }
+    let value = if field == "note" {
+        node.field(field)
+    } else {
+        node.custom_field(field)
+    };
+    match value {
+        Some(Value::String(text)) => Some(Cow::Owned(text)),
+        _ => None,
+    }
 }
 
 pub(super) struct CompiledRules {
@@ -236,6 +304,9 @@ pub(super) struct CompiledRules {
 }
 
 impl CompiledRules {
+    pub(super) fn skipped_reason(&self, name: &str) -> Option<&'static str> {
+        self.skipped.get(name).copied()
+    }
     pub(super) fn notes(&self, graph: &ValidName) -> Vec<Problem> {
         self.skipped
             .iter()
@@ -271,7 +342,7 @@ pub(super) fn compile_rules<'a>(
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuleEntry {
     pub rule: Rule,
-    pub source: &'static str,
+    pub source: String,
     pub off: bool,
 }
 
@@ -313,7 +384,7 @@ fn known_field(o: &Ontology, types: &[String], field: &str) -> bool {
             .any(|t| o.field_decl(&t.name, field).is_some())
 }
 
-fn name_notes(o: &Ontology, rule: &Rule, graph: &ValidName) -> Vec<Problem> {
+pub(super) fn name_notes(o: &Ontology, rule: &Rule, graph: &ValidName) -> Vec<Problem> {
     let fail = |at: &'static str, name: &str, fix: Command| {
         problems::rule_vocabulary_unknown(&rule.name, at, name, fix.word("--graph").name(graph))
     };
@@ -394,7 +465,14 @@ pub(super) fn validate_stored(meta: &GraphMeta) -> Result<(), Problem> {
 
 pub(super) fn stored_notes(meta: &GraphMeta, graph: &ValidName) -> Result<Vec<Problem>, Problem> {
     let o = meta.ontology.effective();
-    let mut notes = compile_rules(meta.rules.iter(), MAX_GRAPH_COMPILED_BYTES)?.notes(graph);
+    let mut notes = compile_rules(
+        meta.rule_sets
+            .values()
+            .flat_map(|set| &set.rules)
+            .chain(&meta.rules),
+        MAX_GRAPH_COMPILED_BYTES,
+    )?
+    .notes(graph);
     notes.extend(
         meta.rules
             .iter()
@@ -407,10 +485,7 @@ pub(super) fn std_rules<'a>(
     central: &'a [Rule],
     meta: &'a GraphMeta,
 ) -> impl Iterator<Item = &'a Rule> {
-    central
-        .iter()
-        .filter(|rule| !meta.rules_off.contains(&rule.name))
-        .chain(&meta.rules)
+    umx_core::rules::effective(central, &meta.rule_sets, &meta.rules, &meta.rules_off).into_iter()
 }
 
 impl GraphStore {
@@ -434,17 +509,26 @@ impl GraphStore {
         std.sort_by(|a, b| a.name.cmp(&b.name));
         let mut own = meta.rules.clone();
         own.sort_by(|a, b| a.name.cmp(&b.name));
+        let off = umx_core::rules::off_names(&meta.rule_sets, &meta.rules_off);
         let rows = std
             .into_iter()
             .map(|rule| RuleEntry {
-                off: meta.rules_off.contains(&rule.name),
+                off: off.contains(rule.name.as_str()),
                 rule,
-                source: "std",
+                source: "std".into(),
             })
+            .chain(meta.rule_sets.iter().flat_map(|(set, rows)| {
+                let off = &off;
+                rows.rules.iter().cloned().map(move |rule| RuleEntry {
+                    off: off.contains(rule.name.as_str()),
+                    rule,
+                    source: set.clone(),
+                })
+            }))
             .chain(own.into_iter().map(|rule| RuleEntry {
+                off: off.contains(rule.name.as_str()),
                 rule,
-                source: "graph",
-                off: false,
+                source: "graph".into(),
             }))
             .collect();
         let mut notes = compile_rules(
@@ -471,22 +555,24 @@ impl GraphStore {
         let std = self.central(&l.meta);
         let rule = std
             .iter()
+            .chain(l.meta.rule_sets.values().flat_map(|set| &set.rules))
             .chain(&l.meta.rules)
             .find(|r| r.name == name)
             .ok_or_else(|| problems::rule_not_found(name))?;
         let mut compiled = compile_rules(std_rules(std, &l.meta), MAX_GRAPH_COMPILED_BYTES)?;
-        let matcher = if l.meta.rules_off.iter().any(|off| off == name) {
-            match RuleMatcher::compile(rule, &mut compiled.remaining) {
-                Ok(matcher) => Some(matcher),
-                Err(CompileError::Limit(reason, _)) => {
-                    compiled.skipped.insert(name.into(), reason);
-                    None
+        let matcher =
+            if umx_core::rules::off_names(&l.meta.rule_sets, &l.meta.rules_off).contains(name) {
+                match RuleMatcher::compile(rule, &mut compiled.remaining) {
+                    Ok(matcher) => Some(matcher),
+                    Err(CompileError::Limit(reason, _)) => {
+                        compiled.skipped.insert(name.into(), reason);
+                        None
+                    }
+                    Err(CompileError::Invalid(problem)) => return Err(problem),
                 }
-                Err(CompileError::Invalid(problem)) => return Err(problem),
-            }
-        } else {
-            compiled.matchers.remove(name)
-        };
+            } else {
+                compiled.matchers.remove(name)
+            };
         let mut shown = self.show_rule(&alias, rule, matcher, limit, offset)?;
         shown.notes.extend(compiled.notes(&alias_name(&alias)));
         shown.notes.extend(self.stale_note(&alias));
@@ -535,16 +621,11 @@ impl GraphStore {
         nodes.sort_unstable();
         let total = nodes.len();
         let end = offset.saturating_add(limit).min(total);
-        let rule_name = rule.name.strip_prefix("std:").unwrap_or(&rule.name);
-        let command = Command::new("rule show");
-        let name = ValidName::new(rule_name).expect("shape checked");
-        let command = if rule.name.starts_with("std:") {
-            command.qualified("std:", &name)
-        } else {
-            command.name(&name)
-        }
-        .word("--graph")
-        .name(&alias_name(alias));
+        let command = Command::new("rule show")
+            .rule_name(&rule.name)
+            .expect("shape checked")
+            .word("--graph")
+            .name(&alias_name(alias));
         let next = (end < total).then(|| {
             command
                 .clone()
@@ -683,6 +764,11 @@ impl GraphStore {
                 "central rules are switched off with rule off, not removed",
             ));
         }
+        if name.contains(':') {
+            return Err(problems::rule_invalid(
+                "set rules are switched off with rule off or removed with rule set remove",
+            ));
+        }
         let before = self.graphs[&alias].meta.clone();
         let unchanged = !before.rules.iter().any(|r| r.name == name);
         let files = self.ports.files.clone();
@@ -714,8 +800,10 @@ impl GraphStore {
     pub fn rule_switch(&mut self, ctx: &Ctx, name: &str, off: bool) -> Outcome<RuleChanged> {
         let alias = self.select_write(ctx, &[])?;
         let before = self.graphs[&alias].meta.clone();
-        if !self.central(&before).iter().any(|r| r.name == name) {
-            return Err(problems::rule_not_found(name));
+        if !umx_core::rules::name_ok(name) {
+            return Err(problems::rule_invalid(
+                "a switch-off names a rule or a set-qualified rule",
+            ));
         }
         let unchanged = before.rules_off.iter().any(|n| n == name) == off;
         let files = self.ports.files.clone();

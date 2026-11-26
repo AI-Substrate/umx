@@ -8,6 +8,7 @@ use super::*;
 fn declared_values_std_risk_ratings_and_mitigation_are_soft() {
     let mut home = Home::new("risk-values");
     let path = home.graph();
+    home.ok(&["rule", "off", "std:risk_owned"]);
     let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
     let std = home.ok(&["ontology", "show", "--std"]);
     let risk_type = std.data["types"]
@@ -75,6 +76,7 @@ fn declared_values_std_risk_ratings_and_mitigation_are_soft() {
 fn declared_values_warning_next_extends_std_and_never_echoes_free_text() {
     let mut home = Home::new("risk-values-next");
     let path = home.graph();
+    home.ok(&["rule", "off", "std:risk_owned"]);
     let (risk, exit) = home.umx(&[
         "node",
         "add",
@@ -650,6 +652,7 @@ fn declared_values_std_mutations_store_only_graph_added_labels() {
 fn declared_values_kind_checks_are_placed_and_risk_overrides_are_soft() {
     let mut home = Home::new("placed-values");
     let plain = std_and_plain(&mut home);
+    home.ok(&["rule", "off", "std:risk_owned", "--graph", "demo"]);
     for field in ["impact:int", "likelihood:int"] {
         let env = home.ok(&["ontology", "add", "field", "task", field, "--graph", "demo"]);
         assert!(env.warnings.is_empty(), "{}", env.to_json());

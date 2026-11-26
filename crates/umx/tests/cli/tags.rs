@@ -199,6 +199,7 @@ fn a_tag_that_is_not_snake_case_is_refused_with_the_snake_case_form_in_next() {
 fn tags_are_stored_lowercased_deduplicated_and_sorted() {
     let mut home = Home::new("tag_order");
     let path = home.graph();
+    home.ok(&["rule", "off", "std:risk_owned"]);
     let id = tagged(&home, "x", &["b", "a", "a"]);
     assert_eq!(line_of(&path, &id)["tags"], json!(["a", "b"]));
     let id = tagged(&home, "y", &["Needs_Review,origin:X", "needs_review"]);
@@ -269,6 +270,7 @@ fn node_list_filters_by_tags() {
 fn a_declared_facet_warns_on_an_undeclared_tag() {
     let mut home = Home::new("tag_vocab");
     let path = home.graph();
+    home.ok(&["rule", "off", "std:risk_owned"]);
     let env = home.ok(&[
         "node",
         "add",
@@ -360,6 +362,7 @@ fn a_declared_facet_warns_on_an_undeclared_tag() {
 fn node_edit_adds_and_removes_tags() {
     let mut home = Home::new("tag_edit");
     let path = home.graph();
+    home.ok(&["rule", "off", "std:risk_owned"]);
     home.ok(&["ontology", "add", "tag", "origin:a"]);
     let id = tagged(&home, "x", &["b"]);
     let env = home.ok(&[

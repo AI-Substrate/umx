@@ -409,6 +409,7 @@ impl GraphStore {
             rules: Vec::new(),
             rules_off: Vec::new(),
             hubs: Vec::new(),
+            rule_sets: Default::default(),
             umx: 1,
             id: self.ports.ids.next_id(),
             alias: alias.as_str().to_string(),
@@ -455,7 +456,10 @@ impl GraphStore {
             .iter()
             .filter_map(|c| match &c.file {
                 FileRef::Graph(f) => Some(*f),
-                FileRef::Shard(_) | FileRef::SimilarMeta(_) | FileRef::Receipts => None,
+                FileRef::Shard(_)
+                | FileRef::SimilarMeta(_)
+                | FileRef::Receipts
+                | FileRef::RuleSet(_) => None,
             })
             .collect();
         let mut warnings = Vec::new();
@@ -550,7 +554,7 @@ impl GraphStore {
             Ok(bytes)
         };
         let meta_bytes = read(GraphFile::Graph)?.ok_or_else(|| problems::graph_not_found(&dir))?;
-        let meta = decode_meta(&dir, &meta_bytes)?;
+        let mut meta = decode_meta(&dir, &meta_bytes)?;
         if expect.is_some_and(|id| id != meta.id) {
             return Err(problems::graph_id_changed(
                 as_alias.unwrap_or(&meta.alias),
@@ -593,6 +597,7 @@ impl GraphStore {
         }
         // Load rules (req-67, req-76, E-4): repeated ids, dangling edges and unknown graph.json keys load, are kept
         // and are reported.
+        let sets = super::rule_sets::read_sets(files.as_ref(), &dir, &mut meta, &alias)?;
         let mut rules: Vec<Problem> = [
             (GraphFile::Nodes, nodes.unsorted),
             (GraphFile::Edges, edges.unsorted),
@@ -776,6 +781,7 @@ impl GraphStore {
             );
         }
         rules.extend(type_column_rules(&alias, &meta));
+        rules.extend(sets.notes);
         rules.extend(super::rules::stored_notes(&meta, &alias)?);
         rules.extend(super::hubs::missing_notes(&meta, &graph, &alias));
         let hidden = rules.len().saturating_sub(MAX_LOAD_WARNINGS);
@@ -806,6 +812,7 @@ impl GraphStore {
         self.resets.insert(alias.as_str().to_string());
         let now_ms = self.ports.clock.now_ms();
         let mut loaded = Loaded::new(dir, meta, ontology, graph, now_ms, stamps.get());
+        loaded.rule_sets_read = sets.value;
         loaded.edges_normalized = !own_ends.is_empty();
         if let Some(order) = order {
             loaded.order = order;
@@ -1018,7 +1025,14 @@ impl GraphStore {
                 .map_err(|e| files_problem(&dir, &self.roots, file, e))
         };
         let meta_bytes = read(GraphFile::Graph)?.ok_or_else(|| problems::graph_not_found(&dir))?;
-        let meta = decode_meta(&dir, &meta_bytes)?;
+        let mut meta = decode_meta(&dir, &meta_bytes)?;
+        let set_notes = super::rule_sets::read_sets(
+            self.ports.files.as_ref(),
+            &dir,
+            &mut meta,
+            &alias_name(alias),
+        )?
+        .notes;
         let mut rows: Vec<CheckRow> = unknown_keys(&meta)
             .into_iter()
             .map(|path| CheckRow {
@@ -1205,6 +1219,7 @@ impl GraphStore {
         // The folder's .gitignore must hide umx's temp and marker files, or a crash leaves them for git to see.
         let ignore = read(GraphFile::GitIgnore)?;
         let mut warnings = edge_warnings;
+        warnings.extend(set_notes);
         warnings.extend(super::rules::stored_notes(&meta, &graph_name)?);
         if !ignore_hides_temp_files(ignore.as_deref()) {
             rows.push(CheckRow {

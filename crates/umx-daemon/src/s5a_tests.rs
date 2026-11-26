@@ -242,6 +242,8 @@ fn writes(op: &Op) -> Writes {
         | Op::RuleRemove { .. }
         | Op::RuleOff { .. }
         | Op::RuleOn { .. }
+        | Op::RuleSetAdd { .. }
+        | Op::RuleSetRemove { .. }
         | Op::HubSet { .. }
         | Op::HubFill { .. }
         | Op::HubRemove { .. } => Content,
@@ -276,6 +278,7 @@ fn writes(op: &Op) -> Writes {
         Op::GraphList { .. }
         | Op::RuleList
         | Op::RuleShow { .. }
+        | Op::RuleSetList
         | Op::HubList
         | Op::HubShow { .. }
         | Op::NodeGet { .. }

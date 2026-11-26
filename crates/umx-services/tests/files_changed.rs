@@ -4,6 +4,7 @@
 //! below take each away to show the other still holds, and both away to show the repro then loses data.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use umx_core::codec::GraphFile;
 use umx_core::ports::{
     Change, Committed, FileRef, FileStamp, FilesError, GraphDir, GraphFiles, GraphStamps, ModelKey,
@@ -19,6 +20,7 @@ struct Planted {
     no_up_front: bool,
     /// Every set is passed on without the stamps it carries.
     no_commit_check: bool,
+    fail_refresh: Option<Arc<AtomicBool>>,
 }
 
 impl GraphFiles for Planted {
@@ -40,8 +42,17 @@ impl GraphFiles for Planted {
         also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError> {
         let expect = expect.filter(|_| !self.no_commit_check);
-        self.inner
-            .write_set_checked_also(dir, changes, expect, also)
+        let committed = self
+            .inner
+            .write_set_checked_also(dir, changes, expect, also)?;
+        if changes
+            .iter()
+            .any(|change| matches!(change.file, FileRef::RuleSet(_)))
+            && let Some(fail) = &self.fail_refresh
+        {
+            fail.store(true, Ordering::SeqCst);
+        }
+        Ok(committed)
     }
     fn read_ref_stamped(
         &self,
@@ -58,6 +69,22 @@ impl GraphFiles for Planted {
     }
     fn list(&self, dir: &GraphDir) -> Result<Vec<GraphFile>, FilesError> {
         self.inner.list(dir)
+    }
+    fn list_rule_sets(
+        &self,
+        dir: &GraphDir,
+    ) -> Result<umx_core::ports::RuleSetListing, FilesError> {
+        if self
+            .fail_refresh
+            .as_ref()
+            .is_some_and(|fail| fail.swap(false, Ordering::SeqCst))
+        {
+            return Err(FilesError::RecoveryConflict(vec![GraphFile::Graph.into()]));
+        }
+        self.inner.list_rule_sets(dir)
+    }
+    fn stamp_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<FileStamp, FilesError> {
+        self.inner.stamp_ref(dir, file)
     }
     fn resolve(&self, dir: &GraphDir) -> Result<GraphDir, FilesError> {
         self.inner.resolve(dir)
@@ -140,6 +167,7 @@ fn repro(no_up_front: bool, no_commit_check: bool) -> (Option<&'static str>, boo
         inner: fake.clone(),
         no_up_front,
         no_commit_check,
+        fail_refresh: None,
     }));
     svc.graph_new(&Ctx::new("tester"), "/work/g", "demo", None, false, None)
         .unwrap();
@@ -156,6 +184,57 @@ fn repro(no_up_front: bool, no_commit_check: bool) -> (Option<&'static str>, boo
 #[test]
 fn the_f144_repro_is_refused_and_writes_nothing() {
     assert_eq!(repro(false, false), (Some("graph_files_changed"), true));
+}
+
+#[test]
+fn rule_sets_committed_changes_survive_refresh_failure_and_writes_require_reload() {
+    use umx_core::ports::RuleSetFile;
+    let fake = Arc::new(FakeGraphFiles::new(GraphDir::parse("/work").unwrap()));
+    let mut svc = services(Arc::new(Planted {
+        inner: fake.clone(),
+        no_up_front: false,
+        no_commit_check: false,
+        fail_refresh: Some(Arc::new(AtomicBool::new(false))),
+    }));
+    svc.graph_new(&Ctx::new("tester"), "/work/g", "demo", None, false, None)
+        .unwrap();
+    let dir = GraphDir::parse("/work/g").unwrap();
+    let file = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    let changed = svc.rule_set_add(&ctx(), "kit", b"{}").unwrap();
+    assert!(!changed.value.unchanged);
+    assert!(
+        changed
+            .notes
+            .iter()
+            .any(|problem| problem.code == "rule_sets_refresh_failed")
+    );
+    assert_eq!(
+        fake.read_ref(&dir, &file).unwrap().as_deref(),
+        Some(&b"{}"[..])
+    );
+    assert_eq!(
+        add(&mut svc, "Blocked until reload").unwrap_err().code,
+        "recovery_conflict"
+    );
+    svc.graph_load(&ctx(), "/work/g", Some("demo")).unwrap();
+    add(&mut svc, "Reloaded").unwrap();
+    let removed = svc.rule_set_remove(&ctx(), "kit").unwrap();
+    assert!(!removed.value.unchanged);
+    assert!(
+        removed
+            .notes
+            .iter()
+            .any(|problem| problem.code == "rule_sets_refresh_failed")
+    );
+    assert_eq!(fake.read_ref(&dir, &file).unwrap(), None);
+    assert_eq!(
+        add(&mut svc, "Last copy is gone but snapshot failed")
+            .unwrap_err()
+            .code,
+        "recovery_conflict"
+    );
+    svc.graph_load(&ctx(), "/work/g", Some("demo")).unwrap();
+    add(&mut svc, "Reloaded after removal").unwrap();
 }
 
 #[test]
@@ -242,6 +321,7 @@ fn entity_unlink_on_a_changed_graph_is_refused_up_front() {
         inner: fake.clone(),
         no_up_front: false,
         no_commit_check: true,
+        fail_refresh: None,
     }));
     svc.graph_new(&Ctx::new("tester"), "/work/g", "demo", None, false, None)
         .unwrap();

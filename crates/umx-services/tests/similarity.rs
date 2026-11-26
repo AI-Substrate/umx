@@ -958,6 +958,19 @@ struct FailSimilar {
 }
 
 impl GraphFiles for FailSimilar {
+    fn stamp_ref(
+        &self,
+        d: &GraphDir,
+        f: &FileRef,
+    ) -> Result<umx_core::ports::FileStamp, umx_core::ports::FilesError> {
+        self.inner.stamp_ref(d, f)
+    }
+    fn list_rule_sets(
+        &self,
+        d: &GraphDir,
+    ) -> Result<umx_core::ports::RuleSetListing, umx_core::ports::FilesError> {
+        self.inner.list_rule_sets(d)
+    }
     fn relocate(
         &self,
         from: &umx_core::ports::GraphDir,
@@ -1673,6 +1686,19 @@ fn is_similar(f: &FileRef) -> bool {
 }
 
 impl GraphFiles for Recorder {
+    fn stamp_ref(
+        &self,
+        d: &GraphDir,
+        f: &FileRef,
+    ) -> Result<umx_core::ports::FileStamp, umx_core::ports::FilesError> {
+        self.inner.stamp_ref(d, f)
+    }
+    fn list_rule_sets(
+        &self,
+        d: &GraphDir,
+    ) -> Result<umx_core::ports::RuleSetListing, umx_core::ports::FilesError> {
+        self.inner.list_rule_sets(d)
+    }
     fn relocate(
         &self,
         from: &umx_core::ports::GraphDir,

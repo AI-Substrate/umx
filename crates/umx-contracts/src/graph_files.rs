@@ -4,7 +4,8 @@
 
 use umx_core::codec::GraphFile;
 use umx_core::ports::{
-    Change, CrashPoint, FileRef, FileStamp, FilesError, GraphDir, GraphFiles, GraphStamps, ModelKey,
+    Change, CrashPoint, EntryKind, FileRef, FileStamp, FilesError, GraphDir, GraphFiles,
+    GraphStamps, ModelKey, RuleSetFile,
 };
 use umx_core::setup::GraphFilesSetup;
 use umx_core::vectors::{ShardFile, ShardKind};
@@ -79,10 +80,298 @@ pub const CLAUSES: &[&str] = &[
     "gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes",
     "gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps",
     "gf_c37_a_changed_also_file_refuses_the_set",
+    "gf_c38_rule_sets_are_graph_local_sorted_and_capped",
+    "gf_c39_rule_sets_commit_with_metadata_and_check_their_stamps",
+    "gf_c40_rule_set_path_stamps_are_body_independent",
+    "gf_c41_rule_set_links_never_follow_the_target",
 ];
 
 fn dir(root: &GraphDir, child: &str) -> GraphDir {
     root.join(child).expect("child dir")
+}
+
+pub fn gf_c38_rule_sets_are_graph_local_sorted_and_capped<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let g = dir(&root, "g");
+    let set = |name: &str| FileRef::RuleSet(RuleSetFile::new(name).unwrap());
+    assert_eq!(port.list_rule_sets(&g).unwrap().entries, []);
+    assert_eq!(
+        port.read_ref_stamped(&g, &set("alpha")).unwrap(),
+        (None, FileStamp::ABSENT)
+    );
+    port.write_set(
+        &g,
+        &[
+            put(set("zeta"), b"{}\n"),
+            put(set("alpha"), b"{ \"rules\": [] }\n"),
+        ],
+    )
+    .unwrap();
+    let before = port.bytes_read();
+    let listing = port.list_rule_sets(&g).unwrap();
+    assert!(!listing.limited);
+    assert_eq!(
+        listing.entries,
+        [
+            ("alpha.json".into(), EntryKind::File),
+            ("zeta.json".into(), EntryKind::File),
+        ]
+    );
+    assert_eq!(port.bytes_read(), before, "listing reads no bodies");
+    assert_eq!(port.list(&g).unwrap(), []);
+    assert_eq!(
+        port.list_rule_sets(&dir(&root, "another")).unwrap().entries,
+        []
+    );
+    let file = set("alpha");
+    let cap = file.cap();
+    port.tamper(&g, file.clone(), &vec![b' '; cap as usize + 1]);
+    let before = port.bytes_read();
+    assert_eq!(
+        port.read_ref_stamped(&g, &file),
+        Err(FilesError::TooLarge {
+            file: file.clone(),
+            size: cap + 1,
+            cap,
+        })
+    );
+    assert_eq!(port.bytes_read(), before, "an over-cap set body is unread");
+    for i in 0..umx_core::ports::graph_files::MAX_RULE_SET_ENTRIES {
+        let name = format!("set_{i}");
+        port.tamper(&g, set(&name), b"{}");
+    }
+    let listing = port.list_rule_sets(&g).unwrap();
+    assert!(listing.limited);
+    assert!(
+        listing.entries.is_empty(),
+        "no OS-order partial folder at the directory cap"
+    );
+}
+
+pub fn gf_c39_rule_sets_commit_with_metadata_and_check_their_stamps<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let set = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    for (i, point) in [
+        CrashPoint::AfterTemps,
+        CrashPoint::AfterMarker,
+        CrashPoint::AfterFirstRename,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let g = dir(&root, &format!("g{i}"));
+        port.write(&g, GraphFile::Graph, b"old\n").unwrap();
+        let stamps = loaded_stamps(&port, &g);
+        let (_, stamp) = port.read_ref_stamped(&g, &set).unwrap();
+        port.crash_at(Some(point));
+        assert!(
+            port.write_set_checked_also(
+                &g,
+                &[put(GraphFile::Graph, b"new\n"), put(set.clone(), b"{}\n"),],
+                Some(&stamps),
+                &[(set.clone(), stamp)]
+            )
+            .is_err()
+        );
+        let after = port.restart();
+        let got = (
+            read(&after, &g, GraphFile::Graph),
+            after.read_ref(&g, &set).unwrap(),
+        );
+        if point == CrashPoint::AfterTemps {
+            assert_eq!(got, (Some(b"old\n".to_vec()), None));
+        } else {
+            assert_eq!(got, (Some(b"new\n".to_vec()), Some(b"{}\n".to_vec())));
+        }
+    }
+    let g = dir(&root, "changed");
+    port.write(&g, GraphFile::Graph, b"old\n").unwrap();
+    port.write_set(&g, &[put(set.clone(), b"{}\n")]).unwrap();
+    let stamps = loaded_stamps(&port, &g);
+    let (_, stamp) = port.read_ref_stamped(&g, &set).unwrap();
+    port.tamper(&g, set.clone(), b"{ \"rules_off\": [] }\n");
+    assert_eq!(
+        port.write_set_checked_also(
+            &g,
+            &[
+                put(GraphFile::Graph, b"new\n"),
+                Change {
+                    file: set.clone(),
+                    bytes: None
+                },
+            ],
+            Some(&stamps),
+            &[(set.clone(), stamp)]
+        ),
+        Err(FilesError::Changed(vec![set.clone()]))
+    );
+    assert_eq!(
+        read(&port, &g, GraphFile::Graph).as_deref(),
+        Some(&b"old\n"[..])
+    );
+    let (_, stamp) = port.read_ref_stamped(&g, &set).unwrap();
+    port.write_set_checked_also(
+        &g,
+        &[Change {
+            file: set.clone(),
+            bytes: None,
+        }],
+        Some(&stamps),
+        &[(set.clone(), stamp)],
+    )
+    .unwrap();
+    assert_eq!(port.read_ref(&g, &set).unwrap(), None);
+}
+
+pub fn gf_c40_rule_set_path_stamps_are_body_independent<P: SetHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let g = dir(&root, "g");
+    let file = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    assert_eq!(port.stamp_ref(&g, &file).unwrap(), FileStamp::ABSENT);
+    port.write_set(&g, &[put(file.clone(), b"{}\n")]).unwrap();
+    let (_, read) = port.read_ref_stamped(&g, &file).unwrap();
+    let before = port.bytes_read();
+    assert_eq!(port.stamp_ref(&g, &file).unwrap(), read);
+    assert_eq!(port.bytes_read(), before, "stamping reads no body");
+    port.tamper(&g, file.clone(), &vec![b' '; file.cap() as usize + 1]);
+    let before = port.bytes_read();
+    let changed = port.stamp_ref(&g, &file).unwrap();
+    assert_ne!(changed, read);
+    assert_ne!(changed, FileStamp::ABSENT);
+    assert_eq!(port.stamp_ref(&g, &file).unwrap(), changed);
+    assert_eq!(
+        port.bytes_read(),
+        before,
+        "even an over-cap body stays unread"
+    );
+    let stamps = port.stamps(&g).unwrap();
+    port.write_set_checked_also(
+        &g,
+        &[Change {
+            file: file.clone(),
+            bytes: None,
+        }],
+        Some(&stamps),
+        &[(file.clone(), changed)],
+    )
+    .unwrap();
+    assert_eq!(port.stamp_ref(&g, &file).unwrap(), FileStamp::ABSENT);
+    port.write(&g, GraphFile::Graph, b"old\n").unwrap();
+    port.write_set(&g, &[put(file.clone(), b"{}\n")]).unwrap();
+    let old = port.stamp_ref(&g, &file).unwrap();
+    port.crash_at(Some(CrashPoint::AfterMarker));
+    assert!(
+        port.write_set(
+            &g,
+            &[
+                put(GraphFile::Graph, b"new\n"),
+                put(file.clone(), b"{ \"rules\": [] }\n"),
+            ]
+        )
+        .is_err()
+    );
+    let pending = port.leftovers(&g);
+    let before = port.bytes_read();
+    assert_eq!(port.stamp_ref(&g, &file).unwrap(), old);
+    assert_eq!(
+        port.bytes_read(),
+        before,
+        "a physical stamp never runs body-reading recovery"
+    );
+    assert_eq!(
+        port.leftovers(&g),
+        pending,
+        "the pending write stays pending"
+    );
+}
+
+pub fn gf_c41_rule_set_links_never_follow_the_target<P: SetHarness + FindHarness, G>(
+    factory: impl Fn() -> (P, GraphDir, G),
+) {
+    let (port, root, _guard) = factory();
+    let (g, outside) = (dir(&root, "g"), dir(&root, "outside"));
+    let file = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    port.write_set(&outside, &[put(file.clone(), b"keep")])
+        .unwrap();
+    port.write_set(&g, &[put(file.clone(), b"seed")]).unwrap();
+    port.write_set(
+        &g,
+        &[Change {
+            file: file.clone(),
+            bytes: None,
+        }],
+    )
+    .unwrap();
+    port.make_link(
+        &g.join(&file.path()).unwrap(),
+        &outside.join(&file.path()).unwrap(),
+    );
+    let before = port.bytes_read();
+    assert!(matches!(
+        port.read_ref(&g, &file),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert!(matches!(
+        port.read_ref_stamped(&g, &file),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert!(matches!(
+        port.write_set(&g, &[put(file.clone(), b"replacement")]),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    let stamp = port.stamp_ref(&g, &file).unwrap();
+    assert_ne!(stamp, FileStamp::ABSENT);
+    assert_eq!(port.bytes_read(), before, "the link's target is never read");
+    let expect = port.stamps(&g).unwrap();
+    port.write_set_checked_also(
+        &g,
+        &[Change {
+            file: file.clone(),
+            bytes: None,
+        }],
+        Some(&expect),
+        &[(file.clone(), stamp)],
+    )
+    .unwrap();
+    assert_eq!(port.read_ref(&g, &file).unwrap(), None);
+    assert_eq!(port.raw(&outside, file.clone()), Some(b"keep".to_vec()));
+
+    let h = dir(&root, "h");
+    port.make_folder(&h);
+    port.make_link(&h.join("rules").unwrap(), &outside.join("rules").unwrap());
+    assert!(matches!(
+        port.list_rule_sets(&h),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert!(matches!(
+        port.read_ref(&h, &file),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert!(matches!(
+        port.stamp_ref(&h, &file),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert!(matches!(
+        port.write_set(&h, &[put(file.clone(), b"replacement")]),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert!(matches!(
+        port.write_set(
+            &h,
+            &[Change {
+                file: file.clone(),
+                bytes: None
+            }]
+        ),
+        Err(FilesError::OutsideRoots(_))
+    ));
+    assert_eq!(port.raw(&outside, file), Some(b"keep".to_vec()));
 }
 
 pub fn gf_c1_write_then_read_is_identical<P: GraphFiles, G>(

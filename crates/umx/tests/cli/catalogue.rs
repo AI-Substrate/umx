@@ -27,6 +27,12 @@ fn every_catalogue_code_is_triggered_and_says_what_to_do_next() {
             // umx-services' tests/graphfile.rs raises it with a racing port. Its catalogue row is checked as usual.
             continue;
         }
+        if *code == Code::RuleSetsRefreshFailed {
+            // A recovery error between commit and refresh cannot be timed from the CLI: services'
+            // files_changed::rule_sets_committed_changes_survive_refresh_failure_and_writes_require_reload
+            // raises it with an injected port, proves the change stands, and requires a reload before writing.
+            continue;
+        }
         if matches!(
             code,
             Code::SimilarityPairsTooLarge | Code::SimilarityPairsTimedOut

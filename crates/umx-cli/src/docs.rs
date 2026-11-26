@@ -20,7 +20,7 @@ const TOPICS: &[Topic] = &[
     Topic {
         name: "rules",
         title: "Graph rules",
-        summary: "Declare, preview, list and remove graph rules; bounded regex patterns and central rule switch-offs.",
+        summary: "Declare and check graph rules, copy graph-local rule sets, and link risk owners; bounded regex patterns and switch-offs.",
         markdown: || include_str!("../docs/rules.md").to_owned(),
     },
     Topic {

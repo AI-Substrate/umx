@@ -437,7 +437,7 @@ fn dispatch(args: &[String], ctx: &Context) -> Envelope {
 fn typed(words: &[&str], ctx: &Context) -> Envelope {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     match parse::parse(words, &cwd) {
-        Ok(p) => match spine_decl(p) {
+        Ok(p) => match file_payloads(p) {
             Ok(p) => send_op(p, ctx),
             Err(env) => *env,
         },
@@ -445,9 +445,8 @@ fn typed(words: &[&str], ctx: &Context) -> Envelope {
     }
 }
 
-/// `graph spine set --file <decl.json|->` (ws008 TM5): the parse holds the file's name; the declaration is read here,
-/// through batch's capped read, and sent as JSON. The daemon never sees the path.
-fn spine_decl(mut p: parse::Parsed) -> Result<parse::Parsed, Box<Envelope>> {
+/// File-backed declarations are read through the capped CLI reader. The daemon never sees a source path.
+fn file_payloads(mut p: parse::Parsed) -> Result<parse::Parsed, Box<Envelope>> {
     if let Op::GraphSpineSet { decl, .. } = &mut p.op
         && let umx_protocol::Value::String(file) = decl
     {
@@ -461,6 +460,11 @@ fn spine_decl(mut p: parse::Parsed) -> Result<parse::Parsed, Box<Envelope>> {
                     "the --file is not JSON (one spine declaration object)",
                 ))
             })?;
+    }
+    if let Op::RuleSetAdd { content, .. } = &mut p.op {
+        let bytes = batch::read(content, batch::Input::RuleSet)?;
+        *content = String::from_utf8(bytes)
+            .map_err(|_| Box::new(usage("rule set add", "the rule set file is not UTF-8 JSON")))?;
     }
     Ok(p)
 }
@@ -752,6 +756,35 @@ pub fn emit(env: &Envelope, output: Output) -> u8 {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
+
+    #[test]
+    fn rule_set_payload_copies_file_bytes_and_refuses_non_utf8() {
+        let path = fresh_socket("rule-set-payload").with_extension("json");
+        let file = path.to_str().unwrap();
+        let bytes = b"{ \"rules\": [], \"rules_off\": [\"std:risk_owned\"] }\n";
+        std::fs::write(&path, bytes).unwrap();
+        let parsed = parse::parse(
+            &["rule", "set", "add", file, "--graph", "g"],
+            Path::new("/"),
+        )
+        .ok()
+        .expect("set parses");
+        let copied = file_payloads(parsed).unwrap();
+        let Op::RuleSetAdd { content, .. } = copied.op else {
+            panic!("set add")
+        };
+        assert_eq!(content.as_bytes(), bytes);
+        std::fs::write(&path, b"{}").unwrap();
+        assert_eq!(content.as_bytes(), bytes, "the request has no source link");
+        std::fs::write(&path, [0xff]).unwrap();
+        let parsed = parse::parse(&["rule", "set", "add", file], Path::new("/"))
+            .ok()
+            .expect("set parses");
+        let error = file_payloads(parsed).err().expect("non-UTF8 is refused");
+        assert_eq!(error.command, "rule set add");
+        assert!(error.errors[0].message().contains("not UTF-8 JSON"));
+        std::fs::remove_file(&path).unwrap();
+    }
 
     /// Plan 129: an agent's `umx ui` command resolves who sent it, as a write does; reading the selection does not.
     #[test]

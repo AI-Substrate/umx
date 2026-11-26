@@ -328,6 +328,11 @@ pub const CODES: &[&str] = &[
     "hub_scan_cut",
     "hub_node_missing",
     "hub_edges_remain",
+    "rule_set_skipped",
+    "rule_sets_cut",
+    "rule_set_name_taken",
+    "rule_sets_full",
+    "rule_sets_refresh_failed",
     "spine_main_taken",
     "spine_not_found",
     "spine_builtin_candidate",
@@ -2790,6 +2795,13 @@ pub fn write_not_durable(file: GraphFile, e: &FilesError) -> Problem {
         .with("os error", Slot::os(e))
 }
 
+pub fn rule_set_remove_not_durable(set: &str, error: &FilesError) -> Problem {
+    let file = umx_core::ports::RuleSetFile::new(set).expect("checked set name");
+    Problem::new("write_not_durable")
+        .with("file", Slot::File(FileRef::RuleSet(file)))
+        .with("os error", Slot::os(error))
+}
+
 /// A crash cut off a set of writes in `dir`, and `files` changed since (a pull, a checkout), so the adapter will
 /// not finish it and every call on the folder fails until a person resolves it. `graph` is the loaded graph's
 /// alias, if any, for the `umx check` next; otherwise the next is the graph docs, which say how to resolve it.
@@ -2817,6 +2829,23 @@ pub fn graph_files_changed(graph: &ValidName, dir: &GraphDir, files: &[FileRef])
 pub fn stale_files(graph: &ValidName, dir: &GraphDir, files: &[GraphFile]) -> Problem {
     let names: Vec<String> = files.iter().map(|f| f.file_name().to_string()).collect();
     files_moved(Problem::new("stale_files"), graph, dir, &names)
+}
+
+pub fn stale_set_files(graph: &ValidName, dir: &GraphDir, files: &[FileRef]) -> Problem {
+    let names = files.iter().map(FileRef::path).collect::<Vec<_>>();
+    files_moved(Problem::new("stale_files"), graph, dir, &names)
+}
+
+pub fn rule_sets_refresh_failed(graph: &ValidName, dir: &GraphDir, cause: &Problem) -> Problem {
+    let fix = Command::new("graph unload")
+        .name(graph)
+        .then("graph load")
+        .path(dir)
+        .word("--as")
+        .name(graph);
+    Problem::new("rule_sets_refresh_failed")
+        .with("reason", Slot::Os(SafeText::lossy(cause.code)))
+        .with("fix", Slot::Command(fix))
 }
 
 /// The next for both: unload and load the folder again under the same alias, the folder quoted when it holds a
@@ -3486,6 +3515,93 @@ pub fn rule_invalid(reason: &'static str) -> Problem {
     Problem::new("rule_invalid").with("reason", Slot::Word(reason))
 }
 
+pub fn rule_set_skipped(file: &str, reason: &'static str, graph: &ValidName) -> Problem {
+    let stem = file.strip_suffix(".json").unwrap_or(file);
+    let set = ValidName::alias(stem)
+        .map(Slot::Name)
+        .unwrap_or(Slot::Word("(that set file)"));
+    Problem::new("rule_set_skipped")
+        .with("set", set)
+        .with("reason", Slot::Word(reason))
+        .with(
+            "fix",
+            Slot::Command(Command::new("rule set list").word("--graph").name(graph)),
+        )
+        .candidates(alloc::vec![Candidate {
+            id: file.into(),
+            title: Some(file.into()),
+            score: None,
+        }])
+}
+
+pub fn rule_sets_cut(names: &[String], graph: &ValidName) -> Problem {
+    Problem::new("rule_sets_cut")
+        .with("count", Slot::Count(names.len() as u64))
+        .with(
+            "fix",
+            Slot::Command(Command::new("rule set list").word("--graph").name(graph)),
+        )
+        .candidates(
+            names
+                .iter()
+                .take(100)
+                .map(|name| Candidate {
+                    id: name.clone(),
+                    title: None,
+                    score: None,
+                })
+                .collect(),
+        )
+}
+
+pub fn rule_set_name_taken(set: &ValidName, graph: &ValidName) -> Problem {
+    Problem::new("rule_set_name_taken")
+        .with("set", Slot::Name(set.clone()))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("rule set remove")
+                    .name(set)
+                    .word("--graph")
+                    .name(graph),
+            ),
+        )
+}
+
+pub fn rule_sets_full(graph: &ValidName, names: &[String], directory_limited: bool) -> Problem {
+    Problem::new("rule_sets_full")
+        .with(
+            "reason",
+            Slot::Word(if directory_limited {
+                "the rules folder exceeds 1000 directory entries"
+            } else {
+                "the graph already holds 32 rule set files"
+            }),
+        )
+        .with(
+            "fix",
+            Slot::Command(if directory_limited {
+                Command::new("rule set list").word("--graph").name(graph)
+            } else {
+                Command::new("rule set remove")
+                    .word("<set>")
+                    .word("--graph")
+                    .name(graph)
+            }),
+        )
+        .candidates(
+            names
+                .iter()
+                .take(32)
+                .map(|name| Candidate {
+                    id: name.clone(),
+                    title: None,
+                    score: None,
+                })
+                .collect(),
+        )
+}
+
 pub fn rule_regex_invalid(reason: &'static str, position: usize) -> Problem {
     Problem::new("rule_regex_invalid")
         .with("reason", Slot::Word(reason))
@@ -3494,7 +3610,7 @@ pub fn rule_regex_invalid(reason: &'static str, position: usize) -> Problem {
 
 pub fn rule_vocabulary_unknown(rule: &str, at: &'static str, given: &str, fix: Command) -> Problem {
     Problem::new("rule_vocabulary_unknown")
-        .with("rule", Slot::name_or(rule, "(that rule)"))
+        .with("rule", rule_name_slot(rule))
         .with("at", Slot::Word(at))
         .with("name", Slot::name_or(given, "(that name)"))
         .with("fix", Slot::Command(fix))
@@ -3528,11 +3644,14 @@ pub fn rule_node_unchecked(given: &str, count: usize, fix: Command) -> Problem {
 }
 
 pub fn rule_skipped(given: &str, reason: &'static str, graph: &ValidName) -> Problem {
-    let rule = ValidName::new(given.strip_prefix("std:").unwrap_or(given)).expect("shape checked");
-    let fix = if given.starts_with("std:") {
-        Command::new("rule off").qualified("std:", &rule)
+    let fix = if given.contains(':') {
+        Command::new("rule off")
+            .rule_name(given)
+            .expect("shape checked")
     } else {
-        Command::new("rule remove").name(&rule)
+        Command::new("rule remove")
+            .rule_name(given)
+            .expect("shape checked")
     };
     Problem::new("rule_skipped")
         .with("name", rule_name_slot(given))
@@ -3613,6 +3732,9 @@ pub fn hub_edges_remain(hub: &str, count: u64, graph: &ValidName) -> Problem {
 }
 
 fn rule_name_slot(given: &str) -> Slot {
+    if !given.starts_with("std:") && given.contains(':') && umx_core::rules::name_ok(given) {
+        return Slot::Path(SafeText::words(given));
+    }
     Slot::name_or(given.strip_prefix("std:").unwrap_or(given), "(that rule)")
 }
 

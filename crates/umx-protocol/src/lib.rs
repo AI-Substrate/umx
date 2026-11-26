@@ -245,12 +245,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// (`--where <field>=<value>`); `ontology show` data carries `hubs`; node add, node edit and batch replies name the
 /// edges umx added for a hub (`hub_edges`); `auto_added_by` is a reserved edge field; new codes hub_invalid,
 /// hub_not_found, hub_joined (hint), hub_unjoined (hint), hub_scan_cut, hub_node_missing and hub_edges_remain.
+/// 109: graph-local RuleSetList, RuleSetAdd (copied UTF-8 content), and RuleSetRemove;
+/// rule_set_skipped, rule_sets_cut, rule_sets_full, rule_set_name_taken and rule_sets_refresh_failed;
+/// rule-check continuation keeps partial results on pathological nodes (usage 230).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 108;
+pub const PROTOCOL: u32 = 109;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -259,7 +262,7 @@ pub const PROTOCOL: u32 = 108;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (108, 0x7f24_4d69_9186_411f);
+const WIRE_FINGERPRINT: (u32, u64) = (109, 0x9b3a_97ea_4324_b4a7);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -2082,6 +2085,15 @@ pub enum Op {
     HubRemove {
         name: String,
     },
+    RuleSetList,
+    /// The CLI reads the source file; only its checked stem and copied UTF-8 content cross the wire.
+    RuleSetAdd {
+        name: String,
+        content: String,
+    },
+    RuleSetRemove {
+        name: String,
+    },
     /// `umx entity link <a> <b>` (ws008 E2): stores one `same_as` edge between two nodes, usually in two graphs, in
     /// the graph the request names (`--graph`), else in `a`'s. `dry_run` (ws008 E2b F179) checks it and reports what
     /// it would store and warn, writing nothing.
@@ -2396,6 +2408,9 @@ impl Op {
         "hub show",
         "hub fill",
         "hub remove",
+        "rule set list",
+        "rule set add",
+        "rule set remove",
     ];
 
     /// Labels only the graph view sends (ws009 S6): no CLI verb, so no example, help, flags row or skill home.
@@ -2507,6 +2522,9 @@ impl Op {
             Op::HubShow { .. } => 90,
             Op::HubFill { .. } => 91,
             Op::HubRemove { .. } => 92,
+            Op::RuleSetList => 93,
+            Op::RuleSetAdd { .. } => 94,
+            Op::RuleSetRemove { .. } => 95,
         }]
     }
 
@@ -2528,6 +2546,7 @@ impl Op {
                 | Op::RuleShow { .. }
                 | Op::HubList
                 | Op::HubShow { .. }
+                | Op::RuleSetList
                 | Op::Resolve { .. }
                 | Op::Query { .. }
                 | Op::Search { .. }
@@ -2609,6 +2628,8 @@ impl Op {
                 | Op::HubSet { .. }
                 | Op::HubFill { .. }
                 | Op::HubRemove { .. }
+                | Op::RuleSetAdd { .. }
+                | Op::RuleSetRemove { .. }
         )
     }
 
@@ -3765,8 +3786,8 @@ catalogue! {
         "<sentence>",
         "<fix>";
     RuleCheckCut => "rule_check_cut", Warning, 0,
-        "the deterministic whole-scan rule budget was reached; resume after the last fully checked node",
-        "The rule check reached its work limit. Resume after the last fully checked node.",
+        "the deterministic whole-scan rule budget was reached; resume after the last visited node, keeping any partial checks as not_checked",
+        "The rule check reached its work limit. Resume after the last visited node.",
         "<fix>";
     RuleSkipped => "rule_skipped", Warning, 0,
         "a stored rule exceeds this build's regex size or graph compile budget; its row is kept but not evaluated",
@@ -3799,6 +3820,26 @@ catalogue! {
     HubEdgesRemain => "hub_edges_remain", Warning, 0,
         "edges umx added for a hub stay after the hub is removed or moved; umx never removes them",
         "<count> edge(s) umx added for hub <hub> remain.",
+        "<fix>";
+    RuleSetSkipped => "rule_set_skipped", Warning, 0,
+        "a graph-local rule set is unreadable, malformed, over its row/file cap, or has an invalid file stem; none of its rules or switch-offs are used",
+        "Rule set <set> was skipped: <reason>. None of its rules or switch-offs are used.",
+        "<fix>";
+    RuleSetsCut => "rule_sets_cut", Warning, 0,
+        "more than 32 valid graph-local set files were found; only the first 32 in filename order are read, with the omitted names as candidates",
+        "<count> rule set files were left out after the first 32 in filename order. See candidates.",
+        "<fix>";
+    RuleSetNameTaken => "rule_set_name_taken", Error, 1,
+        "a graph-local set already has this name but different file content; nothing was written",
+        "Rule set <set> already has different content. Nothing changed.",
+        "<fix>";
+    RuleSetsFull => "rule_sets_full", Error, 1,
+        "adding a set exceeds 32 valid set files or the directory's 1000-entry listing bound; nothing was written",
+        "A rule set cannot be added: <reason>. Nothing changed.",
+        "<fix>";
+    RuleSetsRefreshFailed => "rule_sets_refresh_failed", Warning, 0,
+        "loaded rule sets could not be refreshed after a read or a saved copy change; any committed change stands, and graph-content writes require a reload",
+        "Loaded rule sets could not be refreshed: <reason>. Any saved change stands. Reload before editing graph content again.",
         "<fix>";
     // ws008 TM5 (req-149): declared spines.
     SpineNameUnknown => "spine_name_unknown", Error, 1,
@@ -6419,6 +6460,12 @@ mod tests {
             Op::HubRemove {
                 name: "register".into(),
             },
+            Op::RuleSetList,
+            Op::RuleSetAdd {
+                name: "kit".into(),
+                content: "{}".into(),
+            },
+            Op::RuleSetRemove { name: "kit".into() },
         ]
     }
 
@@ -6530,6 +6577,9 @@ mod tests {
             Op::HubShow { .. } => 100,
             Op::HubFill { .. } => 101,
             Op::HubRemove { .. } => 102,
+            Op::RuleSetList => 103,
+            Op::RuleSetAdd { .. } => 104,
+            Op::RuleSetRemove { .. } => 105,
         }
     }
 
@@ -6688,7 +6738,7 @@ mod tests {
         let seen: std::collections::BTreeSet<usize> = ops.iter().map(variant).collect();
         assert_eq!(
             (seen.len(), ops.len()),
-            (103, 103),
+            (106, 106),
             "one sample per Op variant"
         );
         let now = (PROTOCOL, fnv1a(wire_samples().as_bytes()));
