@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { WorkerMessage, WorkerRequest, WorkerStart } from "@/lib/graph/layout.worker";
 import { HUB_DEFAULTS, type LayoutMode } from "@/lib/graph/hubs";
+import { layoutRequest } from "@/components/use-layout";
 
 const replies: WorkerMessage[] = [];
 const worker = {
@@ -35,6 +36,58 @@ function run(request: WorkerStart) {
 }
 
 describe("layout worker boundary", () => {
+  it("lays out hidden nodes once, then filters and resolution changes return no coordinates", () => {
+    const request = fixture(30, "normal");
+    request.visible[5] = 0;
+    request.visible[8] = 0;
+    const first = run(request);
+    expect(first.ids).toEqual([...request.ids].sort());
+    expect(new Set(Array.from({ length: 30 }, (_, i) => `${first.positions[i * 2]},${first.positions[i * 2 + 1]}`)).size).toBe(30);
+    const before = { ...request, view: { index: request.graph } };
+    const visible = request.visible.slice();
+    visible[5] = 1;
+    visible[3] = 0;
+    const edges = request.edges.slice();
+    edges[0] = 0;
+    for (const change of [{ visible }, { edges }, { resolution: 2 }]) {
+      const after = { ...before, ...change };
+      const kind = layoutRequest(before, after);
+      if (kind !== "cluster") throw new Error("filter and resolution changes must only recluster");
+      replies.length = 0;
+      worker.onmessage!(new MessageEvent("message", { data: { ...request, ...change, kind } }));
+      expect(replies).toHaveLength(1);
+      expect(replies[0].kind).toBe("clusters");
+      expect(replies[0]).not.toHaveProperty("positions");
+    }
+    for (const change of [
+      { spacing: 3 },
+      { options: { ...request.options, mode: "degree" as const } },
+      { options: { ...request.options, degree: "incoming" as const } },
+      { options: { ...request.options, count: 3 } },
+    ]) expect(layoutRequest(before, { ...before, ...change })).toBe("start");
+  });
+
+  it("ignores identical shadow re-reads by content and only reclusters changed similarities", () => {
+    for (const mode of ["degree", "similarity"] as const) {
+      const request = fixture(30, mode);
+      const similarities = [
+        { a: request.ids[0], b: request.ids[1], score: 0.8 },
+        { a: request.ids[0], b: request.ids[2], score: 0.9 },
+      ];
+      const before = { ...request, view: { index: request.graph }, similarities };
+      expect(layoutRequest(before, { ...before, similarities: similarities.map((p) => ({ ...p })) })).toBeNull();
+      expect(layoutRequest(before, { ...before, similarities: [...similarities].reverse() })).toBeNull();
+      const changed = similarities.map((p) => ({ ...p, score: p.score - 0.1 }));
+      const kind = layoutRequest(before, { ...before, similarities: changed });
+      if (kind !== "cluster") throw new Error("a similarity change must only recluster");
+      replies.length = 0;
+      worker.onmessage!(new MessageEvent("message", { data: { ...request, similarities: changed, kind } }));
+      expect(replies).toHaveLength(1);
+      expect(replies[0].kind).toBe("clusters");
+      expect(replies[0]).not.toHaveProperty("positions");
+    }
+  });
+
   it("refreshes hub metadata after live changes without moving existing nodes", () => {
     const request = fixture(30, "similarity");
     const first = run(request);

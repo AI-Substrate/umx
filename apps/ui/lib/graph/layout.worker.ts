@@ -57,18 +57,27 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   plan.owner.forEach((head, i) => { if (head >= 0) hubs.owner.push([ids[i], ids[head]]); });
   post({ kind: "clusters", id: m.id, groups, ms: clusterMs, ...(m.kind === "cluster" ? { hubs } : {}) });
   if (m.kind === "cluster") return;
-  const centres = new Set(plan.centres);
-  const sizes = Float32Array.from(order.map((i, j) => centres.has(j) ? hubSize(m.sizes[i]) : m.sizes[i]));
+  // Hidden nodes need coordinates too: revealing one is a cluster-only update, not another full layout.
+  const all = canonicalGraph(m.graph, m.ids, new Uint8Array(m.graph.n).fill(1), m.edges);
+  const at = new Int32Array(m.graph.n);
+  all.order.forEach((i, j) => { at[i] = j; });
+  const wholePlan = { ...plan, centres: plan.centres.map((i) => at[order[i]]), owner: new Int32Array(all.graph.n).fill(-1) };
+  plan.owner.forEach((head, i) => { if (head >= 0) wholePlan.owner[at[order[i]]] = at[order[head]]; });
+  const wholeGroups: Groups = {
+    of: Int32Array.from(all.order.map((i) => groups.of[i])), sizes: found.sizes, heads: found.heads.map((i) => at[order[i]]),
+  };
+  const centres = new Set(wholePlan.centres);
+  const sizes = Float32Array.from(all.order.map((i, j) => centres.has(j) ? hubSize(m.sizes[i]) : m.sizes[i]));
   const keep = m.keep ? {
-    positions: Float32Array.from(order.flatMap((i) => [m.keep!.positions[i * 2], m.keep!.positions[i * 2 + 1]])),
-    fixed: Uint8Array.from(order.map((i) => m.keep!.fixed[i])),
+    positions: Float32Array.from(all.order.flatMap((i) => [m.keep!.positions[i * 2], m.keep!.positions[i * 2 + 1]])),
+    fixed: Uint8Array.from(all.order.map((i) => m.keep!.fixed[i])),
   } : undefined;
-  const result = layOut(graph, found, sizes, { seed: m.seed, spacing: m.spacing }, Math.max(0, m.budgetMs - (performance.now() - started)), (positions, progress) => {
-    post({ kind: "tick", id: m.id, ids, positions, progress }, [positions.buffer]);
+  const result = layOut(all.graph, wholeGroups, sizes, { seed: m.seed, spacing: m.spacing }, Math.max(0, m.budgetMs - (performance.now() - started)), (positions, progress) => {
+    post({ kind: "tick", id: m.id, ids: all.ids, positions, progress }, [positions.buffer]);
   }, keep);
   // An agent's open preserves existing positions; explicit layout changes run without keep.
-  if (plan.centres.length > 0 && !keep?.fixed.includes(1)) result.positions = fanLayout(result.positions, sizes, plan, m.spacing);
+  if (wholePlan.centres.length > 0 && !keep?.fixed.includes(1)) result.positions = fanLayout(result.positions, sizes, wholePlan, m.spacing);
   result.ms = Math.round(performance.now() - started);
   result.capped ||= result.ms >= m.budgetMs;
-  post({ kind: "done", id: m.id, ids, ...result, hubs }, [result.positions.buffer]);
+  post({ kind: "done", id: m.id, ids: all.ids, ...result, hubs }, [result.positions.buffer]);
 };
