@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "umx"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "umx-cli",
  "umx-compose",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "umx-adapter-azure-openai"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "umx-adapter-fs"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "libc",
  "serde_json",
@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "umx-adapter-llamacpp"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "llama-cpp-2",
  "serde_json",
@@ -917,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "umx-adapter-model-fetch"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "umx-contracts",
  "umx-core",
@@ -926,7 +926,7 @@ dependencies = [
 
 [[package]]
 name = "umx-adapter-system"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "libc",
  "ulid",
@@ -936,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "umx-arch"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -945,7 +945,7 @@ dependencies = [
 
 [[package]]
 name = "umx-bench"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
  "sha2",
@@ -958,14 +958,14 @@ dependencies = [
 
 [[package]]
 name = "umx-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "umx-protocol",
 ]
 
 [[package]]
 name = "umx-compose"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "umx-adapter-azure-openai",
  "umx-adapter-fs",
@@ -981,14 +981,14 @@ dependencies = [
 
 [[package]]
 name = "umx-contracts"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "umx-core",
 ]
 
 [[package]]
 name = "umx-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "libm",
  "serde",
@@ -999,14 +999,14 @@ dependencies = [
 
 [[package]]
 name = "umx-cypher"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "umx-daemon"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
  "umx-compose",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "umx-fakes"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "umx-contracts",
  "umx-core",
@@ -1026,7 +1026,7 @@ dependencies = [
 
 [[package]]
 name = "umx-graph"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "hashbrown",
  "libm",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "umx-protocol"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1044,7 +1044,7 @@ dependencies = [
 
 [[package]]
 name = "umx-query"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
  "umx-core",
@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "umx-services"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "regex-automata",
  "regex-syntax",

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.1](https://github.com/AI-Substrate/umx/compare/v0.6.0...v0.6.1) (2026-11-26)
+
+
+### Features
+
+* add graph-local rule sets and risk ownership advice ([8aa1af7](https://github.com/AI-Substrate/umx/commit/8aa1af7a4bf5d9756252ee60c25cb514af87b263))
+
+
+### Bug Fixes
+
+* hub follow-ups ([942bcc6](https://github.com/AI-Substrate/umx/commit/942bcc60afdcfa99de2dda922fb3ab9c04e23966))
+* version non-std rule switches and guide snapshot reloads ([1d3ae32](https://github.com/AI-Substrate/umx/commit/1d3ae32827efb1dee47fc8b34aef276d3e07fe92))
+
+
+### Documentation
+
+* PRD 003, a hub whose node is retired or gone says so ([2618a39](https://github.com/AI-Substrate/umx/commit/2618a397cb044fa3f6f4a2b5d503036c3e1b47c8))
+* rules and hubs read end to end; the skill sets meetings up as hubs on the meeting spine ([3465eb7](https://github.com/AI-Substrate/umx/commit/3465eb7c74f79be8ad4a37ba4fcf7bd58168e14f))
+* set the meeting spine as main only when the graph has none ([4cab734](https://github.com/AI-Substrate/umx/commit/4cab7343d8ed40bdfba0bc059ef4961b2f6bbe27))
+
 ## [0.6.0](https://github.com/AI-Substrate/umx/compare/v0.5.2...v0.6.0) (2026-11-26)
 
 
