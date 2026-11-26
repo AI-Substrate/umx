@@ -137,7 +137,8 @@ Every graph or set's `rules_off` contributes to one union, suppressing any rule 
 name, including another set's or the graph's own. Only own rows and own switch-offs are
 stored in graph.json, sorted by name.
 
-The first stored rule or switch-off raises graph.json to format 8. Older umx refuses that
+The first stored graph rule or central-rule switch-off raises graph.json to format 8.
+Switch-offs naming non-std rules require format 10. Older umx refuses an unsupported
 format rather than dropping rules. A graph with no rules keeps its format and encoding;
 removing the last rule never lowers a format already written. Hand-edited malformed rows
 or unparseable regexes are refused at load with the reason. A stored regex that exceeds this

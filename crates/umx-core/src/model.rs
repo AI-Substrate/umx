@@ -59,7 +59,8 @@ impl GraphMeta {
     pub fn needed_format(&self) -> u32 {
         let roles =
             self.ontology.has_roles() || self.embedding.as_ref().is_some_and(|e| e.text_form >= 2);
-        if !self.rule_sets.is_empty() {
+        if !self.rule_sets.is_empty() || self.rules_off.iter().any(|name| !name.starts_with("std:"))
+        {
             FORMAT_RULE_SETS
         } else if !self.hubs.is_empty() {
             FORMAT_HUBS

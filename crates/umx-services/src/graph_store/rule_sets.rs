@@ -183,8 +183,8 @@ pub(super) fn moved_sets(
     before: &SetReads,
     graph: &ValidName,
 ) -> Result<Vec<FileRef>, Problem> {
-    if let Some(problem) = &before.failed {
-        return Err(problem.clone());
+    if before.failed.is_some() {
+        return Err(problems::graph_files_changed(graph, dir, &before.files));
     }
     let listing = match files.list_rule_sets(dir) {
         Ok(listing) => listing,

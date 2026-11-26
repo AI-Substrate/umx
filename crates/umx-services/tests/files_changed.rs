@@ -212,10 +212,11 @@ fn rule_sets_committed_changes_survive_refresh_failure_and_writes_require_reload
         fake.read_ref(&dir, &file).unwrap().as_deref(),
         Some(&b"{}"[..])
     );
-    assert_eq!(
-        add(&mut svc, "Blocked until reload").unwrap_err().code,
-        "recovery_conflict"
-    );
+    let refused = add(&mut svc, "Blocked until reload").unwrap_err();
+    assert_eq!(refused.code, "graph_files_changed");
+    let next = refused.slot("fix").unwrap();
+    assert!(next.contains("umx graph unload demo"));
+    assert!(next.contains("umx graph load /work/g --as demo"));
     svc.graph_load(&ctx(), "/work/g", Some("demo")).unwrap();
     add(&mut svc, "Reloaded").unwrap();
     let removed = svc.rule_set_remove(&ctx(), "kit").unwrap();
@@ -227,11 +228,13 @@ fn rule_sets_committed_changes_survive_refresh_failure_and_writes_require_reload
             .any(|problem| problem.code == "rule_sets_refresh_failed")
     );
     assert_eq!(fake.read_ref(&dir, &file).unwrap(), None);
-    assert_eq!(
-        add(&mut svc, "Last copy is gone but snapshot failed")
-            .unwrap_err()
-            .code,
-        "recovery_conflict"
+    let refused = add(&mut svc, "Last copy is gone but snapshot failed").unwrap_err();
+    assert_eq!(refused.code, "graph_files_changed");
+    assert!(
+        refused
+            .slot("fix")
+            .unwrap()
+            .contains("umx graph load /work/g --as demo")
     );
     svc.graph_load(&ctx(), "/work/g", Some("demo")).unwrap();
     add(&mut svc, "Reloaded after removal").unwrap();

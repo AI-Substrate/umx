@@ -880,6 +880,30 @@ mod tests {
     }
 
     #[test]
+    fn non_std_rule_switches_require_rule_set_format_before_decoding() {
+        for name in ["myset:foo", "local"] {
+            let mut meta = decode_graph(V1.as_bytes()).unwrap();
+            meta.rules_off.push("std:owned".into());
+            assert_eq!(
+                decode_graph_with_version(&encode_graph(&meta), 9)
+                    .unwrap()
+                    .umx,
+                crate::model::FORMAT_RULES
+            );
+            meta.rules_off.push(name.into());
+            let bytes = encode_graph(&meta);
+            assert_eq!(
+                decode_graph(&bytes).unwrap().umx,
+                crate::model::FORMAT_RULE_SETS
+            );
+            assert_eq!(
+                decode_graph_with_version(&bytes, 9).unwrap_err().reason,
+                DecodeReason::NewerFormat(crate::model::FORMAT_RULE_SETS)
+            );
+        }
+    }
+
+    #[test]
     fn hubs_raise_format_only_when_declared_and_older_readers_refuse_them() {
         let mut meta = decode_graph(V1.as_bytes()).unwrap();
         let before = encode_graph(&meta);
