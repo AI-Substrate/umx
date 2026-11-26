@@ -105,6 +105,7 @@ Every topic, also printed by `umx <noun> --help`:
     umx docs get git         # graphs in git: diffs, unload before git, merging branches, umx check
     umx docs get graph       # graphs: new, load, list, set, unload, check; choosing a graph with --graph
     umx docs get rules       # graph rule declarations, pattern previews and central switch-offs
+    umx docs get hubs        # where nodes gather: risk registers, meetings, auto-added members
     umx docs get graphfile   # a repository's list of its graphs: graph scan, load --graphfile
     umx docs get node        # nodes: add, get, list, find, edit, note, status, history
     umx docs get edge        # edges: add, list

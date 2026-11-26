@@ -47,6 +47,7 @@ A module missing at its path: say so and stop. Never improvise a route from memo
 | `umx node note` `umx resource show` `umx resource refresh` `umx embeddings allow` `umx root add` `umx root list` `umx root remove` | ingest |
 | `umx query` | query |
 | `umx rule list` `umx rule add` `umx rule remove` `umx rule off` `umx rule on` `umx rule show` | build |
+| `umx hub list` `umx hub set` `umx hub show` `umx hub fill` `umx hub remove` | build |
 | `umx scope save` `umx scope list` `umx scope show` `umx scope delete` `umx entity key` `umx entity link` `umx entity unlink` `umx entity deny` `umx entity undeny` `umx entity show` `umx graph primary` `umx graph rename` `umx graph move` | multi-graph |
 | `umx graph scan` `umx graph guide` `umx graph list` `umx graph load` `umx node get` `umx node list` `umx node find` `umx search` `umx node history` `umx node who` `umx who` `umx edge list` `umx edge show` `umx neighbours` `umx walk` `umx path` `umx resolve` `umx ui` `umx ui focus` `umx ui highlight` `umx ui filter` `umx ui fit` `umx ui clear` `umx ui open` `umx ui selection` `umx ui status` `umx ui stop` `umx similarity pairs` | explore |
 | `umx ui lan-password` | start |

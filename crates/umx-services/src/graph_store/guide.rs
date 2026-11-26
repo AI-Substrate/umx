@@ -73,7 +73,7 @@ pub struct GuideRule {
     pub description: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Guide {
     pub alias: String,
     pub title: String,
@@ -91,6 +91,8 @@ pub struct Guide {
     /// The best spine `graph spine propose` offers, with its cover (B4); a hint, never a warning.
     pub spine: super::SpineLine,
     pub rules: Vec<GuideRule>,
+    /// The graph's hubs (PRD 003 rules-32): where things gather, the relation and the edge that adds a member.
+    pub hubs: Vec<super::HubRow>,
 }
 
 /// A name, whether the ontology declares it, and its tally when records use it.
@@ -427,6 +429,7 @@ impl GraphStore {
                 relations,
                 spine: super::spine::spine_line(g, o, &graph),
                 rules,
+                hubs: super::hubs::hub_rows(&l.meta, g, &graph),
             },
             notes: warnings,
         })

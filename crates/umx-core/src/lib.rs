@@ -24,6 +24,7 @@ pub mod ontology;
 pub mod place;
 pub mod ports;
 pub mod problem;
+pub mod hubs;
 pub mod provenance;
 pub mod receipts;
 pub mod registry;

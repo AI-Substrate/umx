@@ -92,6 +92,23 @@ pub const FLAGS: &[(&str, &[&str])] = &[
     ("rule off", &[]),
     ("rule on", &[]),
     ("rule show", &["--limit", "--offset"]),
+    ("hub list", &[]),
+    (
+        "hub set",
+        &[
+            "--node",
+            "--type-hub",
+            "--via",
+            "--type",
+            "--status",
+            "--tag",
+            "--where",
+            "--match",
+        ],
+    ),
+    ("hub show", &["--limit", "--offset"]),
+    ("hub fill", &["--after"]),
+    ("hub remove", &[]),
     (
         "check",
         &[
@@ -386,6 +403,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--after",
             "--before",
             "--provenance",
+            "--where",
         ],
     ),
     ("ontology show", &["--std"]),
@@ -902,32 +920,14 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
     }
     .with(a))
 }
-fn rule_add(a: Args) -> Result<Parsed, Usage> {
-    let fail = |what| Usage {
-        command: "rule add",
-        what,
-    };
-    let mut rule = umx_protocol::json!({"name": a.positionals(1, "give one rule name")?.remove(0)});
+/// `--type`, `--status`, `--tag`, `--where` and `--match` as a pattern object (a rule's or a named hub's match).
+fn pattern_flags(a: &Args, command: &'static str) -> Result<umx_protocol::Value, Usage> {
+    let fail = |what| Usage { command, what };
     let mut pattern = umx_protocol::json!({});
-    for flag in ["--type", "--status", "--tag", "--from", "--to"] {
-        let mut values = Vec::new();
-        for value in a.all(flag) {
-            for part in value.split(',') {
-                if part.trim().is_empty() {
-                    return Err(fail("rule lists need nonempty entries"));
-                }
-                values.push(part.trim().to_owned());
-            }
-        }
-        values.sort();
-        values.dedup();
+    for flag in ["--type", "--status", "--tag"] {
+        let values = list_flag(a, flag).map_err(fail)?;
         if !values.is_empty() {
-            let target = if matches!(flag, "--from" | "--to") {
-                &mut rule
-            } else {
-                &mut pattern
-            };
-            target[&flag[2..]] = umx_protocol::json!(values);
+            pattern[&flag[2..]] = umx_protocol::json!(values);
         }
     }
     for (flag, key) in [("--where", "field"), ("--match", "regex")] {
@@ -946,6 +946,38 @@ fn rule_add(a: Args) -> Result<Parsed, Usage> {
             } else {
                 parse_json(value).unwrap_or_else(|| umx_protocol::json!(value))
             };
+        }
+    }
+    Ok(pattern)
+}
+
+/// A comma list flag given any number of times, trimmed, sorted and without repeats.
+fn list_flag(a: &Args, flag: &str) -> Result<Vec<String>, &'static str> {
+    let mut values = Vec::new();
+    for value in a.all(flag) {
+        for part in value.split(',') {
+            if part.trim().is_empty() {
+                return Err("rule lists need nonempty entries");
+            }
+            values.push(part.trim().to_owned());
+        }
+    }
+    values.sort();
+    values.dedup();
+    Ok(values)
+}
+
+fn rule_add(a: Args) -> Result<Parsed, Usage> {
+    let fail = |what| Usage {
+        command: "rule add",
+        what,
+    };
+    let mut rule = umx_protocol::json!({"name": a.positionals(1, "give one rule name")?.remove(0)});
+    let pattern = pattern_flags(&a, "rule add")?;
+    for flag in ["--from", "--to"] {
+        let values = list_flag(&a, flag).map_err(fail)?;
+        if !values.is_empty() {
+            rule[&flag[2..]] = umx_protocol::json!(values);
         }
     }
     for (flag, key) in [
@@ -1011,6 +1043,50 @@ pub fn batch(words: &[&str]) -> Result<(String, Vec<String>, Parsed), Usage> {
 pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
     // Top-level verbs that are operations (workshop 007 rule 1).
     match words {
+        ["hub", verb, rest @ ..] => {
+            let command = known("hub", verb).ok_or(Usage {
+                command: "hub list",
+                what: "hub takes list, set, show, fill or remove",
+            })?;
+            let a = Args::new(command, rest)?;
+            if *verb == "list" {
+                a.positionals(0, "hub list takes no positional arguments")?;
+                return Ok(Op::HubList.with(a));
+            }
+            let name = a.positionals(1, "give one hub name")?.remove(0);
+            let op = match *verb {
+                "set" => {
+                    for flag in ["--node", "--type-hub", "--via"] {
+                        if a.all(flag).len() > 1 {
+                            return Err(Usage {
+                                command: "hub set",
+                                what: "give --node, --type-hub and --via once each",
+                            });
+                        }
+                    }
+                    let pattern = pattern_flags(&a, "hub set")?;
+                    Op::HubSet {
+                        name,
+                        node: a.one("--node"),
+                        type_hub: a.one("--type-hub"),
+                        via: a.one("--via"),
+                        pattern: (pattern != umx_protocol::json!({})).then_some(pattern),
+                    }
+                }
+                "show" => Op::HubShow {
+                    name,
+                    limit: a.number("--limit")?,
+                    offset: a.number("--offset")?,
+                },
+                "fill" => Op::HubFill {
+                    name,
+                    after: a.one("--after"),
+                },
+                "remove" => Op::HubRemove { name },
+                _ => unreachable!("known hub verb"),
+            };
+            return Ok(op.with(a));
+        }
         ["rule", verb, rest @ ..] => {
             let command = known("rule", verb).ok_or(Usage {
                 command: "rule list",
@@ -1664,6 +1740,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                 limit: a.number("--limit")?,
                 offset: a.number("--offset")?,
                 along: a.along()?,
+                wheres: a.all("--where"),
             }
             .with(a)
         }

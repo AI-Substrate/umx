@@ -14,6 +14,7 @@ mod external;
 mod external_ends_tests;
 mod graph;
 mod graphfile;
+mod hubs;
 mod guide;
 mod ignore;
 mod incoming;
@@ -121,6 +122,9 @@ pub(crate) use resolve::check_evidence;
 pub use resolve::{ResolveStatus, Resolved, Target};
 pub use resources::ResourceShown;
 pub use rule_check::{RuleCheckRequest, RuleFinding, RulesChecked};
+pub use hubs::{
+    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
+};
 pub use rules::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub(crate) use scopes::SavedRead;
 pub use scopes::{Scope, ScopeInfo, ScopeMemberInfo};
@@ -1344,6 +1348,7 @@ mod tests {
             former_paths: Vec::new(),
             rules: Vec::new(),
             rules_off: Vec::new(),
+            hubs: Vec::new(),
             umx: FORMAT_VERSION,
             id: Id(1),
             alias: "demo".into(),

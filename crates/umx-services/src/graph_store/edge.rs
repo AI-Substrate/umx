@@ -160,6 +160,9 @@ pub struct EdgeListRequest {
     pub offset: usize,
     /// `--along` (D71 step 12): keep only the edges whose ends the spine both places in range.
     pub along: Option<super::AlongRequest>,
+    /// `--where <field>=<value>`: keep the edges whose field holds exactly that value (text, or the JSON it parses
+    /// as), every one given.
+    pub wheres: Vec<String>,
 }
 
 impl Default for EdgeListRequest {
@@ -171,6 +174,7 @@ impl Default for EdgeListRequest {
             limit: 100,
             offset: 0,
             along: None,
+            wheres: Vec::new(),
         }
     }
 }
@@ -1045,6 +1049,17 @@ impl GraphStore {
         access: &Ctx,
     ) -> Outcome<Page<EdgeRow>> {
         let access = self.external_access(access)?;
+        let mut wheres = Vec::new();
+        for expr in &req.wheres {
+            match super::node::where_parts(expr)? {
+                (field, umx_graph::Op::Eq, raw) => wheres.push((field, raw)),
+                _ => {
+                    return Err(problems::where_invalid(
+                        "edge list --where takes <field>=<value>",
+                    ));
+                }
+            }
+        }
         let refs = [req.from.as_deref(), req.to.as_deref()];
         let alias = self.external_read_alias(ctx, &refs)?;
         let l = self.get(&alias);
@@ -1079,6 +1094,12 @@ impl GraphStore {
             .collect();
         let keep = |owner: &str, graph: Id, edge: EdgeRef<'_>| {
             req.kind.as_deref().is_none_or(|kind| edge.kind() == kind)
+                && wheres.iter().all(|(field, raw)| {
+                    edge.field(field).is_some_and(|v| {
+                        v.as_str() == Some(raw.as_str())
+                            || (!v.is_string() && v.to_string() == *raw)
+                    })
+                })
                 && from.is_none_or(|node| {
                     edge.from() == node && edge.from_graph().unwrap_or(graph) == l.meta.id
                 })

@@ -269,6 +269,8 @@ pub struct BatchRow {
     pub changed: Vec<String>,
     /// An edge add whose edge already existed: nothing was added.
     pub existed: bool,
+    /// The edges umx added on this line to put its node in the named hubs it matches (PRD 003 hubs).
+    pub hub_edges: Vec<Id>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -507,6 +509,9 @@ struct Run<'a, 'g> {
     /// Each touched node with the first line that touched it (ws002 X1, review R3: a batch's segment hint names it).
     touched_at: BTreeMap<Id, u32>,
     session: Option<Id>,
+    /// PRD 003 hubs: the named hubs with a pattern, and the edges this batch added to them.
+    joiner: super::hubs::Joiner,
+    joins: Vec<super::HubJoin>,
 }
 
 type LineResult = Result<(BatchRow, Vec<Problem>), Problem>;
@@ -533,6 +538,7 @@ fn row(line: u32, op: &'static str) -> BatchRow {
         raised_in: None,
         changed: Vec::new(),
         existed: false,
+        hub_edges: Vec::new(),
     }
 }
 
@@ -553,6 +559,7 @@ fn reply_bound(
                 + r.ref_name.as_ref().map_or(0, String::len)
                 + r.changed.iter().map(|c| c.len() + 3).sum::<usize>()
                 + r.raised_in.as_ref().map_or(0, |a| 96 + a.len())
+                + 32 * r.hub_edges.len()
         })
         .sum();
     let issue: usize = problems.iter().map(|p| issue_bound(p)).sum();
@@ -1017,10 +1024,48 @@ impl Run<'_, '_> {
         }
         let mut r = row(line, "node add");
         self.place_edges(&mut r, edge, raised);
+        self.join_hubs(line, id, None, session, &mut r);
         self.nodes = true;
         self.touch(id, line);
         r.id = Some(id);
         Ok((r, warnings))
+    }
+
+    /// PRD 003 hubs: puts node `id`, as the batch now holds it, in each named hub it matches and is not yet a member
+    /// of; for an edit, only a hub it did not match `before`. The edges are named on the row.
+    fn join_hubs(&mut self, line: u32, id: Id, before: Option<&umx_core::Node>, session: Id, r: &mut BatchRow) {
+        if self.joiner.is_empty() {
+            return;
+        }
+        let Some(node) = self.b.graph().node(id).map(|n| n.to_node()) else {
+            return;
+        };
+        for (hub, via, to) in self.joiner.wanted(&node, before) {
+            if self.ends_out(id, &via).contains(&StoredEnd::local(to)) {
+                continue;
+            }
+            let edge = self.next_id(line);
+            self.added_edges
+                .insert((StoredEnd::local(id), via.clone(), StoredEnd::local(to)), edge);
+            self.b.insert_edge(super::hubs::hub_edge(
+                edge,
+                id,
+                &hub,
+                &via,
+                to,
+                &self.now,
+                &self.ctx.by,
+                session,
+            ));
+            self.edges = true;
+            r.hub_edges.push(edge);
+            self.joins.push(super::HubJoin {
+                hub,
+                edge,
+                node: id,
+                to,
+            });
+        }
     }
 
     /// A node add's part_of edge from `node` to `parent`: its preplanned id, else one drawn now (an on_key line is
@@ -1344,6 +1389,7 @@ impl Run<'_, '_> {
             .pair(line, node.as_deref(), node_ref.as_deref(), "node", true)?
             .expect("a needed node");
         let mut n = self.b.graph().node(id).expect("a resolved node").to_node();
+        let before = n.clone();
         let mut warnings = Vec::new();
         let changed = edit_node(
             &self.graph,
@@ -1359,6 +1405,10 @@ impl Run<'_, '_> {
             self.replace_node(line, n, true, evidence_start, &mut warnings)?;
         }
         let mut r = row(line, "node edit");
+        if !changed.is_empty() {
+            let session = self.session(line, &mut warnings)?;
+            self.join_hubs(line, id, Some(&before), session, &mut r);
+        }
         r.id = Some(id);
         r.changed = changed;
         Ok((r, warnings))
@@ -2344,7 +2394,9 @@ impl GraphStore {
                 .map(|id| id.0)
                 .max()
                 .unwrap_or(0);
-            let needed = 3 * req.lines.len() as u128 + super::provenance::MAX_NEW_IDS;
+            // Each node line may also join up to MAX_HUBS hubs (PRD 003 hubs).
+            let needed = (3 + umx_core::hubs::MAX_HUBS as u128) * req.lines.len() as u128
+                + super::provenance::MAX_NEW_IDS;
             if base > u128::MAX - needed {
                 return Err(alloc::vec![problems::internal("dry_run_ids")]);
             }
@@ -2365,7 +2417,10 @@ impl GraphStore {
             written_umx,
             provenance_changed,
         ) = {
+            let joiner = super::hubs::Joiner::new(meta, g);
             let mut run = Run {
+                joiner,
+                joins: Vec::new(),
                 ctx,
                 alias: &alias,
                 graph: alias_name(&alias),
@@ -2620,6 +2675,7 @@ impl GraphStore {
                     hints.push(hint.at_line(*line));
                 }
             }
+            hints.extend(super::hubs::joined_hints(&run.joins, &run.graph));
             if warned > MAX_BATCH_WARNINGS {
                 warnings.push(problems::batch_warnings_truncated(
                     warned,
@@ -2667,6 +2723,7 @@ impl GraphStore {
                     }
                     r.parent_edge = None;
                     r.raised_in_edge = None;
+                    r.hub_edges.clear();
                 }
                 for sentence in &mut run.sentences {
                     if sentence.id.is_some_and(|id| run.minted.contains_key(&id)) {

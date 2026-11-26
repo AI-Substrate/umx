@@ -127,6 +127,8 @@ pub struct NodeEdited {
     pub node: Node,
     /// Field names that changed, in the order given; empty when the edit changed nothing (and nothing was written).
     pub changed: Vec<String>,
+    /// The edges umx added in the same write because the edit made the node match a named hub (PRD 003 hubs).
+    pub hub_edges: Vec<super::HubJoin>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -590,15 +592,32 @@ impl GraphStore {
         &mut self,
         ctx: &Ctx,
         alias: &str,
-        mut node: Node,
+        node: Node,
         evidence_start: usize,
     ) -> Outcome<Node> {
+        let done = self.write_node_joining(ctx, alias, node, evidence_start, None)?;
+        Ok(Done {
+            value: done.value.0,
+            notes: done.notes,
+        })
+    }
+
+    /// [`Self::write_node`], joining the node in the same write to the named hubs the change makes it match
+    /// (`joiner`, node edit only: PRD 003 hubs).
+    fn write_node_joining(
+        &mut self,
+        ctx: &Ctx,
+        alias: &str,
+        mut node: Node,
+        evidence_start: usize,
+        mut joiner: Option<super::hubs::Joiner>,
+    ) -> Outcome<(Node, Vec<super::HubJoin>)> {
         canonical_keys(&mut node, super::tags::is_std(self.get(alias).ontology()));
         let id = node.id;
         let before = self.get(alias).graph.node(id).map(|old| old.to_node());
         let allows = self.secret_allows();
         let mut warnings = Vec::new();
-        let mut done = self.attributed_write(ctx, alias, |batch, session, _, _, meta| {
+        let mut done = self.attributed_write(ctx, alias, |batch, session, next, now, meta| {
             warnings.extend(
                 super::secrets::node_write_secrets(
                     before.as_ref(),
@@ -624,7 +643,21 @@ impl GraphStore {
             batch
                 .insert_node(node.clone())
                 .map_err(|e| problems::image_full(&e))?;
-            Ok(node)
+            let joined = match joiner.as_mut() {
+                Some(joiner) => super::hubs::join_in(
+                    batch,
+                    joiner,
+                    &node,
+                    before.as_ref(),
+                    &[],
+                    session,
+                    next,
+                    now,
+                    &ctx.by,
+                ),
+                None => Vec::new(),
+            };
+            Ok((node, joined))
         })?;
         warnings.append(&mut done.notes);
         done.notes = warnings;
@@ -636,12 +669,14 @@ impl GraphStore {
         done.notes.extend(key_warnings(
             &alias_name(alias),
             &self.get(alias).graph,
-            &done.value,
+            &done.value.0,
         ));
         done.notes.extend(super::node::title_key_warnings(
             before.as_ref(),
-            &done.value,
+            &done.value.0,
         ));
+        done.notes
+            .extend(super::hubs::joined_hints(&done.value.1, &alias_name(alias)));
         Ok(done)
     }
 
@@ -670,11 +705,14 @@ impl GraphStore {
             }
             warnings.extend(more);
         }
+        let mut hub_edges = Vec::new();
         if !changed.is_empty() {
             n.updated = self.now();
             let evidence_start = n.evidence.len();
-            let done = self.write_node(ctx, &alias, n, evidence_start)?;
-            n = done.value;
+            let l = self.get(&alias);
+            let joiner = Some(super::hubs::Joiner::new(&l.meta, &l.graph));
+            let done = self.write_node_joining(ctx, &alias, n, evidence_start, joiner)?;
+            (n, hub_edges) = done.value;
             warnings.extend(done.notes);
             let parent = super::node::has_part_of(&self.get(&alias).graph, n.id);
             warnings.extend(super::node::segment_hint(&graph, &n, parent));
@@ -684,6 +722,7 @@ impl GraphStore {
                 alias,
                 node: n,
                 changed,
+                hub_edges,
             },
             notes: warnings,
         })

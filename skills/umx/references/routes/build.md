@@ -69,6 +69,14 @@ node fix, or use `umx check --rules --rule <name>` to list findings; plain check
 Follow returned `next`/`resume` commands for offset pages and `--after` scan continuation.
 `not_checked` is not `unmet`; an incomplete total is null. Named rule sets and hubs remain separate.
 
+**usage 229**: hubs say where nodes gather. Run `umx hub list` before adding nodes and put each
+node in the hubs it belongs to with the edge it prints (`umx edge add <node> part_of <hub>`, or
+`--raised-in <meeting>`). To set up a risk register: add its node, then
+`umx hub set risk_register --node <id> --type risk`; umx joins every risk now and each new one
+later, says `hub_joined`, and marks the edge `auto_added_by`. For meetings:
+`umx hub set meetings --type-hub meeting --via raised_in` (no pattern; the writer links each
+point). Follow `hub_scan_cut`'s `umx hub fill <name> --after <node>`. `umx docs get hubs`.
+
 - See it: `umx ontology show`.
 - **usage 007**: the vocabulary is soft. A write with an undeclared name warns `off_vocabulary_type` (or
   status, relation, field) with the `umx ontology add ...` that declares it. If the name is right for this

@@ -382,6 +382,7 @@ pub fn usage(command: &str, what: &'static str) -> Envelope {
         Some("edge") => "edge",
         Some("ontology") => "ontology",
         Some("rule") => "rules",
+        Some("hub") => "hubs",
         Some("config") => "config",
         Some("embeddings") => "embeddings",
         Some("neighbours" | "walk" | "path" | "resolve") => "explore",
@@ -412,7 +413,7 @@ fn dispatch(args: &[String], ctx: &Context) -> Envelope {
         [
             "graph" | "node" | "edge" | "ontology" | "check" | "config" | "embeddings"
             | "similarity" | "neighbours" | "walk" | "path" | "search" | "query" | "scope"
-            | "resolve" | "root" | "entity" | "resource" | "who" | "rule",
+            | "resolve" | "root" | "entity" | "resource" | "who" | "rule" | "hub",
             ..,
         ] => typed(&words, ctx),
         ["ui", verb, ..] if is_ui_verb(verb) => typed(&words, ctx),

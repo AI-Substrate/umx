@@ -142,6 +142,7 @@ pub fn generate(seed: u64, nodes: usize, edges_per_node: usize, rich: bool) -> F
         former_paths: Vec::new(),
         rules: Vec::new(),
         rules_off: Vec::new(),
+        hubs: Vec::new(),
         umx: 1,
         id: next_id(),
         alias: "bench".into(),

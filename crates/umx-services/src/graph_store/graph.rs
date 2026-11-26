@@ -408,6 +408,7 @@ impl GraphStore {
             former_paths: Vec::new(),
             rules: Vec::new(),
             rules_off: Vec::new(),
+            hubs: Vec::new(),
             umx: 1,
             id: self.ports.ids.next_id(),
             alias: alias.as_str().to_string(),
@@ -776,6 +777,7 @@ impl GraphStore {
         }
         rules.extend(type_column_rules(&alias, &meta));
         rules.extend(super::rules::stored_notes(&meta, &alias)?);
+        rules.extend(super::hubs::missing_notes(&meta, &graph, &alias));
         let hidden = rules.len().saturating_sub(MAX_LOAD_WARNINGS);
         rules.truncate(MAX_LOAD_WARNINGS);
         if hidden > 0 {

@@ -46,6 +46,8 @@ pub const RESERVED_NODE_FIELDS: &[&str] = &[
 /// refuse); refused as custom field names (rule 4). Checked on write only, so a graph that
 /// already holds one of these as a custom field still loads.
 pub const RESERVED_EDGE_FIELDS: &[&str] = &[
+    // PRD 003 hubs: umx alone marks the edges it adds for a hub.
+    crate::hubs::AUTO_ADDED_BY,
     "id",
     "address",
     "graph",

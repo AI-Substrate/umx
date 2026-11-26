@@ -12,6 +12,12 @@ struct Topic {
 
 const TOPICS: &[Topic] = &[
     Topic {
+        name: "hubs",
+        title: "Hubs",
+        summary: "Declare where nodes gather: a named hub that joins matching nodes, or every node of a type; add, fill and read members.",
+        markdown: || include_str!("../docs/hubs.md").to_owned(),
+    },
+    Topic {
         name: "rules",
         title: "Graph rules",
         summary: "Declare, preview, list and remove graph rules; bounded regex patterns and central rule switch-offs.",
@@ -253,6 +259,7 @@ pub fn agents_start_here() -> Envelope {
 /// top-level commands are in start.
 const HELP_ALIASES: &[(&str, &str)] = &[
     ("rule", "rules"),
+    ("hub", "hubs"),
     ("neighbours", "explore"),
     ("walk", "explore"),
     ("path", "explore"),
@@ -269,6 +276,7 @@ const HELP_ALIASES: &[(&str, &str)] = &[
 /// The nouns `umx --help` lists, each with its topic's summary.
 const HELP_NOUNS: &[&str] = &[
     "rule",
+    "hub",
     "entity",
     "scope",
     "graph",
@@ -734,7 +742,7 @@ mod tests {
                 Some(
                     &("graph" | "node" | "edge" | "ontology" | "check" | "config" | "embeddings"
                     | "similarity" | "neighbours" | "walk" | "path" | "search" | "query"
-                    | "scope" | "resolve" | "root" | "entity" | "resource" | "who" | "rule"),
+                    | "scope" | "resolve" | "root" | "entity" | "resource" | "who" | "rule" | "hub"),
                 ) => crate::parse::parse(&words, std::path::Path::new("/")).is_ok(),
                 Some(&"batch") => crate::parse::batch(&words[1..]).is_ok(),
                 Some(&"ui")
@@ -1174,6 +1182,7 @@ mod tests {
     fn unknown_verbs(page: &str) -> Vec<String> {
         let nouns = [
             "rule",
+            "hub",
             "graph",
             "node",
             "edge",
