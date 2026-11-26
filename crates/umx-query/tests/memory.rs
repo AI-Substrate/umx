@@ -32,6 +32,12 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOC: Counting = Counting;
 
+/// The allocation counters are process-wide, so the tests in this file run one at a time.
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Peak bytes allocated while `f` runs, over what was live before it.
 fn peak_of<T>(f: impl FnOnce() -> T) -> (T, usize) {
     let base = LIVE.load(Relaxed);
@@ -54,6 +60,7 @@ const MB: usize = 1 << 20;
 /// query_too_large.
 #[test]
 fn a_list_bound_across_rows_is_shared_and_charged() {
+    let _one = one_at_a_time();
     let g = design();
     let view = GraphView::one("design", &g, &[]);
     let options = RunOptions::default();
@@ -97,6 +104,7 @@ fn a_list_bound_across_rows_is_shared_and_charged() {
 /// The graph form: collect every node, then unwind it, at 100k nodes.
 #[test]
 fn collect_then_unwind_over_a_big_graph_is_bounded() {
+    let _one = one_at_a_time();
     let n = 100_000_u32;
     let nodes: String = (0..n)
         .map(|i| {
@@ -129,6 +137,7 @@ fn collect_then_unwind_over_a_big_graph_is_bounded() {
 /// clauses aborted a 2 MiB stack. A value past MAX_VALUE_DEPTH is refused when it is built.
 #[test]
 fn a_value_nested_across_clauses_is_capped() {
+    let _one = one_at_a_time();
     std::thread::Builder::new()
         .stack_size(2 << 20)
         .spawn(|| {
@@ -159,6 +168,7 @@ fn a_value_nested_across_clauses_is_capped() {
 /// with a bounded peak.
 #[test]
 fn a_value_doubled_across_clauses_meets_the_budget() {
+    let _one = one_at_a_time();
     let g = design();
     let view = GraphView::one("design", &g, &[]);
     for k in [16, 19, 22, 26, 30] {
