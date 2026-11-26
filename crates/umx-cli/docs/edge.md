@@ -193,6 +193,8 @@ and visible ends have
 `from_title` and `to_title`. `from_graph` and `to_graph` are graph ids, including local ends. An external
 edge is listed at its local end; `--from` and `--to` also include links stored by other loaded graphs.
 `--limit` (default 100) and `--offset` page through the rows.
+`--where <field>=<value>` keeps the edges whose field holds exactly that value (repeat it for more fields; only
+`=`): `umx edge list --where auto_added_by=risk_register` lists the edges umx added for that hub (`umx docs get hubs`).
 `--graph a,b` or `--scope both` lists across graphs, adding `graph` and `address`, with global pagination.
 See `umx docs get scope`.
 `--along <spine>` with `--after <end>` and `--before <end>` keeps only the edges whose two ends the spine places in

@@ -241,7 +241,10 @@ fn writes(op: &Op) -> Writes {
         | Op::RuleAdd { dry_run: false, .. }
         | Op::RuleRemove { .. }
         | Op::RuleOff { .. }
-        | Op::RuleOn { .. } => Content,
+        | Op::RuleOn { .. }
+        | Op::HubSet { .. }
+        | Op::HubFill { .. }
+        | Op::HubRemove { .. } => Content,
         Op::GraphNew { .. }
         | Op::GraphLoad { .. }
         | Op::GraphUnload { .. }
@@ -273,6 +276,8 @@ fn writes(op: &Op) -> Writes {
         Op::GraphList { .. }
         | Op::RuleList
         | Op::RuleShow { .. }
+        | Op::HubList
+        | Op::HubShow { .. }
         | Op::NodeGet { .. }
         | Op::NodeList { .. }
         | Op::NodeFind { .. }
@@ -830,6 +835,7 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
             limit: None,
             offset: None,
             along: None,
+            wheres: Vec::new(),
         },
         Some("g"),
     )))["rows"][0]["id"]
@@ -952,6 +958,7 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
             limit: None,
             offset: None,
             along: None,
+            wheres: Vec::new(),
         },
         Some("g"),
     )))["rows"]

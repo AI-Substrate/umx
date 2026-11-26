@@ -15,6 +15,7 @@ mod external_ends_tests;
 mod graph;
 mod graphfile;
 mod guide;
+mod hubs;
 mod ignore;
 mod incoming;
 mod index;
@@ -101,6 +102,9 @@ pub use graphfile::{
     GraphfileAdded, GraphfileListing, GraphfileMode, GraphfileRow, ScanRequest, ScanRow, Scanned,
 };
 pub use guide::{Guide, GuideEntry, GuideExample, GuideField, GuideType};
+pub use hubs::{
+    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
+};
 pub(crate) use index::Known;
 pub use index::{FolderState, GraphForgotten, IndexRow};
 pub use lint::{LINT_PAGE, Lint, LintKind, LintRequest, LintRow, RangePair};
@@ -1344,6 +1348,7 @@ mod tests {
             former_paths: Vec::new(),
             rules: Vec::new(),
             rules_off: Vec::new(),
+            hubs: Vec::new(),
             umx: FORMAT_VERSION,
             id: Id(1),
             alias: "demo".into(),

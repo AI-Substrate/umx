@@ -241,12 +241,16 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// 107: soft rule checks on writes and final batch state; rule_unmet carries optional
 /// rule {name,count,nodes}; rule_check_cut, Check's rules/rule/after filters, check data.rules,
 /// and the same fixed rule sentence in rule list and graph guide (usage 227).
+/// 108: hubs (graph.json `hubs`): HubList, HubSet, HubShow, HubFill and HubRemove; EdgeList `wheres`
+/// (`--where <field>=<value>`); `ontology show` data carries `hubs`; node add, node edit and batch replies name the
+/// edges umx added for a hub (`hub_edges`); `auto_added_by` is a reserved edge field; new codes hub_invalid,
+/// hub_not_found, hub_joined (hint), hub_unjoined (hint), hub_scan_cut, hub_node_missing and hub_edges_remain.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 107;
+pub const PROTOCOL: u32 = 108;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -255,7 +259,7 @@ pub const PROTOCOL: u32 = 107;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (107, 0xc6f8_5eb7_f2eb_67e5);
+const WIRE_FINGERPRINT: (u32, u64) = (108, 0x7f24_4d69_9186_411f);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1493,6 +1497,9 @@ pub enum Op {
         offset: Option<usize>,
         #[serde(default)]
         along: Option<Along>,
+        /// `--where <field>=<value>`, each once: exact matches on an edge's fields (hubs: `auto_added_by`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        wheres: Vec<String>,
     },
     /// `std` (`--std`, req-98): std v1 alone, whatever graph is selected or loaded.
     OntologyShow {
@@ -2049,6 +2056,32 @@ pub enum Op {
         limit: Option<usize>,
         offset: Option<usize>,
     },
+    /// `umx hub list`: the graph's hub declarations with counts and the edge that adds a member by hand.
+    HubList,
+    /// `umx hub set <name>`: one named hub (`node`, with an optional `pattern` whose matches umx joins) or one type
+    /// hub (`type_hub`); `via` is the members' relation.
+    HubSet {
+        name: String,
+        node: Option<String>,
+        type_hub: Option<String>,
+        via: Option<String>,
+        pattern: Option<Value>,
+    },
+    /// `umx hub show <name>`: the hub's nodes and members, a page at a time, and matching non-members.
+    HubShow {
+        name: String,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    },
+    /// `umx hub fill <name> [--after <node>]`: joins the matching non-members in one write, from `after` on.
+    HubFill {
+        name: String,
+        after: Option<String>,
+    },
+    /// `umx hub remove <name>`: drops the declaration; the edges umx added for it stay.
+    HubRemove {
+        name: String,
+    },
     /// `umx entity link <a> <b>` (ws008 E2): stores one `same_as` edge between two nodes, usually in two graphs, in
     /// the graph the request names (`--graph`), else in `a`'s. `dry_run` (ws008 E2b F179) checks it and reports what
     /// it would store and warn, writing nothing.
@@ -2358,6 +2391,11 @@ impl Op {
         "rule off",
         "rule on",
         "rule show",
+        "hub list",
+        "hub set",
+        "hub show",
+        "hub fill",
+        "hub remove",
     ];
 
     /// Labels only the graph view sends (ws009 S6): no CLI verb, so no example, help, flags row or skill home.
@@ -2464,6 +2502,11 @@ impl Op {
             Op::RuleOff { .. } => 85,
             Op::RuleOn { .. } => 86,
             Op::RuleShow { .. } => 87,
+            Op::HubList => 88,
+            Op::HubSet { .. } => 89,
+            Op::HubShow { .. } => 90,
+            Op::HubFill { .. } => 91,
+            Op::HubRemove { .. } => 92,
         }]
     }
 
@@ -2483,6 +2526,8 @@ impl Op {
                 | Op::GraphSpineShow { .. }
                 | Op::RuleList
                 | Op::RuleShow { .. }
+                | Op::HubList
+                | Op::HubShow { .. }
                 | Op::Resolve { .. }
                 | Op::Query { .. }
                 | Op::Search { .. }
@@ -2561,6 +2606,9 @@ impl Op {
                 | Op::RuleRemove { .. }
                 | Op::RuleOff { .. }
                 | Op::RuleOn { .. }
+                | Op::HubSet { .. }
+                | Op::HubFill { .. }
+                | Op::HubRemove { .. }
         )
     }
 
@@ -3723,6 +3771,34 @@ catalogue! {
     RuleSkipped => "rule_skipped", Warning, 0,
         "a stored rule exceeds this build's regex size or graph compile budget; its row is kept but not evaluated",
         "Rule <name> was skipped: <reason>. Its stored row is unchanged; remove it or re-add a smaller pattern.",
+        "<fix>";
+    HubInvalid => "hub_invalid", Error, 1,
+        "a hub declaration or hub command has an invalid shape, name, cap or pattern; nothing was written",
+        "Invalid hub: <reason>. Nothing changed.",
+        "umx docs get hubs";
+    HubNotFound => "hub_not_found", Error, 1,
+        "the graph declares no hub with this name",
+        "No hub named <name> is declared in this graph.",
+        "umx hub list";
+    HubJoined => "hub_joined", Hint, 0,
+        "umx added nodes to a named hub whose pattern they match, in the same write; each edge carries auto_added_by",
+        "Added <count> node(s) to hub <hub>.",
+        "<fix>";
+    HubUnjoined => "hub_unjoined", Hint, 0,
+        "nodes match a named hub's pattern but are not members (added before the hub, or a hand-deleted edge)",
+        "Some nodes match hub <hub> but are not members.",
+        "<fix>";
+    HubScanCut => "hub_scan_cut", Warning, 0,
+        "hub set or hub fill reached its scan or join limit; the nodes reached were joined and the next call carries on",
+        "Hub <hub> was filled up to a scan limit. Run the next command to carry on.",
+        "<fix>";
+    HubNodeMissing => "hub_node_missing", Warning, 0,
+        "a named hub names a node no longer in the graph; it adds nothing until it is removed or set again",
+        "Hub <hub> names a node that is no longer in the graph.",
+        "<fix>";
+    HubEdgesRemain => "hub_edges_remain", Warning, 0,
+        "edges umx added for a hub stay after the hub is removed or moved; umx never removes them",
+        "<count> edge(s) umx added for hub <hub> remain.",
         "<fix>";
     // ws008 TM5 (req-149): declared spines.
     SpineNameUnknown => "spine_name_unknown", Error, 1,
@@ -5784,6 +5860,7 @@ mod tests {
                 to: s("b"),
                 kind: s("r"),
                 columns: Some(vec!["id".into(), "confidence".into()]),
+                wheres: vec!["auto_added_by=register".into()],
                 limit: Some(1),
                 offset: Some(2),
                 along: Some(Along {
@@ -6322,6 +6399,26 @@ mod tests {
                 limit: Some(10),
                 offset: Some(2),
             },
+            Op::HubList,
+            Op::HubSet {
+                name: "register".into(),
+                node: s("n"),
+                type_hub: None,
+                via: s("part_of"),
+                pattern: Some(json!({"type":["risk"]})),
+            },
+            Op::HubShow {
+                name: "register".into(),
+                limit: Some(10),
+                offset: Some(2),
+            },
+            Op::HubFill {
+                name: "register".into(),
+                after: s("n"),
+            },
+            Op::HubRemove {
+                name: "register".into(),
+            },
         ]
     }
 
@@ -6428,6 +6525,11 @@ mod tests {
             Op::RuleOff { .. } => 95,
             Op::RuleOn { .. } => 96,
             Op::RuleShow { .. } => 97,
+            Op::HubList => 98,
+            Op::HubSet { .. } => 99,
+            Op::HubShow { .. } => 100,
+            Op::HubFill { .. } => 101,
+            Op::HubRemove { .. } => 102,
         }
     }
 
@@ -6586,7 +6688,7 @@ mod tests {
         let seen: std::collections::BTreeSet<usize> = ops.iter().map(variant).collect();
         assert_eq!(
             (seen.len(), ops.len()),
-            (98, 98),
+            (103, 103),
             "one sample per Op variant"
         );
         let now = (PROTOCOL, fnv1a(wire_samples().as_bytes()));

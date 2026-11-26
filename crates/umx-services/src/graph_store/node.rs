@@ -66,6 +66,8 @@ pub struct NodeAdded {
     pub resolved: bool,
     /// What a resolved add changed on its node, in order: note, filled fields (entity_key among them), evidence.
     pub changed: Vec<String>,
+    /// The edges umx added in the same write to put the new node in the named hubs it matches (PRD 003 hubs).
+    pub hub_edges: Vec<super::HubJoin>,
 }
 
 #[derive(Clone, Debug)]
@@ -981,6 +983,7 @@ impl GraphStore {
                         raised_in_edge: None,
                         resolved: false,
                         changed: Vec::new(),
+                        hub_edges: Vec::new(),
                     },
                     notes: warnings,
                 });
@@ -994,6 +997,7 @@ impl GraphStore {
             warnings.extend(part_of_warning(l.ontology(), &graph));
         }
         let allows = self.secret_allows();
+        let mut joiner = super::hubs::Joiner::new(&l.meta, &l.graph);
         let done = self.attributed_write(ctx, &alias, |batch, session, next, now, meta| {
             let mut node = draft.into_node(next(batch.graph()), now, &ctx.by);
             warnings.extend(super::ontology::value_warnings(
@@ -1023,6 +1027,27 @@ impl GraphStore {
                 anchor.as_ref(),
                 &|id, title| super::secrets::title_suspect(|| &allows, meta.id, id, title),
             );
+            let held: Vec<(&str, Id)> = parent_edge
+                .iter()
+                .chain(&raised_in_edge)
+                .filter(|e| e.edge.to_graph.is_none())
+                .map(|e| (e.edge.kind.as_str(), e.edge.to))
+                .collect();
+            let hub_edges = if joiner.is_empty() {
+                Vec::new()
+            } else {
+                super::hubs::join_in(
+                    batch,
+                    &mut joiner,
+                    &node,
+                    None,
+                    &held,
+                    session,
+                    next,
+                    now,
+                    &ctx.by,
+                )
+            };
             Ok(NodeAdded {
                 alias: alias.clone(),
                 node,
@@ -1030,9 +1055,11 @@ impl GraphStore {
                 raised_in_edge,
                 resolved: false,
                 changed: Vec::new(),
+                hub_edges,
             })
         })?;
         warnings.extend(done.notes);
+        warnings.extend(super::hubs::joined_hints(&done.value.hub_edges, &graph));
         let mut value = done.value;
         self.raised_in_written(ctx, &alias, &mut value);
         if let Some(near) = near {
@@ -1157,6 +1184,7 @@ impl GraphStore {
                     raised_in_edge,
                     resolved: true,
                     changed,
+                    hub_edges: Vec::new(),
                 })
             })?;
             warnings.extend(done.notes);
@@ -1169,6 +1197,7 @@ impl GraphStore {
                 raised_in_edge: None,
                 resolved: true,
                 changed,
+                hub_edges: Vec::new(),
             }
         };
         self.raised_in_written(ctx, alias, &mut value);

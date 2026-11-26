@@ -72,6 +72,9 @@ pub use graph_store::{
     ScanRequest, ScanRow, Scanned, SpineCandidate, SpineHint, SpineHints, SpineLine, SpineProposal,
     SpineSource, Unplaced, WhyNot,
 };
+pub use graph_store::{
+    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
+};
 pub use graph_store::{LINT_PAGE, Lint, LintKind, LintRequest, LintRow, RangePair};
 /// The title scores `node add` passes to `Graph::near_duplicates` (ws004 s30); umx-bench's ruler times the same call.
 pub use graph_store::{NEAR_DUPLICATE, NEAR_DUPLICATE_OTHER_TYPE};
@@ -2709,6 +2712,37 @@ impl Services {
 
     pub fn rule_switch(&mut self, ctx: &Ctx, name: &str, off: bool) -> Outcome<RuleChanged> {
         self.graph.rule_switch(ctx, name, off)
+    }
+
+    /// The hub declarations of a loaded graph (`ontology show`'s `hubs`, for the view).
+    pub fn hubs_of(&self, alias: &str) -> Vec<umx_core::hubs::Hub> {
+        self.graph.hubs_of(alias)
+    }
+
+    pub fn hub_list(&self, ctx: &Ctx) -> Outcome<HubsListed> {
+        self.graph.hub_list(ctx)
+    }
+
+    pub fn hub_show(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Outcome<HubShown> {
+        self.graph.hub_show(ctx, name, limit, offset)
+    }
+
+    pub fn hub_set(&mut self, ctx: &Ctx, req: HubSetRequest) -> Outcome<HubFilled> {
+        self.graph.hub_set(ctx, req)
+    }
+
+    pub fn hub_fill(&mut self, ctx: &Ctx, name: &str, after: Option<&str>) -> Outcome<HubFilled> {
+        self.graph.hub_fill(ctx, name, after)
+    }
+
+    pub fn hub_remove(&mut self, ctx: &Ctx, name: &str) -> Outcome<HubRemoved> {
+        self.graph.hub_remove(ctx, name)
     }
 
     /// `ontology set field <type> <field> --role data|content` (D56, req-97): each node whose embedded text the

@@ -216,12 +216,16 @@ impl<'g> Facts<'g> {
         self.relations.contains(name)
     }
 
-    /// Every local edge between two content nodes: (from, relation, to).
+    /// Every local edge between two content nodes: (from, relation, to). An edge umx added for a hub
+    /// (`auto_added_by`) is never read: joining a hub never gives a node a parent or a place (PRD 003 rules-33).
     pub(crate) fn edges(&self) -> impl Iterator<Item = (NodeIx, &'g str, NodeIx)> + '_ {
         self.g.edges().filter_map(|e| {
             let (from, to) = (e.from_ix()?, e.to_ix()?);
-            (self.content[from.index()] && self.content[to.index()] && e.kind() != SIMILAR_TO)
-                .then(|| (from, e.kind(), to))
+            (self.content[from.index()]
+                && self.content[to.index()]
+                && e.kind() != SIMILAR_TO
+                && e.field(umx_core::hubs::AUTO_ADDED_BY).is_none())
+            .then(|| (from, e.kind(), to))
         })
     }
 }

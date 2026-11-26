@@ -271,6 +271,7 @@ pub fn generate(seed: u64, nodes: usize) -> Real {
         former_paths: Vec::new(),
         rules: Vec::new(),
         rules_off: Vec::new(),
+        hubs: Vec::new(),
         umx: 1,
         id: id(counter),
         alias: "ruler".into(),

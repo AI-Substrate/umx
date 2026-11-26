@@ -43,6 +43,10 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    **usage 179**: run each window's batch with `--raised-in <segment>` (else the meeting), so every node it adds
    gets that link in the same write; a line's own `"raised_in"` overrides it, and a single add takes
    `node add --raised-in`.
+   **usage 229**: before adding, run `umx hub list`: each meeting is a hub when the graph declares
+   `umx hub set meetings --type-hub meeting --via raised_in` (set it once if the graph records meetings and
+   has none), and a named hub such as a risk register gathers its matches by itself (`hub_joined`). Put a
+   point in any other hub it belongs to with the edge `hub list` prints.
 7. Finish with `umx node list` and `umx edge list --from <node>` on the nodes you touched, and report the ids
    you added or changed.
 8. **usage 091**: a write that warns `secret_suspected` still happened, but that field is held from hosted

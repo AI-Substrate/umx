@@ -54,6 +54,11 @@ fn every_catalogue_code_is_triggered_and_says_what_to_do_next() {
             // both through the fake host, and system.ui-host's contract and tests cover the real adapter.
             continue;
         }
+        if *code == Code::HubScanCut {
+            // It needs more than 1,000 matching nodes before the hub is set, a batch too slow for this loop on a loaded
+            // machine: umx-services' tests/hubs.rs raises it on the fakes and follows its next to the end.
+            continue;
+        }
         if matches!(code, Code::ModelHashMismatch | Code::ModelDiskSpace) {
             // A wrong download or a full disk cannot be made offline from the CLI: umx-daemon's models tests raise
             // both through the fake fetcher, and the fetcher contract checks the hash refusal on the real adapter.

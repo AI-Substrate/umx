@@ -13,6 +13,7 @@ pub mod cut;
 pub mod entity;
 pub mod evidence;
 pub mod graphfile;
+pub mod hubs;
 pub mod id;
 pub mod lint_terms;
 pub mod local_state;

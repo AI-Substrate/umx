@@ -2909,6 +2909,86 @@ fn trigger(code: Code) -> (Envelope, u8) {
             fs::write(&file, meta.to_string()).unwrap();
             home.umx(&["graph", "load", &path])
         }
+        Code::HubInvalid => {
+            home.graph();
+            home.umx(&["hub", "set", "meetings", "--type-hub", "meeting"])
+        }
+        Code::HubNotFound => {
+            home.graph();
+            home.umx(&["hub", "show", "not_here"])
+        }
+        Code::HubJoined => {
+            home.graph();
+            let hub = home.add("topic", "Risk register");
+            home.ok(&[
+                "hub",
+                "set",
+                "risk_register",
+                "--node",
+                &hub,
+                "--type",
+                "risk",
+            ]);
+            home.umx(&[
+                "node",
+                "add",
+                "--type",
+                "risk",
+                "--title",
+                "Supplier may slip",
+            ])
+        }
+        Code::HubUnjoined | Code::HubNodeMissing => {
+            // Declared by hand, as a merge brings it: nothing has joined the risk yet.
+            let path = home.graph();
+            let hub = home.add("topic", "Risk register");
+            home.add("risk", "Supplier may slip");
+            home.ok(&["graph", "unload", "demo"]);
+            let file = Path::new(&path).join("graph.json");
+            let mut meta = umx_protocol::parse_json(&fs::read_to_string(&file).unwrap()).unwrap();
+            meta["umx"] = json!(9);
+            let node = if code == Code::HubUnjoined {
+                hub
+            } else {
+                "0".repeat(26)
+            };
+            meta["hubs"] = json!([{"name":"risk_register","node":node,"via":"part_of","match":{"type":["risk"]}}]);
+            fs::write(&file, meta.to_string()).unwrap();
+            home.ok(&["graph", "load", &path]);
+            home.umx(&["hub", "show", "risk_register"])
+        }
+        Code::HubScanCut => {
+            home.graph();
+            let lines: String = (0..1001)
+                .map(|i| format!("{}\n", json!({"op": "node add", "type": "risk", "title": format!("Risk number {i}")})))
+                .collect();
+            home.ok(&["batch", "--file", &home.ops_file(&lines)]);
+            let hub = home.add("topic", "Risk register");
+            home.umx(&[
+                "hub",
+                "set",
+                "risk_register",
+                "--node",
+                &hub,
+                "--type",
+                "risk",
+            ])
+        }
+        Code::HubEdgesRemain => {
+            home.graph();
+            let hub = home.add("topic", "Risk register");
+            home.ok(&[
+                "hub",
+                "set",
+                "risk_register",
+                "--node",
+                &hub,
+                "--type",
+                "risk",
+            ]);
+            home.add("risk", "Supplier may slip");
+            home.umx(&["hub", "remove", "risk_register"])
+        }
         Code::SpineNameUnknown => {
             home.graph();
             let file = home.ops_file(&tm5_decl("widget", "widget", false).to_string());

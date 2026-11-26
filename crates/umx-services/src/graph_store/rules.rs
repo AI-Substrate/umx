@@ -217,6 +217,18 @@ impl RuleMatcher {
     }
 }
 
+impl RuleMatcher {
+    /// A fresh work budget, for a caller that checks one node per write (hub joins).
+    pub(super) fn reset_work(&mut self) {
+        self.work_left = MAX_MATCH_WORK;
+    }
+
+    /// Whether the scan's budget still covers the most one node can cost.
+    pub(super) fn can_check_more(&self) -> bool {
+        self.work_left >= MAX_NODE_MATCH_WORK
+    }
+}
+
 pub(super) struct CompiledRules {
     pub(super) matchers: BTreeMap<String, RuleMatcher>,
     skipped: BTreeMap<String, &'static str>,

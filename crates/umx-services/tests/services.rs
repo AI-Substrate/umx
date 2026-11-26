@@ -6694,6 +6694,7 @@ fn a_dangling_edge_is_kept_reported_and_left_out_until_its_node_returns() {
                 limit: 100,
                 offset: 0,
                 along: None,
+                wheres: Vec::new(),
             },
         )
         .unwrap();

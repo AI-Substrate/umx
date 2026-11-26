@@ -61,6 +61,8 @@ pub const HINTS: &[&str] = &[
     "idempotency_key_expired",
     "rule_matches_cut",
     "rule_scan_cut",
+    "hub_joined",
+    "hub_unjoined",
 ];
 
 /// The most hints a reply shows: umx-protocol's MAX_HINTS and its `hints_truncated` (the daemon's test keeps the two
@@ -319,6 +321,13 @@ pub const CODES: &[&str] = &[
     "rule_node_unchecked",
     "rule_unmet",
     "rule_check_cut",
+    "hub_invalid",
+    "hub_not_found",
+    "hub_joined",
+    "hub_unjoined",
+    "hub_scan_cut",
+    "hub_node_missing",
+    "hub_edges_remain",
     "spine_main_taken",
     "spine_not_found",
     "spine_builtin_candidate",
@@ -3529,6 +3538,78 @@ pub fn rule_skipped(given: &str, reason: &'static str, graph: &ValidName) -> Pro
         .with("name", rule_name_slot(given))
         .with("reason", Slot::Word(reason))
         .with("fix", Slot::Command(fix.word("--graph").name(graph)))
+}
+
+pub fn hub_invalid(reason: &'static str) -> Problem {
+    Problem::new("hub_invalid").with("reason", Slot::Word(reason))
+}
+
+pub fn hub_not_found(given: &str) -> Problem {
+    Problem::new("hub_not_found").with("name", Slot::name_or(given, "(that hub)"))
+}
+
+fn hub_show(hub: &str, graph: &ValidName) -> Command {
+    let cmd = Command::new("hub show");
+    match ValidName::new(hub) {
+        Some(name) => cmd.name(&name),
+        None => cmd.word("<name>"),
+    }
+    .word("--graph")
+    .name(graph)
+}
+
+/// A write joined `count` nodes to `hub` (a hint: umx did it, nothing to fix).
+pub fn hub_joined(hub: &str, count: u64, graph: &ValidName) -> Problem {
+    Problem::new("hub_joined")
+        .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("count", Slot::Count(count))
+        .with("fix", Slot::Command(hub_show(hub, graph)))
+        .subject(hub)
+}
+
+pub fn hub_unjoined(hub: &str, fill: Command) -> Problem {
+    Problem::new("hub_unjoined")
+        .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("fix", Slot::Command(fill))
+        .subject(hub)
+}
+
+pub fn hub_scan_cut(hub: &str, fill: Command) -> Problem {
+    Problem::new("hub_scan_cut")
+        .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("fix", Slot::Command(fill))
+        .subject(hub)
+}
+
+pub fn hub_node_missing(hub: &str, graph: &ValidName) -> Problem {
+    let cmd = Command::new("hub remove");
+    let cmd = match ValidName::new(hub) {
+        Some(name) => cmd.name(&name),
+        None => cmd.word("<name>"),
+    };
+    Problem::new("hub_node_missing")
+        .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("fix", Slot::Command(cmd.word("--graph").name(graph)))
+        .subject(hub)
+}
+
+/// Edges umx added for `hub` that stay after it was removed or moved (umx never removes one).
+pub fn hub_edges_remain(hub: &str, count: u64, graph: &ValidName) -> Problem {
+    let name = ValidName::new(hub).expect("a stored hub name");
+    Problem::new("hub_edges_remain")
+        .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("count", Slot::Count(count))
+        .with(
+            "fix",
+            Slot::Command(
+                Command::new("edge list")
+                    .word("--where")
+                    .qualified("auto_added_by=", &name)
+                    .word("--graph")
+                    .name(graph),
+            ),
+        )
+        .subject(name.as_str())
 }
 
 fn rule_name_slot(given: &str) -> Slot {

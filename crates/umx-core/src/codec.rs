@@ -64,12 +64,14 @@ pub enum DecodeReason {
     /// offsets).
     TooLarge,
     Rule(&'static str),
+    Hub(&'static str),
 }
 
 impl fmt::Display for DecodeReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DecodeReason::Rule(reason) => write!(f, "invalid graph rule: {reason}"),
+            DecodeReason::Hub(reason) => write!(f, "invalid hub: {reason}"),
             DecodeReason::Syntax => f.write_str("not valid JSON"),
             DecodeReason::Data => f.write_str("a field is missing, unknown or of the wrong type"),
             DecodeReason::Eof => f.write_str("the record ends early"),
@@ -199,6 +201,12 @@ fn decode_graph_with_version(bytes: &[u8], supported: u32) -> Result<GraphMeta, 
         line: 1,
         column: 1,
         reason: DecodeReason::Rule(reason),
+    })?;
+    crate::hubs::stored_ok(&meta.hubs).map_err(|reason| DecodeError {
+        file: GraphFile::Graph,
+        line: 1,
+        column: 1,
+        reason: DecodeReason::Hub(reason),
     })?;
     // Format 1 has no `embedding` key: one there is a hand edit, refused like any other unknown key in format 1.
     // Stored spines umx could not have written (a hand edit, R366-3) are refused the same way.
@@ -814,6 +822,7 @@ mod tests {
             former_paths: Vec::new(),
             rules: Vec::new(),
             rules_off: Vec::new(),
+            hubs: Vec::new(),
             umx: 1,
             id: Id(7),
             alias: "demo".into(),
@@ -870,6 +879,38 @@ mod tests {
     }
 
     #[test]
+    fn hubs_raise_format_only_when_declared_and_older_readers_refuse_them() {
+        let mut meta = decode_graph(V1.as_bytes()).unwrap();
+        let before = encode_graph(&meta);
+        meta.hubs.push(
+            serde_json::from_value(serde_json::json!({
+                "name": "meetings", "type": "meeting", "via": "raised_in"
+            }))
+            .unwrap(),
+        );
+        let written = encode_graph(&meta);
+        assert_eq!(
+            decode_graph(&written).unwrap().umx,
+            crate::model::FORMAT_HUBS
+        );
+        assert_eq!(
+            decode_graph_with_version(&written, crate::model::FORMAT_RULES)
+                .unwrap_err()
+                .reason,
+            DecodeReason::NewerFormat(crate::model::FORMAT_HUBS)
+        );
+        let mut patterned = meta.clone();
+        patterned.hubs[0].pattern =
+            serde_json::from_value(serde_json::json!({"type": ["risk"]})).unwrap();
+        assert!(matches!(
+            decode_graph(&encode_graph(&patterned)).unwrap_err().reason,
+            DecodeReason::Hub(_)
+        ));
+        meta.hubs.clear();
+        assert_eq!(encode_graph(&meta), before);
+    }
+
+    #[test]
     fn hand_edited_rules_have_a_reason_and_cannot_exceed_the_cap() {
         let mut meta = decode_graph(V1.as_bytes()).unwrap();
         let rule = crate::rules::Rule::from_value(&serde_json::json!({
@@ -915,6 +956,7 @@ mod tests {
             former_paths: Vec::new(),
             rules: Vec::new(),
             rules_off: Vec::new(),
+            hubs: Vec::new(),
             umx: 1,
             id: Id(7),
             alias: "demo".into(),
@@ -1094,6 +1136,7 @@ mod tests {
             former_paths: Vec::new(),
             rules: Vec::new(),
             rules_off: Vec::new(),
+            hubs: Vec::new(),
             umx: FORMAT_VERSION,
             id: Id(7),
             alias: "demo".into(),
