@@ -186,7 +186,7 @@
         {
           "id": "rules-08",
           "title": "umx check --rules lists everything out of shape",
-          "statement": "`umx check --rules` reads every node of the graph against the rules in force and lists each node that breaks one, with the rule and the command that would fix it, a page at a time, with a total. `--rule <name>` limits it to one rule. Plain `umx check` adds one line: how many nodes break a rule, with `umx check --rules` as its next command. Check never writes.",
+          "statement": "`umx check --rules` reads every node of the graph against the rules in force and lists each node that breaks one, with the rule and the command that would fix it, a page at a time, with a total. `--rule <name>` limits it to one rule. On a graph too large to read in one call it stops at the scan limit and its next continues from there; it never refuses for size. Plain `umx check` adds one line: how many nodes break a rule, with `umx check --rules` as its next command. Check never writes.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
@@ -246,7 +246,7 @@
         {
           "id": "rules-14",
           "title": "Rules are kept by older umx or refused, never dropped",
-          "statement": "The first rule or switch-off a graph stores raises graph.json to a new format, so an older umx refuses to load the graph rather than drop its rules. A graph that declares none keeps its format. A graph holds at most 64 rules of its own. Stored rules umx could not have written (a hand edit: a wrong shape, a regex that does not compile, a count past the cap) are refused at load with the reason, as a graph.json that does not read is. A rule that names a type, status, relation or field the graph no longer declares is not such a case: the graph loads and warns `rule_vocabulary_unknown` with the command that declares the name.",
+          "statement": "The first rule or switch-off a graph stores raises graph.json to a new format, so an older umx refuses to load the graph rather than drop its rules. A graph that declares none keeps its format. A graph holds at most 64 rules of its own. Stored rules umx could not have written (a hand edit: a wrong shape, a regex that does not parse, a count past the cap) are refused at load with the reason, as a graph.json that does not read is. A stored regex that parses but is over the size or compile limit is not such a case, since a later regex library can compile the same pattern to another size: the rule is skipped with the warning `rule_skipped`, its row is kept and can be removed, and the graph loads. A rule that names a type, status, relation or field the graph no longer declares is not such a case: the graph loads and warns `rule_vocabulary_unknown` with the command that declares the name.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
@@ -266,7 +266,7 @@
         {
           "id": "rules-16",
           "title": "Creating a hub joins the nodes that already match, and lists them",
-          "statement": "Adding a fill rule adds the edge for every node its pattern matches that lacks one, in one write, all or nothing. The reply lists the nodes joined, with a total.",
+          "statement": "Adding a fill rule adds the edge for every node its pattern matches that lacks one, in one write, all or nothing. The reply lists the nodes joined, with a total. A graph too large to scan in one call is never refused: the rule is stored, the nodes reached (in node id order) are joined in that one write, and the reply says the scan was cut, with a warning whose next is the `umx rule fill <name> --after <node>` that carries on from there.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
@@ -307,7 +307,7 @@
         {
           "id": "rules-20",
           "title": "Fill happens at three moments and never behind your back",
-          "statement": "umx fills only when a fill rule is added, when a node is added or edited, and when `umx rule fill <name>` is run. It never fills on a read, on load, on check or on an edge write. So an auto edge deleted by hand is not put back: the delete warns `rule_unmet` once, and a matching node that arrives by a git merge is not joined until asked. Both show in `umx check --rules` as `rule_unmet`, whose next is `umx rule fill <name>`.",
+          "statement": "umx fills only when a fill rule is added, when a node is added or edited, and when `umx rule fill <name>` is run (each call one write; on a large graph it stops at the scan limit and its next continues with `--after`, and a node that already has the edge is skipped, so it is safe to repeat). It never fills on a read, on load, on check or on an edge write. So an auto edge deleted by hand is not put back: the delete warns `rule_unmet` once, and a matching node that arrives by a git merge is not joined until asked. Both show in `umx check --rules` as `rule_unmet`, whose next is `umx rule fill <name>`.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
@@ -501,6 +501,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "rules-23 filled in after the risk seat's question: declared values are snake_case labels, a node may still hold any value, and how the warning's next is formed."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "From the engine seat's questions: a large graph is never refused for size, so backfill, `rule fill` and `check --rules` stop at the scan limit and continue from a resume point (rules-08, rules-16, rules-20); a stored regex over the size limit is skipped with a warning and the graph loads (rules-14, the prime's ruling)."
         }
       ]
     }
