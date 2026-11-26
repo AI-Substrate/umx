@@ -191,7 +191,11 @@ impl Joiner {
     /// The hubs `node` now belongs in: it matches, and for an edit (`before`) it did not match before, so a hand
     /// delete is never undone by an unrelated edit. Never a node's own hub, never a provenance record. Each is
     /// (hub name, via, hub node); the caller skips the ones the node is already a member of.
-    pub(super) fn wanted(&mut self, node: &Node, before: Option<&Node>) -> Vec<(String, String, Id)> {
+    pub(super) fn wanted(
+        &mut self,
+        node: &Node,
+        before: Option<&Node>,
+    ) -> Vec<(String, String, Id)> {
         if PROVENANCE_TYPES.contains(&node.kind.as_str()) {
             return Vec::new();
         }
@@ -277,9 +281,7 @@ fn scan(g: &Graph, hub: &Hub, after: Option<Id>, max_joins: usize) -> Result<Sca
         // At least one node per call, so `--after` always moves on.
         if out.last.is_some() {
             match work.checked_sub(node.line().len() as u64 + 1) {
-                Some(left) if out.join.len() < max_joins && matcher.can_check_more() => {
-                    work = left
-                }
+                Some(left) if out.join.len() < max_joins && matcher.can_check_more() => work = left,
                 _ => {
                     out.cut = true;
                     break;
@@ -309,7 +311,11 @@ fn auto_edges(g: &Graph, name: &str) -> usize {
 fn hub_nodes(g: &Graph, hub: &Hub) -> Vec<Id> {
     let mut ids: Vec<Id> = match (&hub.node, &hub.kind) {
         (Some(id), _) => g.node(*id).map(|n| n.id()).into_iter().collect(),
-        (None, Some(kind)) => g.nodes().filter(|n| n.kind() == kind).map(|n| n.id()).collect(),
+        (None, Some(kind)) => g
+            .nodes()
+            .filter(|n| n.kind() == kind)
+            .map(|n| n.id())
+            .collect(),
         _ => Vec::new(),
     };
     ids.sort_unstable();
@@ -383,7 +389,13 @@ impl GraphStore {
         })
     }
 
-    pub fn hub_show(&self, ctx: &Ctx, name: &str, limit: usize, offset: usize) -> Outcome<HubShown> {
+    pub fn hub_show(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Outcome<HubShown> {
         if !(1..=1000).contains(&limit) {
             return Err(problems::hub_invalid(
                 "hub show --limit is between 1 and 1000",
@@ -521,7 +533,11 @@ impl GraphStore {
         {
             let remaining = auto_edges(&l.graph, &hub.name);
             if remaining > 0 {
-                notes.push(problems::hub_edges_remain(&hub.name, remaining as u64, &graph));
+                notes.push(problems::hub_edges_remain(
+                    &hub.name,
+                    remaining as u64,
+                    &graph,
+                ));
             }
         }
         let found = match hub.pattern {

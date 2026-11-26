@@ -72,14 +72,14 @@ pub use graph_store::{
     ScanRequest, ScanRow, Scanned, SpineCandidate, SpineHint, SpineHints, SpineLine, SpineProposal,
     SpineSource, Unplaced, WhyNot,
 };
+pub use graph_store::{
+    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
+};
 pub use graph_store::{LINT_PAGE, Lint, LintKind, LintRequest, LintRow, RangePair};
 /// The title scores `node add` passes to `Graph::near_duplicates` (ws004 s30); umx-bench's ruler times the same call.
 pub use graph_store::{NEAR_DUPLICATE, NEAR_DUPLICATE_OTHER_TYPE};
 pub use graph_store::{NodeWho, StampState, WhoListed, WhoNode, WhoRecord, WhoRow, WhoStamp};
 pub use graph_store::{NotReloaded, ReloadReport, Reloaded};
-pub use graph_store::{
-    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
-};
 pub use graph_store::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub use graph_store::{RuleCheckRequest, RuleFinding, RulesChecked};
 pub use graph_store::{Scope, ScopeInfo, ScopeMemberInfo, SelectedRow, SourceRoots, TITLE_CHARS};
@@ -2723,7 +2723,13 @@ impl Services {
         self.graph.hub_list(ctx)
     }
 
-    pub fn hub_show(&self, ctx: &Ctx, name: &str, limit: usize, offset: usize) -> Outcome<HubShown> {
+    pub fn hub_show(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Outcome<HubShown> {
         self.graph.hub_show(ctx, name, limit, offset)
     }
 

@@ -4610,11 +4610,34 @@ fn hubs_are_served_to_the_view_and_listed_in_the_guide() {
     home.graph();
     assert_eq!(home.ok(&["ontology", "show"]).data["hubs"], json!([]));
     let register = home.add("topic", "Risk register");
-    home.ok(&["hub", "set", "risk_register", "--node", &register, "--type", "risk"]);
-    home.ok(&["hub", "set", "meetings", "--type-hub", "meeting", "--via", "raised_in"]);
+    home.ok(&[
+        "hub",
+        "set",
+        "risk_register",
+        "--node",
+        &register,
+        "--type",
+        "risk",
+    ]);
+    home.ok(&[
+        "hub",
+        "set",
+        "meetings",
+        "--type-hub",
+        "meeting",
+        "--via",
+        "raised_in",
+    ]);
     let meeting = home.add("meeting", "Monday sync");
     let added = home.ok(&[
-        "node", "add", "--type", "risk", "--title", "Supplier may slip", "--raised-in", &meeting,
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Supplier may slip",
+        "--raised-in",
+        &meeting,
     ]);
     let risk = added.data["node"]["id"].as_str().unwrap().to_owned();
     assert_eq!(added.data["hub_edges"][0]["hub"], "risk_register");
@@ -4634,14 +4657,23 @@ fn hubs_are_served_to_the_view_and_listed_in_the_guide() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1]["members"], 1);
     let add = rows[1]["add"].as_str().unwrap();
-    assert_eq!(add, format!("umx edge add <node> part_of {register} --graph demo"));
+    assert_eq!(
+        add,
+        format!("umx edge add <node> part_of {register} --graph demo")
+    );
     let listed = home.ok(&["edge", "list", "--where", "auto_added_by=risk_register"]);
     assert_eq!(listed.data["total"], 1);
     assert_eq!(listed.data["rows"][0]["from"], json!(risk));
     let shown = home.ok(&["hub", "show", "meetings"]);
     assert_eq!(shown.data["nodes"][0]["members"], json!([risk]));
     let (env, exit) = home.umx(&[
-        "edge", "add", &risk, "part_of", &register, "--set", "auto_added_by=x",
+        "edge",
+        "add",
+        &risk,
+        "part_of",
+        &register,
+        "--set",
+        "auto_added_by=x",
     ]);
     assert_eq!((exit, env.errors[0].code()), (1, "reserved_name"));
 }

@@ -9,8 +9,8 @@ use umx_core::value::SetValue;
 use umx_core::{Id, Problem};
 use umx_fakes::{FakeClock, FakeGraphFiles, FakeIds, FakeLocalState};
 use umx_services::{
-    BatchLine, BatchOp, BatchRequest, Ctx, EdgeListRequest, HubSetRequest, NodeAddRequest, NodeEditRequest, Ports,
-    Services,
+    BatchLine, BatchOp, BatchRequest, Ctx, EdgeListRequest, HubSetRequest, NodeAddRequest,
+    NodeEditRequest, Ports, Services,
 };
 
 struct World {
@@ -188,7 +188,10 @@ fn named_and_type_hubs_list_and_show_and_a_risk_joins_both() {
     let mut w = demo();
     let hub = register(&mut w);
     w.svc
-        .hub_set(&ctx(), set("meetings", None, Some("meeting"), Some("raised_in")))
+        .hub_set(
+            &ctx(),
+            set("meetings", None, Some("meeting"), Some("raised_in")),
+        )
         .unwrap();
     let m1 = add(&mut w, "meeting", "Monday sync", None).node.id;
     let m2 = add(&mut w, "meeting", "Tuesday sync", None).node.id;
@@ -228,7 +231,11 @@ fn named_and_type_hubs_list_and_show_and_a_risk_joins_both() {
         .map(|n| (n.node, n.members.clone()))
         .collect();
     assert_eq!(rows, [(m1, vec![risk]), (m2, vec![])]);
-    let register = w.svc.hub_show(&ctx(), "risk_register", 20, 0).unwrap().value;
+    let register = w
+        .svc
+        .hub_show(&ctx(), "risk_register", 20, 0)
+        .unwrap()
+        .value;
     assert_eq!(register.nodes[0].members, [risk]);
     // A hand-added member: the ordinary edge, with no mark.
     let q = add(&mut w, "question", "Who owns it?", None).node.id;
@@ -237,7 +244,11 @@ fn named_and_type_hubs_list_and_show_and_a_risk_joins_both() {
         .unwrap();
     assert_eq!(auto(&w, "risk_register"), [(risk, "part_of".into(), hub)]);
     assert_eq!(
-        w.svc.hub_show(&ctx(), "risk_register", 20, 0).unwrap().value.nodes[0]
+        w.svc
+            .hub_show(&ctx(), "risk_register", 20, 0)
+            .unwrap()
+            .value
+            .nodes[0]
             .members
             .len(),
         2
@@ -250,7 +261,9 @@ fn named_and_type_hubs_list_and_show_and_a_risk_joins_both() {
 fn edits_join_only_when_they_make_a_node_match_and_fill_restores_hand_deletes() {
     let mut w = demo();
     let hub = register(&mut w);
-    let q = add(&mut w, "question", "Is the supplier late?", None).node.id;
+    let q = add(&mut w, "question", "Is the supplier late?", None)
+        .node
+        .id;
     let done = retype(&mut w, q, "risk");
     assert_eq!(done.value.hub_edges.len(), 1);
     assert!(codes(&done.notes).contains(&"hub_joined"));
@@ -283,7 +296,11 @@ fn edits_join_only_when_they_make_a_node_match_and_fill_restores_hand_deletes() 
     assert_eq!(auto(&w, "risk_register"), [(q, "part_of".into(), hub)]);
     // Filling again is safe: a member is skipped.
     assert_eq!(
-        w.svc.hub_fill(&ctx(), "risk_register", None).unwrap().value.joined_total,
+        w.svc
+            .hub_fill(&ctx(), "risk_register", None)
+            .unwrap()
+            .value
+            .joined_total,
         0
     );
     // Retyped out of the pattern, the edge stays.
@@ -354,8 +371,18 @@ fn removing_or_moving_a_hub_keeps_its_auto_edges() {
     let removed = w.svc.hub_remove(&ctx(), "risk_register").unwrap();
     assert_eq!(removed.value.remaining, 4);
     assert!(codes(&removed.notes).contains(&"hub_edges_remain"));
-    assert_eq!(edges_json(&w).matches("\"auto_added_by\":\"risk_register\"").count(), 4);
-    assert!(codec::decode_graph(&graph_json(&w)).unwrap().hubs.is_empty());
+    assert_eq!(
+        edges_json(&w)
+            .matches("\"auto_added_by\":\"risk_register\"")
+            .count(),
+        4
+    );
+    assert!(
+        codec::decode_graph(&graph_json(&w))
+            .unwrap()
+            .hubs
+            .is_empty()
+    );
     assert!(edges_json(&w).contains(&hub.to_text()));
     // Without the hub, a new risk joins nothing.
     assert!(add(&mut w, "risk", "R3", None).hub_edges.is_empty());
@@ -406,7 +433,11 @@ fn node_line(line: u32, kind: &str, title: &str, parent: Option<Id>) -> BatchLin
     }
 }
 
-fn batch(w: &mut World, lines: Vec<BatchLine>, dry_run: bool) -> umx_services::Done<umx_services::BatchDone> {
+fn batch(
+    w: &mut World,
+    lines: Vec<BatchLine>,
+    dry_run: bool,
+) -> umx_services::Done<umx_services::BatchDone> {
     w.svc
         .batch(
             &ctx(),
@@ -454,7 +485,10 @@ fn batch_adds_and_edits_join_hubs_in_the_same_write() {
     let done = batch(&mut w, lines, false);
     let rows = &done.value.rows;
     assert_eq!(rows[0].hub_edges.len(), 1);
-    assert!(rows[1].hub_edges.is_empty(), "already a member through --parent");
+    assert!(
+        rows[1].hub_edges.is_empty(),
+        "already a member through --parent"
+    );
     assert!(rows[2].hub_edges.is_empty());
     assert_eq!(rows[3].hub_edges.len(), 1);
     assert_eq!(
@@ -552,7 +586,12 @@ fn hub_edges_never_change_spine_places() {
         let done = w.svc.hub_set(&ctx(), req).unwrap().value;
         assert_eq!(done.joined.iter().map(|j| j.node).collect::<Vec<_>>(), [*s]);
     }
-    let mut req = set("risk_register", Some(add(&mut w, "topic", "Risks", None).node.id), None, None);
+    let mut req = set(
+        "risk_register",
+        Some(add(&mut w, "topic", "Risks", None).node.id),
+        None,
+        None,
+    );
     req.pattern = Some(json!({"type": ["risk"]}));
     assert_eq!(w.svc.hub_set(&ctx(), req).unwrap().value.joined_total, 3);
     assert_eq!(w.svc.spine_places("demo", "day", &all).unwrap(), before);
@@ -574,7 +613,11 @@ fn a_large_backfill_is_cut_and_continued_with_after() {
     assert_eq!(done.value.joined_total, 1000);
     assert_eq!(done.value.joined.len(), 100);
     let after = done.value.after.expect("cut");
-    let cut = done.notes.iter().find(|p| p.code == "hub_scan_cut").unwrap();
+    let cut = done
+        .notes
+        .iter()
+        .find(|p| p.code == "hub_scan_cut")
+        .unwrap();
     assert!(
         format!("{cut:?}").contains(&after.to_text()),
         "the next names where to carry on"
@@ -587,7 +630,9 @@ fn a_large_backfill_is_cut_and_continued_with_after() {
     assert!(next.value.after.is_none());
     assert!(!codes(&next.notes).contains(&"hub_scan_cut"));
     assert_eq!(
-        edges_json(&w).matches("\"auto_added_by\":\"risk_register\"").count(),
+        edges_json(&w)
+            .matches("\"auto_added_by\":\"risk_register\"")
+            .count(),
         1001
     );
 }

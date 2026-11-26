@@ -889,7 +889,10 @@ mod tests {
             .unwrap(),
         );
         let written = encode_graph(&meta);
-        assert_eq!(decode_graph(&written).unwrap().umx, crate::model::FORMAT_HUBS);
+        assert_eq!(
+            decode_graph(&written).unwrap().umx,
+            crate::model::FORMAT_HUBS
+        );
         assert_eq!(
             decode_graph_with_version(&written, crate::model::FORMAT_RULES)
                 .unwrap_err()
@@ -897,7 +900,8 @@ mod tests {
             DecodeReason::NewerFormat(crate::model::FORMAT_HUBS)
         );
         let mut patterned = meta.clone();
-        patterned.hubs[0].pattern = serde_json::from_value(serde_json::json!({"type": ["risk"]})).unwrap();
+        patterned.hubs[0].pattern =
+            serde_json::from_value(serde_json::json!({"type": ["risk"]})).unwrap();
         assert!(matches!(
             decode_graph(&encode_graph(&patterned)).unwrap_err().reason,
             DecodeReason::Hub(_)

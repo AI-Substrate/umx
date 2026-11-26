@@ -2920,8 +2920,23 @@ fn trigger(code: Code) -> (Envelope, u8) {
         Code::HubJoined => {
             home.graph();
             let hub = home.add("topic", "Risk register");
-            home.ok(&["hub", "set", "risk_register", "--node", &hub, "--type", "risk"]);
-            home.umx(&["node", "add", "--type", "risk", "--title", "Supplier may slip"])
+            home.ok(&[
+                "hub",
+                "set",
+                "risk_register",
+                "--node",
+                &hub,
+                "--type",
+                "risk",
+            ]);
+            home.umx(&[
+                "node",
+                "add",
+                "--type",
+                "risk",
+                "--title",
+                "Supplier may slip",
+            ])
         }
         Code::HubUnjoined | Code::HubNodeMissing => {
             // Declared by hand, as a merge brings it: nothing has joined the risk yet.
@@ -2932,7 +2947,11 @@ fn trigger(code: Code) -> (Envelope, u8) {
             let file = Path::new(&path).join("graph.json");
             let mut meta = umx_protocol::parse_json(&fs::read_to_string(&file).unwrap()).unwrap();
             meta["umx"] = json!(9);
-            let node = if code == Code::HubUnjoined { hub } else { "0".repeat(26) };
+            let node = if code == Code::HubUnjoined {
+                hub
+            } else {
+                "0".repeat(26)
+            };
             meta["hubs"] = json!([{"name":"risk_register","node":node,"via":"part_of","match":{"type":["risk"]}}]);
             fs::write(&file, meta.to_string()).unwrap();
             home.ok(&["graph", "load", &path]);
@@ -2945,12 +2964,28 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 .collect();
             home.ok(&["batch", "--file", &home.ops_file(&lines)]);
             let hub = home.add("topic", "Risk register");
-            home.umx(&["hub", "set", "risk_register", "--node", &hub, "--type", "risk"])
+            home.umx(&[
+                "hub",
+                "set",
+                "risk_register",
+                "--node",
+                &hub,
+                "--type",
+                "risk",
+            ])
         }
         Code::HubEdgesRemain => {
             home.graph();
             let hub = home.add("topic", "Risk register");
-            home.ok(&["hub", "set", "risk_register", "--node", &hub, "--type", "risk"]);
+            home.ok(&[
+                "hub",
+                "set",
+                "risk_register",
+                "--node",
+                &hub,
+                "--type",
+                "risk",
+            ]);
             home.add("risk", "Supplier may slip");
             home.umx(&["hub", "remove", "risk_register"])
         }

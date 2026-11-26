@@ -14,8 +14,8 @@ mod external;
 mod external_ends_tests;
 mod graph;
 mod graphfile;
-mod hubs;
 mod guide;
+mod hubs;
 mod ignore;
 mod incoming;
 mod index;
@@ -102,6 +102,9 @@ pub use graphfile::{
     GraphfileAdded, GraphfileListing, GraphfileMode, GraphfileRow, ScanRequest, ScanRow, Scanned,
 };
 pub use guide::{Guide, GuideEntry, GuideExample, GuideField, GuideType};
+pub use hubs::{
+    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
+};
 pub(crate) use index::Known;
 pub use index::{FolderState, GraphForgotten, IndexRow};
 pub use lint::{LINT_PAGE, Lint, LintKind, LintRequest, LintRow, RangePair};
@@ -122,9 +125,6 @@ pub(crate) use resolve::check_evidence;
 pub use resolve::{ResolveStatus, Resolved, Target};
 pub use resources::ResourceShown;
 pub use rule_check::{RuleCheckRequest, RuleFinding, RulesChecked};
-pub use hubs::{
-    HubFilled, HubJoin, HubNodeRow, HubRemoved, HubRow, HubSetRequest, HubShown, HubsListed,
-};
 pub use rules::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub(crate) use scopes::SavedRead;
 pub use scopes::{Scope, ScopeInfo, ScopeMemberInfo};

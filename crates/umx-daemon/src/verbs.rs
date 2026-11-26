@@ -108,19 +108,27 @@ fn hub_json(h: &umx_core::hubs::Hub) -> Value {
 }
 
 fn hub_rows_json(rows: &[umx_services::HubRow]) -> Value {
-    json!(rows.iter().map(|r| {
-        let mut row = hub_json(&r.hub);
-        row["hub_nodes"] = json!(r.hub_nodes);
-        row["members"] = json!(r.members);
-        row["missing"] = json!(r.missing);
-        row["add"] = json!(r.add.to_string());
-        row
-    }).collect::<Vec<_>>())
+    json!(
+        rows.iter()
+            .map(|r| {
+                let mut row = hub_json(&r.hub);
+                row["hub_nodes"] = json!(r.hub_nodes);
+                row["members"] = json!(r.members);
+                row["missing"] = json!(r.missing);
+                row["add"] = json!(r.add.to_string());
+                row
+            })
+            .collect::<Vec<_>>()
+    )
 }
 
 fn hub_joins_json(joins: &[umx_services::HubJoin]) -> Value {
-    json!(joins.iter().map(|j| json!({"hub": j.hub, "edge": j.edge, "node": j.node, "to": j.to}))
-        .collect::<Vec<_>>())
+    json!(
+        joins
+            .iter()
+            .map(|j| json!({"hub": j.hub, "edge": j.edge, "node": j.node, "to": j.to}))
+            .collect::<Vec<_>>()
+    )
 }
 
 fn hub_filled_json(v: &umx_services::HubFilled) -> Value {
@@ -961,19 +969,15 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 tag: tag.clone(),
                 untag: untag.clone(),
             };
-            reply(
-                command,
-                services.node_edit(&ctx, node, req),
-                |v| {
-                    let mut data =
-                        json!({ "node": node_json(&v.alias, &v.node), "changed": v.changed });
-                    // PRD 003 hubs: only when umx added the node to a hub, so other replies are unchanged.
-                    if !v.hub_edges.is_empty() {
-                        data["hub_edges"] = hub_joins_json(&v.hub_edges);
-                    }
-                    data
-                },
-            )
+            reply(command, services.node_edit(&ctx, node, req), |v| {
+                let mut data =
+                    json!({ "node": node_json(&v.alias, &v.node), "changed": v.changed });
+                // PRD 003 hubs: only when umx added the node to a hub, so other replies are unchanged.
+                if !v.hub_edges.is_empty() {
+                    data["hub_edges"] = hub_joins_json(&v.hub_edges);
+                }
+                data
+            })
         }
         Op::EntityKey { node, action, key } => reply(
             command,
@@ -2148,9 +2152,11 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
         return Envelope::fail(command, issue(&problem, command));
     }
     match op {
-        Op::HubList => reply(command, services.hub_list(&ctx), |v| {
-            json!({"graph": v.graph, "total": v.rows.len(), "rows": hub_rows_json(&v.rows)})
-        }),
+        Op::HubList => reply(
+            command,
+            services.hub_list(&ctx),
+            |v| json!({"graph": v.graph, "total": v.rows.len(), "rows": hub_rows_json(&v.rows)}),
+        ),
         Op::HubShow {
             name,
             limit,
@@ -2652,7 +2658,13 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             reply(command, services.ontology_show(&ctx), |(alias, o)| {
                 let mut v = ontology_json(o);
                 // PRD 003 rules-34: the hub declarations the view draws declared hubs from; [] when none.
-                v["hubs"] = json!(services.hubs_of(alias).iter().map(hub_json).collect::<Vec<_>>());
+                v["hubs"] = json!(
+                    services
+                        .hubs_of(alias)
+                        .iter()
+                        .map(hub_json)
+                        .collect::<Vec<_>>()
+                );
                 v
             })
         }

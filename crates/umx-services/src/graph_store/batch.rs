@@ -1033,7 +1033,14 @@ impl Run<'_, '_> {
 
     /// PRD 003 hubs: puts node `id`, as the batch now holds it, in each named hub it matches and is not yet a member
     /// of; for an edit, only a hub it did not match `before`. The edges are named on the row.
-    fn join_hubs(&mut self, line: u32, id: Id, before: Option<&umx_core::Node>, session: Id, r: &mut BatchRow) {
+    fn join_hubs(
+        &mut self,
+        line: u32,
+        id: Id,
+        before: Option<&umx_core::Node>,
+        session: Id,
+        r: &mut BatchRow,
+    ) {
         if self.joiner.is_empty() {
             return;
         }
@@ -1045,8 +1052,10 @@ impl Run<'_, '_> {
                 continue;
             }
             let edge = self.next_id(line);
-            self.added_edges
-                .insert((StoredEnd::local(id), via.clone(), StoredEnd::local(to)), edge);
+            self.added_edges.insert(
+                (StoredEnd::local(id), via.clone(), StoredEnd::local(to)),
+                edge,
+            );
             self.b.insert_edge(super::hubs::hub_edge(
                 edge,
                 id,

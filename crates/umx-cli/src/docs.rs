@@ -742,7 +742,8 @@ mod tests {
                 Some(
                     &("graph" | "node" | "edge" | "ontology" | "check" | "config" | "embeddings"
                     | "similarity" | "neighbours" | "walk" | "path" | "search" | "query"
-                    | "scope" | "resolve" | "root" | "entity" | "resource" | "who" | "rule" | "hub"),
+                    | "scope" | "resolve" | "root" | "entity" | "resource" | "who" | "rule"
+                    | "hub"),
                 ) => crate::parse::parse(&words, std::path::Path::new("/")).is_ok(),
                 Some(&"batch") => crate::parse::batch(&words[1..]).is_ok(),
                 Some(&"ui")
