@@ -15,7 +15,7 @@
     },
     {
       "name": "why",
-      "value": "umx already tells a writer when a graph is out of shape, and each case is written in Rust. `anchor_undated` says a meeting should have a start date. `segment_without_parent` says a segment should be part of a meeting. Both are one of two shapes: this kind of node should have this field, or this edge. A third case needs a code change and a release, and a graph cannot state its own.\n\nThe case that started this is the risk. A risk should be owned by a person, a team or an organisation in the graph, as an edge. Today nothing says so, and the docs show the owner held as text, which links to nothing.\n\nThe project lead ruled on 2026-11-26: rules are data; there are central rules, and a graph mixes in its own, which can add rules and delete central ones, stored with the graph; rules run on the writes that can break one (a node added or edited, an edge removed) and when `umx check --rules` is run; a broken rule is a warning with a suggested fix, never a failure; a hub is a rule that joins matching nodes itself; and a rule's pattern takes exact matches and regex.\n\nThe rules guide two things. They guide the graph's shape, the same way for every reader. And they guide the feedback an agent gets: each warning carries the next command to run, so an agent is led to a well-shaped graph one step at a time.\n\nThe first real user is the AFP agent in Work IQ, which will build risks from the AFP engagement with these rules once they ship (project lead, 2026-11-26)."
+      "value": "umx already tells a writer when a graph is out of shape, and each case is written in Rust. `anchor_undated` says a meeting should have a start date. `segment_without_parent` says a segment should be part of a meeting. Both are one of two shapes: this kind of node should have this field, or this edge. A third case needs a code change and a release, and a graph cannot state its own.\n\nThe case that started this is the risk. A risk should be owned by a person, a team or an organisation in the graph, as an edge. Today nothing says so, and the docs show the owner held as text, which links to nothing.\n\nThe project lead ruled on 2026-11-26: rules are data; there are central rules, and a graph mixes in its own, which can add rules and delete central ones, stored with the graph; rules run on the writes that can break one (a node added or edited, an edge removed) and when `umx check --rules` is run; a broken rule is a warning with a suggested fix, never a failure; a hub is a rule that joins matching nodes itself; and a rule's pattern takes exact matches and regex.\n\nThe rules guide two things. They guide the graph's shape, the same way for every reader. And they guide the feedback an agent gets: each warning carries the next command to run, so an agent is led to a well-shaped graph one step at a time.\n\nRules must not make a graph rigid, inflexible or unworkable. An agent has agency in how it designs its graph; rules are hints and nudges toward a good shape, never a fence (project lead, 2026-11-26). So a rule never blocks a write, every central rule can be switched off, anything umx adds for a rule can be deleted by hand and stays deleted, and an agent that ignores a nudge loses nothing but the reminder.\n\nThe first real user is the AFP agent in Work IQ, which will build risks from the AFP engagement with these rules once they ship (project lead, 2026-11-26)."
     },
     {
       "name": "actors",
@@ -63,6 +63,10 @@
         {
           "id": "g-6",
           "goal": "A risk in a std graph has a likelihood, an impact, an owner who is a node, and things that mitigate it."
+        },
+        {
+          "id": "g-7",
+          "goal": "Rules nudge and never fence: an agent keeps full agency over its graph's design, and no rule makes a graph rigid or unworkable."
         }
       ]
     },
@@ -242,7 +246,7 @@
         {
           "id": "rules-14",
           "title": "Rules are kept by older umx or refused, never dropped",
-          "statement": "The first rule or switch-off a graph stores raises graph.json to a new format, so an older umx refuses to load the graph rather than drop its rules. A graph that declares none keeps its format. A graph holds at most 64 rules of its own. Stored rules umx could not have written (a hand edit) are refused at load with the reason, as a graph.json that does not read is.",
+          "statement": "The first rule or switch-off a graph stores raises graph.json to a new format, so an older umx refuses to load the graph rather than drop its rules. A graph that declares none keeps its format. A graph holds at most 64 rules of its own. Stored rules umx could not have written (a hand edit: a wrong shape, a regex that does not compile, a count past the cap) are refused at load with the reason, as a graph.json that does not read is. A rule that names a type, status, relation or field the graph no longer declares is not such a case: the graph loads and warns `rule_vocabulary_unknown` with the command that declares the name.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
@@ -312,13 +316,13 @@
         },
         {
           "id": "rules-21",
-          "title": "A hub node cannot be deleted from under its rule",
-          "statement": "Deleting a node that a rule names as its hub is refused while the rule stands, with the command that removes the rule as its next. Nothing changes.",
+          "title": "Deleting a hub node is allowed, and says what it leaves behind",
+          "statement": "A node that a rule names as its hub can be deleted like any node. The delete warns that the rule now names a node that is gone, with the command that removes the rule as its next. Until then the rule fills nothing and warns nothing on writes, and `umx rule list` and `umx check --rules` show it as naming a missing node. The graph always loads.",
           "actor": "a-builder",
           "priority": "should",
           "state": "planned",
-          "done_when": "Deleting the risk register node is refused and names `umx rule remove risk_register`.",
-          "source": "Follows `ontology_in_use` of PRD 001"
+          "done_when": "Deleting the risk register node succeeds with a warning naming `umx rule remove risk_register`; adding a risk afterwards stores it with no fill and no error; the graph reloads.",
+          "source": "Project lead 2026-11-26 (hints and nudges, not rigid graphs); replaces an earlier draft that refused the delete"
         },
         {
           "id": "rules-22",
@@ -487,6 +491,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "Added rules-30 and q-08: meetings as many hubs, the meeting spine and the `from_a_meeting` rule, set up by the skill (project lead, 2026-11-26)."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "The project lead's principle added to Why and as g-7: rules are hints and nudges, agents keep agency, graphs must not become rigid. rules-21 changed to match: deleting a hub node is allowed and warns, where the draft refused it. Also recorded from the slice 1 review, by the prime's ruling: a stored rule that names vocabulary no longer declared loads with a warning, never a refusal."
         }
       ]
     }
