@@ -60,7 +60,8 @@ import { cycleRelation, type RelationModes, relationMode, relationSymmetric, sym
 import { effectiveFocus } from "@/lib/graph/fui";
 import { graphColor } from "@/lib/graph/graph-colors";
 import { aliasOfKey, qid, setKey, unq } from "@/lib/graph/keys";
-import { nodeScale, SPACING, SPACING_KEY, spacingOf } from "@/lib/graph/spacing";
+import { SPACING, SPACING_KEY, spacingOf } from "@/lib/graph/spacing";
+import { HUB_DEFAULTS, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
 import { isLaunch, keptSpinePicks, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, readSpinePicks, reopenGraphs, SPINES_KEY, type ViewLook, writeLook } from "@/lib/view-url";
 import { type FilterDim, hiddenReasons, NO_FILTERS, reasonText, reveal, toggleChip, toggled } from "@/lib/graph/filters";
 import { FOCUS_OFF, focusDepths, focusOf } from "@/lib/graph/focus";
@@ -218,6 +219,7 @@ type Merge = { wanted: string; frame: Extent; camera: CameraState | null; positi
 
 
 const NO_CHANGES: ReadonlyMap<string, number> = new Map();
+const NO_SIMILARITIES: readonly SimilarityLink[] = [];
 
 function spineState(r: SpineRead | undefined): SpineState {
   return !r || r.loading ? "loading" : r.failed ? "failed" : r.gone ? "gone" : r.supported ? "ready" : "unsupported";
@@ -264,6 +266,9 @@ export function GraphApp() {
   const [spacing, setSpacingState] = useState<number>(SPACING.default);
   // The spine view's Spread slider, kept in the fragment with the rest of the look.
   const [spread, setSpread] = useState<number>(SPREAD.default);
+  const [layoutOptions, setLayoutOptions] = useState<HubOptions>(HUB_DEFAULTS);
+  const [shadowMode, setShadowMode] = useState<ShadowMode>("selected");
+  const [shadowState, setShadowState] = useState<ShadowState>(NO_SHADOWS);
   useEffect(() => {
     let stored: string | null = null;
     try {
@@ -305,6 +310,9 @@ export function GraphApp() {
       resolution,
       spacing,
       spread,
+      layout: layoutOptions.mode,
+      degree: layoutOptions.degree,
+      hubs: layoutOptions.count,
       merge: mergeEntities,
       provenance: visible.provenance,
       retired: visible.retired,
@@ -314,7 +322,7 @@ export function GraphApp() {
     if (isLaunch(window.location.hash)) return;
     const url = window.location.pathname + window.location.search + (look ? `#${look}` : "");
     if (url !== window.location.pathname + window.location.search + window.location.hash) window.history.replaceState(null, "", url);
-  }, [colourBy, groupingPick, resolution, spacing, spread, mergeEntities, visible, filters]);
+  }, [colourBy, groupingPick, resolution, spacing, spread, layoutOptions, mergeEntities, visible, filters]);
   // The open graphs, once the index is read: a reload in this tab opens them again (none, if the person cleared it).
   useEffect(() => {
     if (graphs === null || !lookRestored.current) return;
@@ -465,6 +473,7 @@ export function GraphApp() {
       if (look.resolution !== undefined) setResolution(look.resolution);
       if (look.spacing !== undefined) setSpacingState(look.spacing);
       if (look.spread !== undefined) setSpread(look.spread);
+      setLayoutOptions({ mode: look.layout ?? HUB_DEFAULTS.mode, degree: look.degree ?? HUB_DEFAULTS.degree, count: look.hubs ?? HUB_DEFAULTS.count });
       if (look.merge !== undefined) setMergeEntities(look.merge);
       if (look.provenance !== undefined || look.retired !== undefined) {
         setVisible((v) => ({ provenance: look.provenance ?? v.provenance, retired: look.retired ?? v.retired }));
@@ -758,7 +767,10 @@ export function GraphApp() {
   // the legend and the counts alike.
   const mask = useMemo(() => (view ? shownMask(view.graph, visible, filters) : null), [view, visible, filters]);
   const edges = useMemo(() => (view ? edgeMask(view.graph, filters) : null), [view, filters]);
-  const { layout, louvain, nudged } = useLayout(view, mask, edges, resolution, spacing);
+  const layoutSimilarities = layoutOptions.mode !== "normal" && shadowMode !== "off" && !filters.relations.has("similar_to") && shadowState.data?.scope === shownKey
+    ? shadowState.data.pairs : NO_SIMILARITIES;
+  const { layout, louvain, hubs, nudged } = useLayout(view, mask, edges, resolution, spacing, layoutOptions, layoutSimilarities);
+  const hubOwners = useMemo(() => new Map(hubs.owner), [hubs]);
   const parent = useMemo(() => (view && mask && edges ? parentGroups(view.index, mask, edges) : null), [view, mask, edges]);
   const chips = useMemo(() => (view ? chipCounts(view.graph, visible, filters) : null), [view, visible, filters]);
   // Louvain's groups are for the numbering it was asked with; after a live change they are read for the new one
@@ -1551,7 +1563,7 @@ export function GraphApp() {
   const [spineAxes, setSpineAxes] = useState<SpineAxis[]>([]);
   const spineShape = useRef("");
   // The force layout's positions, kept while a spine is shown so none puts each node back where it was laid out.
-  const spineBase = useRef<{ graph: ViewGraph; layout: unknown; at: Map<string, { x: number; y: number }> } | null>(null);
+  const spineBase = useRef<{ graph: ViewGraph; layout: unknown; nudged: number; at: Map<string, { x: number; y: number; clearance?: number }> } | null>(null);
   // Positions: back to the force layout, then along each graph's spine, then merged; off puts every member back.
   useEffect(() => {
     if (!view) return;
@@ -1559,16 +1571,23 @@ export function GraphApp() {
     applyMerge(g, NO_ENTITIES);
     const base = spineBase.current;
     if (base && base.graph === g && base.layout === layout) {
+      if (base.nudged !== nudged) {
+        for (const id of view.nudge?.fresh ?? []) if (g.hasNode(id)) {
+          const a = g.getNodeAttributes(id);
+          base.at.set(id, { x: a.x, y: a.y, clearance: a.clearance });
+        }
+        base.nudged = nudged;
+      }
       g.updateEachNodeAttributes((k, a) => {
         const p = base.at.get(k);
-        if (p) [a.x, a.y] = [p.x, p.y];
-        else base.at.set(k, { x: a.x, y: a.y });
+        if (p) { [a.x, a.y] = [p.x, p.y]; a.clearance = p.clearance; }
+        else base.at.set(k, { x: a.x, y: a.y, clearance: a.clearance });
         return a;
       });
     } else if (layout.done) {
-      const at = new Map<string, { x: number; y: number }>();
-      g.forEachNode((k, a) => void at.set(k, { x: a.x, y: a.y }));
-      spineBase.current = { graph: g, layout, at };
+      const at = new Map<string, { x: number; y: number; clearance?: number }>();
+      g.forEachNode((k, a) => void at.set(k, { x: a.x, y: a.y, clearance: a.clearance }));
+      spineBase.current = { graph: g, layout, nudged, at };
     }
     const axes: SpineAxis[] = [];
     if (layout.done && spineNow.size > 0) {
@@ -1578,12 +1597,12 @@ export function GraphApp() {
       for (const [alias, places] of spineNow) {
         const nodes: { key: string; id: string; x: number; y: number }[] = [];
         g.forEachNode((k, a) => {
-          if (a.graph === alias) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y });
+          if (a.graph === alias && !a.hidden) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y });
         });
-        const laid = spineLayout(alias, nodes, places, spread, aspect);
+        const laid = spineLayout(alias, nodes, places, spread, aspect, hubOwners, spacing);
         g.updateEachNodeAttributes((k, a) => {
           const p = laid.at.get(k);
-          if (p) [a.x, a.y] = [p.x, p.y];
+          if (p) { [a.x, a.y] = [p.x, p.y]; a.clearance = laid.clearance; }
           return a;
         });
         if (laid.axis) axes.push(laid.axis);
@@ -1597,13 +1616,11 @@ export function GraphApp() {
       setFit((f) => ({ nodes: [], n: (f?.n ?? 0) + 1 }));
     }
     applyMerge(g, mergeEntities && layout.done ? entities : NO_ENTITIES);
-  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread]);
+  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread, hubOwners, spacing]);
   // Shadow connections (ws009 M1c, plan 169). ShadowReads owns the reads (review B2 to B4): the data belongs to
   // the open set it was read over, a new set drops it, Off stops and drops it, and only the newest read lands. Read
   // again on events: a new set, a live change or an Apply (10 s after the last), and the refresh button. Under Hold the
   // graphs holding changes are not read again, so shadows always match the applied canvas (review B3).
-  const [shadowMode, setShadowMode] = useState<ShadowMode>("selected");
-  const [shadowState, setShadowState] = useState<ShadowState>(NO_SHADOWS);
   const reads = useMemo(
     () => new ShadowReads((graphs, signal) => api<ShadowReply>(`/api/shadows?graphs=${graphs.map(encodeURIComponent).join(",")}`, signal), setShadowState),
     [],
@@ -1887,6 +1904,10 @@ export function GraphApp() {
             resolution={resolution}
             onResolution={setResolution}
             spacing={spacing}
+            layout={layoutOptions}
+            onLayout={setLayoutOptions}
+            hubCount={hubs.centres.length}
+            hubFallback={hubs.fallback ?? false}
             onSpacing={setSpacing}
             louvainMs={louvain?.ms ?? null}
             clustering={view !== null && grouping === "louvain" && (louvain === null || louvain.resolution !== resolution)}
@@ -1917,7 +1938,10 @@ export function GraphApp() {
           />
           <main
             className="relative min-w-0 flex-1 overflow-hidden bg-canvas"
-            data-layout={layout.done ? "done" : "running"}
+            data-layout={layout.error ? "error" : layout.capped ? "incomplete" : layout.done ? "done" : "running"}
+            data-layout-mode={layoutOptions.mode}
+            data-hubs={hubs.centres.length}
+            data-hub-ms={hubs.ms}
             data-layout-ms={layout.ms}
             data-layout-iterations={layout.iterations}
             data-layout-capped={layout.capped ? "yes" : layout.done ? "no" : undefined}
@@ -1955,6 +1979,9 @@ export function GraphApp() {
             data-external-drawn={stats?.external.drawn}
             data-external-omitted={stats ? stats.external.notOpen + stats.external.broken : undefined}
           >
+            {layout.error || layout.capped ? <div className="absolute bottom-3 left-3 z-10 rounded-md border bg-card px-3 py-2 text-sm" role="status">
+              {layout.error ? `Layout failed: ${layout.error}` : "Layout incomplete: time limit reached. Change the layout or filters to retry."}
+            </div> : null}
             {truncated && view ? (
               <div className="absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-1.5 text-sm text-amber-900 shadow-sm dark:bg-amber-950 dark:text-amber-100" data-testid="truncated">
                 <AlertTriangle className="size-4" />
@@ -2053,7 +2080,8 @@ export function GraphApp() {
                 focused={acrossDepths ?? shownFocus?.depths ?? null}
                 groups={spineAxes.length > 0 ? null : groupShown}
                 layoutDone={layout.done}
-                nodeScale={nodeScale(spacing)}
+                spacing={spacing}
+                layoutMode={layoutOptions.mode}
                 onUnlabelled={setUnlabelled}
                 offRelations={filters.relations}
                 relationModes={relationModes}

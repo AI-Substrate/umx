@@ -8,6 +8,7 @@
 // graph id and id (`At`), so a link into a graph that is not open still joins the walk through the links the open
 // graphs store to it, and is never shown, as umx does.
 import type { ViewGraph } from "@/lib/graph/build";
+import { clearanceRadius, separateDiscs } from "@/lib/graph/clearance";
 import { aliasOfKey, qid, unq } from "@/lib/graph/keys";
 import type { Snapshot } from "@/lib/types";
 
@@ -512,7 +513,7 @@ export function mergeRecords(records: readonly MemberRecord[]): Merged | null {
 /** Where a member is drawn while entities are merged: at its entity's centroid (of its shown members), the size of
  * its biggest member and a bit more. `head` is the member whose title the merged node shows (the latest updated,
  * D69 (2)); `title` is that title. Hidden members stay hidden and out of the centroid. */
-export type Place = { x: number; y: number; size: number; head: boolean; entity: number; title: string; graphs: string[] };
+export type Place = { x: number; y: number; size: number; head: boolean; entity: number; title: string; graphs: string[]; clearance?: number };
 
 export const MERGED_GROWTH = 1.25;
 
@@ -541,6 +542,29 @@ export function mergedPlaces(graph: ViewGraph, entities: Entities, visible?: (ke
     const graphs = [...new Set(shown.map((m) => graph.getNodeAttribute(m, "graph")))];
     for (const m of shown) out.set(m, { x: x / shown.length, y: y / shown.length, size: size * MERGED_GROWTH, head: m === head, entity: i, title, graphs });
   });
+  if (out.size > 0 && graph.someNode((_n, a) => a.clearance !== undefined)) {
+    const radii = new Map<number, number>();
+    for (const [key, p] of out) radii.set(p.entity, Math.max(radii.get(p.entity) ?? 0, graph.getNodeAttribute(key, "clearance") ?? clearanceRadius(p.size, 1.6)));
+    const discs: { x: number; y: number; radius: number; entity: number }[] = [];
+    for (const key of graph.nodes().sort()) {
+      if (!isShown(key)) continue;
+      const a = graph.getNodeAttributes(key), p = out.get(key);
+      if (p && !p.head) continue;
+      discs.push({
+        x: p?.x ?? a.x, y: p?.y ?? a.y,
+        radius: p ? radii.get(p.entity)! * MERGED_GROWTH : a.clearance ?? clearanceRadius(a.size, 1.6),
+        entity: p?.entity ?? -1,
+      });
+    }
+    const moved = new Map<number, { x: number; y: number; radius: number }>();
+    separateDiscs(discs, Uint8Array.from(discs.map((d) => d.entity < 0 ? 1 : 0))).forEach((d, i) => {
+      if (discs[i].entity >= 0) moved.set(discs[i].entity, d);
+    });
+    for (const p of out.values()) {
+      const d = moved.get(p.entity)!;
+      [p.x, p.y, p.clearance] = [d.x, d.y, d.radius];
+    }
+  }
   return out;
 }
 

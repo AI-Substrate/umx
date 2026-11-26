@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { convexHull, type IndexGraph, louvainGroups, parentGroups } from "@/lib/graph/clusters";
 import { compactGroups, iterationsFor, keepSeeds, layOut, runLayout, seedPositions } from "@/lib/graph/layout";
-import { nodeScale, SPACING, spacingOf } from "@/lib/graph/spacing";
+import { SPACING, spacingOf } from "@/lib/graph/spacing";
 
 /** Two 6-cliques joined by one edge, plus node 12 hanging off node 0 by part_of. */
 function twoCliques(): IndexGraph {
@@ -125,13 +125,6 @@ describe("spacing (plan 198)", () => {
     expect(spacingOf("0.5")).toBe(0.5);
     expect(spacingOf("3")).toBe(3);
     for (const bad of [null, "", " ", "0.4", "3.1", "wide", "NaN", "Infinity"]) expect(spacingOf(bad)).toBe(SPACING.default);
-  });
-
-  it("draws nodes smaller as the spacing grows, so the gaps between them widen at Fit (ruling r2)", () => {
-    const [low, mid, high] = [0.5, SPACING.default, 3].map(nodeScale);
-    expect(low).toBeGreaterThan(mid);
-    expect(mid).toBeGreaterThan(high);
-    expect(nodeScale(SPACING.default)).toBe(1);
   });
 
   it("pulls groups toward the centre until their circles are the gap apart, never outward, and leaves loners", () => {

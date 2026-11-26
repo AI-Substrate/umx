@@ -16,6 +16,7 @@ import { groupColor, HULL_MIN, statusColor, statusLook, STATUS_KINDS, type Statu
 import { anyOff, type FilterDim, type Filters } from "@/lib/graph/filters";
 import { graphColor } from "@/lib/graph/graph-colors";
 import { SPACING } from "@/lib/graph/spacing";
+import { LAYOUT_MODES, DEGREE_MODES, type HubOptions } from "@/lib/graph/hubs";
 import type { SearchMode } from "@/lib/types";
 import { cn, number } from "@/lib/utils";
 
@@ -40,6 +41,10 @@ type Props = {
   /** The layout's spacing (plan 198): a change lays the graph out again from where it is. */
   spacing: number;
   onSpacing: (s: number) => void;
+  layout: HubOptions;
+  onLayout: (value: HubOptions) => void;
+  hubCount: number;
+  hubFallback: boolean;
   louvainMs: number | null;
   /** A Louvain run for the current settings is still on its way. */
   clustering: boolean;
@@ -93,6 +98,38 @@ export function Sidebar({ searchRef, ...p }: Props) {
         <GraphPicker {...p.picker} />
       </div>
       {p.spine ? <SpinePicker {...p.spine} /> : null}
+      <div className="space-y-2 border-t px-4 py-3" data-testid="layout-controls">
+        <label className="block space-y-1 text-sm">
+          <span className="section-head">Layout</span>
+          <select aria-label="Layout" value={p.layout.mode} onChange={(e) => {
+            const mode = LAYOUT_MODES.find(([key]) => key === e.target.value)?.[0];
+            if (mode) p.onLayout({ ...p.layout, mode });
+          }} className="w-full rounded-md border bg-background px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-ring" disabled={!p.graph}>
+            {LAYOUT_MODES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
+        {p.layout.mode === "degree" ? <label className="block space-y-1 text-sm">
+          <span>Rank hubs by</span>
+          <select aria-label="Rank hubs by" value={p.layout.degree} onChange={(e) => {
+            const degree = DEGREE_MODES.find(([key]) => key === e.target.value)?.[0];
+            if (degree) p.onLayout({ ...p.layout, degree });
+          }} className="w-full rounded-md border bg-background px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-ring">
+            {DEGREE_MODES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label> : null}
+        {p.layout.mode === "declared" ? <p className="text-xs text-muted-foreground">Inferred part_of preview; not yet verified by fill rules.</p> : null}
+        {p.layout.mode !== "normal" ? <label className="flex items-center justify-between gap-2 text-sm">
+          <span>Hubs</span>
+          <input type="number" aria-label="Hubs" min={1} max={100} step={1} value={p.layout.count} onChange={(e) => {
+            const count = e.currentTarget.valueAsNumber;
+            if (Number.isInteger(count) && count >= 1 && count <= 100) p.onLayout({ ...p.layout, count });
+          }} className="w-20 rounded-md border bg-background px-2 py-1 text-right tabular-nums focus-visible:outline-2 focus-visible:outline-ring" />
+        </label> : null}
+        {p.layout.mode !== "normal" ? <p className="text-xs text-muted-foreground" role="status">
+          {p.hubCount > 0 ? `${number.format(p.hubCount)} hub${p.hubCount === 1 ? "" : "s"}` : p.hubFallback ? "No eligible degree hubs." : `No ${p.layout.mode === "declared" ? "part_of" : p.layout.mode} hubs available; using Normal.`}
+        </p> : null}
+        {p.hubFallback ? <p className="text-xs text-muted-foreground" role="status">No similarity data; using Degree hubs (most connections).</p> : null}
+      </div>
 
       <div className="space-y-2 border-t px-4 py-3" data-testid="search">
         <div className="flex items-center justify-between gap-2">
@@ -190,7 +227,7 @@ export function Sidebar({ searchRef, ...p }: Props) {
             max={3}
             step={0.1}
             value={p.resolution}
-            disabled={p.grouping !== "louvain" || !p.graph}
+            disabled={(p.grouping !== "louvain" && p.layout.mode !== "similarity") || !p.graph}
             onChange={(e) => p.onResolution(Number(e.target.value))}
             className="w-full accent-primary disabled:opacity-50"
             aria-label="Louvain resolution"

@@ -29,6 +29,8 @@ export type NodeAttrs = {
   y: number;
   size: number;
   degree: number;
+  /** Collision-free radius in layout units, projected to pixels by the canvas. */
+  clearance?: number;
   color: string;
   borderColor: string;
   borderSize: number;
@@ -230,19 +232,21 @@ export function buildGraph(input: Snapshot | readonly Snapshot[]): { graph: View
 export function indexGraph(graph: ViewGraph, ranks?: ReadonlyMap<string, number>): IndexGraph {
   const edges = new Uint32Array(graph.size * 2);
   const partOf = new Uint8Array(graph.size);
+  const similarity = new Float32Array(graph.size);
   let e = 0;
   graph.forEachEdge((_k, a, _s, _t, sa, ta) => {
     edges[e * 2] = sa.index;
     edges[e * 2 + 1] = ta.index;
     partOf[e] = a.kind === "part_of" ? 1 : 0;
+    similarity[e] = a.kind === "similar_to" ? 1 : 0;
     e++;
   });
-  if (!ranks || ranks.size < 2) return { n: graph.order, edges, partOf };
+  if (!ranks || ranks.size < 2) return { n: graph.order, edges, partOf, similarity };
   const part = new Int32Array(graph.order);
   graph.forEachNode((_n, a) => {
     part[a.index] = ranks.get(a.graph) ?? 0;
   });
-  return { n: graph.order, edges, partOf, part };
+  return { n: graph.order, edges, partOf, part, similarity };
 }
 
 /** Groups by graph (plan 133): one group per open graph, ranked in the order the graphs are open, so a graph keeps

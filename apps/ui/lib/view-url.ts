@@ -6,6 +6,7 @@ import type { ColourBy } from "@/lib/graph/build";
 import { MAX_OPEN } from "@/lib/graph/keys";
 import { SPACING } from "@/lib/graph/spacing";
 import { SPREAD } from "@/lib/graph/spine-layout";
+import { HUB_DEFAULTS, LAYOUT_MODES, DEGREE_MODES, type LayoutMode, type DegreeMode } from "@/lib/graph/hubs";
 
 export type Grouping = "louvain" | "parent" | "graph";
 
@@ -17,6 +18,9 @@ export type ViewLook = {
   spacing?: number;
   /** The spine view's Spread slider. */
   spread?: number;
+  layout?: LayoutMode;
+  degree?: DegreeMode;
+  hubs?: number;
   merge?: boolean;
   provenance?: boolean;
   retired?: boolean;
@@ -31,7 +35,7 @@ const RESOLUTION = { min: 0.1, max: 3 };
 /** Names in the fragment: a chip's key is a type, relation or status name; anything longer or odder is dropped. */
 const NAME = /^[A-Za-z0-9_:.-]{1,64}$/;
 const OFF_MAX = 200;
-const KEYS = { colourBy: "colour", grouping: "group", resolution: "res", spacing: "spacing", spread: "spread", merge: "merge", provenance: "prov", retired: "retired" } as const;
+const KEYS = { colourBy: "colour", grouping: "group", resolution: "res", spacing: "spacing", spread: "spread", layout: "layout", degree: "degree", hubs: "hubs", merge: "merge", provenance: "prov", retired: "retired" } as const;
 const OFF = { relations: "off.rel", types: "off.type", statuses: "off.status" } as const;
 /** A graph alias (lib/umx ALIAS) and a declared spine's name (snake case), as the tab's storage may hold them. */
 const ALIAS_NAME = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -62,6 +66,14 @@ function names(v: string | null): string[] {
 export function readLook(hash: string): ViewLook {
   const p = params(hash);
   const look: ViewLook = {};
+  const layout = p.get(KEYS.layout);
+  const degree = p.get(KEYS.degree);
+  const mode = LAYOUT_MODES.find(([key]) => key === layout)?.[0];
+  const direction = DEGREE_MODES.find(([key]) => key === degree)?.[0];
+  if (mode) look.layout = mode;
+  if (direction) look.degree = direction;
+  const hubs = num(p.get(KEYS.hubs), 1, 100);
+  if (hubs !== undefined && Number.isInteger(hubs)) look.hubs = hubs;
   const colour = p.get(KEYS.colourBy);
   if (colour && (COLOURS as readonly string[]).includes(colour)) look.colourBy = colour as ColourBy;
   const group = p.get(KEYS.grouping);
@@ -84,6 +96,9 @@ export function readLook(hash: string): ViewLook {
 /** The fragment for `look`: only what differs from the defaults, in a fixed order; "" when nothing does. */
 export function writeLook(look: ViewLook): string {
   const p = new URLSearchParams();
+  if (look.layout && look.layout !== HUB_DEFAULTS.mode) p.set(KEYS.layout, look.layout);
+  if (look.degree && look.degree !== HUB_DEFAULTS.degree) p.set(KEYS.degree, look.degree);
+  if (look.hubs !== undefined && look.hubs !== HUB_DEFAULTS.count && Number.isInteger(look.hubs) && look.hubs >= 1 && look.hubs <= 100) p.set(KEYS.hubs, String(look.hubs));
   if (look.colourBy && look.colourBy !== LOOK_DEFAULTS.colourBy) p.set(KEYS.colourBy, look.colourBy);
   if (look.grouping) p.set(KEYS.grouping, look.grouping);
   if (look.resolution !== undefined && look.resolution !== LOOK_DEFAULTS.resolution) p.set(KEYS.resolution, String(look.resolution));

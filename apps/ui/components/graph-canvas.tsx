@@ -12,7 +12,7 @@ import { type CanvasReadouts, Readouts, type ReadoutValues } from "@/components/
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { canvasFit, type Gesture } from "@/lib/agent";
-import type { Extent } from "@/lib/graph/apply";
+import { extentOf as graphExtent, type Extent } from "@/lib/graph/apply";
 import type { EdgeAttrs, NodeAttrs, ViewGraph } from "@/lib/graph/build";
 import { type Box, convexHull, placePills } from "@/lib/graph/clusters";
 import { curvatures, EDGE_SIZE, edgeProgram, fitsZoomRule, forcedLabels, forcedShown, HEAD, headProgram, HUB_HEAD, incomingDrawn, isSymmetric, labelAnchor, type LabelBox, labelFrame, LABEL_PX, type LabelStyle, nodeLabelBox, overlaps, paintEdgeLabel, type RelationModes, relationMode, selectedEdgeColor, SMALL_GRAPH_EDGES } from "@/lib/graph/edges";
@@ -27,6 +27,8 @@ import { nodesInLasso } from "@/lib/selection";
 import { Lru } from "@/lib/lru";
 import { cn } from "@/lib/utils";
 import { anchorLabels, rowsLabelled, type SpineAxis } from "@/lib/graph/spine-layout";
+import { SPACING } from "@/lib/graph/spacing";
+import type { LayoutMode } from "@/lib/graph/hubs";
 
 export type CanvasPalette = {
   theme: Theme;
@@ -137,8 +139,8 @@ type Props = {
   /** Shadow connections (ws009 M1c): the pairs to draw (each with its model's floor) and, in Selected, a hovered
    * node's own top shadows. */
   shadows?: { pairs: readonly Pair[]; hover?: (node: string) => Pair[] } | null;
-  /** Every node's drawn size, times this (lib/graph/spacing nodeScale): the Spacing slider at Fit (plan 198). */
-  nodeScale?: number;
+  spacing?: number;
+  layoutMode?: LayoutMode;
   /** The selected node's drawn edges past the forced labels (the panel's "+n edges"), told whenever it may change. */
   onUnlabelled?: (n: number) => void;
 };
@@ -335,7 +337,7 @@ const NO_PLACES: ReadonlyMap<string, Place> = new Map();
 /** A thread's width, in screen pixels: confirmed, and picked by "Show across graphs" (ws009 M2 design point 1). */
 const THREAD = { normal: 1.2, emphasis: 2.4 };
 
-function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, nodeScale = 1, onUnlabelled, spineAxes = NO_AXES }: Props) {
+function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "similarity", onUnlabelled, spineAxes = NO_AXES }: Props) {
   const sigma = useSigma<NodeAttrs, EdgeAttrs>();
   // Merged places (ws009 M2), recomputed lazily after any node change (layout, visibility, live), read by the reducers
   // and the overlays.
@@ -363,9 +365,9 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     (id: string) => {
       const p = placesNow().get(id);
       const a = graph.getNodeAttributes(id);
-      return { ...sigma.graphToViewport({ x: p?.x ?? a.x, y: p?.y ?? a.y }), r: sigma.scaleSize(p?.size ?? a.size) * nodeScale };
+      return { ...sigma.graphToViewport({ x: p?.x ?? a.x, y: p?.y ?? a.y }), r: sigma.scaleSize(sigma.getNodeDisplayData(id)?.size ?? (p?.size ?? a.size)) };
     },
-    [graph, sigma, placesNow, nodeScale],
+    [graph, sigma, placesNow],
   );
   const reduced = useReducedMotion();
   const fui = palette.skin === "fui";
@@ -499,13 +501,18 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     };
   }, [sigma, graph, palette, onLasso]);
 
-  // A held frame stays while this graph is on the canvas; the camera an Undo restores is taken once.
+  const spacingFrame = useRef<{ graph: ViewGraph; spacing: number; mode: LayoutMode; box: Extent | null }>({ graph, spacing, mode: layoutMode, box: null });
+  // Keep the frame while spacing changes: automatic normalization would otherwise cancel the increased distances.
   useEffect(() => {
-    if (!hold && !cameraTo && sigma.getCustomBBox() === null) return;
-    sigma.setCustomBBox(hold);
+    const frame = spacingFrame.current;
+    if (frame.graph !== graph || frame.mode !== layoutMode) frame.box = null;
+    else if (frame.spacing !== spacing && !hold) frame.box ??= graphExtent(graph);
+    [frame.graph, frame.spacing, frame.mode] = [graph, spacing, layoutMode];
+    if (!hold && !frame.box && !cameraTo && sigma.getCustomBBox() === null) return;
+    sigma.setCustomBBox(hold ?? frame.box);
     if (cameraTo) sigma.getCamera().setState(cameraTo);
     sigma.refresh();
-  }, [sigma, hold, cameraTo]);
+  }, [sigma, graph, hold, cameraTo, spacing, layoutMode]);
   useEffect(() => {
     if (!cameraOut) return;
     const read = () => sigma.getCamera().getState();
@@ -527,7 +534,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         if (target) void sigma.getCamera().animate(target, { duration });
         return;
       }
-      if (!hold) {
+      if (!hold && !spacingFrame.current.box) {
         void sigma.getCamera().animatedReset({ duration });
         return;
       }
@@ -538,7 +545,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
   }, [sigma, graph, hold, spineAxes]);
 
   useEffect(() => {
-    if (layoutDone && !hold) sigma.getCamera().animatedReset({ duration: ease(400) });
+    if (layoutDone && !hold && !spacingFrame.current.box) sigma.getCamera().animatedReset({ duration: ease(400) });
   }, [layoutDone, sigma, ease, hold]);
 
   // Where three nodes are, on screen (@) and in the layout (~), for checks that an agent's open moved nothing
@@ -964,7 +971,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         const [ps, pt] = [end(s), end(t)];
         const [sx, sy, tx, ty] = [o.x + ax * ps.x + bx * ps.y, o.y + ay * ps.x + by * ps.y, o.x + ax * pt.x + bx * pt.y, o.y + ay * pt.x + by * pt.y];
         if ((sx < 0 && tx < 0) || (sy < 0 && ty < 0) || (sx > width && tx > width) || (sy > height && ty > height)) return false;
-        const [rs, rt] = [ps.size * scale * nodeScale, pt.size * scale * nodeScale];
+        const [rs, rt] = [sigma.getNodeDisplayData(s)?.size ?? ps.size, sigma.getNodeDisplayData(t)?.size ?? pt.size].map((r) => r * scale);
         if (how === "rule" && (mode(kind) !== "normal" || !fitsZoomRule(Math.hypot(tx - sx, ty - sy), widthOf(kind), rs, rt))) return false;
         // Labelled only where the edge reducer gives it its label: inside the focus, when there is one.
         if (!inFocus(s, t, kind)) return false;
@@ -974,7 +981,9 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         const style = { font: labelFont, color: how === "forced" ? forcedColor : ruleColor, halo: palette.canvas };
         return paintEdgeLabel(labelCtx, kind, { x: sx, y: sy, size: rs }, { x: tx, y: ty, size: rt }, curvature, style, how === "rule", meetsNodeLabel, textWidth, stamp);
       };
-      const drew = labelFrame(forcedNow(), drawnNow(), {
+      const drawn = drawnNow();
+      const automatic = drawn.length <= SMALL_GRAPH_EDGES || sigma.getCamera().ratio < LABEL_RATIO ? drawn : [];
+      const drew = labelFrame(forcedNow(), automatic, {
         forced: (edge) => {
           if (!graph.hasEdge(edge) || !shown(edge)) return false;
           const [s, t] = graph.extremities(edge);
@@ -997,6 +1006,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     };
     sigma.on("enterNode", hoverLabels);
     sigma.on("leaveNode", hoverLabels);
+    let sizeRatio: number | undefined, sizeScale: number | undefined;
     setSettings({
       defaultDrawNodeLabel: (context, data, settings) => {
         const key = (data as { key?: string }).key ?? "";
@@ -1019,11 +1029,16 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
             if (anchorBoxes.some((b) => overlaps(b, box)) || nodeLabels.some((b) => overlaps(b, box))) return;
           }
         }
+        if (at.label && key !== selected) {
+          context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
+          const box = nodeLabelBox(at.x, at.y, at.size, settings.labelSize, context.measureText(at.label).width);
+          if (nodeLabels.some((b) => overlaps(b, box))) return;
+        }
         drawDiscNodeLabel(context, at, settings);
         if (at.label) nodeLabels.push(nodeLabelBox(at.x, at.y, at.size, settings.labelSize, context.measureText(at.label).width));
       },
       // Which nodes get labels goes by their nominal size, as on main, not by the size the Spacing slider draws.
-      labelRenderedSizeThreshold: labelThreshold(graph.order) * nodeScale,
+      labelRenderedSizeThreshold: labelThreshold(graph.order),
       labelDensity: labelDensity(graph.order),
       labelColor: { color: palette.ink },
       labelFont: palette.font,
@@ -1070,7 +1085,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         // The head (or the selected member) is drawn on top with the merged title; the others are under it, unlabelled.
         const place = merge ? placesNow().get(node) : undefined;
         if (place) {
-          out.size = place.size * nodeScale;
+          out.size = place.size;
           const top = node === selected || (place.head && !(selected !== null && placesNow().get(selected)?.entity === place.entity));
           out.label = top ? place.title : null;
           if (!top) {
@@ -1078,7 +1093,14 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
             out.highlighted = false;
             out.zIndex = 0;
           } else out.zIndex = Math.max(Number(out.zIndex ?? 0), 1) + 1;
-        } else out.size = data.size * nodeScale;
+        } else out.size = data.size;
+        const clearance = place?.clearance ?? data.clearance;
+        if (clearance !== undefined) {
+          sizeRatio = sigma.getGraphToViewportRatio();
+          sizeScale = sigma.scaleSize(1);
+          const pixels = clearance * sizeRatio * 0.78;
+          out.size = Math.min(out.size, pixels / sizeScale / extentOf(shapeAt(data.shape)).reach);
+        }
         // A spine's anchors are always offered a label; the label pass cuts each to the room it has.
         if (spineAnchors.has(node) && out.label && out.color !== palette.dim) out.forceLabel = true;
         return out;
@@ -1110,14 +1132,27 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       if (selected && (s === selected || t === selected)) return { ...out, color: selectedEdgeColor(kind, palette), size: EDGE_SIZE.emphasis, zIndex: 2 };
       return { ...out, color: quiet ? palette.edgeStructure : palette.edge, size: quiet ? EDGE_SIZE.quiet : EDGE_SIZE.normal };
     }
+    const refreshSizes = () => sigma.scheduleRefresh();
+    // Sigma updates its bounding box after reducers run. Reprocess once if that changed the projection used above.
+    const settledSizes = () => {
+      if (sizeRatio !== undefined && (Math.abs(sigma.getGraphToViewportRatio() - sizeRatio) > 1e-8 || Math.abs(sigma.scaleSize(1) - sizeScale!) > 1e-8)) refreshSizes();
+    };
+    sigma.getCamera().on("updated", refreshSizes);
+    sigma.on("resize", refreshSizes);
+    sigma.on("afterRender", settledSizes);
+    const sizeFrame = requestAnimationFrame(refreshSizes);
     return () => {
+      cancelAnimationFrame(sizeFrame);
+      sigma.getCamera().off("updated", refreshSizes);
+      sigma.off("resize", refreshSizes);
+      sigma.off("afterRender", settledSizes);
       sigma.off("beforeRender", newFrame);
       sigma.off("afterRender", drawEdgeLabels);
       sigma.off("enterNode", hoverLabels);
       sigma.off("leaveNode", hoverLabels);
       cancelAnimationFrame(hoverFrame);
     };
-  }, [selected, selection, focused, groups, palette, graph, sigma, setSettings, offRelations, relationModes, symmetric, agentMarks, agentFocusNode, merge, placesNow, entities, proposedPairs, version, nodeScale, onUnlabelled, spineAxes]);
+  }, [selected, selection, focused, groups, palette, graph, sigma, setSettings, offRelations, relationModes, symmetric, agentMarks, agentFocusNode, merge, placesNow, entities, proposedPairs, version, onUnlabelled, spineAxes]);
 
   // Shadow connections (ws009 M1c, ui-expert point 1): a dotted straight line under the edges, 0.8 px with 2 px dots and
   // 4 px gaps, no arrow, in the structure colour (Console: chrome-hi; Instrument: ink), fading in with the score. A

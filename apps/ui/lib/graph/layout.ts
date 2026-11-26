@@ -7,6 +7,7 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import noverlap from "graphology-layout-noverlap";
 import type { Groups, IndexGraph } from "@/lib/graph/clusters";
 import { rng } from "@/lib/graph/rng";
+import { clearanceRadius, separateDiscs } from "@/lib/graph/clearance";
 
 export type LayoutResult = { positions: Float32Array; iterations: number; ms: number; capped: boolean };
 
@@ -190,10 +191,7 @@ export function compactGroups(positions: Float32Array, sizes: Float32Array, grou
   }
 }
 
-/** ForceAtlas2 against inferSettings (ui-expert's spacing rulings, plan 198): `scaling` times the repulsion, times the
- * spacing; `gravity` times the gravity, strong, whatever the spacing, so loosely joined clusters do not drift apart and
- * shrink at Fit. Repulsion only sets the layout's scale (its forces are 1/d against linear attraction and gravity), so
- * at Fit the spacing shows as the drawn node size (lib/graph/spacing nodeScale), not here. */
+/** Spacing increases repulsion and therefore the equilibrium link distance; strong gravity keeps groups together. */
 export const FORCE = { scaling: 3, gravity: 2 } as const;
 
 /** ForceAtlas2 for the spread-out look: more repulsion, strong gravity, attraction shared out by degree (so hubs do
@@ -263,7 +261,7 @@ export function runLayout(
     onTick?.(positionsOf(graph, n), Math.min(0.95, iterations / maxIterations));
   }
   const median = medianSize(sizes);
-  if (groups && groups.of.length === n && !fixed?.includes(1)) {
+  if (groups && groups.of.length === n && groups.sizes.length <= 128 && !fixed?.includes(1)) {
     const pulled = positionsOf(graph, n);
     compactGroups(pulled, sizes, homeGroups(g, groups), PULL_GAP * median);
     for (let i = 0; i < n; i++) graph.mergeNodeAttributes(i, { x: pulled[i * 2], y: pulled[i * 2 + 1] });
@@ -272,6 +270,10 @@ export function runLayout(
   const positions = positionsOf(graph, n);
   // noverlap moves every node a little; a kept node stays exactly where it was (ws009 M1b1).
   if (fixed) for (let i = 0; i < n; i++) if (fixed[i]) [positions[i * 2], positions[i * 2 + 1]] = [seeded[i * 2], seeded[i * 2 + 1]];
+  const clear = separateDiscs(Array.from({ length: n }, (_, i) => ({
+    x: positions[i * 2], y: positions[i * 2 + 1], radius: clearanceRadius(sizes[i], spacing),
+  })), fixed);
+  clear.forEach((p, i) => { [positions[i * 2], positions[i * 2 + 1]] = [p.x, p.y]; });
   return { positions, iterations, ms: Math.round(performance.now() - started), capped };
 }
 
@@ -324,7 +326,7 @@ export const NUDGE_ITERATIONS = 40;
  * move, so the graph the person was looking at stays where it was; only the new nodes settle between their
  * neighbours and away from the nodes around them. No gravity: it would pull them towards the middle of the graph.
  */
-export function nudge(input: { n: number; edges: Uint32Array; positions: Float32Array; sizes: Float32Array; fixed: Uint8Array }): Float32Array {
+export function nudge(input: { n: number; edges: Uint32Array; positions: Float32Array; sizes: Float32Array; fixed: Uint8Array; spacing?: number }): Float32Array {
   const { n, edges, positions, sizes, fixed } = input;
   const graph = new Graph({ type: "undirected", multi: true, allowSelfLoops: false });
   for (let i = 0; i < n; i++) graph.addNode(i, { x: positions[i * 2], y: positions[i * 2 + 1], size: sizes[i], fixed: fixed[i] === 1 });
@@ -333,5 +335,9 @@ export function nudge(input: { n: number; edges: Uint32Array; positions: Float32
   }
   const settings = { ...forceAtlas2.inferSettings(graph), gravity: 0, slowDown: 4, barnesHutOptimize: n > 2000, adjustSizes: false };
   forceAtlas2.assign(graph, { iterations: NUDGE_ITERATIONS, settings });
-  return positionsOf(graph, n);
+  const settled = positionsOf(graph, n);
+  const clear = separateDiscs(Array.from({ length: n }, (_, i) => ({
+    x: settled[i * 2], y: settled[i * 2 + 1], radius: clearanceRadius(sizes[i], input.spacing ?? 1.6),
+  })), fixed);
+  return Float32Array.from(clear.flatMap((p) => [p.x, p.y]));
 }
