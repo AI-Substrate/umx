@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/graphs/[alias]/rows/route";
 import { BODY_MAX } from "@/lib/http";
 import { createRows, EDGE_CHUNK, readWanted, ROWS_MAX } from "@/lib/rows";
-import { type ReadArgs, UmxError } from "@/lib/umx";
+import { createUmx, type Exec, type ReadArgs, UMX_PROTOCOL, UmxError } from "@/lib/umx";
 
 const id = (i: number) => `01${String(i).padStart(24, "0")}`;
 const JSON_TYPE = "application/json";
@@ -52,6 +52,24 @@ describe("the row request", () => {
 });
 
 describe("reading rows by id", () => {
+  it("carries declarations and local/external attribution without another daemon read", async () => {
+    const hubs = [{ name: "register", form: "named", node: id(1), via: "part_of" }];
+    const exec = vi.fn<Exec>(async (_bin, argv) => {
+      const ontology = argv[0] === "ontology";
+      const rows = [1, 2, 3].map((n) => ({
+        id: id(n), owner: "demo", type: "part_of", from: id(4), to: id(1), from_graph: "demo", to_graph: n === 3 ? "ops" : "demo",
+        ...(n > 1 ? { auto_added_by: "register" } : {}),
+      }));
+      return { stdout: JSON.stringify({ umx: UMX_PROTOCOL, command: ontology ? "ontology show" : "query", status: "ok", data: ontology ? { symmetric: [], hubs } : { rows }, warnings: [], errors: [] }), failed: false, detail: "" };
+    });
+    const read = createUmx({ exec, bin: () => "/u", env: () => ({}) });
+    const got = await createRows({ read, check: async () => {}, sleep: async () => {} })("demo", { nodes: [], edges: [id(1), id(2), id(3)], with: ["ops"] });
+    expect(got.hubs).toEqual(hubs);
+    expect(got.edges).toEqual([[id(1), "part_of", id(4), id(1)], [id(2), "part_of", id(4), id(1), "register"]]);
+    expect(got.external).toEqual([[id(3), "part_of", "demo", id(4), "ops", id(1), "register"]]);
+    expect(exec).toHaveBeenCalledTimes(2);
+  });
+
   it("checks the graph with the picker's rule first, and reads nothing for one it would not open", async () => {
     const h = harness();
     await expect(h.rows("vault", { nodes: [id(1)], edges: [] })).rejects.toMatchObject({ code: "ui_graph_not_open" });

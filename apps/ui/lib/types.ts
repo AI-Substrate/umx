@@ -28,12 +28,16 @@ export type ScopeSummary = { name: string; graphs: string[]; securedGraphs: stri
 /** [id, type, title, status, updated, entity_key]: the last two only where entities need them (ws009 M2): a node with
  * keys, or an end of an identity edge, and every node a live change reads. */
 export type NodeRow = [id: string, type: string, title: string, status: string, updated?: string, keys?: string[]];
-/** [id, type, from, to] */
-export type EdgeRow = [string, string, string, string];
+/** The optional final value is attribution, never a membership condition. */
+export type EdgeRow = [id: string, type: string, from: string, to: string, autoAddedBy?: string | null];
 /** An edge with an end in another graph: [id, type, from graph id, from, to graph id, to, unresolved]. Drawn only when
  * both graphs are open on the canvas (plan 133). `unresolved`: umx gave an end as graph_not_loaded to this graph's
  * own read, as it does for a secured graph nobody named; it is drawn only when the person opened that graph too. */
-export type ExternalRow = [string, string, string, string, string, string, boolean];
+export type ExternalRow = [string, string, string, string, string, string, boolean, (string | null)?];
+
+export type HubDeclaration =
+  | { name: string; form: "named"; via: string; node: string }
+  | { name: string; form: "type"; via: string; type: string };
 
 export type Snapshot = {
   graph: string;
@@ -48,6 +52,8 @@ export type Snapshot = {
   broken?: string[];
   /** The graph's symmetric relations (`umx ontology show`, built-in ones included): drawn as lines, not arrows. */
   symmetric?: string[];
+  /** Absent on older daemons; an empty list authoritatively declares no hubs. */
+  hubs?: HubDeclaration[];
   totalNodes: number;
   totalEdges: number;
   truncated: boolean;

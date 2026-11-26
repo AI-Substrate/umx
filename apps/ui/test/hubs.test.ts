@@ -5,6 +5,8 @@ import { layOut } from "@/lib/graph/layout";
 import { louvainGroups, type IndexGraph } from "@/lib/graph/clusters";
 import { spineLayout, type Place } from "@/lib/graph/spine-layout";
 import { readLook, writeLook } from "@/lib/view-url";
+import { buildGraph, indexGraph } from "@/lib/graph/build";
+import type { NodeRow, Snapshot } from "@/lib/types";
 
 function graph(n: number, rows: [number, number, number?, number?][]): IndexGraph {
   return {
@@ -25,6 +27,64 @@ function clear(positions: Float32Array, radii: readonly number[]) {
 }
 
 describe("hub selection", () => {
+  it("resolves every named/type declaration and incoming relation, without a count or degree threshold", () => {
+    const snapshot: Snapshot = {
+      graph: "g", graphId: "gid",
+      nodes: [["reg", "register"], ...Array.from({ length: 13 }, (_, i) => [`m${String(i + 1).padStart(2, "0")}`, "meeting"]), ["a", "risk"], ["b", "risk"], ["c", "risk"], ["wrong", "risk"], ["look", "gathering"]]
+        .map(([id, type]): NodeRow => [id, type, id, "open"]),
+      edges: [
+        ["manual", "part_of", "a", "reg"], ["auto", "part_of", "b", "reg", "risk_register"],
+        ["shared", "raised_in", "a", "m01"], ["custom", "tracks", "c", "reg"],
+        ["wrong-via", "part_of", "wrong", "m02", "meetings"], ["reversed", "raised_in", "m02", "wrong"],
+        ["look1", "part_of", "wrong", "look"], ["look2", "part_of", "c", "look"],
+      ],
+      hubs: [
+        { name: "risk_register", form: "named", via: "part_of", node: "reg" },
+        { name: "extra_relation", form: "named", via: "tracks", node: "reg" },
+        { name: "meetings", form: "type", via: "raised_in", type: "meeting" },
+        { name: "gone", form: "named", via: "part_of", node: "missing" },
+      ],
+      totalNodes: 19, totalEdges: 8, truncated: false, omittedEdges: { otherGraph: 0, unresolved: 0 },
+    };
+    const built = buildGraph(snapshot);
+    const indexed = indexGraph(built.graph, undefined, [snapshot]);
+    const plan = findHubs(indexed, built.ids, options("declared", "connections", 1), 1, 7);
+    const at = (id: string) => built.ids.indexOf(`g/${id}`);
+    expect(plan.centres).toHaveLength(14);
+    expect(plan.centres).toContain(at("reg"));
+    expect(plan.centres).toContain(at("m13"));
+    expect(plan.owner[at("a")]).toBe(at("m01"));
+    expect(plan.owner[at("b")]).toBe(at("reg"));
+    expect(plan.owner[at("c")]).toBe(at("reg"));
+    expect(plan.owner[at("wrong")]).toBe(-1);
+    expect(plan.owner[at("look")]).toBe(-1);
+    expect(built.graph.size).toBe(snapshot.edges.length);
+    expect(plan.preview).toBe(false);
+    const mask = new Uint8Array(indexed.n).fill(1), edges = new Uint8Array(built.graph.size).fill(1);
+    const canonical = canonicalGraph(indexed, built.ids, mask, edges);
+    const reversed = buildGraph({ ...snapshot, nodes: [...snapshot.nodes].reverse(), edges: [...snapshot.edges].reverse() });
+    const again = canonicalGraph(indexGraph(reversed.graph, undefined, [snapshot]), reversed.ids, mask, edges);
+    expect(again.ids).toEqual(canonical.ids);
+    expect(again.graph).toEqual(canonical.graph);
+    expect(findHubs(indexGraph(built.graph, undefined, [{ graph: "g", hubs: [] }]), built.ids, options("declared"), 1, 7)).toMatchObject({ centres: [], preview: false });
+    const legacy = findHubs(indexGraph(built.graph, undefined, [{ graph: "g" }]), built.ids, options("declared"), 1, 7);
+    expect(legacy.preview).toBe(true);
+    expect(legacy.centres).toContain(at("look"));
+  });
+
+  it("scopes declarations to their own graph, including equal ids and types in another open graph", () => {
+    const snap = (name: string): Snapshot => ({
+      graph: name, graphId: name, nodes: [["hub", "meeting", "Meeting", "open"], ["member", "risk", "Risk", "open"]],
+      edges: [["e", "raised_in", "member", "hub"]],
+      hubs: name === "a" ? [{ name: "meetings", form: "type", type: "meeting", via: "raised_in" }] : [],
+      totalNodes: 2, totalEdges: 1, truncated: false, omittedEdges: { otherGraph: 0, unresolved: 0 },
+    });
+    const snaps = [snap("a"), snap("b")], built = buildGraph(snaps);
+    const plan = findHubs(indexGraph(built.graph, undefined, snaps), built.ids, options("declared"), 1, 7);
+    expect(plan.centres.map((i) => built.ids[i])).toEqual(["a/hub"]);
+    expect(plan.owner[built.ids.indexOf("b/member")]).toBe(-1);
+  });
+
   it("counts unique directed neighbours, ignores loops, and limits the chosen hubs", () => {
     const g = graph(8, [[1, 0], [2, 0], [3, 0], [4, 5], [4, 6], [4, 7], [0, 0], [1, 0]]);
     expect(findHubs(g, ids(8), options("degree", "incoming", 1), 1, 7).centres).toEqual([0]);
@@ -140,6 +200,36 @@ describe("clearance and fans", () => {
       expect(nodes.slice(110).every((node) => result.at.get(node.key)!.y < minPlaced)).toBe(true);
       clear(Float32Array.from(nodes.flatMap((node) => { const p = result.at.get(node.key)!; return [p.x, p.y]; })), new Array(n).fill(result.clearance));
     }
+  });
+
+  it("projects fan arcs into members' own bands, fixes every anchor and keeps unplaced hubs on the shelf", () => {
+    const n = 120, g = graph(n, Array.from({ length: n - 4 }, (_, i): [number, number] => [i % 4, i + 4]));
+    const plan = findHubs(g, ids(n), options("degree"), 1, 7);
+    const sizes = new Float32Array(n).fill(4);
+    for (const head of plan.centres) sizes[head] = hubSize(sizes[head]);
+    const free = fanLayout(new Float32Array(n * 2), sizes, plan, 1.6);
+    const nodes = ids(n).map((key, i) => ({ key, id: String(i), x: free[i * 2], y: free[i * 2 + 1], clearance: clearanceRadius(sizes[i], 1.6) }));
+    const owners = new Map([...plan.owner].map((head, i) => [nodes[i].key, nodes[head].key]));
+    for (const name of ["first", "second"]) {
+      const places = new Map<string, Place>(nodes.map((node, i) => [node.id, { band: i >= 110 || i === 3 ? null : name === "first" ? i % 3 : (i * 7) % 4, by: "field", anchor: i < 3 || i === 4 }]));
+      for (const spread of [1, 4]) {
+        const normal = spineLayout("g", nodes, places, spread, 1.8);
+        const result = spineLayout("g", nodes, places, spread, 1.8, owners, 1.6, true);
+        expect(result.axis).toEqual(normal.axis);
+        expect(result.at.size).toBe(n);
+        for (const node of nodes) if (places.get(node.id)!.anchor && places.get(node.id)!.band !== null) expect(result.at.get(node.key)!.y).toBe(result.axis!.y);
+        const bandXs = [...new Set([...places.values()].map((p) => p.band).filter((b): b is number => b !== null))].sort((a, b) => a - b)
+          .map((band) => nodes.filter((node) => places.get(node.id)!.band === band).map((node) => result.at.get(node.key)!.x));
+        for (let b = 1; b < bandXs.length; b++) expect(Math.max(...bandXs[b - 1])).toBeLessThan(Math.min(...bandXs[b]));
+        const placed = nodes.filter((node) => places.get(node.id)!.band !== null);
+        const bottom = Math.min(...placed.map((node) => result.at.get(node.key)!.y - result.radii!.get(node.key)!));
+        for (const node of nodes) if (places.get(node.id)!.band === null) expect(result.at.get(node.key)!.y + result.radii!.get(node.key)!).toBeLessThan(bottom);
+        clear(Float32Array.from(nodes.flatMap((node) => { const p = result.at.get(node.key)!; return [p.x, p.y]; })), nodes.map((node) => result.radii!.get(node.key)!));
+        expect(result.at).toEqual(spineLayout("g", [...nodes].reverse(), places, spread, 1.8, owners, 1.6, true).at);
+        expect(result.at).not.toEqual(normal.at);
+      }
+    }
+    expect(free).toEqual(fanLayout(new Float32Array(n * 2), sizes, plan, 1.6));
   });
 });
 

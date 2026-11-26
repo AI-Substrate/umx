@@ -26,7 +26,7 @@ export function readChange(post: (body: Wanted) => Promise<RowsReply>, want: { n
  * relations as the change's reply has them (kept when the reply has none). Only that graph's snapshot changes. Its
  * external rows lose every edge the change removed (`gone`, the graph's own ids), so an edge deleted live is never
  * read back from them (ws009 M2 review B1: the entity walk follows the ones not drawn). */
-export function snapAfter(snap0: Snapshot, outcome: Pick<Outcome, "nodes" | "edges">, rows: Pick<RowsReply, "symmetric">, gone: readonly string[] = []): Snapshot {
+export function snapAfter(snap0: Snapshot, outcome: Pick<Outcome, "nodes" | "edges">, rows: Pick<RowsReply, "symmetric" | "hubs">, gone: readonly string[] = []): Snapshot {
   const drop = new Set(gone);
   return {
     ...snap0,
@@ -34,6 +34,7 @@ export function snapAfter(snap0: Snapshot, outcome: Pick<Outcome, "nodes" | "edg
     totalNodes: snap0.totalNodes + outcome.nodes.added - outcome.nodes.removed,
     totalEdges: snap0.totalEdges + outcome.edges.added - outcome.edges.removed,
     symmetric: rows.symmetric ?? snap0.symmetric,
+    ...(rows.hubs !== undefined ? { hubs: rows.hubs } : {}),
   };
 }
 
@@ -89,7 +90,7 @@ export function applyRows(graph: ViewGraph, rows: { nodes: NodeRow[]; edges: Edg
     out.touched.add(t);
     graph.dropEdge(id);
   };
-  for (const [id, kind, from, to] of rows.edges) {
+  for (const [id, kind, from, to, origin] of rows.edges) {
     const had = graph.hasEdge(id);
     if (!graph.hasNode(from) || !graph.hasNode(to)) {
       if (had) {
@@ -99,11 +100,11 @@ export function applyRows(graph: ViewGraph, rows: { nodes: NodeRow[]; edges: Edg
       continue;
     }
     if (had) {
-      if (graph.getEdgeAttribute(id, "kind") === kind && graph.source(id) === from && graph.target(id) === to) continue;
+      if (graph.getEdgeAttribute(id, "kind") === kind && graph.source(id) === from && graph.target(id) === to && (graph.getEdgeAttribute(id, "autoAddedBy") ?? null) === (origin ?? null)) continue;
       // A new relation or direction: dropped and added again, never repainted in place (sigma trap, plan 102).
       dropEdge(id);
     }
-    graph.addEdgeWithKey(id, from, to, edgeAttrs(kind));
+    graph.addEdgeWithKey(id, from, to, edgeAttrs(kind, origin));
     out.touched.add(from);
     out.touched.add(to);
     if (had) out.edges.edited++;
@@ -147,13 +148,13 @@ export function applyRows(graph: ViewGraph, rows: { nodes: NodeRow[]; edges: Edg
  * name ends by alias) are kept only when both ends' graphs are open. */
 export function qualifyRows(
   alias: string,
-  rows: { nodes: NodeRow[]; edges: EdgeRow[]; external?: [string, string, string, string, string, string][] },
+  rows: Pick<RowsReply, "nodes" | "edges" | "external">,
   open: ReadonlySet<string>,
 ): { nodes: NodeRow[]; edges: EdgeRow[] } {
   const nodes = rows.nodes.map(([id, ...rest]): NodeRow => [qid(alias, id), ...rest]);
-  const edges = rows.edges.map(([id, kind, from, to]): EdgeRow => [qid(alias, id), kind, qid(alias, from), qid(alias, to)]);
-  for (const [id, kind, fa, from, ta, to] of rows.external ?? []) {
-    if (open.has(fa) && open.has(ta)) edges.push([qid(alias, id), kind, qid(fa, from), qid(ta, to)]);
+  const edges = rows.edges.map(([id, kind, from, to, ...origin]): EdgeRow => [qid(alias, id), kind, qid(alias, from), qid(alias, to), ...origin]);
+  for (const [id, kind, fa, from, ta, to, ...origin] of rows.external ?? []) {
+    if (open.has(fa) && open.has(ta)) edges.push([qid(alias, id), kind, qid(fa, from), qid(ta, to), ...origin]);
   }
   return { nodes, edges };
 }

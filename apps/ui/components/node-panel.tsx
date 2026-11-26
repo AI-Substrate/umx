@@ -52,7 +52,7 @@ type Props = {
 };
 
 /** Where a neighbour is on the canvas (plan 133): its key when its graph is open, and how to name its graph. */
-export type Links = { target: (n: Neighbour) => string | null; graphName: (n: Neighbour) => string };
+export type Links = { target: (n: Neighbour) => string | null; graphName: (n: Neighbour) => string; edgeOrigin?: (n: Neighbour) => string | null };
 
 export type Similar = {
   loading: boolean;
@@ -265,11 +265,13 @@ export function NeighbourList({
               <span className="tabular-nums">({list.length})</span>
             </div>
             <ul>
-              {list.map((n) => (
-                <li key={`${n.edge}:${n.graph}:${n.id}`}>
+              {list.map((n) => {
+                const origin = links?.edgeOrigin?.(n);
+                return <li key={`${n.edge}:${n.graph}:${n.id}`}>
                   <NeighbourRow n={n} theme={theme} onPick={onPick} hiddenIds={hiddenIds} links={links} />
-                </li>
-              ))}
+                  {origin ? <p className="px-2 pb-1 text-xs text-muted-foreground"><span className="font-mono">auto_added_by</span>: {origin}</p> : null}
+                </li>;
+              })}
             </ul>
           </div>
         );

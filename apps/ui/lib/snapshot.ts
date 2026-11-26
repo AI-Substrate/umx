@@ -5,7 +5,7 @@ import { shadowCache } from "@/lib/shadows-read";
 import { keysOf } from "@/lib/graph/entities";
 import { shownTitle, vouchTitles } from "@/lib/flagged-read";
 import { hiddenTitle, redactNode } from "@/lib/secret-flags";
-import type { ApiError, ExternalRow, GraphSummary, Neighbour, NodeDetail, NodeRow, ResolvedNeighbour, ScopeSummary, Snapshot } from "@/lib/types";
+import type { ApiError, EdgeRow, ExternalRow, GraphSummary, HubDeclaration, Neighbour, NodeDetail, NodeRow, ResolvedNeighbour, ScopeSummary, Snapshot } from "@/lib/types";
 
 type Reader = ReturnType<typeof createUmx>;
 type Rows<T> = { rows: T[]; total: number; truncated: boolean };
@@ -312,6 +312,7 @@ type EdgeListRow = {
   to_graph?: string | null;
   from_state?: string | null;
   to_state?: string | null;
+  auto_added_by?: unknown;
 };
 
 /** Where an edge belongs on a one-graph canvas: drawn, or left out with a reason. */
@@ -324,20 +325,31 @@ export function edgePlace(e: EdgeListRow, localId: string): "local" | "otherGrap
   return "local";
 }
 
-/** The graph's symmetric relations (`umx ontology show`, built-in ones included): drawn as lines, not arrows. Read with
- * each snapshot and with each live change's rows, so a relation declared symmetric while the view is open is redrawn. */
-export async function symmetricOf(read: Reader, graph: string): Promise<string[]> {
-  const ontology = await read<{ symmetric?: unknown }>("ontology show", { graph });
-  return Array.isArray(ontology.data?.symmetric) ? ontology.data.symmetric.filter((r): r is string => typeof r === "string") : [];
+/** Declarations and symmetric relations share the ontology read already made with snapshots and live rows. */
+export async function ontologyOf(read: Reader, graph: string): Promise<{ symmetric: string[]; hubs?: HubDeclaration[] }> {
+  const { data } = await read<{ symmetric?: unknown; hubs?: unknown }>("ontology show", { graph });
+  const symmetric = Array.isArray(data?.symmetric) ? data.symmetric.filter((r): r is string => typeof r === "string") : [];
+  if (data?.hubs === undefined) return { symmetric };
+  const bad = () => new UmxError("ui_bad_hubs", "umx returned invalid hub declarations.", `umx ontology show --graph ${graph}`, 502);
+  if (!Array.isArray(data.hubs)) throw bad();
+  const hubs = data.hubs.map((row): HubDeclaration => {
+    if (row === null || typeof row !== "object" || Array.isArray(row)) throw bad();
+    const r: Record<string, unknown> = row;
+    if (typeof r.name !== "string" || !r.name || typeof r.via !== "string" || !r.via) throw bad();
+    if (r.form === "named" && typeof r.node === "string" && /^[0-9A-Z]{26}$/.test(r.node)) return { name: r.name, form: r.form, via: r.via, node: r.node };
+    if (r.form === "type" && typeof r.type === "string" && r.type) return { name: r.name, form: r.form, via: r.via, type: r.type };
+    throw bad();
+  });
+  return { symmetric, hubs };
 }
 
 export async function loadSnapshot(read: Reader, graph: string): Promise<Snapshot> {
   type N = { id: string; type: string; title: string; status: string; updated?: unknown; entity_key?: unknown };
   const { localId } = await graphIds(read, graph);
   // The three reads are independent: run together, a snapshot waits for the slowest, not the sum.
-  const [nodes, symmetric, edges] = await Promise.all([
+  const [nodes, ontology, edges] = await Promise.all([
     pages<N>(read, "node list", graph, NODE_CAP),
-    symmetricOf(read, graph),
+    ontologyOf(read, graph),
     pages<EdgeListRow>(read, "edge list", graph, EDGE_CAP),
   ]);
   const omittedEdges = { otherGraph: 0, unresolved: 0 };
@@ -346,14 +358,20 @@ export async function loadSnapshot(read: Reader, graph: string): Promise<Snapsho
   const broken: string[] = [];
   for (const e of edges.rows) {
     const place = edgePlace(e, localId);
-    if (place === "local") local.push([e.id, e.type, e.from, e.to]);
+    if (place === "local") {
+      const row: EdgeRow = [e.id, e.type, e.from, e.to];
+      if (typeof e.auto_added_by === "string") row.push(e.auto_added_by);
+      local.push(row);
+    }
     else omittedEdges[place]++;
     // The browser draws these only when both graphs are open on its canvas (plan 133): graph ids, never an alias. An
     // end umx gave as graph_not_loaded (a graph not loaded, or a secured one this read did not name) comes too, so a
     // secured graph the person opened by name shows its links; any other state can never be drawn.
     const notLoaded = (s: string | null | undefined) => s == null || s === "graph_not_loaded";
     if (place === "otherGraph" || (place === "unresolved" && notLoaded(e.from_state) && notLoaded(e.to_state))) {
-      external.push([e.id, e.type, e.from_graph ?? localId, e.from, e.to_graph ?? localId, e.to, place === "unresolved"]);
+      const row: ExternalRow = [e.id, e.type, e.from_graph ?? localId, e.from, e.to_graph ?? localId, e.to, place === "unresolved"];
+      if (typeof e.auto_added_by === "string") row.push(e.auto_added_by);
+      external.push(row);
     } else if (place === "unresolved") broken.push(e.id);
   }
   // Entities (ws009 M2): every node keeps its updated time, as any node can be a member through an edge another graph
@@ -372,7 +390,7 @@ export async function loadSnapshot(read: Reader, graph: string): Promise<Snapsho
     edges: local,
     external,
     broken,
-    symmetric,
+    ...ontology,
     totalNodes: nodes.total,
     totalEdges: edges.total,
     truncated: nodes.rows.length < nodes.total || edges.rows.length < edges.total,

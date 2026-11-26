@@ -4,6 +4,7 @@
 // the line as the force layout had them; nodes the spine does not place on a shelf under the lane (the canvas's y grows
 // upward). The lane keeps the
 // graph's own region, so several graphs each keep theirs.
+import { separateDiscs } from "@/lib/graph/clearance";
 
 /** Where umx placed one node: its band (null when not placed), how, and whether it is one of the spine's anchors. */
 export type Place = { band: number | null; by: string; anchor: boolean };
@@ -14,6 +15,7 @@ export type Place = { band: number | null; by: string; anchor: boolean };
 export type SpineAxis = { graph: string; y: number; x0: number; x1: number; bands: number[]; anchors: string[]; pitch: number };
 
 type At = { x: number; y: number };
+type SpineNode = At & { key: string; id: string; clearance?: number };
 const NO_HUBS: ReadonlyMap<string, string> = new Map();
 
 /** The lane's width over its height when the canvas does not say: a wide browser canvas. */
@@ -75,13 +77,14 @@ export function rowsFor(sizes: readonly number[], wide: readonly number[], shelf
  */
 export function spineLayout(
   graph: string,
-  nodes: readonly { key: string; id: string; x: number; y: number }[],
+  nodes: readonly SpineNode[],
   places: ReadonlyMap<string, Place>,
   spread: number = SPREAD.default,
   aspect: number = ASPECT,
   hubs: ReadonlyMap<string, string> = NO_HUBS,
   spacing = 1.6,
-): { at: Map<string, At>; axis: SpineAxis | null; clearance: number } {
+  fans = false,
+): { at: Map<string, At>; axis: SpineAxis | null; clearance: number; radii?: ReadonlyMap<string, number> } {
   const at = new Map<string, At>();
   if (nodes.length === 0) return { at, axis: null, clearance: 1 };
   const s = spreadOf(spread);
@@ -123,7 +126,13 @@ export function spineLayout(
   const w = bands.length > 0 ? spans.reduce((a, b) => a + b, 0) * col : Math.max(x1 - x0, h * ratio, 1);
   const left = cx - w / 2;
   const column = new Map<number, number>();
-  bands.reduce((x, b, i) => (column.set(b, x + (spans[i] * col) / 2), x + spans[i] * col), left);
+  const bounds = new Map<number, { left: number; right: number }>();
+  bands.reduce((x, b, i) => {
+    const right = x + spans[i] * col;
+    column.set(b, (x + right) / 2);
+    bounds.set(b, { left: x, right });
+    return right;
+  }, left);
 
   for (const [band, keys] of anchors) {
     const mid = column.get(band)!;
@@ -160,7 +169,86 @@ export function spineLayout(
     bands.length > 0
       ? { graph, y: cy, x0: left, x1: left + w, bands: bands.map((b) => column.get(b)!), anchors: [...anchors.values()].flat().sort(), pitch: row }
       : null;
-  return { at, axis, clearance: Math.min(row, col) * 0.45 };
+  const clearance = Math.min(row, col) * 0.45;
+  return fans && hubs.size > 0
+    ? { ...spineFans(nodes, places, at, hubs, bounds, { left, right: left + w }, cy, clearance), axis, clearance }
+    : { at, axis, clearance };
+}
+
+/** Project the existing fan into each member's own band, clipping it into arcs where needed. Spatial packing stays
+ * inside that band; the normal grid supplies its width and minimum vertical spread, never a serial row of fans. */
+function spineFans(
+  nodes: readonly SpineNode[], places: ReadonlyMap<string, Place>, normal: ReadonlyMap<string, At>,
+  owners: ReadonlyMap<string, string>, bounds: ReadonlyMap<number, { left: number; right: number }>,
+  shelf: { left: number; right: number }, cy: number, radius: number,
+): { at: Map<string, At>; radii: ReadonlyMap<string, number> } {
+  const source = new Map<string, SpineNode>();
+  const zones = new Map<number | null, SpineNode[]>();
+  const radii = new Map<string, number>();
+  for (const n of nodes) {
+    source.set(n.key, n);
+    const band = places.get(n.id)?.band ?? null;
+    const list = zones.get(band) ?? [];
+    list.push(n);
+    zones.set(band, list);
+    radii.set(n.key, radius * (owners.get(n.key) === n.key ? 1 : 1 / 1.6));
+  }
+  const at = new Map<string, At>();
+  let low = cy;
+  const project = (list: SpineNode[], band: number | null, box: { left: number; right: number; top?: number }) => {
+    list.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    let shift = 0;
+    if (box.top !== undefined) for (const n of list) shift = Math.min(shift, box.top - normal.get(n.key)!.y - radii.get(n.key)!);
+    const wanted = list.map((n) => ({ x: normal.get(n.key)!.x, y: normal.get(n.key)!.y + shift, radius: radii.get(n.key)! }));
+    const fixed = Uint8Array.from(list, (n) => (band !== null && places.get(n.id)?.anchor) || owners.get(n.key) === n.key ? 1 : 0);
+    const groups = new Map<string, number[]>();
+    list.forEach((n, i) => {
+      const owner = owners.get(n.key);
+      if (owner === undefined || !source.has(owner)) return;
+      const group = groups.get(owner) ?? [];
+      group.push(i);
+      groups.set(owner, group);
+    });
+    for (const [head, members] of groups) {
+      const hub = source.get(head)!;
+      const sameBand = (places.get(hub.id)?.band ?? null) === band;
+      const home = normal.get(head)!;
+      const centre = sameBand ? { x: home.x, y: home.y + shift } : { x: 0, y: 0 };
+      if (!sameBand) for (const i of members) {
+        centre.x += wanted[i].x / members.length;
+        centre.y += wanted[i].y / members.length;
+      }
+      let scale = 0, dx = 0, margin = 0;
+      for (const i of members) {
+        const n = list[i], r = wanted[i].radius;
+        scale = Math.max(scale, r / (n.clearance ?? r));
+        dx = Math.max(dx, Math.abs(n.x - hub.x));
+        margin = Math.max(margin, r);
+      }
+      const room = Math.max(0, Math.min(centre.x - box.left, box.right - centre.x) - margin);
+      const sx = dx > 0 ? Math.min(scale, room / dx) : scale;
+      for (const i of members) if (!fixed[i]) {
+        wanted[i].x = centre.x + (list[i].x - hub.x) * sx;
+        wanted[i].y = centre.y + (list[i].y - hub.y) * scale;
+      }
+    }
+    const packed = separateDiscs(wanted, fixed, box);
+    let [baseMin, baseMax, min, max] = [Infinity, -Infinity, Infinity, -Infinity];
+    list.forEach((n, i) => {
+      const y = normal.get(n.key)!.y;
+      baseMin = Math.min(baseMin, y); baseMax = Math.max(baseMax, y);
+      min = Math.min(min, packed[i].y); max = Math.max(max, packed[i].y);
+    });
+    const stretch = band !== null && max > min ? Math.max(1, (baseMax - baseMin) / (max - min)) : 1;
+    list.forEach((n, i) => {
+      const p = { x: packed[i].x, y: cy + (packed[i].y - cy) * stretch };
+      at.set(n.key, p);
+      low = Math.min(low, p.y - radii.get(n.key)!);
+    });
+  };
+  for (const [band, box] of bounds) project(zones.get(band) ?? [], band, box);
+  if (zones.has(null)) project(zones.get(null)!, null, { ...shelf, top: low - 2 * radius });
+  return { at, radii };
 }
 
 /** An anchor's label narrower than this (px) is not cut to fit before the next anchor: it runs past it, to at most

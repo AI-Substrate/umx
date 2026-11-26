@@ -3,7 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NodePanel } from "@/components/node-panel";
+import { NeighbourList, NodePanel } from "@/components/node-panel";
 import { NodeSpines } from "@/components/node-spines";
 import type { NodeOnSpine } from "@/lib/graph/spine-layout";
 import { copyText, IdText, idLike, Value } from "@/components/text";
@@ -11,8 +11,20 @@ import type { Theme } from "@/lib/graph/colors";
 import { HIDDEN_VALUE } from "@/lib/secret-flags";
 import { loadNode } from "@/lib/snapshot";
 import { createUmx, UMX_PROTOCOL, type Exec } from "@/lib/umx";
+import type { Neighbour } from "@/lib/types";
 
 const ID = "01M78ADDVW6AJP6E2SM22WP9KE";
+
+it("shows held edge attribution without treating manual members as auto-added", () => {
+  const member: Neighbour = { kind: "node", id: ID, graph: "gid", graphAlias: "demo", local: true, way: "in", relation: "part_of", edge: "manual", type: "risk", title: "Manual member", status: "open" };
+  const html = renderToStaticMarkup(<NeighbourList rows={[member, { ...member, edge: "auto", title: "Auto member" }]} theme="light" onPick={() => {}} hiddenIds={() => false} links={{
+    target: () => `demo/${ID}`, graphName: () => "demo", edgeOrigin: (n) => n.edge === "auto" ? "risk_register" : null,
+  }} />);
+  expect(html).toContain("Manual member");
+  expect(html).toContain("Auto member");
+  expect(html.match(/auto_added_by/g)).toHaveLength(1);
+  expect(html).toContain("risk_register");
+});
 
 function panel(theme: Theme, loading: boolean, node?: Record<string, unknown>) {
   return renderToStaticMarkup(

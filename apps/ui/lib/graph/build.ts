@@ -14,7 +14,7 @@ import {
 } from "@/lib/graph/colors";
 import { type Filters, NO_FILTERS, nodeShown, toggled, type Visibility } from "@/lib/graph/filters";
 import { graphColor } from "@/lib/graph/graph-colors";
-import { qid } from "@/lib/graph/keys";
+import { qid, unq } from "@/lib/graph/keys";
 import { shapeIndex } from "@/lib/graph/shapes";
 import { inPolygon } from "@/lib/selection";
 import type { EdgeRow, Neighbour, Snapshot } from "@/lib/types";
@@ -50,7 +50,7 @@ export type NodeAttrs = {
   homeX?: number;
   homeY?: number;
 };
-export type EdgeAttrs = { kind: string; color: string; size: number; hidden: boolean };
+export type EdgeAttrs = { kind: string; color: string; size: number; hidden: boolean; autoAddedBy?: string };
 export type ViewGraph = MultiDirectedGraph<NodeAttrs, EdgeAttrs>;
 
 export type { Visibility };
@@ -78,7 +78,7 @@ export function newNode(graph: string, kind: string, title: string, status: stri
   };
 }
 
-export const edgeAttrs = (kind: string): EdgeAttrs => ({ kind, color: "#999999", size: kind === "part_of" ? 0.6 : 1, hidden: false });
+export const edgeAttrs = (kind: string, origin?: string | null): EdgeAttrs => ({ kind, color: "#999999", size: kind === "part_of" ? 0.6 : 1, hidden: false, ...(origin ? { autoAddedBy: origin } : {}) });
 
 /** Why an edge a graph stores is not on the canvas (plan 133): an end in a graph that is not open (or not loaded),
  * or an end umx could not resolve, or one in a graph open in several copies (never guessed). Keyed by edge key. */
@@ -111,12 +111,28 @@ function endKey(graphId: string, node: string, owner: { alias: string; graphId: 
  * another graph is in the one open graph with its id; one whose graph is not open, or open in several copies, is not
  * on the canvas. A secured graph that is not open is never named (d-20).
  */
-export function neighbourLinks(open: OpenGraphs, owner: string | null, secured: ReadonlySet<string>) {
+export function neighbourLinks(open: OpenGraphs, owner: string | null, secured: ReadonlySet<string>, drawn?: { graph: ViewGraph; node: string }) {
   const aliasOf = (n: Neighbour) => (n.local && owner ? owner : open.get(n.graph));
+  const target = (n: Neighbour): string | null => {
+    const a = aliasOf(n);
+    return n.kind === "node" && a ? qid(a, n.id) : null;
+  };
+  const origins = new Map<string, string | null>();
+  const keyOf = (edge: string, far: string, way: string) => JSON.stringify([edge, far, way]);
+  if (drawn?.graph.hasNode(drawn.node)) drawn.graph.forEachEdge(drawn.node, (edgeKey, a, from, to) => {
+    const add = (far: string, way: string) => {
+      const key = keyOf(unq(edgeKey).id, far, way);
+      const origin = a.autoAddedBy ?? null;
+      origins.set(key, origins.has(key) && origins.get(key) !== origin ? null : origin);
+    };
+    if (from === drawn.node) add(to, "out");
+    if (to === drawn.node) add(from, "in");
+  });
   return {
-    target: (n: Neighbour): string | null => {
-      const a = aliasOf(n);
-      return n.kind === "node" && a ? qid(a, n.id) : null;
+    target,
+    edgeOrigin: (n: Neighbour): string | null => {
+      const far = target(n);
+      return far ? origins.get(keyOf(n.edge, far, n.way)) ?? null : null;
     },
     graphName: (n: Neighbour): string => {
       const a = aliasOf(n);
@@ -130,10 +146,10 @@ export function neighbourLinks(open: OpenGraphs, owner: string | null, secured: 
 /** A snapshot's external rows as canvas edge rows, each end resolved (endKey), or null for one that cannot be drawn. */
 export function externalRows(snap: Pick<Snapshot, "graph" | "graphId" | "external">, open: OpenGraphs): { key: string; row: EdgeRow | null; ambiguous: boolean }[] {
   const owner = { alias: snap.graph, graphId: snap.graphId };
-  return (snap.external ?? []).map(([id, kind, fromGraph, from, toGraph, to]) => {
+  return (snap.external ?? []).map(([id, kind, fromGraph, from, toGraph, to, , ...origin]) => {
     const [s, t] = [endKey(fromGraph, from, owner, open), endKey(toGraph, to, owner, open)];
     const ambiguous = open.get(fromGraph) === null || open.get(toGraph) === null;
-    return { key: qid(snap.graph, id), row: s && t ? [qid(snap.graph, id), kind, s, t] : null, ambiguous };
+    return { key: qid(snap.graph, id), row: s && t ? [qid(snap.graph, id), kind, s, t, ...origin] : null, ambiguous };
   });
 }
 
@@ -141,9 +157,9 @@ export function externalRows(snap: Pick<Snapshot, "graph" | "graphId" | "externa
 export function addExternal(graph: ViewGraph, snap: Pick<Snapshot, "graph" | "graphId" | "external">, open: OpenGraphs) {
   for (const { row } of externalRows(snap, open)) {
     if (!row) continue;
-    const [key, kind, s, t] = row;
+    const [key, kind, s, t, origin] = row;
     if (graph.hasEdge(key) || !graph.hasNode(s) || !graph.hasNode(t)) continue;
-    graph.addEdgeWithKey(key, s, t, edgeAttrs(kind));
+    graph.addEdgeWithKey(key, s, t, edgeAttrs(kind, origin));
   }
 }
 
@@ -198,14 +214,14 @@ export function buildGraph(input: Snapshot | readonly Snapshot[]): { graph: View
   }
   let droppedEdges = 0;
   for (const snap of snaps) {
-    for (const [id, kind, from, to] of snap.edges) {
+    for (const [id, kind, from, to, origin] of snap.edges) {
       const [key, s, t] = [qid(snap.graph, id), qid(snap.graph, from), qid(snap.graph, to)];
       if (!graph.hasNode(s) || !graph.hasNode(t) || graph.hasEdge(key)) {
         droppedEdges++;
         continue;
       }
       // Colour comes from the canvas palette in the edge reducer; part_of is drawn thinner (design note section 4).
-      graph.addEdgeWithKey(key, s, t, edgeAttrs(kind));
+      graph.addEdgeWithKey(key, s, t, edgeAttrs(kind, origin));
     }
   }
   const open = openByGraphId(snaps);
@@ -230,24 +246,45 @@ export function buildGraph(input: Snapshot | readonly Snapshot[]): { graph: View
 /** The graph by node index (insertion order, which is NodeAttrs.index), for the worker and the grouping. With
  * `ranks` (alias -> rank, more than one graph open), `part` holds each node's graph rank, so the layout seeds each
  * graph in a region of its own. */
-export function indexGraph(graph: ViewGraph, ranks?: ReadonlyMap<string, number>): IndexGraph {
+export function indexGraph(graph: ViewGraph, ranks?: ReadonlyMap<string, number>, snaps: readonly Pick<Snapshot, "graph" | "hubs">[] = []): IndexGraph {
   const edges = new Uint32Array(graph.size * 2);
   const partOf = new Uint8Array(graph.size);
   const similarity = new Float32Array(graph.size);
+  const known = new Set(snaps.filter((s) => s.hubs !== undefined).map((s) => s.graph));
+  const declared = known.size > 0 ? new Int8Array(graph.order).fill(-1) : undefined;
+  const membership = declared ? new Uint8Array(graph.size) : undefined;
+  const named = new Map<string, Set<string>>();
+  const typed = new Map<string, Set<string>>();
+  for (const snap of snaps) for (const hub of snap.hubs ?? []) {
+    const map = hub.form === "named" ? named : typed;
+    const key = qid(snap.graph, hub.form === "named" ? hub.node : hub.type);
+    const via = map.get(key) ?? new Set<string>();
+    via.add(hub.via);
+    map.set(key, via);
+  }
+  const relations = new Map<number, Set<string>>();
+  graph.forEachNode((key, a) => {
+    if (!declared || !known.has(a.graph)) return;
+    const via = new Set([...(named.get(key) ?? []), ...(typed.get(qid(a.graph, a.kind)) ?? [])]);
+    declared[a.index] = via.size > 0 ? 1 : 0;
+    if (via.size > 0) relations.set(a.index, via);
+  });
   let e = 0;
   graph.forEachEdge((_k, a, _s, _t, sa, ta) => {
     edges[e * 2] = sa.index;
     edges[e * 2 + 1] = ta.index;
     partOf[e] = a.kind === "part_of" ? 1 : 0;
     similarity[e] = a.kind === "similar_to" ? 1 : 0;
+    if (membership) membership[e] = relations.get(ta.index)?.has(a.kind) ? 1 : 0;
     e++;
   });
-  if (!ranks || ranks.size < 2) return { n: graph.order, edges, partOf, similarity };
+  const hubs = declared ? { declared, membership } : {};
+  if (!ranks || ranks.size < 2) return { n: graph.order, edges, partOf, similarity, ...hubs };
   const part = new Int32Array(graph.order);
   graph.forEachNode((_n, a) => {
     part[a.index] = ranks.get(a.graph) ?? 0;
   });
-  return { n: graph.order, edges, partOf, part, similarity };
+  return { n: graph.order, edges, partOf, part, similarity, ...hubs };
 }
 
 /** Groups by graph (plan 133): one group per open graph, ranked in the order the graphs are open, so a graph keeps
