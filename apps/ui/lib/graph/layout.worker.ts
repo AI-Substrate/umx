@@ -23,7 +23,7 @@ export type WorkerNudge = { kind: "nudge"; id: number; n: number; edges: Uint32A
 export type WorkerRequest = WorkerStart | WorkerCluster | WorkerNudge;
 export type HubResult = { centres: string[]; owner: [string, string][]; ms: number; fallback?: boolean };
 export type WorkerMessage =
-  | { kind: "clusters"; id: number; groups: Groups; ms: number; hubs?: HubResult }
+  | { kind: "clusters"; id: number; groups: Groups; ms: number }
   | { kind: "tick"; id: number; ids: readonly string[]; positions: Float32Array; progress: number }
   | { kind: "done"; id: number; ids: readonly string[]; positions: Float32Array; iterations: number; ms: number; capped: boolean; hubs: HubResult }
   | { kind: "nudged"; id: number; positions: Float32Array };
@@ -46,6 +46,8 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   };
   order.forEach((i, j) => { groups.of[i] = found.of[j]; });
   const clusterMs = Math.round(performance.now() - started);
+  post({ kind: "clusters", id: m.id, groups, ms: clusterMs });
+  if (m.kind === "cluster") return;
   const hubStart = performance.now();
   const plan = findHubs(graph, ids, m.options, m.resolution, m.seed, m.similarities);
   const hubs: HubResult = {
@@ -55,8 +57,6 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     fallback: plan.fallback,
   };
   plan.owner.forEach((head, i) => { if (head >= 0) hubs.owner.push([ids[i], ids[head]]); });
-  post({ kind: "clusters", id: m.id, groups, ms: clusterMs, ...(m.kind === "cluster" ? { hubs } : {}) });
-  if (m.kind === "cluster") return;
   // Hidden nodes need coordinates too: revealing one is a cluster-only update, not another full layout.
   const all = canonicalGraph(m.graph, m.ids, new Uint8Array(m.graph.n).fill(1), m.edges);
   const at = new Int32Array(m.graph.n);
