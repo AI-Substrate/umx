@@ -49,6 +49,14 @@ export default tseslint.config(
     ]),
   },
   {
+    files: ["bin/lan.mjs"],
+    rules: boundary([...PROCESS, ...NET, ...FS], `${BOUNDARY} LAN startup may read its password only.`, [
+      ...restricted([...PROCESS, ...NET], BOUNDARY),
+      { name: "node:fs", allowImportNames: ["closeSync", "constants", "fstatSync", "openSync", "readFileSync"], message: "Only the LAN launcher's password-file reader may use these." },
+      ...restricted(FS.filter((n) => n !== "node:fs"), NO_FS),
+    ]),
+  },
+  {
     files: ["next.config.ts", "eslint.config.mjs", "vitest.config.ts", "postcss.config.mjs"],
     rules: { "no-restricted-imports": "off", "no-restricted-syntax": "off" },
   },

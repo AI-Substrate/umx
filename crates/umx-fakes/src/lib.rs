@@ -1986,9 +1986,19 @@ impl UiHost for FakeUiHost {
         state
             .servers
             .insert(id, (true, launch.node.ends_with("-ends")));
+        let port = launch.port.unwrap_or(4747);
         Ok(UiServed {
             id,
-            port: launch.port.unwrap_or(4747),
+            port,
+            lan_urls: if launch
+                .env
+                .iter()
+                .any(|(key, value)| key == "UMX_UI_LAN" && value == "1")
+            {
+                vec![format!("http://192.0.2.10:{port}/")]
+            } else {
+                vec![]
+            },
         })
     }
 

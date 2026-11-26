@@ -4,7 +4,7 @@
 //! the daemon answers (umx_cli::ui_preflight).
 //!
 //! The supervisor (ws009 M1b2, design agreed by the architect and security, D1 to D6): one per UMX_HOME, recorded in
-//! `$UMX_HOME/run/ui.json` (pid, start time, port, the daemon's start id, PROTOCOL; never a code). It keeps the
+//! `$UMX_HOME/run/ui.json` (pid, start time, port, daemon start id, PROTOCOL, LAN flag; never a code). It keeps the
 //! server's stdin lifeline; it waits on the daemon as its one
 //! supervisor wait, and ends (the server's group with it) when the daemon's start id changes or the daemon is
 //! unreachable for about 5 s or reachable but silent for 60 s (slow or busy keeps the view), or the server stops
@@ -33,6 +33,8 @@ use umx_core::ports::{
 use umx_protocol::{Build, Code, Envelope, Fill, Issue, PROTOCOL, Value, json};
 
 use umx_daemon::Config;
+
+pub mod lan;
 
 const CMD: &str = "ui";
 
@@ -90,6 +92,7 @@ pub struct UiRun {
     pub graphs: Vec<String>,
     pub port: Option<u16>,
     pub no_open: bool,
+    pub lan: bool,
     /// Started by `--detach`: where to report ready, or why not. The idle stop is on.
     pub report_to: Option<String>,
     /// What the launcher's checks said, warnings and hints, said with the ready envelope in the list each kind
@@ -107,6 +110,8 @@ pub struct UiReady {
     /// The supervisor's pid (what `umx ui stop` signals).
     pub pid: u32,
     pub detached: bool,
+    pub lan: bool,
+    pub lan_urls: Vec<String>,
 }
 
 impl UiReady {
@@ -120,6 +125,10 @@ impl UiReady {
         });
         if self.detached {
             data["detached"] = json!(true);
+        }
+        if self.lan {
+            data["lan"] = json!(true);
+            data["lan_urls"] = json!(self.lan_urls);
         }
         notes
             .iter()
@@ -215,13 +224,16 @@ pub(crate) struct Record {
     pub started: String,
     pub port: u16,
     pub daemon: String,
+    pub lan: bool,
 }
 
 impl Record {
     fn bytes(&self) -> Vec<u8> {
-        json!({ "pid": self.pid, "started": self.started, "port": self.port, "daemon": self.daemon, "umx": PROTOCOL })
-            .to_string()
-            .into_bytes()
+        let mut data = json!({ "pid": self.pid, "started": self.started, "port": self.port, "daemon": self.daemon, "umx": PROTOCOL });
+        if self.lan {
+            data["lan"] = json!(true);
+        }
+        data.to_string().into_bytes()
     }
 
     fn parse(bytes: &[u8]) -> Option<Record> {
@@ -231,6 +243,7 @@ impl Record {
             started: v["started"].as_str()?.to_owned(),
             port: u16::try_from(v["port"].as_u64()?).ok()?,
             daemon: v["daemon"].as_str()?.to_owned(),
+            lan: v.get("lan").map_or(Some(false), Value::as_bool)?,
         })
     }
 }
@@ -333,6 +346,12 @@ pub fn ui(config: &Config, build: &Build, run: &UiRun, ready: impl FnOnce(&UiRea
     if run.report_to.is_some() {
         env.push(("UMX_UI_IDLE_MS".to_owned(), idle().as_millis().to_string()));
     }
+    if run.lan {
+        if let Err(issue) = lan::ensure(config, host.as_ref(), false) {
+            return report_failure(&parts, run, Envelope::fail(CMD, issue));
+        }
+        env.push(("UMX_UI_LAN".to_owned(), "1".to_owned()));
+    }
     serve(&parts, &launch.0, &launch.1, env, run, ready)
 }
 
@@ -373,6 +392,8 @@ pub(crate) fn serve(
         opened: !run.no_open,
         pid: me,
         detached: run.report_to.is_some(),
+        lan: run.lan,
+        lan_urls: server.lan_urls.clone(),
     };
     if let Some(to) = &run.report_to {
         let _ = host.report(to, up.envelope(&run.notes).to_json().as_bytes());
@@ -433,6 +454,7 @@ fn start(
         started: host.process(me).map(|p| p.started).unwrap_or_default(),
         port: server.port,
         daemon: first.epoch.clone(),
+        lan: run.lan,
     };
     let opened = if run.no_open {
         Ok(())
@@ -581,6 +603,9 @@ pub(crate) fn start_detached(
     if run.no_open {
         args.push("--no-open".to_owned());
     }
+    if run.lan {
+        args.push("--lan".to_owned());
+    }
     // The child's own checks and start, plus its first daemon wait.
     let within = READY_WITHIN + Duration::from_secs(30);
     match host.detach(exe, &args, within.as_millis() as u64) {
@@ -608,10 +633,14 @@ pub fn status(config: &Config) -> Envelope {
 pub(crate) fn status_of(host: &dyn UiHost, state: &dyn LocalState) -> Envelope {
     match read_record(state) {
         Err(issue) => Envelope::fail("ui status", issue),
-        Ok(Some(r)) if live(host, &r) => Envelope::ok(
-            "ui status",
-            json!({ "running": true, "port": r.port, "pid": r.pid, "started": r.started }),
-        ),
+        Ok(Some(r)) if live(host, &r) => {
+            let mut data =
+                json!({ "running": true, "port": r.port, "pid": r.pid, "started": r.started });
+            if r.lan {
+                data["lan"] = json!(true);
+            }
+            Envelope::ok("ui status", data)
+        }
         Ok(_) => Envelope::ok("ui status", json!({ "running": false })),
     }
 }
@@ -773,7 +802,7 @@ mod tests {
     use umx_fakes::{FakeLocalState, FakeUiHost};
     use umx_protocol::{Build, Value};
 
-    fn temp() -> PathBuf {
+    pub(super) fn temp() -> PathBuf {
         static N: AtomicUsize = AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "umx-uiverb-{}-{}",
@@ -1104,6 +1133,8 @@ mod tests {
             opened: true,
             pid: 1,
             detached: true,
+            lan: false,
+            lan_urls: vec![],
         }
         .envelope(std::slice::from_ref(&stale));
         assert_eq!(ready.status, umx_protocol::Status::Warning);
@@ -1124,6 +1155,8 @@ mod tests {
             opened: true,
             pid: 1,
             detached: false,
+            lan: false,
+            lan_urls: vec![],
         }
         .envelope(std::slice::from_ref(&loaded));
         assert_eq!(hinted.status, umx_protocol::Status::Ok);
@@ -1133,7 +1166,7 @@ mod tests {
         );
     }
 
-    /// ui.json holds exactly pid, start time, port, the daemon's start id and PROTOCOL (security, architect).
+    /// ui.json holds the process identity, port, daemon epoch, protocol and LAN flag, never a secret.
     #[test]
     fn ui_json_records_the_view_while_it_runs_and_never_a_secret() {
         let host = FakeUiHost::new();
@@ -1173,15 +1206,23 @@ mod tests {
             &parts,
             Path::new("/a"),
             Path::new("/fake/node"),
-            vec![],
-            &UiRun::default(),
-            |_| {},
+            vec![("UMX_UI_LAN".into(), "1".into())],
+            &UiRun {
+                lan: true,
+                ..UiRun::default()
+            },
+            |ready| {
+                let data = ready.envelope(&[]).data;
+                assert_eq!(data["lan"], true);
+                assert_eq!(data["lan_urls"], json!(["http://192.0.2.10:4747/"]));
+                assert_eq!(status_of(&host, &state).data["lan"], true);
+            },
         );
         let bytes = seen.lock().unwrap().clone().expect("written while it ran");
         let v = umx_protocol::parse_json(std::str::from_utf8(&bytes).unwrap()).unwrap();
         assert_eq!(
             v,
-            json!({ "pid": std::process::id(), "started": me().started, "port": 4747, "daemon": "e1", "umx": PROTOCOL })
+            json!({ "pid": std::process::id(), "started": me().started, "port": 4747, "daemon": "e1", "umx": PROTOCOL, "lan": true })
         );
         assert_eq!(watch.served(), 1);
     }
@@ -1421,6 +1462,7 @@ mod tests {
             started: me().started,
             port: 5151,
             daemon: "e0".into(),
+            lan: false,
         };
         state.set_bytes(&record.bytes());
         host.watch().add_process(999_001, me());
@@ -1452,13 +1494,14 @@ mod tests {
         let state = FakeLocalState::new().with_absent_ok(true);
         let said = Envelope::ok(
             CMD,
-            json!({ "url": "http://127.0.0.1:5000/", "pid": 4242, "detached": true }),
+            json!({ "url": "http://127.0.0.1:5000/", "pid": 4242, "detached": true, "lan": true, "lan_urls": ["http://192.0.2.10:5000/"] }),
         );
         host.watch().detach_says(Some(said.to_json().into_bytes()));
         let run = UiRun {
             graphs: vec!["alpha".into(), "beta".into()],
             port: Some(5000),
             no_open: true,
+            lan: true,
             ..UiRun::default()
         };
         let got = start_detached(&host, &state, "/opt/umx", &run);
@@ -1473,6 +1516,7 @@ mod tests {
                 "--port",
                 "5000",
                 "--no-open",
+                "--lan",
                 umx_core::ports::ui_host::REPORT_FLAG,
                 "/fake/home/run/ui-report.sock"
             ]
@@ -1511,6 +1555,7 @@ mod tests {
             started: me().started,
             port: 5152,
             daemon: "e0".into(),
+            lan: false,
         };
         // Reused: the pid runs something else.
         state.set_bytes(&record.bytes());

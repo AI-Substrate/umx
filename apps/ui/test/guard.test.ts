@@ -15,6 +15,17 @@ const api = (over: Partial<GuardInput> = {}): GuardInput => ({
 const refused = { ok: false, status: 403 };
 
 describe("guard", () => {
+  it("accepts only configured LAN addresses on the public port and preserves every API origin check", () => {
+    const lan = { ...cfg, lanHosts: ["192.168.1.10:4321"] };
+    const request = api({ host: "192.168.1.10:4321", origin: "http://192.168.1.10:4321" });
+    expect(guard(request, cfg)).toMatchObject(refused);
+    expect(guard(request, lan)).toEqual({ ok: true });
+    expect(guard({ ...request, origin: "http://evil.example" }, lan)).toMatchObject(refused);
+    expect(guard({ ...request, secFetchSite: "cross-site" }, lan)).toMatchObject(refused);
+    expect(guard({ ...request, view: null }, lan)).toMatchObject(refused);
+    expect(guard({ ...request, host: "192.168.1.11:4321" }, lan)).toMatchObject(refused);
+  });
+
   it("serves a plain same-origin request with no token or cookie, on 127.0.0.1 and localhost", () => {
     expect(guard(api(), cfg)).toEqual({ ok: true });
     expect(guard(api({ pathname: "/", secFetchSite: "none", view: null }), cfg)).toEqual({ ok: true });

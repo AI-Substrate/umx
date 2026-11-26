@@ -1,27 +1,27 @@
 #!/usr/bin/env node
-// Starts the view on 127.0.0.1 only (security note ws:009, B1). There is no token: lib/guard.ts keeps the view to
-// this machine's browsers by Host, Origin and Sec-Fetch-Site.
+// Starts the view on loopback by default. UMX_UI_LAN=1 adds a socket-level password gate on all IPv4 interfaces.
 //   node bin/serve.mjs [--port=<n>]           the built standalone server (pnpm build first); prints the URL
 //   node bin/serve.mjs --dev [--port=<n>]     next dev, for local work only; prints the URL
 //   node bin/serve.mjs --stdin [--port=<n>]   how `umx ui` runs it (plan 095): see below
 // The run's settings live in a process global (lib/guard.ts runSettings), never in process.env, so nothing the
 // server starts inherits them.
 //
-// --stdin: the server prints exactly one line, {"ready":true,"port":N}, once it accepts connections. stdin stays open
-// while umx runs; when it ends (umx stopped, Ctrl-C, kill -9) the server stops its whole process group, which umx
-// made for it.
+// --stdin: the server prints one ready line, {"ready":true,"port":N} (plus lan_urls in LAN mode), once accepting.
+// stdin stays open while umx runs; when it ends (umx stopped, Ctrl-C, kill -9), the server stops the process group
+// umx made for it.
 // Each stdin line `code <code>` is a launch code from umx (ws009 M1b2, security D5): the server answers one stdout
 // line, {"code":"tab"} when a tab asked for events in the last 30 s (the code is dropped; that tab shows the agent's
 // raise), else {"code":"armed"} (good once, for 60 s, taken at /api/launch so the link may name graphs).
 // `end <why>` (restarted, unreachable): umx is about to stop this server, and every events poll answers ui_ended.
 // UMX_UI_IDLE_MS (umx ui --detach): stop the group once no tab has asked for events for that long.
-import { createServer, get } from "node:http";
+import { createServer, get, request } from "node:http";
 import { setInterval } from "node:timers";
 import { setTimeout as sleep } from "node:timers/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { upgradeAllowed } from "./upgrade-guard.mjs";
 import { answerCode, endView, idleFor, launchState } from "./launch-codes.mjs";
+import { lanAddresses, lanGate, readPassword } from "./lan.mjs";
 
 const LOOPBACK = "127.0.0.1";
 const READY_WITHIN_MS = 60_000;
@@ -36,6 +36,18 @@ const args = process.argv.slice(2);
 let dev = false;
 let fromStdin = false;
 let port = 0;
+const lan = process.env.UMX_UI_LAN === "1";
+delete process.env.UMX_UI_LAN;
+if (lan && args.includes("--dev")) refuse("LAN access is available only in the built view.");
+const addresses = lan ? lanAddresses() : [];
+let password;
+if (lan) {
+  try {
+    password = readPassword(process.env.UMX_HOME);
+  } catch (error) {
+    refuse(error.message);
+  }
+}
 for (const arg of args) {
   if (arg === "--dev") dev = true;
   else if (arg === "--stdin") fromStdin = true;
@@ -138,20 +150,28 @@ if (idleMs > 0) {
 
 if (fromStdin) readStdin();
 if (port === 0) port = await freePort();
+const lanUrls = addresses.map((ip) => `http://${ip}:${port}/`);
+let backendPort = port;
+if (lan) {
+  do {
+    backendPort = await freePort();
+  } while (backendPort === port);
+}
 
 globalThis[Symbol.for("umx.ui.run")] = Object.freeze({
   UMX_UI_PORT: String(port),
   UMX_UI_DEV: dev ? "1" : "0",
+  UMX_UI_LAN_HOSTS: JSON.stringify(addresses.map((ip) => `${ip}:${port}`)),
 });
 for (const name of ["UMX_UI_PORT", "UMX_UI_DEV", "HOST"]) {
   delete process.env[name];
 }
-Object.assign(process.env, { HOSTNAME: LOOPBACK, PORT: String(port), NEXT_TELEMETRY_DISABLED: "1" });
+Object.assign(process.env, { HOSTNAME: LOOPBACK, PORT: String(backendPort), NEXT_TELEMETRY_DISABLED: "1" });
 
 async function announce() {
   if (fromStdin) {
     await whenAccepting(port);
-    process.stdout.write(`${JSON.stringify({ ready: true, port })}\n`);
+    process.stdout.write(`${JSON.stringify({ ready: true, port, ...(lan ? { lan_urls: lanUrls } : {}) })}\n`);
   } else {
     console.log(`\numx ui: open http://${LOOPBACK}:${port}/\n`);
   }
@@ -182,6 +202,32 @@ if (dev) {
     await import(pathToFileURL(entry).href);
   } catch (error) {
     refuse(`cannot start ${entry} (${error.code ?? error.message}). Run \`pnpm build\` first.`);
+  }
+  if (lan) {
+    await whenAccepting(backendPort);
+    const gate = lanGate({ password, hosts: [`${LOOPBACK}:${port}`, `localhost:${port}`, ...addresses.map((ip) => `${ip}:${port}`)] });
+    password = undefined;
+    const gateway = createServer(async (req, res) => {
+      if (!await gate(req, res)) return;
+      const upstream = request({ host: LOOPBACK, port: backendPort, path: req.url, method: req.method, headers: req.headers }, (reply) => {
+        res.writeHead(reply.statusCode, reply.headers);
+        reply.pipe(res);
+        reply.on("error", () => res.destroy());
+      });
+      upstream.on("error", () => {
+        if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain", "cache-control": "no-store" });
+        res.end("The graph view is unavailable.");
+      });
+      res.on("close", () => upstream.destroy());
+      req.pipe(upstream);
+    });
+    gateway.on("upgrade", (_req, socket) => socket.destroy());
+    gateway.requestTimeout = 15_000;
+    gateway.on("error", (error) => refuse(`cannot bind the LAN view (${error.code ?? error.message}).`));
+    gateway.listen(port, "0.0.0.0");
+    console.error(`umx-ui: LAN URLs: ${lanUrls.join(", ") || "no LAN IPv4 address found"}`);
+    console.error(`umx-ui: password file: ${join(process.env.UMX_HOME, "ui-lan-password")}. Run umx ui lan-password to show it.`);
+    console.error("umx-ui: WARNING: plain HTTP exposes the password and graph data to network sniffing. Use only a trusted LAN.");
   }
   await announce();
 }

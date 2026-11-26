@@ -1,8 +1,9 @@
 //! UiHost port (req-104, ws009 s2): runs the local graph view's server for `umx ui` and opens the browser at it.
 //! Adapters: system.ui-host (node in its own process group, the browser by absolute path), fake.ui-host.
 //!
-//! The view has no per-run token: the server keeps it to this machine's browsers by Host, Origin and Sec-Fetch-Site
-//! (apps/ui lib/guard.ts). The server's stdin stays open while umx runs, so when umx ends in any way (Ctrl-C, kill)
+//! The view has no per-run token: Host, Origin and Sec-Fetch-Site guard local access (apps/ui lib/guard.ts); an
+//! explicit LAN mode adds password authentication for remote sockets. The server's stdin stays open while umx
+//! runs, so when umx ends in any way (Ctrl-C, kill)
 //! the server sees end of file and stops its whole process group.
 //!
 //! ws009 M1b2: the host also starts `umx ui` detached ([`UiHost::detach`], [`UiHost::report`]), reads a process's
@@ -25,7 +26,7 @@ pub struct UiLaunch {
     pub node: String,
     /// The app folder, canonical and checked by the caller.
     pub app_dir: String,
-    /// The port to bind on 127.0.0.1; `None` lets the server pick a free one.
+    /// The public port (loopback-only by default); `None` lets the server pick a free one.
     pub port: Option<u16>,
     /// The server's whole environment: nothing else is inherited.
     pub env: Vec<(String, String)>,
@@ -122,12 +123,14 @@ pub enum UiCodeUse {
 }
 
 /// A server [`UiHost::serve`] started. The host owns its processes: pass this back to ask about it or stop it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UiServed {
     /// The host's own number for it.
     pub id: u64,
-    /// The port it listens on, on 127.0.0.1.
+    /// The public port, always reachable on 127.0.0.1.
     pub port: u16,
+    /// The public IPv4 URLs reported by a LAN-enabled server; empty for loopback-only.
+    pub lan_urls: Vec<String>,
 }
 
 pub trait UiHost: Send + Sync {

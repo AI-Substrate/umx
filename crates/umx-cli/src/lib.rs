@@ -195,12 +195,17 @@ pub fn is_ui_verb(word: &str) -> bool {
 
 /// `umx ui status` and `umx ui stop` (ws009 M1b2): run by the binary, which reads ui.json and the process it names;
 /// neither asks the daemon.
-pub const UI_LOCAL_VERBS: [&str; 2] = ["status", "stop"];
+pub const UI_LOCAL_VERBS: [&str; 3] = ["status", "stop", "lan-password"];
 
 /// The words after `umx ui status|stop`: none.
 pub fn ui_local_flags(verb: &str, rest: &[String]) -> Result<(), Box<Envelope>> {
-    if rest.is_empty() {
+    if rest.is_empty() || (verb == "lan-password" && rest == ["--rotate"]) {
         Ok(())
+    } else if verb == "lan-password" {
+        Err(Box::new(usage(
+            "ui lan-password",
+            "ui lan-password takes only --rotate",
+        )))
     } else if verb == "stop" {
         Err(Box::new(usage("ui stop", "ui stop takes no arguments")))
     } else {
@@ -222,6 +227,8 @@ pub struct UiFlags {
     /// `--no-open`: print the link instead of opening the browser (human output only); with `--detach`, open
     /// nothing and print no link (a later `umx ui open --raise` opens a tab).
     pub no_open: bool,
+    /// `--lan`: let password-authenticated clients reach the view on this machine's IPv4 addresses.
+    pub lan: bool,
     /// `--detach` (ws009 M1b2): run the view in the background, tied to the daemon, and return once it is ready.
     pub detach: bool,
     /// `--report-to <socket>`: set only by `--detach` for the background `umx ui` it starts (the UiHost's report
@@ -232,7 +239,7 @@ pub struct UiFlags {
 /// Parses the flags of `umx ui`. The view's URL holds no secret, so `--no-open` works with JSON output too (the
 /// envelope's `url`).
 pub fn ui_flags(rest: &[String]) -> Result<UiFlags, Box<Envelope>> {
-    const WHAT: &str = "ui takes only --graph <alias>[,<alias>...], --port <1-65535>, --no-open and --detach, each at most once";
+    const WHAT: &str = "ui takes only --graph <alias>[,<alias>...], --port <1-65535>, --no-open, --lan and --detach, each at most once";
     let wrong = || Box::new(usage("ui", WHAT));
     let mut flags = UiFlags::default();
     let mut args = rest.iter();
@@ -250,6 +257,7 @@ pub fn ui_flags(rest: &[String]) -> Result<UiFlags, Box<Envelope>> {
         match name {
             "--no-open" if !flags.no_open && inline.is_none() => flags.no_open = true,
             "--detach" if !flags.detach && inline.is_none() => flags.detach = true,
+            "--lan" if !flags.lan && inline.is_none() => flags.lan = true,
             // umx-core's ui_host::REPORT_FLAG (crates/umx keeps the two equal).
             "--report-to" if flags.report_to.is_none() => {
                 flags.report_to = Some(value()?);

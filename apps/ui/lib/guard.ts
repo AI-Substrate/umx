@@ -1,16 +1,18 @@
 // Request checks run before routing on every request, static assets included. Pure functions so the rules are
 // unit-tested without a server.
 //
-// The view has no token and no cookie: any browser on this machine that opens http://127.0.0.1:<port>/ (or
+// Loopback needs no token or cookie: any browser on this machine that opens http://127.0.0.1:<port>/ (or
 // localhost) gets it. What keeps it local: the server binds 127.0.0.1 only (bin/serve.mjs); a Host other than this
 // port's loopback names is refused (DNS rebinding); and a page on another origin can neither read the API nor make
 // the view act (Origin, Sec-Fetch-Site and a header only the view's own fetches send, which no cross-site request can
 // carry without a CORS preflight this server never answers). Any process or user on this machine that can reach
 // 127.0.0.1 can read the view: the trust boundary is the user account (crates/umx-cli/docs/ui.md).
+// With --lan, bin/serve.mjs authenticates remote sockets before forwarding requests here.
 
 export type GuardConfig = {
   port: number;
   dev: boolean;
+  lanHosts?: string[];
 };
 
 export type GuardInput = {
@@ -43,12 +45,18 @@ export function runSettings(): Record<string, string | undefined> {
 export function readGuardConfig(env: Record<string, string | undefined>): GuardConfig | null {
   const port = Number(env.UMX_UI_PORT);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
-  return { port, dev: env.UMX_UI_DEV === "1" };
+  const cfg: GuardConfig = { port, dev: env.UMX_UI_DEV === "1" };
+  if (env.UMX_UI_LAN_HOSTS) {
+    const hosts: unknown = JSON.parse(env.UMX_UI_LAN_HOSTS);
+    if (!Array.isArray(hosts) || !hosts.every((h): h is string => typeof h === "string" && /^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(h))) return null;
+    cfg.lanHosts = hosts;
+  }
+  return cfg;
 }
 
-/** The Host values this view answers: its port on the loopback names, nothing else (DNS rebinding). */
+/** Only this port's loopback names and, with --lan, this machine's interface addresses (DNS rebinding). */
 export function allowedHosts(cfg: GuardConfig): string[] {
-  return [`127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`];
+  return [`127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`, ...(cfg.lanHosts ?? [])];
 }
 
 export function guard(req: GuardInput, cfg: GuardConfig | null): GuardVerdict {
