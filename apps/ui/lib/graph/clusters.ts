@@ -9,7 +9,7 @@ export const PART_OF_WEIGHT = 3;
 
 /** The graph by node index, as the worker gets it: edges as source, target pairs, partOf[e] = 1 for part_of. `part`,
  * when several graphs are open, is each node's graph rank (plan 133): the seed gives each graph a region. */
-export type IndexGraph = { n: number; edges: Uint32Array; partOf: Uint8Array; part?: Int32Array };
+export type IndexGraph = { n: number; edges: Uint32Array; partOf: Uint8Array; part?: Int32Array; similarity?: Float32Array };
 
 /** of[i] is node i's group rank (0 is the biggest) or -1 when it is hidden; heads[r] names group r. */
 export type Groups = { of: Int32Array; sizes: number[]; heads: number[] };

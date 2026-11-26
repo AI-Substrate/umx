@@ -242,6 +242,24 @@ describe("threads and the merged panel", () => {
 });
 
 describe("merged positions", () => {
+  it("keeps a merged glyph clear of ordinary glyphs while preserving members' layout homes", () => {
+    const v = world([snap("alpha", GA, [person(1, ["k:1"]), person(2)]), snap("beta", GB, [person(1, ["k:1"])])]);
+    const [a, b, ordinary] = [qid("alpha", id(1)), qid("beta", id(1)), qid("alpha", id(2))];
+    v.graph.mergeNodeAttributes(a, { x: -40, y: 0, clearance: 12 });
+    v.graph.mergeNodeAttributes(b, { x: 40, y: 0, clearance: 12 });
+    v.graph.mergeNodeAttributes(ordinary, { x: 0, y: 0, clearance: 12 });
+    const all = entitiesOf(v.w);
+    const places = mergedPlaces(v.graph, all), p = places.get(a)!;
+    expect(places.get(b)).toMatchObject({ x: p.x, y: p.y, clearance: 15 });
+    expect(Math.hypot(p.x, p.y)).toBeGreaterThanOrEqual(27);
+    applyMerge(v.graph, all);
+    expect(mergedPlaces(v.graph, all)).toEqual(places);
+    expect(v.graph.getNodeAttributes(ordinary)).toMatchObject({ x: 0, y: 0 });
+    applyMerge(v.graph, NO_ENTITIES);
+    expect(homeOf(v.graph.getNodeAttributes(a))).toEqual({ x: -40, y: 0 });
+    expect(homeOf(v.graph.getNodeAttributes(b))).toEqual({ x: 40, y: 0 });
+  });
+
   it("moves each shown member to its entity's centroid, keeps where it is laid out, and puts it back", () => {
     const alpha = snap("alpha", GA, [person(1, ["k:1"]), person(2)]);
     const beta = snap("beta", GB, [person(1, ["k:1"])]);
