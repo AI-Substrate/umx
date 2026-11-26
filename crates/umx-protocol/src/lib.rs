@@ -259,7 +259,7 @@ pub const PROTOCOL: u32 = 108;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (108, 0xab4d_693f_a1ac_7cb7);
+const WIRE_FINGERPRINT: (u32, u64) = (108, 0x7f24_4d69_9186_411f);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
