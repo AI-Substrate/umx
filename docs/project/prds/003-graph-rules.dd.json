@@ -337,11 +337,11 @@
         {
           "id": "rules-23",
           "title": "A string field can declare its values",
-          "statement": "A string field may declare the values it takes: `umx ontology add field <type> <field>:string --values low,medium,high`. The vocabulary stays soft: a value outside the list is stored, with a warning that lists the declared values and whose next declares the new one. This is how std states a risk's likelihood and impact, and any graph may use it for its own fields.",
+          "statement": "A string field may declare the values it takes: `umx ontology add field <type> <field>:string --values low,medium,high`. A declared value is a label: snake_case, at most 64 characters, at most 32 to a field, kept in the order declared. An entry that is not a label is refused when declared, with its snake_case form in the next. What a node holds stays free: a value outside the list is stored, with a warning that lists the declared values. The match is exact and case sensitive. When the stored value is itself a label the warning's next is the command that declares it; when it is not, the next is the node edit with a placeholder for the value, and never the text. `umx ontology add field ... --values` on a field that already has a list adds the labels it lacks, in the order given, and is unchanged when all are there; it never removes or reorders, so the warning's next is always the short command that adds the one label. `umx ontology set field <type> <field> --values <list>` replaces the whole list. A graph may add values to a std field and never remove std's. Only string fields take values. This is how std states a risk's likelihood and impact, and any graph may use it for its own fields.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
-          "done_when": "Setting a risk's impact to `severe` stores it and warns with `low`, `medium` and `high` as candidates.",
+          "done_when": "Setting a risk's impact to `severe` stores it and warns with `low`, `medium` and `high` as candidates and a next that declares `severe`; setting it to `Very High` stores it and warns with a next that edits the node; declaring `--values \"Very High\"` is refused and suggests `very_high`.",
           "source": "Needed by rules-22; follows declared tag facets of PRD 001",
           "note": "This is vocabulary, not shape, so it is a field's declaration and not a rule."
         },
@@ -496,6 +496,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "The project lead's principle added to Why and as g-7: rules are hints and nudges, agents keep agency, graphs must not become rigid. rules-21 changed to match: deleting a hub node is allowed and warns, where the draft refused it. rules-06 changed the same way: `umx rule add` stores a rule that names undeclared vocabulary and warns, where the draft refused it. Also recorded from the slice 1 review, by the prime's ruling: a stored rule that names vocabulary no longer declared loads with a warning, never a refusal."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "rules-23 filled in after the risk seat's question: declared values are snake_case labels, a node may still hold any value, and how the warning's next is formed."
         }
       ]
     }
