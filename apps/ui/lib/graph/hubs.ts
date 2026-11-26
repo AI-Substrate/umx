@@ -8,6 +8,7 @@ export type LayoutMode = "normal" | "degree" | "similarity" | "declared";
 export type DegreeMode = "incoming" | "outgoing" | "connections";
 export type HubOptions = { mode: LayoutMode; degree: DegreeMode; count: number };
 export const HUB_DEFAULTS: HubOptions = { mode: "similarity", degree: "connections", count: 10 };
+export const hubSize = (size: number) => Math.max(size, 10) * 1.6;
 export function hubCount(value: number): number {
   return Number.isInteger(value) && value >= 1 && value <= 100 ? value : HUB_DEFAULTS.count;
 }
@@ -107,20 +108,22 @@ export function fanLayout(positions: Float32Array, sizes: Float32Array, plan: Hu
   const bodies: { x: number; y: number; radius: number; nodes: number[]; head: number }[] = [];
   for (const head of plan.centres) {
     const list = members.get(head) ?? [];
-    const maximum = list.reduce((max, i) => Math.max(max, clearanceRadius(sizes[i], spacing)), clearanceRadius(sizes[head], spacing));
+    const centre = clearanceRadius(sizes[head], spacing);
+    const maximum = list.reduce((max, i) => Math.max(max, clearanceRadius(sizes[i], spacing)), 1);
     const pitch = maximum * 2.1;
-    let offset = 0, ring = 1;
+    let offset = 0, ring = 1, outer = centre;
     for (; offset < list.length; ring++) {
-      const radius = ring * pitch;
+      const radius = centre + maximum * 1.2 + (ring - 1) * pitch;
       const count = Math.min(list.length - offset, Math.max(1, Math.floor(Math.PI / Math.asin(Math.min(1, maximum / radius)))));
       for (let j = 0; j < count; j++) {
         const i = list[offset + j], angle = j * Math.PI * 2 / count;
         out[i * 2] = positions[head * 2] + Math.cos(angle) * radius;
         out[i * 2 + 1] = positions[head * 2 + 1] + Math.sin(angle) * radius;
       }
+      outer = radius + maximum;
       offset += count;
     }
-    bodies.push({ x: positions[head * 2], y: positions[head * 2 + 1], radius: Math.max(maximum, (ring - 1) * pitch + maximum), nodes: [head, ...list], head });
+    bodies.push({ x: positions[head * 2], y: positions[head * 2 + 1], radius: outer + pitch * 0.4, nodes: [head, ...list], head });
   }
   for (let i = 0; i < sizes.length; i++) if (plan.owner[i] < 0) bodies.push({ x: out[i * 2], y: out[i * 2 + 1], radius: clearanceRadius(sizes[i], spacing), nodes: [i], head: i });
   separateDiscs(bodies).forEach((p, b) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalGraph, fanLayout, findHubs, type HubOptions } from "@/lib/graph/hubs";
+import { canonicalGraph, fanLayout, findHubs, hubSize, type HubOptions } from "@/lib/graph/hubs";
 import { clearanceRadius, separateDiscs } from "@/lib/graph/clearance";
 import { layOut } from "@/lib/graph/layout";
 import { louvainGroups, type IndexGraph } from "@/lib/graph/clusters";
@@ -80,6 +80,7 @@ describe("clearance and fans", () => {
     const plan = findHubs(g, ids(n), options("degree"), 1, 7);
     for (const spacing of [1.6, 3]) {
       const sizes = new Float32Array(n).fill(4);
+      for (const head of plan.centres) sizes[head] = hubSize(sizes[head]);
       const at = fanLayout(new Float32Array(n * 2), sizes, plan, spacing);
       clear(at, [...sizes].map((s) => clearanceRadius(s, spacing)));
       expect(at.every(Number.isFinite)).toBe(true);

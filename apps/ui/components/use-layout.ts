@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { type IndexGraph, type Groups } from "@/lib/graph/clusters";
 import { applyNudge, nudgeInput } from "@/lib/graph/apply";
 import { type ViewGraph } from "@/lib/graph/build";
-import { HUB_DEFAULTS, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
+import { HUB_DEFAULTS, hubSize, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
 import { clearanceRadius } from "@/lib/graph/clearance";
 import type { HubResult, WorkerMessage, WorkerStart, WorkerCluster } from "@/lib/graph/layout.worker";
 
@@ -99,10 +99,12 @@ export function useLayout(
         // Full requests send coordinates after their clusters; cluster-only requests finish here.
         if (state.runningFull) return;
       } else if (m.id === state.latest) {
+        const centres = m.kind === "done" ? new Set(m.hubs.centres) : null;
         graph.updateEachNodeAttributes((id, a) => {
+          if (centres) a.hub = centres.has(id);
           const i = positionIndex.get(id);
           if (i !== undefined) {
-            a.clearance = clearanceRadius(a.size, state.sent.spacing);
+            a.clearance = clearanceRadius(a.hub ? hubSize(a.size) : a.size, state.sent.spacing);
             if (a.homeX !== undefined) [a.homeX, a.homeY] = [m.positions[i * 2], m.positions[i * 2 + 1]];
             else [a.x, a.y] = [m.positions[i * 2], m.positions[i * 2 + 1]];
           }

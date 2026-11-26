@@ -97,8 +97,7 @@ export function Sidebar({ searchRef, ...p }: Props) {
       <div className="space-y-2 px-4 pt-4 pb-3">
         <GraphPicker {...p.picker} />
       </div>
-      {p.spine ? <SpinePicker {...p.spine} /> : null}
-      <div className="space-y-2 border-t px-4 py-3" data-testid="layout-controls">
+      <div className="sticky top-0 z-10 shrink-0 space-y-2 border-y bg-card px-4 py-3" data-testid="layout-controls">
         <label className="block space-y-1 text-sm">
           <span className="section-head">Layout</span>
           <select aria-label="Layout" value={p.layout.mode} onChange={(e) => {
@@ -130,6 +129,7 @@ export function Sidebar({ searchRef, ...p }: Props) {
         </p> : null}
         {p.hubFallback ? <p className="text-xs text-muted-foreground" role="status">No similarity data; using Degree hubs (most connections).</p> : null}
       </div>
+      {p.spine ? <SpinePicker {...p.spine} /> : null}
 
       <div className="space-y-2 border-t px-4 py-3" data-testid="search">
         <div className="flex items-center justify-between gap-2">

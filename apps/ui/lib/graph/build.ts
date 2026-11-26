@@ -31,6 +31,7 @@ export type NodeAttrs = {
   degree: number;
   /** Collision-free radius in layout units, projected to pixels by the canvas. */
   clearance?: number;
+  hub?: boolean;
   color: string;
   borderColor: string;
   borderSize: number;
