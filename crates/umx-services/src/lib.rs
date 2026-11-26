@@ -2493,9 +2493,21 @@ impl Services {
         description: Option<&str>,
         role: Option<&str>,
     ) -> Outcome<OntologyAdded> {
-        let mut done = self
-            .graph
-            .ontology_add_field(ctx, type_name, spec, description, role)?;
+        self.ontology_add_field_with_values(ctx, type_name, spec, description, role, &[])
+    }
+
+    pub fn ontology_add_field_with_values(
+        &mut self,
+        ctx: &Ctx,
+        type_name: &str,
+        spec: &str,
+        description: Option<&str>,
+        role: Option<&str>,
+        values: &[String],
+    ) -> Outcome<OntologyAdded> {
+        let mut done =
+            self.graph
+                .ontology_add_field(ctx, type_name, spec, description, role, values)?;
         // search-05: a field whose nodes already hold values (set before it was declared) is judged at once.
         let mut hints = self
             .graph
@@ -2629,7 +2641,20 @@ impl Services {
         field: &str,
         role: &str,
     ) -> Outcome<RoleSet> {
-        let mut done = self.graph.ontology_set_field(ctx, type_name, field, role)?;
+        self.ontology_set_field_with_values(ctx, type_name, field, Some(role), None)
+    }
+
+    pub fn ontology_set_field_with_values(
+        &mut self,
+        ctx: &Ctx,
+        type_name: &str,
+        field: &str,
+        role: Option<&str>,
+        values: Option<&[String]>,
+    ) -> Outcome<RoleSet> {
+        let mut done = self
+            .graph
+            .ontology_set_field(ctx, type_name, field, role, values)?;
         let v = &done.value;
         if v.affected.is_empty() {
             return Ok(done);
@@ -2767,9 +2792,20 @@ impl Services {
         description: Option<&str>,
         role: Option<&str>,
     ) -> Result<Done<FieldsAdded>, Vec<Problem>> {
-        let mut done =
-            self.graph
-                .ontology_add_field_many(ctx, types, all, spec, description, role)?;
+        self.ontology_add_field_many_with_values(ctx, types, all, spec, (description, role, &[]))
+    }
+
+    pub fn ontology_add_field_many_with_values(
+        &mut self,
+        ctx: &Ctx,
+        types: &[String],
+        all: bool,
+        spec: &str,
+        options: (Option<&str>, Option<&str>, &[String]),
+    ) -> Result<Done<FieldsAdded>, Vec<Problem>> {
+        let mut done = self
+            .graph
+            .ontology_add_field_many(ctx, types, all, spec, options)?;
         // search-05 and search-04, as the single-type add.
         let v = &done.value;
         let mut hints: Vec<Problem> = v

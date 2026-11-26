@@ -18,7 +18,8 @@ Id prefixes and suggestions use the same visibility, so an opt-in can make a pre
 
     umx node add --type problem --title "Approval delays"
     umx node add --type option --title "Pre-approve vendors" --status proposed --note "From the 3 Nov call"
-    umx node add --type risk --title "Launch slips" --set likelihood=3 --set owner=finance
+    umx node add --type risk --title "Launch slips" --set likelihood=high --set impact=low
+    umx edge add <person|team|organisation> owns <risk>   # ownership is a link, not a name in a field
     umx node add --type option --title "Weekly review" --parent 01JC8XA4H7     # adds a part_of edge
     umx node add --type problem --title "Approval delays" --evidence 'calls/3-nov.vtt#seq=120-140' --evidence-kind room
 
@@ -170,7 +171,7 @@ Changes the title, type, note or custom fields. `--note` replaces the note; to a
 The result lists the fields that changed; an edit that changes nothing writes nothing.
 
     umx node edit 01JC8XA4H7 --title "Approval delays at month end"
-    umx node edit 01JC8XA4H7 --type risk --set likelihood=4 --unset owner
+    umx node edit 01JC8XA4H7 --type risk --set likelihood=high --unset impact
     umx node edit 01JC8XA4H7 --note "Replaces the whole note"
     umx node edit 01JC8XA4H7 --tag stage:review --untag needs_review
 

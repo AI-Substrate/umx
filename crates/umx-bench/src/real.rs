@@ -247,6 +247,7 @@ fn ontology(types: &[&str]) -> Ontology {
                 kind,
                 role: None,
                 description: None,
+                values: Vec::new(),
                 extra: BTreeMap::new(),
             });
         }

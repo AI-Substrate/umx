@@ -687,14 +687,16 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             all_types: false,
             description,
             role,
+            values,
         } if types.len() == 1 => reply(
             command,
-            services.ontology_add_field_as(
+            services.ontology_add_field_with_values(
                 &ctx,
                 &types[0],
                 field,
                 description.as_deref(),
                 role.as_deref(),
+                values,
             ),
             |v| json!({ "added": v.added, "name": v.name, "unchanged": v.unchanged }),
         ),
@@ -704,13 +706,13 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             all_types,
             description,
             role,
-        } => match services.ontology_add_field_many_as(
+            values,
+        } => match services.ontology_add_field_many_with_values(
             &ctx,
             types,
             *all_types,
             field,
-            description.as_deref(),
-            role.as_deref(),
+            (description.as_deref(), role.as_deref(), values),
         ) {
             Ok(done) => reply(
                 command,
@@ -723,13 +725,21 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             type_name,
             field,
             role,
+            values,
         } => reply(
             command,
-            services.ontology_set_field(&ctx, type_name, field, role),
+            services.ontology_set_field_with_values(
+                &ctx,
+                type_name,
+                field,
+                role.as_deref(),
+                values.as_deref(),
+            ),
             |v| {
                 json!({
                     "type": v.type_name, "field": v.field, "role": v.role.as_str(),
                     "changed": v.changed, "pending": v.affected.len(),
+                    "values": v.values,
                 })
             },
         ),
@@ -3548,6 +3558,7 @@ fn retry(op: &Op) -> Command {
             all_types,
             description,
             role,
+            values,
         } => {
             let c = Command::new("ontology add field");
             let c = match (types.as_slice(), *all_types) {
@@ -3565,9 +3576,14 @@ fn retry(op: &Op) -> Command {
                 }
             };
             let c = text(field_spec(c, field), "--description", description, "<text>");
-            match role {
+            let c = match role {
                 Some(r) => c.word("--role").word(role_word(r)),
                 None => c,
+            };
+            if values.is_empty() {
+                c
+            } else {
+                c.field_values(values)
             }
         }
         Op::OntologyAddRelationField { relation, field } => field_spec(
@@ -3662,13 +3678,21 @@ fn retry(op: &Op) -> Command {
             type_name,
             field,
             role,
-        } => name(
-            name(Command::new("ontology set field"), type_name, "<type>"),
-            field,
-            "<field>",
-        )
-        .word("--role")
-        .word(role_word(role)),
+            values,
+        } => {
+            let mut c = name(
+                name(Command::new("ontology set field"), type_name, "<type>"),
+                field,
+                "<field>",
+            );
+            if let Some(role) = role {
+                c = c.word("--role").word(role_word(role));
+            }
+            if let Some(values) = values {
+                c = c.field_values(values);
+            }
+            c
+        }
         Op::GraphUnload { alias: a } => alias(Command::new("graph unload"), a),
         Op::GraphPrimary { alias: a } => alias(Command::new("graph primary"), a),
         Op::GraphRename { from, to } => alias(alias(Command::new("graph rename"), from), to),
@@ -5115,6 +5139,7 @@ fn guide_json(g: &Guide) -> Value {
                     json!({
                         "name": f.name, "kind": f.kind, "description": f.description, "next": cmd(&f.next),
                         "std": f.std,
+                        "values": f.values,
                     })
                 })
                 .collect();

@@ -543,6 +543,15 @@ pub(crate) fn edit_node(
             Some(edit()),
         ));
     }
+    warnings.extend(super::ontology::value_warnings(
+        graph,
+        o,
+        n,
+        changed
+            .iter()
+            .map(String::as_str)
+            .filter(|f| req.sets.iter().any(|(s, _)| s == f)),
+    ));
     Ok(changed)
 }
 

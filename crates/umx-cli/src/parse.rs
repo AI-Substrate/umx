@@ -31,7 +31,8 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 29] = [
+const SWITCHES: [&str; 30] = [
+    "--clear-values",
     "--same-graph",
     "--raise",
     "--add",
@@ -364,11 +365,21 @@ pub const FLAGS: &[(&str, &[&str])] = &[
             "--relation",
             "--description",
             "--role",
+            "--values",
             "--from",
             "--to",
         ],
     ),
-    ("ontology set", &["--columns", "--reset", "--role"]),
+    (
+        "ontology set",
+        &[
+            "--columns",
+            "--reset",
+            "--role",
+            "--values",
+            "--clear-values",
+        ],
+    ),
     (
         "ontology adopt-std",
         &["--map", "--dry-run", "--field-to-tag"],
@@ -1812,12 +1823,22 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
         }
         "ontology set" => {
             let a = args()?;
-            let what = "use ontology set type <type> --columns <a,b,...> or --reset, or ontology set field <type> <field> --role data|content";
+            let what = "use ontology set type <type> --columns <a,b,...> or --reset, or ontology set field <type> <field> --role data|content, --values a,b,c or --clear-values";
             let p = a.positional.clone();
             let reset = a.switches.iter().any(|s| s == "--reset");
+            let clear_values = a.switches.iter().any(|s| s == "--clear-values");
+            let values = a.one("--values");
+            if clear_values && values.is_some() {
+                return Err(Usage {
+                    command,
+                    what: "give --values or --clear-values, not both",
+                });
+            }
             let op = match p.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
                 // F96: a type's default node list columns.
-                ["type", name] if a.one("--role").is_none() => {
+                ["type", name]
+                    if a.one("--role").is_none() && values.is_none() && !clear_values =>
+                {
                     let columns = match (a.columns(), reset) {
                         (Some(c), false) if !c.is_empty() => Some(c),
                         (None, true) => None,
@@ -1835,11 +1856,22 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                     }
                 }
                 // D56: a field's role.
-                ["field", t, f] if a.one("--columns").is_none() && !reset => Op::OntologySetField {
-                    type_name: (*t).to_owned(),
-                    field: (*f).to_owned(),
-                    role: a.need("--role", "--role data|content is required")?,
-                },
+                ["field", t, f]
+                    if a.one("--columns").is_none()
+                        && !reset
+                        && (a.one("--role").is_some() || values.is_some() || clear_values) =>
+                {
+                    Op::OntologySetField {
+                        type_name: (*t).to_owned(),
+                        field: (*f).to_owned(),
+                        role: a.one("--role"),
+                        values: if clear_values {
+                            Some(Vec::new())
+                        } else {
+                            values.map(|s| s.split(',').map(str::to_owned).collect())
+                        },
+                    }
+                }
                 _ => return Err(Usage { command, what }),
             };
             op.with(a)
@@ -1993,6 +2025,15 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             let p = a.positional.clone();
             let description = a.one("--description");
             let all_types = a.switches.iter().any(|s| s == "--all-types");
+            let values = a.one("--values");
+            if values.is_some()
+                && (p.first().map(String::as_str) != Some("field") || a.one("--relation").is_some())
+            {
+                return Err(Usage {
+                    command,
+                    what: "--values is for ontology add field <type> <field>:string only",
+                });
+            }
             if all_types && p.first().map(String::as_str) != Some("field") {
                 return Err(Usage {
                     command,
@@ -2064,6 +2105,8 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                         all_types,
                         description,
                         role: a.one("--role"),
+                        values: values
+                            .map_or_else(Vec::new, |s| s.split(',').map(str::to_owned).collect()),
                     }
                 }
                 _ => {
@@ -2497,6 +2540,7 @@ mod tests {
             all_types,
             description,
             role,
+            ..
         } = p("ontology add field risk impact:int --description=How_bad")
             .ok()
             .unwrap()
@@ -2526,6 +2570,7 @@ mod tests {
             type_name,
             field,
             role,
+            ..
         } = p("ontology set field doc file --role content")
             .ok()
             .unwrap()
@@ -2534,8 +2579,8 @@ mod tests {
             panic!()
         };
         assert_eq!(
-            (type_name.as_str(), field.as_str(), role.as_str()),
-            ("doc", "file", "content")
+            (type_name.as_str(), field.as_str(), role.as_deref()),
+            ("doc", "file", Some("content"))
         );
         assert!(
             p("ontology set field doc file").is_err(),

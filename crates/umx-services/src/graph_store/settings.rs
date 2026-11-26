@@ -23,7 +23,7 @@ pub struct GraphSet {
 pub(crate) fn change_commands(graph: &ValidName) -> Vec<Command> {
     let mut out: Vec<Command> = [
         Command::new("ontology add type").word("experiment"),
-        Command::new("ontology add relation").word("mitigates"),
+        Command::new("ontology add relation").word("validates"),
         Command::new("ontology add status").word("parked"),
     ]
     .into_iter()

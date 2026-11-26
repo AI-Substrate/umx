@@ -460,6 +460,7 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
                     all_types: false,
                     description: None,
                     role: None,
+                    values: Vec::new(),
                 },
                 Some("g"),
             ),
@@ -480,7 +481,8 @@ fn every_write_op_gives_one_change_for_the_graph_it_wrote_and_none_for_another()
                 Op::OntologySetField {
                     type_name: "risk_item".into(),
                     field: "owner".into(),
-                    role: "data".into(),
+                    role: Some("data".into()),
+                    values: None,
                 },
                 Some("g"),
             ),

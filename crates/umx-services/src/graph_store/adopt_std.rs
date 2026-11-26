@@ -608,7 +608,7 @@ impl GraphStore {
             }
         }
         let fold = adopt::fold(&own);
-        for c in &fold.clashes {
+        for c in fold.clashes.iter().filter(|c| !c.keeps_own_kind()) {
             // The fix names the declaration the graph has now: before a --map that renamed its owner.
             let what = if c.at.relation {
                 Renaming::Relation
@@ -705,6 +705,11 @@ impl GraphStore {
             return Err(e);
         }
         let mut warnings = value_warnings(&graph, l, &maps, &map_of);
+        warnings.extend(super::ontology::soft_kind_warnings(
+            &fold.ontology,
+            None,
+            &graph,
+        ));
         let (moved, tag_changes, tag_warnings) = plan_tags(&graph, l, &fields);
         warnings.extend(tag_warnings);
         let renamed: Vec<MapDone> = maps

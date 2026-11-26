@@ -1242,6 +1242,31 @@ fn source_cited(home: &Home, path: &str) {
 fn trigger(code: Code) -> (Envelope, u8) {
     let mut home = Home::new(code.spec().code);
     match code {
+        Code::FieldValueOffVocabulary => {
+            home.graph();
+            home.umx(&[
+                "node",
+                "add",
+                "--type",
+                "risk",
+                "--title",
+                "Risk rating",
+                "--set",
+                "impact=severe",
+            ])
+        }
+        Code::FieldValuesInvalid => {
+            home.graph();
+            home.umx(&[
+                "ontology",
+                "add",
+                "field",
+                "task",
+                "priority:string",
+                "--values",
+                "Very High",
+            ])
+        }
         Code::ActorInvalid => {
             let path = home.graph();
             let result = raw(

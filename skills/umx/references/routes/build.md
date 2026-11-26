@@ -24,7 +24,9 @@ edge or relation by hand (`name_invalid`); umx keeps them, read with `umx neighb
 graph adds. `umx ontology show` marks std's entries `std: true` (hint `std_entries_shown`) and `--std` prints std
 v1 alone; `--no-std` makes a graph without std. On `std_newer`, keep working: the graph loads on this umx's std.
 
-**usage 211**: in a std graph std's names keep std's kinds (`std_field_conflict`), and a std type or relation
+**usage 211**, refined by usage 226: placed std fields keep std's kinds (`std_field_conflict`), except soft risk
+ratings, whose non-string declarations warn and keep the graph's kind. Names placed only elsewhere do not
+constrain custom fields. A std type or relation
 declared by name alone is unchanged. `std` is never a type, relation or field name, and umx's provenance and
 derived names are refused in every graph (`reserved_name`, `reserved_relation`, `derived_relation`). std relations
 expect end types softly (`relation_endpoint_unexpected` names them); widen with `umx ontology add relation <r>
@@ -32,7 +34,7 @@ expect end types softly (`relation_endpoint_unexpected` names them); widen with 
 
 **usage 212**: add a field to a std type with `umx ontology add field person shoe_size:int`: graph.json gets only
 yours, `ontology show` lists std's first. A field std already gives the type, with std's kind and role, is
-unchanged; another kind is `std_field_conflict`. Several types take a field at once, std's included
+unchanged; another kind is `std_field_conflict` except for soft risk ratings. Several types take a field at once, std's included
 (`risk,team`); `--all-types` means graph.json's types only. `ontology remove field` refuses std's own fields
 (`reserved_name`) and removes only your extension or your role for a std field.
 
@@ -63,10 +65,18 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 - **usage 141**: `umx ontology remove type|status|relation <name>` and `remove field <type> <name>` take an
   entry out. While nodes or edges use it, it refuses (`ontology_in_use`, with a next that lists them); change or
   delete those first. Built-ins (`part_of`, `open`, derived and provenance names, `std:` entries) never go.
-- **usage 103**: one field on many types is one call: `umx ontology add field risk,issue impact:int`, or
+- **usage 103**: one field on many types is one call: `umx ontology add field risk,issue score:int`, or
   `--all-types`; all or nothing, each culprit its own error (`type_unknown`, `field_conflict`). An `ontology add`
   that matches what is declared is ok with `"unchanged": true` and writes nothing, so setup can re-run; one that
   differs (another kind, a type missing a given field, a plain add of a symmetric relation) is refused.
+  **usage 226**: `ontology add field <type> <field>:string --values low,medium,high` declares up to 32 ordered,
+  distinct snake_case labels; add appends missing labels and leaves a subset unchanged.
+  `ontology set field <type> <field> --values ...` replaces the list;
+  `--clear-values` clears only the graph's own list. A value outside it is still stored, with
+  `field_value_off_vocabulary` and the declared labels as candidates. Run its next to declare a new label, or
+  choose a value for its node-edit placeholder. std 1 risks have `likelihood` and `impact` as `low,medium,high`,
+  without adoption. Owners are `owns` edges from a person, team or organisation, never `owner:string`;
+  `mitigates` goes from any node to a risk (a non-risk target only warns). Std's labels cannot be removed.
 - **usage 129**: edge fields have a vocabulary too. `edge add --set` with a field the relation does not declare
   warns `off_vocabulary_edge_field`; its next, `umx ontology add field --relation <r> <name>:<kind>`, declares it
   (typed from then on; `ontology show` lists `relation_fields`). An edge's own keys are `reserved_name`.

@@ -992,6 +992,12 @@ impl GraphStore {
         let allows = self.secret_allows();
         let done = self.attributed_write(ctx, &alias, |batch, session, next, now, meta| {
             let mut node = draft.into_node(next(batch.graph()), now, &ctx.by);
+            warnings.extend(super::ontology::value_warnings(
+                &graph,
+                meta.ontology,
+                &node,
+                node.fields.keys().map(String::as_str),
+            ));
             warnings.extend(
                 super::secrets::node_write_secrets(None, &node, meta.ontology, meta.id, &allows)
                     .into_iter()
@@ -1086,6 +1092,12 @@ impl GraphStore {
             status_given,
             super::tags::is_std(l.ontology()),
         )?;
+        warnings.extend(super::ontology::value_warnings(
+            &graph,
+            l.ontology(),
+            &n,
+            changed.iter().map(String::as_str),
+        ));
         let live = |e: Id| l.graph.edge(e).map(|e| e.to_edge());
         let parent = parent.filter(|p| {
             let ends = ends_out(&l.graph, id, PART_OF, live);

@@ -967,6 +967,12 @@ impl Run<'_, '_> {
             .unwrap_or_else(|| self.next_id(line));
         let parent = draft.parent;
         let mut node = draft.into_node(id, &self.now, &self.ctx.by);
+        warnings.extend(super::ontology::value_warnings(
+            &self.graph,
+            self.o,
+            &node,
+            node.fields.keys().map(String::as_str),
+        ));
         if let Some(created) = created {
             node.created =
                 umx_core::time::normalise_date(&created).expect("created passed preflight");
@@ -1121,6 +1127,12 @@ impl Run<'_, '_> {
         let parent = draft.parent;
         let (mut n, changed, mut held) =
             enrich(&before, draft, status_given, super::tags::is_std(self.o))?;
+        warnings.extend(super::ontology::value_warnings(
+            &self.graph,
+            self.o,
+            &n,
+            changed.iter().map(String::as_str),
+        ));
         let parent = parent.filter(|p| {
             let ends = self.ends_out(id, PART_OF);
             if !ends.is_empty() && !ends.contains(&StoredEnd::local(*p)) {

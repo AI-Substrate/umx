@@ -123,7 +123,7 @@ impl StdRelation {
 /// Where a std field may be used without a declaration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
-    /// On the types and relations it is placed on (a graph may add it elsewhere as a custom field of its kind).
+    /// On the types and relations it is placed on; elsewhere the name and kind are the graph's own.
     Placed,
     /// On any node, never off_vocabulary.
     AnyNode,
@@ -135,6 +135,7 @@ pub enum Scope {
 pub struct StdField {
     pub name: &'static str,
     pub kind: FieldKind,
+    pub values: &'static [&'static str],
     /// Its s22 role (D56): content is embedded, data never is.
     pub role: Role,
     pub flags: Flags,
@@ -198,6 +199,7 @@ const fn field(
     StdField {
         name,
         kind,
+        values: &[],
         role,
         flags: USER,
         scope,
@@ -247,6 +249,7 @@ const USER_RELATIONS: &[StdRelation] = &[
     rel(PART_OF, &[], &[]),
     rel("attended", &[], &["meeting"]),
     rel("owns", OWNERS, &[]),
+    rel("mitigates", &[], &["risk"]),
     rel("decides", &[], &[]),
     rel("answers", &[], &[]),
     rel(
@@ -276,6 +279,26 @@ const USER_RELATIONS: &[StdRelation] = &[
 
 /// The user fields. The provenance keys follow from [`PROVENANCE_KEYS`].
 const USER_FIELDS: &[StdField] = &[
+    StdField {
+        values: &["low", "medium", "high"],
+        ..field(
+            "likelihood",
+            FieldKind::String,
+            Role::Data,
+            Scope::Placed,
+            &["risk"],
+        )
+    },
+    StdField {
+        values: &["low", "medium", "high"],
+        ..field(
+            "impact",
+            FieldKind::String,
+            Role::Data,
+            Scope::Placed,
+            &["risk"],
+        )
+    },
     field(
         "aliases",
         FieldKind::List,

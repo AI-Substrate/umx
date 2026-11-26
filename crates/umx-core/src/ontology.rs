@@ -6,6 +6,16 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const MAX_FIELD_VALUES: usize = 32;
+
+pub fn valid_field_values(values: &[String]) -> bool {
+    values.len() <= MAX_FIELD_VALUES
+        && values
+            .iter()
+            .enumerate()
+            .all(|(i, v)| crate::name::is_snake_case(v) && !values[..i].contains(v))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldKind {
@@ -108,6 +118,9 @@ pub struct FieldDecl {
     /// What the field means, one line (`umx graph guide`). Older builds keep it among their unknown keys.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Ordered string labels. Empty means unrestricted; older builds preserve this key in `extra`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub values: Vec<String>,
     /// Keys this build does not know (a newer umx or a hand edit), kept through load and save.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -384,6 +397,7 @@ impl FieldDecl {
             kind,
             role: None,
             description: None,
+            values: Vec::new(),
             extra: BTreeMap::new(),
         }
     }
@@ -684,7 +698,8 @@ impl Ontology {
     /// ([`Ontology::std_base`]), then its own: a type, status or relation std has is merged into std's entry, and
     /// every other entry follows in the graph's order. A merged type keeps std's fields first, then the graph's
     /// others, with the graph's description, columns and unknown keys; a field both declare keeps std's kind (the
-    /// graph adds, never removes or narrows std) and, when the kinds agree, the graph's role and description. A std
+    /// graph adds, never removes or narrows std) and, when the kinds agree, the graph's role and description.
+    /// Vocabulary fields with declared labels are soft defaults and keep a graph's different kind. A std
     /// newer than this build's ([`crate::standard::STD_VERSION`], `std_newer`) gets std v1's names. Pure and never
     /// written: graph.json keeps the stored ontology.
     pub fn effective(&self) -> Ontology {
@@ -731,6 +746,7 @@ impl Ontology {
 /// A std field as a declaration: its role is stated only where it is not its kind's default.
 fn std_field_decl(f: &crate::standard::StdField) -> FieldDecl {
     let mut decl = FieldDecl::new(f.name, f.kind);
+    decl.values = f.values.iter().map(|v| v.to_string()).collect();
     if f.role != f.kind.default_role() {
         decl.role = Some(f.role);
     }
@@ -757,7 +773,17 @@ fn merge_type(t: &mut TypeDecl, own: &TypeDecl) {
 fn merge_fields(fields: &mut Vec<FieldDecl>, own: &[FieldDecl]) {
     for f in own {
         match fields.iter_mut().find(|have| have.name == f.name) {
-            Some(have) if have.kind == f.kind => *have = f.clone(),
+            Some(have) if have.kind == f.kind => {
+                let mut values = have.values.clone();
+                for value in &f.values {
+                    if !values.contains(value) {
+                        values.push(value.clone());
+                    }
+                }
+                *have = f.clone();
+                have.values = values;
+            }
+            Some(have) if !have.values.is_empty() => *have = f.clone(),
             Some(_) => {}
             None => fields.push(f.clone()),
         }
@@ -805,6 +831,22 @@ pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
 mod tests {
     use super::*;
     use crate::name::is_valid_name;
+
+    #[test]
+    fn risk_values_extend_std_in_order_without_narrowing_it() {
+        let mut o = Ontology {
+            std: Some(1),
+            ..Ontology::default()
+        };
+        let mut f = FieldDecl::new("impact", FieldKind::String);
+        f.values = alloc::vec!["severe".into(), "low".into()];
+        o.types.push(TypeDecl::new("risk", alloc::vec![f]));
+        assert_eq!(
+            o.effective().field_decl("risk", "impact").unwrap().values,
+            ["low", "medium", "high", "severe"]
+        );
+        assert_eq!(o.types[0].fields[0].values, ["severe", "low"]);
+    }
 
     #[test]
     fn starter_names_follow_rule_2() {

@@ -27,6 +27,7 @@ pub struct RoleSet {
     pub type_name: String,
     pub field: String,
     pub role: Role,
+    pub values: Vec<String>,
     /// Whether graph.json changed (false: the field already stated this role).
     pub changed: bool,
     /// Nodes whose embedded text the change alters (the field holds text and its effective role changed). The
@@ -169,11 +170,19 @@ fn node_field_decl(spec: &str, fix: &dyn Fn(&ValidName) -> Command) -> Result<Fi
     field_decl(spec, RESERVED_NODE_FIELDS, fix)
 }
 
-/// ws008 T2b (req-99): in a std graph, a field std v1 has keeps std's kind (`std_field_conflict`); a graph may declare
-/// it on another type or relation only with that kind.
-fn std_kind(o: &Ontology, graph: &ValidName, field: &FieldDecl) -> Result<(), Problem> {
-    match standard::std_field(&field.name) {
-        Some(f) if o.std_version().is_some() && f.kind != field.kind => {
+fn std_kind(
+    o: &Ontology,
+    graph: &ValidName,
+    on: (&str, bool),
+    field: &FieldDecl,
+) -> Result<(), Problem> {
+    let placed = if on.1 {
+        std_relation_decl(o, on.0, &field.name)
+    } else {
+        std_decl(o, on.0, &field.name)
+    };
+    match placed {
+        Some(f) if f.kind != field.kind && f.values.is_empty() => {
             Err(problems::std_field_conflict(
                 graph,
                 &ValidName::new(&field.name).expect("checked by field_decl"),
@@ -232,10 +241,159 @@ fn role_affected(graph: &Graph, kind: &str, field: &str) -> Vec<Id> {
 
 fn std_field_as_decl(f: &standard::StdField) -> FieldDecl {
     let mut decl = FieldDecl::new(f.name, f.kind);
+    decl.values = f.values.iter().map(|v| v.to_string()).collect();
     if f.role != f.kind.default_role() {
         decl.role = Some(f.role);
     }
     decl
+}
+
+fn check_values(field: &FieldDecl, values: &[String], retry: Command) -> Result<(), Problem> {
+    if values.is_empty()
+        || (field.kind == FieldKind::String && umx_core::ontology::valid_field_values(values))
+    {
+        return Ok(());
+    }
+    let mut suggested = Vec::new();
+    for value in values.iter().take(umx_core::ontology::MAX_FIELD_VALUES) {
+        let label = ValidName::alias(value)
+            .map(|v| v.as_str().to_string())
+            .or_else(|| umx_core::name::suggest_name(value));
+        if let Some(label) = label
+            && !suggested.contains(&label)
+        {
+            suggested.push(label);
+        }
+    }
+    let fix = if suggested.is_empty() {
+        retry.word("--values").word("<values>")
+    } else {
+        retry.field_values(&suggested)
+    };
+    Err(problems::field_values_invalid(
+        &ValidName::new(&field.name).expect("checked field name"),
+        fix,
+    ))
+}
+
+fn set_values_command(graph: &ValidName, kind: &ValidName, field: &ValidName) -> Command {
+    Command::new("ontology set field")
+        .name(kind)
+        .name(field)
+        .word("--graph")
+        .name(graph)
+}
+
+fn revalues(
+    o: &Ontology,
+    graph: &ValidName,
+    kind: &ValidName,
+    field: &ValidName,
+    have: &FieldDecl,
+    given: &FieldDecl,
+) -> Result<Vec<String>, Problem> {
+    let std = std_decl(o, kind.as_str(), field.as_str()).filter(|f| f.kind == have.kind);
+    let mut merged = have.clone();
+    merged.values = std.as_ref().map_or_else(Vec::new, |f| f.values.clone());
+    for value in &have.values {
+        if !merged.values.contains(value) {
+            merged.values.push(value.clone());
+        }
+    }
+    for value in &given.values {
+        if !merged.values.contains(value) {
+            merged.values.push(value.clone());
+        }
+    }
+    if merged.values != have.values {
+        check_values(
+            &merged,
+            &merged.values,
+            set_values_command(graph, kind, field),
+        )?;
+    }
+    if let Some(std) = std {
+        merged.values.retain(|v| !std.values.contains(v));
+    }
+    Ok(merged.values)
+}
+
+pub(crate) fn value_warnings<'a>(
+    graph: &ValidName,
+    o: &Ontology,
+    node: &umx_core::Node,
+    fields: impl IntoIterator<Item = &'a str>,
+) -> Vec<Problem> {
+    let Some(kind) = ValidName::new(&node.kind) else {
+        return Vec::new();
+    };
+    fields
+        .into_iter()
+        .filter_map(|name| {
+            let value = node.fields.get(name)?;
+            let field = o.field_decl(&node.kind, name)?;
+            let value = value.as_str()?;
+            if field.kind != FieldKind::String
+                || field.values.is_empty()
+                || field.values.iter().any(|v| v == value)
+            {
+                return None;
+            }
+            let name = ValidName::new(name)?;
+            let fix = if umx_core::name::is_snake_case(value) {
+                let mut c = Command::new("ontology add field")
+                    .name(&kind)
+                    .name_with(&name, ':', "string");
+                if field.effective_role() == Role::Content {
+                    c = c.word("--role").word("content");
+                }
+                c.word("--graph")
+                    .name(graph)
+                    .field_values(&[value.to_string()])
+            } else {
+                Command::new("node edit")
+                    .id(node.id)
+                    .word("--set")
+                    .name_with(&name, '=', "<value>")
+                    .word("--graph")
+                    .name(graph)
+            };
+            Some(
+                problems::field_value_off_vocabulary(&name, &field.values, fix)
+                    .subject(node.id.to_text()),
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn soft_kind_warnings(
+    o: &Ontology,
+    before: Option<&Ontology>,
+    graph: &ValidName,
+) -> Vec<Problem> {
+    if o.std_version().is_none() {
+        return Vec::new();
+    }
+    umx_core::adopt::kind_clashes(o)
+        .into_iter()
+        .filter(|c| c.keeps_own_kind())
+        .filter(|c| {
+            before
+                .and_then(|b| b.field_decl(&c.at.on, &c.at.field))
+                .is_none_or(|f| f.kind != c.kind)
+        })
+        .filter_map(|c| {
+            let field = ValidName::new(&c.at.field)?;
+            Some(problems::std_field_conflict_stored(
+                graph,
+                &c.at.on,
+                &field,
+                (c.kind, c.std_kind),
+                c.kind,
+                Command::new("ontology show").word("--graph").name(graph),
+            ))
+        })
+        .collect()
 }
 
 /// A type name umx keeps (ws008 T2b): `std` in every graph; in a std graph also the provenance types only umx writes
@@ -408,7 +566,7 @@ impl GraphStore {
         let done = self.change_ontology(ctx, "type", &name, |o, graph| {
             reserved_type_name(o, name.as_str())?;
             for f in &fields {
-                std_kind(o, graph, f)?;
+                std_kind(o, graph, (name.as_str(), false), f)?;
             }
             // ws008 T2b: a std graph has std's types already; the name alone adds nothing.
             if o.std_version().is_some()
@@ -831,6 +989,7 @@ impl GraphStore {
         spec: &str,
         description: Option<&str>,
         role: Option<&str>,
+        values: &[String],
     ) -> Outcome<OntologyAdded> {
         let role = role.map(parse_role).transpose()?;
         let type_name = check_name(type_name, "node type", &|g| {
@@ -851,6 +1010,20 @@ impl GraphStore {
             )
         };
         let mut field = node_field_decl(spec, &fix)?;
+        check_values(
+            &field,
+            values,
+            ctx.same_graph(
+                Command::new("ontology add field")
+                    .name(&type_name)
+                    .name_with(
+                        &ValidName::new(&field.name).expect("checked name"),
+                        ':',
+                        "string",
+                    ),
+            ),
+        )?;
+        field.values = values.to_vec();
         if let Some(role) = role {
             check_role(&field, role)?;
             field.role = Some(role);
@@ -859,7 +1032,7 @@ impl GraphStore {
         let text = field.description.clone();
         let name = ValidName::new(&field.name).expect("checked by field_decl");
         let done = self.change_ontology(ctx, "field", &name.clone(), |o, graph| {
-            std_kind(o, graph, &field)?;
+            std_kind(o, graph, (type_name.as_str(), false), &field)?;
             // The effective declaration (req-100): a field std already gives the type counts as declared, so the
             // same field again writes nothing and graph.json holds only the graph's own extensions.
             let own = o.field_decl(type_name.as_str(), &field.name).cloned();
@@ -867,6 +1040,12 @@ impl GraphStore {
             let have = own.or_else(|| std_decl(o, type_name.as_str(), &field.name));
             match have {
                 Some(f) if f.kind == field.kind && f.effective_role() == field.effective_role() => {
+                    let merged_values = revalues(o, graph, &type_name, &name, &f, &field)?;
+                    let changed_values = if from_std {
+                        !merged_values.is_empty()
+                    } else {
+                        merged_values != f.values
+                    };
                     // A description for a std field is the graph's own declaration of it, with std's kind (as
                     // `ontology add type person --description` is); std's entry has no description to clash with.
                     if !(from_std && field.description.is_some()) {
@@ -878,7 +1057,22 @@ impl GraphStore {
                             &field.description,
                             f.description.as_ref(),
                         )?;
-                        return Ok(false);
+                        if !changed_values {
+                            return Ok(false);
+                        }
+                    }
+                    field.values = merged_values;
+                    if !from_std {
+                        o.types
+                            .iter_mut()
+                            .find(|t| t.name == type_name.as_str())
+                            .expect("declared type")
+                            .fields
+                            .iter_mut()
+                            .find(|f| f.name == field.name)
+                            .expect("declared field")
+                            .values = field.values;
+                        return Ok(true);
                     }
                 }
                 Some(f) if f.kind == field.kind => {
@@ -889,6 +1083,7 @@ impl GraphStore {
                         f.effective_role(),
                     ));
                 }
+                Some(f) if from_std && !f.values.is_empty() => {}
                 Some(f) => return Err(problems::field_conflict(graph, &type_name, &name, f.kind)),
                 None => {}
             }
@@ -942,7 +1137,7 @@ impl GraphStore {
         let field = field_decl(spec, RESERVED_EDGE_FIELDS, &fix)?;
         let name = ValidName::new(&field.name).expect("checked by field_decl");
         self.change_ontology(ctx, "relation field", &name.clone(), |o, graph| {
-            std_kind(o, graph, &field)?;
+            std_kind(o, graph, (rel.as_str(), true), &field)?;
             let declared = o
                 .relation_fields
                 .get(rel.as_str())
@@ -981,9 +1176,9 @@ impl GraphStore {
         types: &[String],
         all: bool,
         spec: &str,
-        description: Option<&str>,
-        role: Option<&str>,
+        options: (Option<&str>, Option<&str>, &[String]),
     ) -> Result<Done<FieldsAdded>, Vec<Problem>> {
+        let (description, role, values) = options;
         let role = role.map(parse_role).transpose().map_err(|p| vec![p])?;
         if all == !types.is_empty() {
             return Err(vec![problems::usage_invalid(
@@ -1023,6 +1218,24 @@ impl GraphStore {
             ctx.same_graph(c.name_with(g, ':', "<kind>"))
         };
         let mut field = node_field_decl(spec, &fix).map_err(|p| vec![p])?;
+        let retry = if all {
+            Command::new("ontology add field").word("--all-types")
+        } else if names.len() <= 64 {
+            Command::new("ontology add field").names(&names, ",")
+        } else {
+            Command::new("ontology add field").word("<types>")
+        };
+        check_values(
+            &field,
+            values,
+            ctx.same_graph(retry.name_with(
+                &ValidName::new(&field.name).expect("checked name"),
+                ':',
+                "string",
+            )),
+        )
+        .map_err(|p| vec![p])?;
+        field.values = values.to_vec();
         if let Some(role) = role {
             check_role(&field, role).map_err(|p| vec![p])?;
             field.role = Some(role);
@@ -1053,11 +1266,15 @@ impl GraphStore {
                 )]);
             }
         }
-        std_kind(o, &graph, &field).map_err(|p| vec![p])?;
         // A std type counts as declared in a std graph (req-100), as it does for the single-type form and node list.
         let effective = o.effective();
         let (mut added, mut unchanged) = (Vec::new(), Vec::new());
+        let mut updated_values = alloc::collections::BTreeMap::new();
         for n in &names {
+            if let Err(p) = std_kind(o, &graph, (n.as_str(), false), &field) {
+                errors.push(p);
+                continue;
+            }
             if effective.type_decl(n.as_str()).is_none() {
                 errors.push(problems::type_unknown(&graph, n));
                 continue;
@@ -1071,10 +1288,24 @@ impl GraphStore {
             match have {
                 None => added.push(n.clone()),
                 // As the single-type form: a description for a std field is the graph's own declaration of it.
-                Some(f) if same(&f) && from_std && field.description.is_some() => {
-                    added.push(n.clone())
-                }
                 Some(f) if same(&f) => {
+                    let merged_values = match revalues(o, &graph, n, &fname, &f, &field) {
+                        Ok(values) => values,
+                        Err(p) => {
+                            errors.push(p);
+                            continue;
+                        }
+                    };
+                    let changed_values = if from_std {
+                        !merged_values.is_empty()
+                    } else {
+                        merged_values != f.values
+                    };
+                    if from_std && field.description.is_some() {
+                        updated_values.insert(n.as_str().to_string(), merged_values);
+                        added.push(n.clone());
+                        continue;
+                    }
                     match redescribed(
                         &graph,
                         Described::Field,
@@ -1083,6 +1314,10 @@ impl GraphStore {
                         &field.description,
                         f.description.as_ref(),
                     ) {
+                        Ok(()) if changed_values => {
+                            updated_values.insert(n.as_str().to_string(), merged_values);
+                            added.push(n.clone());
+                        }
                         Ok(()) => unchanged.push(n.as_str().to_string()),
                         Err(p) => errors.push(p),
                     }
@@ -1093,6 +1328,7 @@ impl GraphStore {
                     &fname,
                     f.effective_role(),
                 )),
+                Some(f) if from_std && !f.values.is_empty() => added.push(n.clone()),
                 Some(f) => errors.push(problems::field_conflict(&graph, n, &fname, f.kind)),
             }
         }
@@ -1114,7 +1350,15 @@ impl GraphStore {
         }
         for t in l.meta.ontology.types.iter_mut() {
             if added.iter().any(|n| n.as_str() == t.name) {
-                t.fields.push(field.clone());
+                let mut added_field = field.clone();
+                if let Some(values) = updated_values.get(&t.name) {
+                    added_field.values = values.clone();
+                }
+                if let Some(existing) = t.fields.iter_mut().find(|f| f.name == field.name) {
+                    existing.values = added_field.values;
+                } else {
+                    t.fields.push(added_field);
+                }
             }
         }
         let mut warnings = persist(
@@ -1124,8 +1368,9 @@ impl GraphStore {
             &[GraphFile::Graph],
             Touched::default(),
         )
-        .inspect_err(|_| l.meta.ontology = before)
+        .inspect_err(|_| l.meta.ontology = before.clone())
         .map_err(|p| vec![p])?;
+        warnings.extend(soft_kind_warnings(&l.meta.ontology, Some(&before), &graph));
         let fix = Command::new("graph set")
             .name(&graph)
             .word("--description")
@@ -1156,26 +1401,34 @@ impl GraphStore {
         ctx: &Ctx,
         type_name: &str,
         field: &str,
-        role: &str,
+        role: Option<&str>,
+        values: Option<&[String]>,
     ) -> Outcome<RoleSet> {
-        let role = parse_role(role)?;
+        let role = role.map(parse_role).transpose()?;
+        if role.is_none() && values.is_none() {
+            return Err(problems::usage_invalid(
+                "give --role, --values or --clear-values",
+                "ontology",
+            ));
+        }
+        let options = |mut c: Command| {
+            if let Some(role) = role {
+                c = c.word("--role").word(role.as_str());
+            }
+            if let Some(values) = values {
+                c = c.field_values(values);
+            }
+            c
+        };
         let type_name = check_name(type_name, "node type", &|g| {
-            ctx.same_graph(
-                Command::new("ontology set field")
-                    .name(g)
-                    .word("<field>")
-                    .word("--role")
-                    .word(role.as_str()),
-            )
+            ctx.same_graph(options(
+                Command::new("ontology set field").name(g).word("<field>"),
+            ))
         })?;
         let field = check_name(field, "field name", &|g| {
-            ctx.same_graph(
-                Command::new("ontology set field")
-                    .name(&type_name)
-                    .name(g)
-                    .word("--role")
-                    .word(role.as_str()),
-            )
+            ctx.same_graph(options(
+                Command::new("ontology set field").name(&type_name).name(g),
+            ))
         })?;
         let alias = self.select_write(ctx, &[])?;
         let graph = alias_name(&alias);
@@ -1186,23 +1439,66 @@ impl GraphStore {
             .expect("selected graph is loaded");
         // A std graph's fields count (req-98): a std field graph.json does not declare gets the graph's own
         // declaration of it here, with std's kind; std's entries are never written.
-        let Some(decl) = l
+        let Some(effective) = l
             .ontology()
             .field_decl(type_name.as_str(), field.as_str())
             .cloned()
         else {
             return Err(problems::field_not_declared(&graph, &type_name, &field));
         };
-        check_role(&decl, role)?;
+        let std = std_decl(&l.meta.ontology, type_name.as_str(), field.as_str())
+            .filter(|f| f.kind == effective.kind);
+        let decl = l
+            .meta
+            .ontology
+            .field_decl(type_name.as_str(), field.as_str())
+            .cloned()
+            .unwrap_or_else(|| {
+                let mut own = effective.clone();
+                own.values.clear();
+                own
+            });
+        if let Some(role) = role {
+            check_role(&decl, role)?;
+        }
+        let mut updated = decl.clone();
+        if let Some(std) = &std {
+            updated.values.retain(|v| !std.values.contains(v));
+        }
+        if let Some(role) = role {
+            updated.role = Some(role);
+        }
+        if let Some(values) = values {
+            let retry = set_values_command(&graph, &type_name, &field);
+            if decl.kind != FieldKind::String {
+                return Err(problems::field_values_invalid(
+                    &field,
+                    Command::new("ontology show").word("--graph").name(&graph),
+                ));
+            }
+            check_values(&decl, values, retry.clone())?;
+            updated.values.clear();
+            for value in values {
+                if !std.as_ref().is_some_and(|s| s.values.contains(value)) {
+                    updated.values.push(value.clone());
+                }
+            }
+            let mut effective_values = std.as_ref().map_or_else(Vec::new, |s| s.values.clone());
+            effective_values.extend(updated.values.clone());
+            check_values(&updated, &effective_values, retry)?;
+        }
+        let mut shown_values = std.map_or_else(Vec::new, |s| s.values);
+        shown_values.extend(updated.values.clone());
         let mut out = RoleSet {
             alias: alias.clone(),
             type_name: type_name.as_str().to_string(),
             field: field.as_str().to_string(),
-            role,
+            role: role.unwrap_or_else(|| updated.effective_role()),
+            values: shown_values,
             changed: false,
             affected: Vec::new(),
         };
-        if decl.role == Some(role) {
+        if decl == updated {
             return Ok(Done::ok(out));
         }
         let was = decl.effective_role();
@@ -1223,7 +1519,7 @@ impl GraphStore {
             .iter_mut()
             .find(|f| f.name == field.as_str())
             .expect("declared above");
-        decl.role = Some(role);
+        *decl = updated;
         let now = decl.effective_role();
         let warnings = persist(
             files.as_ref(),
@@ -1542,7 +1838,7 @@ impl GraphStore {
                 unchanged: true,
             }));
         }
-        let warnings = persist(
+        let mut warnings = persist(
             files.as_ref(),
             &alias,
             l,
@@ -1550,8 +1846,13 @@ impl GraphStore {
             Touched::default(),
         )
         .inspect_err(|_| {
-            l.meta.ontology = before;
+            l.meta.ontology = before.clone();
         })?;
+        warnings.extend(soft_kind_warnings(
+            &l.meta.ontology,
+            Some(&before),
+            &alias_name(&alias),
+        ));
         Ok(Done {
             value: OntologyAdded {
                 alias,

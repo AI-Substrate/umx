@@ -283,6 +283,8 @@ pub const CODES: &[&str] = &[
     "edge_broken",
     "link_targets_unnamed",
     "field_kind_mismatch",
+    "field_value_off_vocabulary",
+    "field_values_invalid",
     "time_no_offset",
     "time_as_text",
     "anchor_undated",
@@ -2064,12 +2066,13 @@ pub fn adopt_field_kind_clash(
         .with("fix", Slot::Command(fix))
 }
 
-/// F285: a std graph's graph.json declares a field with another kind than std's; it loads, std's kind is used.
+/// A placed std field has another stored kind; names the kind actually used.
 pub fn std_field_conflict_stored(
     graph: &ValidName,
     on: &str,
     field: &ValidName,
     (kind, std_kind): (FieldKind, FieldKind),
+    used_kind: FieldKind,
     fix: Command,
 ) -> Problem {
     Problem::new("std_field_conflict_stored")
@@ -2078,6 +2081,7 @@ pub fn std_field_conflict_stored(
         .with("field", name(field))
         .with("kind", Slot::Word(kind.as_str()))
         .with("std kind", Slot::Word(std_kind.as_str()))
+        .with("used kind", Slot::Word(used_kind.as_str()))
         .with("fix", Slot::Command(fix))
 }
 
@@ -2881,6 +2885,28 @@ pub fn off_vocabulary_field(
         .with("type", name(kind))
         .with("field", name(field))
         .with("inferred kind", Slot::Word(inferred))
+}
+
+pub fn field_values_invalid(field: &ValidName, fix: Command) -> Problem {
+    Problem::new("field_values_invalid")
+        .with("field", name(field))
+        .with("fix", Slot::Command(fix))
+}
+
+pub fn field_value_off_vocabulary(field: &ValidName, values: &[String], fix: Command) -> Problem {
+    Problem::new("field_value_off_vocabulary")
+        .with("field", name(field))
+        .with("fix", Slot::Command(fix))
+        .candidates(
+            values
+                .iter()
+                .map(|v| Candidate {
+                    id: v.clone(),
+                    title: None,
+                    score: None,
+                })
+                .collect(),
+        )
 }
 
 /// An edge sets a custom field its relation does not declare (F92): written all the same, like a node's.

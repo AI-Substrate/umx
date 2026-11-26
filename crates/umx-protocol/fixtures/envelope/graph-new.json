@@ -1,5 +1,5 @@
 {
-  "umx": 103,
+  "umx": 105,
   "command": "graph new",
   "status": "ok",
   "data": {
@@ -20,7 +20,7 @@
     "graphfile": null,
     "next": [
       "umx ontology add type experiment --graph launch",
-      "umx ontology add relation mitigates --graph launch",
+      "umx ontology add relation validates --graph launch",
       "umx ontology add status parked --graph launch",
       "umx graph set launch --title \"Launch planning\"",
       "umx graph set launch --policy secured",

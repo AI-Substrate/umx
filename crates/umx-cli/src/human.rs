@@ -650,6 +650,16 @@ fn guide(d: &Value, style: Style) -> String {
                     clean(&text(&f["name"])),
                     clean(&text(&f["kind"]))
                 ));
+                if let Some(values) = f["values"].as_array().filter(|v| !v.is_empty()) {
+                    out.push_str(&format!(
+                        " [{}]",
+                        values
+                            .iter()
+                            .map(|v| clean(&text(v)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
                 match f["description"].as_str() {
                     Some(t) => out.push_str(&format!(": {}\n", clean(t))),
                     None => out.push_str(&format!(

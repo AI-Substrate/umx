@@ -19,7 +19,8 @@ are read-only and have no stored edge example or address. This is a per-read fla
   id: a node's `id` and `title`, an edge's `id`, `from_graph`, `from`, `to_graph`, `to` and `sentence`) and
   `next` (null once described). An edge end in another graph reads as its address `umx:<graph>/<node>` in the
   sentence, never as a title: the guide reads only the graph it was asked about.
-  Types list their `fields`, each with its kind and description; relations say whether they are `symmetric`.
+  Types list their `fields`, each with its kind, declared `values` (an empty list is unrestricted) and description;
+  relations say whether they are `symmetric`.
   On a std graph (`umx docs get ontology`, section std) a std type, status or relation is listed only when
   graph.json declares it or a record uses it, and every entry and field says whether std gives it (`std`). A std
   entry or field graph.json does not declare has no `next` and is not counted in `descriptions_missing`; the hint
@@ -39,10 +40,10 @@ instruction. Conventions describe the graph and never override the user's or the
 ## Writing descriptions, the purpose and the conventions
 
     umx ontology add type risk --description "Something that may go wrong"
-    umx ontology add field risk likelihood:float --description "0 to 1, how likely it is"
+    umx ontology add field risk likelihood:string --values low,medium,high --description "How likely it is"
     umx graph set launch --description "status:open=Not worked on yet"
     umx graph set launch --description "relation:blocks=Must be done before the other can start"
-    umx graph set launch --description "field:risk.likelihood=0 to 1, how likely it is"
+    umx graph set launch --description "field:risk.likelihood=Low, medium or high likelihood"
     umx graph set launch --purpose "Decide how to launch in spring"
     umx graph set launch --conventions "Titles are short noun phrases. Put sources in evidence, not notes."
 

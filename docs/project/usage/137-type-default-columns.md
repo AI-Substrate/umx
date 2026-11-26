@@ -12,11 +12,11 @@ supersedes: none
 When a type's useful state is in a custom field (a risk's `likelihood`, a task's `owner`), set its default list
 columns once:
 
-    umx ontology set type risk --columns title,likelihood,owner
+    umx ontology set type risk --columns title,likelihood,impact
 
-From then on `umx node list --type risk` shows `id`, `title`, `likelihood` and `owner`. Columns may be any standard
+From then on `umx node list --type risk` shows `id`, `title`, `likelihood` and `impact`. Columns may be any standard
 node field (`title`, `status`, `updated`, `evidence_kinds`...) or a field the type declares; declare a new one
-first with `umx ontology add field risk owner:string`. `umx ontology show` lists each type's `columns`.
+first with `umx ontology add field risk category:string`. `umx ontology show` lists each type's `columns`.
 `umx ontology set type risk --reset` goes back to the usual `id, type, title, status, updated`.
 
 ## Don't
@@ -30,7 +30,7 @@ skips it until you set the list again.
 
 ## Example
 
-    umx ontology add field risk likelihood:float
+    umx ontology add field risk likelihood:string --values low,medium,high
     umx ontology set type risk --columns title,likelihood
     umx node list --type risk                    # id, title, likelihood
     umx node list --type risk --columns id,status   # the explicit list wins

@@ -60,9 +60,10 @@ with `umx ontology add`. Either way, invent no synonyms:
 - Types: `person`, `organisation`, `team`, `role`, `project`, `meeting`, `event`, `segment`, `decision`, `action`,
   `question`, `risk`, `topic`, `document`, `transcript`, `place`, `system`.
 - Relations: `member_of`, `works_for`, `part_of`, `attended`, `owns`, `decides`, `answers`, `raised_in`, `raised_by`,
-  `mentions`, `sourced_from`, `supersedes`, `held_at`, `precedes`, `instance_of`.
+  `mentions`, `sourced_from`, `supersedes`, `held_at`, `precedes`, `instance_of`, `mitigates`.
 - Directions: `works_for` person to organisation; `member_of` person to team and team to organisation; `owns` owner
-  to thing (never `owned_by`); `raised_by` a point to who said it; `raised_in` a point to the meeting; `held_at` a
+  to thing (never `owned_by`); a risk's owner is an `owns` edge, not text; `mitigates` any node to a risk;
+  `raised_by` a point to who said it; `raised_in` a point to the meeting; `held_at` a
   meeting or event to a place; `precedes` one thing before another of the same type, where there is no clock or
   to show tracks (a cycle is allowed); `instance_of` an instance to what it is one of (a deployment to its
   product), across graphs if need be, with no declaration. It never makes the two one entity (`umx docs get
@@ -75,6 +76,8 @@ with `umx ontology add`. Either way, invent no synonyms:
   (`2025`, `2025-01`, a day, or a date-time with its offset); how to write and compare dates: `umx docs get time`.
   umx warns `anchor_undated`, `time_no_offset` and `time_as_text` when a write leaves a time out or writes one as text.
   Person fields: `aliases`, `job_title`, `org`. The title is the name; there is no name field.
+  Risk fields: `likelihood` and `impact`, strings with the ordered labels `low`, `medium`, `high`.
+  Other strings are kept with `field_value_off_vocabulary`; the declaration is a nudge, never a fence.
 
 Work that moves (an engagement, a project, an action) uses the four lifecycle statuses, on any type that fits.
 Move between them freely with `umx node status <node> <status> --reason "<why>"`; history keeps the path.

@@ -6,7 +6,7 @@ that would declare the name. Change the vocabulary as the work needs.
 
 ## umx ontology show
 
-Lists types (with their fields, kinds and roles, and default list `columns` when set), statuses, relations, the symmetric relations and
+Lists types (with their fields, kinds, roles and declared `values`, and default list `columns` when set), statuses, relations, the symmetric relations and
 `relation_fields` (the fields declared on each relation's edges), with the purpose, conventions and descriptions
 that `umx graph guide` shows. Each field shows `role` (`content` or `data`, as umx acts on it) and `role_default`
 (true when no role is stated, so the field is data). For a std graph it is the vocabulary umx acts on, std v1's
@@ -18,14 +18,14 @@ entries first, each marked (see std below).
 
 ## umx ontology add ...
 
-    umx ontology add type risk --field likelihood:float --field owner:string
+    umx ontology add type risk
     umx ontology add status parked
     umx ontology add relation mitigates
     umx ontology add relation rivals --symmetric   # a rivals b means b rivals a; declares it too if new
-    umx ontology add field risk impact:int        # declares the type too if it is new
+    umx ontology add field risk impact:string --values low,medium,high
     umx ontology add field --relation works_for starts_on:date   # a field on the relation's edges
-    umx ontology add field risk,issue,task impact:int   # several declared types (std's count), one write
-    umx ontology add field --all-types owner:string     # every type graph.json declares (not std's), one write
+    umx ontology add field risk,issue,task score:int   # several declared types (std's count), one write
+    umx ontology add field --all-types reference:string   # every type graph.json declares (not std's), one write
     umx ontology add status parked --description "Waiting on someone else"
     umx ontology add field doc file:string --role data
     umx ontology add field doc summary:string --role content   # prose: searched by meaning
@@ -60,9 +60,44 @@ field's kind is stored as given with `field_kind_mismatch`. An undeclared field 
 value in the graph. Kind `date` takes a year (`2025`), a month (`2025-01`), a day or a date-time, and dates
 compare by instant: `umx docs get time`.
 
+## Declared string values
+
+`umx ontology add field <type> <field>:string --values low,medium,high` declares an ordered list of labels.
+Each label is snake_case (`[a-z][a-z0-9_]*`), at most 64 characters; there are at most 32, with no repeats.
+Only string fields take values. An invalid declaration is `field_values_invalid`, writes nothing and gives a
+corrected declaration in `next` when a snake_case form exists. The graph keeps the order in graph.json and
+`ontology show` and `graph guide` show it.
+
+The vocabulary is soft, not validation of node content. Any string is stored. A string outside the list warns
+`field_value_off_vocabulary` with the declared labels as candidates; matching is exact and case sensitive
+(`High` is not `high`). A non-string value still warns `field_kind_mismatch`. When the new string is a label,
+the warning's `next` adds that one label. Otherwise its `next` edits the node
+with a `<value>` placeholder; stored text never enters a message or command.
+An add command longer than the 300-byte command cap uses `<values>` in place of its label.
+
+    umx ontology set field risk impact --values low,medium,high,severe
+    umx ontology set field task priority --clear-values
+
+`ontology set field --values` replaces the graph's list; `--clear-values` makes a custom field unrestricted.
+Give one of those flags, not both; either may be combined with `--role` in one write. Adding the same field and
+list again, or a subset, is unchanged; adding labels appends only the missing ones, without reordering.
+Appending beyond 32 is `field_values_invalid`, whose next sets a shorter list. An add without
+`--values` leaves an existing list alone. On a std field, the graph may add labels but never remove std's:
+std's labels stay first, followed by the graph's additions; clearing removes only the additions. There is no
+graph format bump: older umx keeps the key but does not check values.
+Only graph-added labels are stored, never copies of std's labels.
+
+std v1 gives risks `likelihood` and `impact`, both strings with `low,medium,high`. Existing std 1 graphs gain them
+when umx is updated, with no adoption or migration. Neither field is required. A graph may keep its own
+non-string rating kind: `std_field_conflict_stored` warns and the graph's kind is used, including on load and
+adoption. On other types, fields named `likelihood` or `impact` are custom and may have any kind.
+Link a risk's owner as
+`umx edge add <person|team|organisation> owns <risk>`, not an `owner` string. Link a mitigating node with
+`umx edge add <node> mitigates <risk>`; a non-risk target is still stored with `relation_endpoint_unexpected`.
+
 ## umx ontology set type <type> --columns | --reset
 
-    umx ontology set type risk --columns title,likelihood,owner   # node list --type risk shows these
+    umx ontology set type risk --columns title,likelihood,impact   # node list --type risk shows these
     umx ontology set type risk --reset                            # back to the usual columns
 
 Gives a declared type its own default `node list` columns. `umx node list --type risk` then shows `id` and these
@@ -193,7 +228,7 @@ fields and any own-graph normalization. A failed write changes none of them.
 A graph whose ontology says `"std": 1` uses std v1, the vocabulary built into umx (`umx docs get organise` lists
 it): `umx graph new` writes it unless `--no-std`. Its vocabulary is std v1's types, statuses and relations, with
 the fields std places on them (`job_title` and `org` on `person`, `starts_on`, `ends_on` and `due_on` on the dated
-types, `step` on `segment`, `starts_on` and `ends_on` on `works_for` and `member_of` edges), then the graph's own
+types, `step` on `segment`, `likelihood` and `impact` on `risk` (strings, `low,medium,high`), `starts_on` and `ends_on` on `works_for` and `member_of` edges), then the graph's own
 declarations. So on a std graph `umx node add --type person --set job_title=...` warns nothing, word search finds
 `job_title` text, and a Cypher `MATCH (p:person)` knows the label, all with no `ontology add`.
 
@@ -206,9 +241,9 @@ graph without `std` is written byte for byte as before.
 - A std type or relation declared by name alone (`umx ontology add type person`, `umx ontology add relation
   works_for`) is std's already: `"unchanged": true`, nothing written. With fields or a description it is the
   graph's own declaration, merged into std's.
-- A field std has keeps std's kind on any type or relation: `umx ontology add field person job_title:int`, or
-  `due_on:string` on any type, is refused with `std_field_conflict` (its next is `umx ontology show --std`).
-  The same name with std's kind is fine anywhere.
+- A field std places on this type or relation keeps std's kind: `umx ontology add field person job_title:int`
+  is refused with `std_field_conflict` (its next is `umx ontology show --std`). The soft risk ratings are the
+  exception: a non-string declaration warns and keeps the graph's kind.
 - A provenance type cannot be declared (`umx ontology add type session` is `reserved_name`); a user node of one
   warns `reserved_type`. A user edge of a provenance relation is refused (`reserved_relation`), of a derived one
   too (`derived_relation`).
@@ -230,15 +265,16 @@ only `shoe_size` under `person` in graph.json, never std's fields. `umx ontology
 marked `"std": true`, then the graph's own, marked `"std": false`. The graph's field then works like any other:
 `node add` and `node edit --set`, batch, `--where` and `--columns`, word search (a string field), roles and
 embedding (`umx ontology set field person shoe_size --role ...`), and Cypher (`p.shoe_size`). Several types take a
-field in one call, std's included (`umx ontology add field risk,team impact:int`); `--all-types` means only the
+field in one call, std's included (`umx ontology add field risk,team score:int`); `--all-types` means only the
 types graph.json declares, never std's.
 
-- A custom field may reuse a std field name only with std's kind (`std_field_conflict` otherwise). On a type or
+- A field std places on this type or relation keeps std's kind (`std_field_conflict` otherwise), except for the
+  soft risk ratings described above. A name placed only elsewhere does not constrain a custom field. On a type or
   relation std already gives the field to (`job_title` on `person`, `tags` on any node, `starts_on` on
   `works_for` edges), the same kind and role is std's already: `"unchanged": true`, nothing written. With
   `--description` it is the graph's own declaration, std's kind and the description. Another role is
   `field_role_conflict`; change a role with `umx ontology set field`. On a type std does not give it to
-  (`umx ontology add field topic due_on:date`) it is the graph's own declaration, with std's kind.
+  (`umx ontology add field topic due_on:date`) it is the graph's own declaration and kind.
 - A reserved key (`id`, `title`, `status`, `note`, the provenance keys such as `prov_key`, the locator fields,
   `entity_key`, `std`) is never a custom field name (`reserved_name`), in any graph.
 - `umx ontology remove field person shoe_size` removes the extension. A field std gives the type cannot be
@@ -247,8 +283,8 @@ types graph.json declares, never std's.
   even while nodes hold the field; when that changes the role, it is a role change like `ontology set field`'s
   (`role_changed`, the nodes pending until remade). A field std allows on any node but does not place on the type
   (`starts_on` on a `widget`) is the graph's own once declared, and is in use while a node holds it.
-- A graph.json edited by hand to give a std field another kind still loads, std's kind wins, and the load warns
-  `std_field_conflict_stored` with the `umx ontology remove field` command that drops the graph's declaration.
+- A graph.json edited by hand to give a placed std field another kind still loads and warns
+  `std_field_conflict_stored`. Std's kind wins except for risk ratings, which keep the graph's kind.
 
 ### Adopting std: umx ontology adopt-std
 
@@ -279,7 +315,8 @@ one write set:
   `--map`). Other graphs are never read or written: one whose own `--from`/`--to` end types name the old type warns
   `relation_endpoint_unexpected` there until it is changed.
 - A conflict blocks the write and is listed with its fix, with or without `--dry-run`: a field declared with another
-  kind than std's (`adopt_field_kind_clash`, next `umx ontology remove field ...`); stored edges of a relation a std
+  kind than std's where std places it (`adopt_field_kind_clash`, next `umx ontology remove field ...`;
+  risk rating overrides only warn and keep their kind); stored edges of a relation a std
   graph keeps for umx, `authored_by`, `edited_by`, `similar_to` or a provenance relation between user nodes
   (`adopt_reserved_relation`: rename them with `--map authored_by=written_by`); and a `--map` that names nothing of
   the graph (`adopt_map_unknown`), a name that is both a type and a relation (`adopt_map_ambiguous`), merges two
@@ -320,6 +357,7 @@ one write set:
 
 Each std relation expects types at its ends: `works_for` from `person` to `organisation`; `member_of` from
 `person` or `team` to `team` or `organisation`; `owns` from `person`, `team` or `organisation` to any node;
+`mitigates` from any node to `risk`;
 `raised_by` from `question`, `risk`, `decision` or `action` to `person`, `team` or `organisation`; `raised_in` to
 `segment`, `meeting`, `event`, `transcript` or `phase`; `held_at` from `meeting` or `event` to `place` or
 `system`; `precedes` between two nodes of one type. The expectation is soft: in a std graph an edge outside it

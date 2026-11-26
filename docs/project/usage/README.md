@@ -19,7 +19,7 @@ title: <one line>
 route: start | build | ingest | explore | query | similarity | resources | multi-graph | doctor | output
 status: current | planned (behaviour not built yet) | superseded
 source: <ruling id and date, workshop section, PR>
-reqs: [req-NN, ...]
+reqs: [<requirement-id>, ...] (from any PRD in docs/project/prds/)
 supersedes: <id or none>
 ---
 ## Do

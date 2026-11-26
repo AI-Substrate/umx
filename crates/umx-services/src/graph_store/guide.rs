@@ -52,6 +52,7 @@ pub struct GuideEntry {
 pub struct GuideField {
     pub name: String,
     pub kind: &'static str,
+    pub values: Vec<String>,
     pub description: Option<String>,
     pub next: Option<Command>,
     /// std places the field on the type (req-98).
@@ -356,6 +357,7 @@ impl GraphStore {
                             GuideField {
                                 name: f.name.clone(),
                                 kind: f.kind.as_str(),
+                                values: f.values.clone(),
                                 description: f.description.clone(),
                                 next,
                                 std: is_std

@@ -4,6 +4,730 @@
 
 use super::*;
 
+#[test]
+fn declared_values_std_risk_ratings_and_mitigation_are_soft() {
+    let mut home = Home::new("risk-values");
+    let path = home.graph();
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    let std = home.ok(&["ontology", "show", "--std"]);
+    let risk_type = std.data["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "risk")
+        .unwrap();
+    for name in ["likelihood", "impact"] {
+        let field = risk_type["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == name)
+            .unwrap();
+        assert_eq!(field["kind"], "string");
+        assert_eq!(field["values"], json!(["low", "medium", "high"]));
+    }
+    let risk = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Launch slips",
+        "--set",
+        "likelihood=high",
+        "--set",
+        "impact=low",
+    ]);
+    assert!(risk.warnings.is_empty(), "{}", risk.to_json());
+    let id = risk.data["node"]["id"].as_str().unwrap();
+    let action = home.add("action", "Test the launch");
+    let (edge, exit) = home.umx(&["edge", "add", &action, "mitigates", id]);
+    assert_eq!(exit, 0);
+    assert!(edge.warnings.is_empty(), "{}", edge.to_json());
+    let (edge, exit) = home.umx(&["edge", "add", id, "mitigates", &action]);
+    assert_eq!(exit, 0);
+    issue(&edge, Code::RelationEndpointUnexpected);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+    let guide = home.ok(&["graph", "guide", "demo"]);
+    let risk_type = guide.data["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "risk")
+        .unwrap();
+    assert!(
+        risk_type["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["name"] == "impact" && f["values"] == json!(["low", "medium", "high"]))
+    );
+    assert!(
+        home.human(&["graph", "guide", "demo"])
+            .contains("[low, medium, high]")
+    );
+}
+
+#[test]
+fn declared_values_warning_next_extends_std_and_never_echoes_free_text() {
+    let mut home = Home::new("risk-values-next");
+    let path = home.graph();
+    let (risk, exit) = home.umx(&[
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Launch slips",
+        "--set",
+        "impact=severe",
+    ]);
+    assert_eq!(exit, 0);
+    assert_eq!(risk.data["node"]["impact"], "severe");
+    let warning = issue(&risk, Code::FieldValueOffVocabulary);
+    assert_eq!(
+        warning.candidates(),
+        &[
+            json!({"id":"low"}),
+            json!({"id":"medium"}),
+            json!({"id":"high"})
+        ]
+    );
+    assert_eq!(
+        warning.next(),
+        "umx ontology add field risk impact:string --graph demo --values severe"
+    );
+    let (set, exit) = home.run_next(warning.next());
+    assert_eq!(exit, 0, "{}", set.to_json());
+    assert_eq!(set.data["unchanged"], false);
+    let id = risk.data["node"]["id"].as_str().unwrap();
+    let (edit, exit) = home.umx(&["node", "edit", id, "--set", "impact=severe"]);
+    assert_eq!(exit, 0);
+    assert!(edit.warnings.is_empty(), "{}", edit.to_json());
+    for text in ["High", "Very High; echo injected"] {
+        let (edit, exit) = home.umx(&["node", "edit", id, "--set-str", &format!("impact={text}")]);
+        assert_eq!(exit, 0);
+        assert_eq!(edit.data["node"]["impact"], text);
+        let warning = issue(&edit, Code::FieldValueOffVocabulary);
+        assert_eq!(
+            warning.next(),
+            format!("umx node edit {id} --set impact=<value> --graph demo")
+        );
+        assert!(!warning.message().contains(text));
+        assert!(!warning.next().contains(text));
+    }
+    let (edit, exit) = home.umx(&["node", "edit", id, "--set-json", "impact=7"]);
+    assert_eq!(exit, 0);
+    issue(&edit, Code::FieldKindMismatch);
+    assert!(
+        edit.warnings
+            .iter()
+            .all(|w| w.code() != "field_value_off_vocabulary")
+    );
+    let clear = home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "risk",
+        "impact",
+        "--clear-values",
+    ]);
+    assert_eq!(clear.data["values"], json!(["low", "medium", "high"]));
+    home.ok(&["graph", "unload", "demo"]);
+    home.ok(&["graph", "load", &path]);
+    let (risk, _) = home.umx(&[
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "A second risk",
+        "--set",
+        "impact=severe",
+    ]);
+    issue(&risk, Code::FieldValueOffVocabulary);
+}
+
+#[test]
+fn declared_values_custom_lists_round_trip_replace_and_clear_without_format_change() {
+    let mut home = Home::new("custom-values");
+    let path = home.graph();
+    let meta = graph_json(&path);
+    let format = meta["umx"].clone();
+    let add = [
+        "ontology",
+        "add",
+        "field",
+        "task",
+        "priority:string",
+        "--values",
+        "low,medium,high",
+    ];
+    home.ok(&add);
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    assert_eq!(home.ok(&add).data["unchanged"], true);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+    assert_eq!(
+        type_in_file(&path, "task")["fields"][0]["values"],
+        json!(["low", "medium", "high"])
+    );
+    home.ok(&["graph", "unload", "demo"]);
+    home.ok(&["graph", "load", &path]);
+    let (subset, exit) = home.umx(&[
+        "ontology",
+        "add",
+        "field",
+        "task",
+        "priority:string",
+        "--values",
+        "high,low",
+    ]);
+    assert_eq!(exit, 0);
+    assert_eq!(subset.data["unchanged"], true);
+    let set = home.ok(&[
+        "ontology", "set", "field", "task", "priority", "--values", "high,low",
+    ]);
+    assert_eq!(set.data["values"], json!(["high", "low"]));
+    let (node, _) = home.umx(&[
+        "node",
+        "add",
+        "--type",
+        "task",
+        "--title",
+        "Try a rating",
+        "--set",
+        "priority=medium",
+    ]);
+    issue(&node, Code::FieldValueOffVocabulary);
+    let clear = home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "task",
+        "priority",
+        "--clear-values",
+    ]);
+    assert_eq!(clear.data["values"], json!([]));
+    assert!(
+        type_in_file(&path, "task")["fields"][0]
+            .get("values")
+            .is_none()
+    );
+    let meta = graph_json(&path);
+    assert_eq!(meta["umx"], format);
+    let (node, _) = home.umx(&[
+        "node",
+        "add",
+        "--type",
+        "task",
+        "--title",
+        "Free rating",
+        "--set",
+        "priority=medium",
+    ]);
+    assert!(node.warnings.is_empty(), "{}", node.to_json());
+}
+
+#[test]
+fn declared_values_invalid_declarations_are_atomic_and_offer_a_label_fix() {
+    let mut home = Home::new("invalid-values");
+    let path = home.graph();
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    let many = (0..33)
+        .map(|i| format!("label_{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    for values in ["Low,Very High", "low,low", "", "low,", &many] {
+        let (env, exit) = home.umx(&[
+            "ontology",
+            "add",
+            "field",
+            "task",
+            "priority:string",
+            "--values",
+            values,
+        ]);
+        assert_eq!(exit, 2, "{}", env.to_json());
+        issue(&env, Code::FieldValuesInvalid);
+        assert_eq!(
+            fs::read(Path::new(&path).join("graph.json")).unwrap(),
+            before
+        );
+    }
+    let (env, _) = home.umx(&[
+        "ontology",
+        "add",
+        "field",
+        "task",
+        "priority:string",
+        "--values",
+        "Low,Very High",
+    ]);
+    let (fixed, exit) = home.run_next(issue(&env, Code::FieldValuesInvalid).next());
+    assert_eq!(exit, 0, "{}", fixed.to_json());
+    assert_eq!(
+        type_in_file(&path, "task")["fields"][0]["values"],
+        json!(["low", "very_high"])
+    );
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    for spec in ["score:int", "score:bool"] {
+        let (env, exit) = home.umx(&[
+            "ontology", "add", "field", "task", spec, "--values", "low,high",
+        ]);
+        assert_eq!(exit, 2);
+        issue(&env, Code::FieldValuesInvalid);
+        assert_eq!(
+            fs::read(Path::new(&path).join("graph.json")).unwrap(),
+            before
+        );
+    }
+    let (env, exit) = home.umx(&[
+        "ontology",
+        "set",
+        "field",
+        "task",
+        "priority",
+        "--values",
+        "low",
+        "--clear-values",
+    ]);
+    assert_eq!(exit, 2);
+    issue(&env, Code::UsageInvalid);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn declared_values_multi_type_appends_preserve_metadata_and_refuse_overflow_atomically() {
+    let mut home = Home::new("append-values");
+    let path = home.graph();
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "task",
+        "priority:string",
+        "--values",
+        "low",
+        "--role",
+        "content",
+        "--description",
+        "Priority",
+    ]);
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "issue",
+        "priority:string",
+        "--values",
+        "high",
+        "--role",
+        "content",
+    ]);
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "task,issue",
+        "priority:string",
+        "--values",
+        "high,match,low",
+        "--role",
+        "content",
+    ]);
+    let task = type_in_file(&path, "task");
+    let field = &task["fields"][0];
+    assert_eq!(field["values"], json!(["low", "high", "match"]));
+    assert_eq!(field["role"], "content");
+    assert_eq!(field["description"], "Priority");
+    assert_eq!(
+        type_in_file(&path, "issue")["fields"][0]["values"],
+        json!(["high", "match", "low"])
+    );
+    let (node, exit) = home.umx(&[
+        "node",
+        "add",
+        "--type",
+        "task",
+        "--title",
+        "Urgent task",
+        "--set",
+        "priority=urgent",
+    ]);
+    assert_eq!(exit, 0);
+    let warning = issue(&node, Code::FieldValueOffVocabulary);
+    assert!(warning.next().contains("--role content"));
+    let (added, exit) = home.run_next(warning.next());
+    assert_eq!(exit, 0, "{}", added.to_json());
+    let values = (0..32)
+        .map(|i| format!("v_{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    home.ok(&[
+        "ontology", "set", "field", "task", "priority", "--values", &values, "--role", "data",
+    ]);
+    assert_eq!(type_in_file(&path, "task")["fields"][0]["role"], "data");
+    home.ok(&[
+        "ontology", "set", "field", "issue", "priority", "--role", "data",
+    ]);
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    let (refused, exit) = home.umx(&[
+        "ontology",
+        "add",
+        "field",
+        "issue,task",
+        "priority:string",
+        "--values",
+        "overflow",
+    ]);
+    assert_eq!(exit, 2);
+    let warning = issue(&refused, Code::FieldValuesInvalid);
+    assert!(
+        warning
+            .next()
+            .starts_with("umx ontology set field task priority ")
+    );
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+    let label = "a".repeat(64);
+    home.ok(&[
+        "ontology", "set", "field", "task", "priority", "--values", &label,
+    ]);
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    let (refused, exit) = home.umx(&[
+        "ontology",
+        "set",
+        "field",
+        "task",
+        "priority",
+        "--values",
+        &format!("{label}a"),
+    ]);
+    assert_eq!(exit, 2);
+    issue(&refused, Code::FieldValuesInvalid);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn declared_values_warning_keeps_an_exact_next_until_the_command_cap() {
+    let mut home = Home::new("long-values-next");
+    home.graph();
+    let (graph, kind, field) = ("g".repeat(64), "t".repeat(64), "f".repeat(64));
+    home.ok(&["graph", "rename", "demo", &graph]);
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        &kind,
+        &format!("{field}:string"),
+        "--values",
+        "low",
+        "--graph",
+        &graph,
+    ]);
+    for (length, fits) in [(50, true), (64, false)] {
+        let label = "a".repeat(length);
+        let (node, exit) = home.umx(&[
+            "node",
+            "add",
+            "--type",
+            &kind,
+            "--title",
+            "Long names",
+            "--set",
+            &format!("{field}={label}"),
+            "--graph",
+            &graph,
+        ]);
+        assert_eq!(exit, 0);
+        let next = issue(&node, Code::FieldValueOffVocabulary).next();
+        assert_eq!(
+            next,
+            format!(
+                "umx ontology add field {kind} {field}:string --graph {graph} --values {}",
+                if fits { &label } else { "<values>" }
+            )
+        );
+        assert!(next.len() <= umx_core::problem::Command::MAX);
+        if fits {
+            let (declared, exit) = home.run_next(next);
+            assert_eq!(exit, 0, "{}", declared.to_json());
+        }
+    }
+}
+
+#[test]
+fn declared_values_only_warn_for_fields_the_edit_changes() {
+    let mut home = Home::new("changed-values");
+    home.graph();
+    let node = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Risk",
+        "--set",
+        "impact=severe",
+    ]);
+    let id = node.data["node"]["id"].as_str().unwrap();
+    for words in [
+        vec!["node", "edit", id, "--title", "Renamed risk"],
+        vec!["node", "edit", id, "--set", "impact=severe"],
+        vec!["node", "edit", id, "--tag", "review"],
+    ] {
+        let env = home.ok(&words);
+        assert!(
+            issues(&env, Code::FieldValueOffVocabulary).is_empty(),
+            "{}",
+            env.to_json()
+        );
+    }
+    let changed = home.ok(&["node", "edit", id, "--set", "impact=extreme"]);
+    assert_eq!(issues(&changed, Code::FieldValueOffVocabulary).len(), 1);
+    let ops = home.ops_file(&format!(
+        "{{\"op\":\"node edit\",\"node\":\"{id}\",\"title\":\"Batch title\"}}\n\
+        {{\"op\":\"node edit\",\"node\":\"{id}\",\"sets\":[{{\"field\":\"impact\",\"value\":\"extreme\"}}]}}\n"
+    ));
+    let env = home.ok(&["batch", "--file", &ops]);
+    assert!(
+        issues(&env, Code::FieldValueOffVocabulary).is_empty(),
+        "{}",
+        env.to_json()
+    );
+}
+
+#[test]
+fn declared_values_on_key_fill_warns_once_in_single_and_batch_writes() {
+    let mut home = Home::new("resolved-values");
+    home.graph();
+    let node = home.ok(&[
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Risk",
+        "--set",
+        "entity_key=email:risk@example.invalid",
+    ]);
+    let id = node.data["node"]["id"].as_str().unwrap();
+    let add = [
+        "node",
+        "add",
+        "--type",
+        "risk",
+        "--title",
+        "Risk",
+        "--set",
+        "entity_key=email:risk@example.invalid",
+        "--set",
+        "impact=severe",
+        "--on-key",
+        "resolve",
+    ];
+    let env = home.ok(&add);
+    assert_eq!(env.data["node"]["id"], id);
+    assert_eq!(issues(&env, Code::FieldValueOffVocabulary).len(), 1);
+    assert!(issues(&home.ok(&add), Code::FieldValueOffVocabulary).is_empty());
+    let line = json!({"op":"node add","type":"risk","title":"Risk","on_key":"resolve",
+        "sets":[{"field":"entity_key","value":"email:risk@example.invalid"},
+        {"field":"likelihood","value":"extreme"}]});
+    let ops = home.ops_file(&format!("{line}\n{line}\n"));
+    let env = home.ok(&["batch", "--file", &ops]);
+    assert_eq!(
+        issues(&env, Code::FieldValueOffVocabulary).len(),
+        1,
+        "{}",
+        env.to_json()
+    );
+    let shown = home.ok(&["node", "get", id]);
+    assert_eq!(shown.data["node"]["likelihood"], "extreme");
+}
+
+#[test]
+fn declared_values_std_mutations_store_only_graph_added_labels() {
+    let mut home = Home::new("own-values");
+    let path = home.graph();
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    let cleared = home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "risk",
+        "impact",
+        "--clear-values",
+    ]);
+    assert_eq!(cleared.data["changed"], false);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "risk",
+        "impact:string",
+        "--description",
+        "Severity",
+    ]);
+    assert!(
+        type_in_file(&path, "risk")["fields"][0]
+            .get("values")
+            .is_none()
+    );
+    home.ok(&[
+        "ontology", "set", "field", "risk", "impact", "--role", "content",
+    ]);
+    assert!(
+        type_in_file(&path, "risk")["fields"][0]
+            .get("values")
+            .is_none()
+    );
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "risk",
+        "impact:string",
+        "--role",
+        "content",
+        "--values",
+        "low,severe",
+    ]);
+    assert_eq!(
+        type_in_file(&path, "risk")["fields"][0]["values"],
+        json!(["severe"])
+    );
+    let set = home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "risk",
+        "impact",
+        "--values",
+        "high,urgent,low",
+    ]);
+    assert_eq!(
+        set.data["values"],
+        json!(["low", "medium", "high", "urgent"])
+    );
+    assert_eq!(
+        type_in_file(&path, "risk")["fields"][0]["values"],
+        json!(["urgent"])
+    );
+    home.ok(&[
+        "ontology",
+        "set",
+        "field",
+        "risk",
+        "impact",
+        "--clear-values",
+    ]);
+    assert!(
+        type_in_file(&path, "risk")["fields"][0]
+            .get("values")
+            .is_none()
+    );
+}
+
+#[test]
+fn declared_values_kind_checks_are_placed_and_risk_overrides_are_soft() {
+    let mut home = Home::new("placed-values");
+    let plain = std_and_plain(&mut home);
+    for field in ["impact:int", "likelihood:int"] {
+        let env = home.ok(&["ontology", "add", "field", "task", field, "--graph", "demo"]);
+        assert!(env.warnings.is_empty(), "{}", env.to_json());
+        home.ok(&[
+            "ontology", "add", "field", "task", field, "--graph", "plain",
+        ]);
+    }
+    home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "risk",
+        "impact:int",
+        "--graph",
+        "plain",
+    ]);
+    let adopted = home.ok(&["ontology", "adopt-std", "--graph", "plain"]);
+    issue(&adopted, Code::StdFieldConflictStored);
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "risk",
+        "impact:int",
+        "--graph",
+        "demo",
+    ]);
+    issue(&env, Code::StdFieldConflictStored);
+    let show = home.ok(&["ontology", "show", "--graph", "demo"]);
+    assert_eq!(
+        named(&named(&show.data["types"], "risk")["fields"], "impact")["kind"],
+        "int"
+    );
+    let node = home.ok(&[
+        "node", "add", "--type", "risk", "--title", "Numeric", "--set", "impact=7", "--graph",
+        "demo",
+    ]);
+    assert!(node.warnings.is_empty(), "{}", node.to_json());
+    assert_eq!(node.data["node"]["impact"], 7);
+    home.ok(&["graph", "unload", "plain"]);
+    let loaded = home.ok(&["graph", "load", &plain]);
+    let warning = issue(&loaded, Code::StdFieldConflictStored);
+    assert!(warning.message().contains("using int"));
+    assert_eq!(issues(&loaded, Code::StdFieldConflictStored).len(), 1);
+    let show = home.ok(&["ontology", "show", "--graph", "plain"]);
+    assert_eq!(
+        named(&named(&show.data["types"], "risk")["fields"], "impact")["kind"],
+        "int"
+    );
+}
+
+#[test]
+fn declared_values_batch_adds_and_edits_use_the_same_soft_warning() {
+    let mut home = Home::new("batch-values");
+    home.graph();
+    let ops = home.path.join("ops.jsonl");
+    fs::write(&ops, concat!(
+        "{\"op\":\"node add\",\"ref\":\"r\",\"type\":\"risk\",\"title\":\"Batch risk\",\"sets\":[{\"field\":\"impact\",\"value\":\"severe\"}]}\n",
+        "{\"op\":\"node edit\",\"node_ref\":\"r\",\"sets\":[{\"field\":\"likelihood\",\"value\":\"extreme\"}]}\n"
+    )).unwrap();
+    let (env, exit) = home.umx(&["batch", "--file", ops.to_str().unwrap()]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    let warnings = issues(&env, Code::FieldValueOffVocabulary);
+    assert!(!warnings.is_empty(), "{}", env.to_json());
+    assert!(warnings.iter().any(|w| w.next().contains("impact")));
+    assert!(warnings.iter().any(|w| w.next().contains("likelihood")));
+    let node = home.ok(&[
+        "node",
+        "list",
+        "--type",
+        "risk",
+        "--columns",
+        "id,impact,likelihood",
+    ]);
+    assert_eq!(node.data["rows"][0]["impact"], "severe");
+    assert_eq!(node.data["rows"][0]["likelihood"], "extreme");
+}
+
 /// F96: a type's own columns are node list's default for `--type` it; an explicit --columns wins, a mixed list keeps
 /// the usual columns, the key is written only while set, and --reset removes it.
 #[test]
@@ -1035,16 +1759,15 @@ fn a_std_graph_keeps_std_s_names_and_kinds_and_a_plain_one_takes_them_as_its_own
             env.to_json()
         );
     }
-    // A std field keeps std's kind, on its own type, another type or a relation.
+    // A field keeps std's kind where std places it.
     for args in [
         &["ontology", "add", "field", "person", "job_title:int"][..],
-        &["ontology", "add", "field", "topic", "due_on:string"][..],
         &["ontology", "add", "field", "risk,topic", "due_on:string"][..],
         &[
             "ontology",
             "add",
             "type",
-            "gadget",
+            "person",
             "--field",
             "aliases:string",
         ][..],

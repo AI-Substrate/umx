@@ -231,12 +231,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// relative evidence and locator paths may start with `..` and reach anywhere in the graph's git repo (usage 223).
 /// 103: `evidence_sources` is reserved on nodes and edges (`n.evidence_sources` in `umx query`); new code
 /// `evidence_sources_field_kept` (warning) for a record that already holds its own field of that name (usage 224).
+/// 105 (slice 1 holds 104): ordered string field `values` in ontology show and graph guide; `--values` on
+/// OntologyAddField and OntologySetField, `--clear-values`, optional set role, and
+/// `field_value_off_vocabulary` (warning), `field_values_invalid` (declaration error; usage 226).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 103;
+pub const PROTOCOL: u32 = 105;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -245,7 +248,7 @@ pub const PROTOCOL: u32 = 103;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (103, 0x02d3_892c_82fb_a930);
+const WIRE_FINGERPRINT: (u32, u64) = (105, 0xbf24_8de8_d765_df44);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1529,13 +1532,19 @@ pub enum Op {
         /// `--role data|content` (D56); absent: the kind's default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         role: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        values: Vec<String>,
     },
     /// `umx ontology set field <type> <field> --role data|content` (D56, req-97).
     OntologySetField {
         #[serde(rename = "type")]
         type_name: String,
         field: String,
-        role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        role: Option<String>,
+        /// A replacement list; an empty list clears the graph's own values.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        values: Option<Vec<String>>,
     },
     /// `umx resource show <node>` (ws006 S3b): a resource node's locator.
     ResourceShow {
@@ -3476,6 +3485,14 @@ catalogue! {
         "a value does not fit its field's kind; it was stored as given",
         "Field <field> is <kind>; the value was stored as given.",
         "umx ontology show --graph <graph>";
+    FieldValueOffVocabulary => "field_value_off_vocabulary", Warning, 0,
+        "a string is outside its field's declared labels; it was stored as given, with declared labels as candidates",
+        "Field <field> has declared values; the value was stored as given. The candidates list its values.",
+        "<fix>";
+    FieldValuesInvalid => "field_values_invalid", Error, 2,
+        "a declared value list is not 1 to 32 distinct snake_case labels of at most 64 characters, or its field is not string; nothing changed",
+        "Field <field> values must be distinct snake_case labels on a string field, at most 32 labels of 64 characters each. Nothing changed.",
+        "<fix>";
     // ws008 TM3 (req-147, D71 R4): time write warnings; the write goes ahead.
     TimeNoOffset => "time_no_offset", Warning, 0,
         "a date-time was written with a clock time and no offset, so umx stored it as universal time (Z) and a local time lands hours out",
@@ -3538,8 +3555,8 @@ catalogue! {
         "<count> <on> <records> hold <field> with a value that is not a <kind>, std's kind for it; kept as written.",
         "<fix>";
     StdFieldConflictStored => "std_field_conflict_stored", Warning, 0,
-        "a std graph's graph.json declares a field std v1 has with another kind than std's, as a hand edit can (F285); it loads, and std's kind is used",
-        "<on> declares <field> as <kind> in graph <graph>'s graph.json, but std's <field> is <std kind>, which is used.",
+        "a graph declares a placed std field with another kind; std's kind is used except for soft risk ratings, which keep the graph's kind",
+        "<on> declares <field> as <kind> in graph <graph>'s graph.json, but std's <field> is <std kind>; using <used kind>.",
         "<fix>";
     AdoptFieldToTagRefused => "adopt_field_to_tag_refused", Error, 1,
         "ontology adopt-std --field-to-tag names a field it cannot move: a std field, tags, one no node type has (unknown, or only on edges), or one a spine reads; nothing changed",
@@ -5676,11 +5693,13 @@ mod tests {
                 all_types: true,
                 description: s("d"),
                 role: Some("data".into()),
+                values: vec!["low".into(), "high".into()],
             },
             Op::OntologySetField {
                 type_name: "k".into(),
                 field: "f".into(),
-                role: "content".into(),
+                role: Some("content".into()),
+                values: Some(vec!["low".into(), "high".into()]),
             },
             Op::ResourceShow { node: "n".into() },
             Op::ResourceRefresh { node: "n".into() },

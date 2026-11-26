@@ -246,7 +246,7 @@ anything changes. The flag is the setting's name exactly, in snake_case.
 
     umx graph set launch --purpose "Decide how to launch in spring"
     umx graph set launch --description "type:risk=Something that may go wrong"
-    umx graph set launch --description "field:risk.likelihood=0 to 1, how likely it is"
+    umx graph set launch --description "field:risk.likelihood=Low, medium or high likelihood"
 
 `--description` takes `<kind>:<name>=<text>`, the kind `type`, `status`, `relation` or `field`, and a field named
 `<type>.<field>`. An empty text clears it. A type or field must be declared first (`description_undeclared` names

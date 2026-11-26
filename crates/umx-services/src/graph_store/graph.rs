@@ -716,6 +716,11 @@ impl GraphStore {
                     &c.at.on,
                     &field,
                     (c.kind, c.std_kind),
+                    if c.keeps_own_kind() {
+                        c.kind
+                    } else {
+                        c.std_kind
+                    },
                     fix.name(&field).word("--graph").name(&alias),
                 ));
             }

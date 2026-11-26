@@ -1410,12 +1410,19 @@ mod tests {
             .collect()
     }
 
-    /// The requirement ids the PRD defines (`"id": "req-NN"`).
+    /// The ids in a PRD's requirements section, not its actors, goals or other rows.
     fn prd_reqs(prd: &str) -> Vec<String> {
-        prd.lines()
-            .filter_map(|l| l.trim().strip_prefix("\"id\": \"")?.split('"').next())
-            .filter(|id| id.starts_with("req-"))
-            .map(str::to_owned)
+        let prd = umx_protocol::parse_json(prd).expect("a PRD is JSON");
+        prd["sections"]
+            .as_array()
+            .expect("PRD sections")
+            .iter()
+            .find(|s| s["name"] == "requirements")
+            .expect("PRD requirements")["value"]
+            .as_array()
+            .expect("requirement rows")
+            .iter()
+            .map(|r| r["id"].as_str().expect("requirement id").to_owned())
             .collect()
     }
 
@@ -1478,9 +1485,7 @@ mod tests {
             Some(list) => {
                 for req in list.split(',').map(str::trim).filter(|r| !r.is_empty()) {
                     if !reqs.iter().any(|r| r == req) {
-                        say(format!(
-                            "{req} is not in docs/project/prds/001-concept-graph.dd.json"
-                        ));
+                        say(format!("{req} is not a requirement in docs/project/prds/"));
                     }
                 }
             }
@@ -1503,9 +1508,18 @@ mod tests {
     #[test]
     fn every_usage_note_parses_and_cites_real_reqs() {
         let readme = read(&usage_dir().join("README.md"));
-        let reqs = prd_reqs(include_str!(
-            "../../../docs/project/prds/001-concept-graph.dd.json"
-        ));
+        let prds = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/project/prds");
+        let reqs: Vec<String> = std::fs::read_dir(prds)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with(".dd.json")
+            })
+            .flat_map(|p| prd_reqs(&read(&p)))
+            .collect();
         assert!(
             reqs.iter().any(|r| r == "req-01"),
             "no req ids read from the PRD"
@@ -1550,7 +1564,7 @@ mod tests {
             [
                 "102-x.md: id 101 is not the file's NNN- prefix",
                 "102-x.md: route nowhere is not one of start, build",
-                "102-x.md: req-99 is not in docs/project/prds/001-concept-graph.dd.json",
+                "102-x.md: req-99 is not a requirement in docs/project/prds/",
                 "102-x.md: ## Why is empty",
             ]
         );
@@ -1558,6 +1572,17 @@ mod tests {
             note_problems("103-x.md", "## Do\n", readme, &reqs),
             ["103-x.md: no front matter between --- lines"]
         );
+    }
+
+    #[test]
+    fn usage_requirements_accept_each_prd_prefix_but_not_other_rows() {
+        let ids = prd_reqs(
+            r#"{"sections":[
+            {"name":"actors","value":[{"id":"a-agent"}]},
+            {"name":"requirements","value":[{"id":"rules-22"},{"id":"search-04"}]}
+        ]}"#,
+        );
+        assert_eq!(ids, ["rules-22", "search-04"]);
     }
 
     // F97 (s14 follow-up): prose that still calls shipped work planned. A sentence saying "planned", "not yet" or

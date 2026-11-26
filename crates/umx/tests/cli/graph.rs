@@ -437,7 +437,7 @@ fn graph_new_prints_how_to_change_the_graph_and_each_command_runs_as_printed() {
         printed,
         [
             "umx ontology add type experiment --graph x",
-            "umx ontology add relation mitigates --graph x",
+            "umx ontology add relation validates --graph x",
             "umx ontology add status parked --graph x",
             "umx graph set x --title \"Launch planning\"",
             "umx graph set x --policy secured",
@@ -459,7 +459,7 @@ fn graph_new_prints_how_to_change_the_graph_and_each_command_runs_as_printed() {
     let meta = graph_json(&path);
     assert_eq!(meta["title"], "Launch planning");
     let ontology = meta["ontology"].to_string();
-    for name in ["\"experiment\"", "\"mitigates\"", "\"parked\""] {
+    for name in ["\"experiment\"", "\"validates\"", "\"parked\""] {
         assert!(ontology.contains(name), "{name} not declared: {ontology}");
     }
     assert_eq!(
@@ -774,7 +774,7 @@ fn graph_guide_orients_an_agent_and_its_nexts_fill_it_in() {
             "type",
             "risk",
             "--field",
-            "likelihood:float",
+            "likelihood:string",
             "--description",
             "Something that may go wrong",
         ][..],
@@ -808,7 +808,7 @@ fn graph_guide_orients_an_agent_and_its_nexts_fill_it_in() {
             "set",
             "demo",
             "--description",
-            "field:risk.likelihood=0 to 1",
+            "field:risk.likelihood=Low, medium or high",
             "--conventions",
             "Short titles.\nOne idea per node.",
         ],
@@ -855,14 +855,15 @@ fn graph_guide_orients_an_agent_and_its_nexts_fill_it_in() {
         widget["next"],
         "umx ontology add type widget --description <text> --graph demo"
     );
-    // risk is a std type: std's due_on first, which graph.json does not declare, so it asks for no description.
+    // Risk ratings and due_on are std's, so fields graph.json does not declare ask for no description.
     let risk = guide_entry(&env, "types", "risk");
     assert_eq!(
         risk["fields"],
         json!([
-            { "name": "due_on", "kind": "date", "description": null, "next": null, "std": true },
-            { "name": "likelihood", "kind": "float", "description": "0 to 1", "next": null, "std": false },
-            { "name": "owner", "kind": "string", "description": "Who watches it", "next": null, "std": false },
+            { "name": "likelihood", "kind": "string", "values": ["low","medium","high"], "description": "Low, medium or high", "next": null, "std": true },
+            { "name": "impact", "kind": "string", "values": ["low","medium","high"], "description": null, "next": null, "std": true },
+            { "name": "due_on", "kind": "date", "values": [], "description": null, "next": null, "std": true },
+            { "name": "owner", "kind": "string", "values": [], "description": "Who watches it", "next": null, "std": false },
         ])
     );
     let blocks = guide_entry(&env, "relations", "blocks");
@@ -899,7 +900,7 @@ fn graph_guide_orients_an_agent_and_its_nexts_fill_it_in() {
         "Conventions\n  Short titles.\n  One idea per node.\n",
         "problem (2): Something in the way\n",
         "widget (1, not declared):\n",
-        "field likelihood (float): 0 to 1\n",
+        "field likelihood (string) [low, medium, high]: Low, medium or high\n",
         "e.g. Two blocks Launch date\n",
     ] {
         assert!(stdout.contains(want), "{want:?} not in:\n{stdout}");

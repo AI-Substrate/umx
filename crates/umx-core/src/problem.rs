@@ -271,6 +271,22 @@ impl Command {
         self.push(&joined.join(sep))
     }
 
+    /// A field's ordered label list, never arbitrary stored text.
+    pub fn field_values(self, values: &[String]) -> Command {
+        if values.is_empty() {
+            return self.word("--clear-values");
+        }
+        let next = self.word("--values");
+        if !crate::ontology::valid_field_values(values) {
+            return next.word("<values>");
+        }
+        let list = values.join(",");
+        if next.as_str().len() + 1 + list.len() > Self::MAX {
+            return next.word("<values>");
+        }
+        next.push(&list)
+    }
+
     /// Std tags (or `<facet>:*`) in stored form, joined by commas (ws008 t2b): None when there are none or one is not
     /// in stored form, so a typed tag never reaches a command. A list holding `*` is single-quoted, so a shell never
     /// expands it.

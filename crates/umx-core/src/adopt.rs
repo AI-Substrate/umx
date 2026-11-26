@@ -44,6 +44,14 @@ pub struct KindClash {
     pub std_kind: FieldKind,
 }
 
+impl KindClash {
+    pub fn keeps_own_kind(&self) -> bool {
+        !self.at.relation
+            && standard::fields_of_type(&self.at.on)
+                .any(|f| f.name == self.at.field && !f.values.is_empty())
+    }
+}
+
 /// Type, relation and status names.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Names {
@@ -65,16 +73,20 @@ pub struct Fold {
     pub extended: Vec<FieldAt>,
     /// The graph's own names std does not have, kept as they are.
     pub custom: Names,
-    /// Fields declared with another kind than std's: adopting is refused while any is left.
+    /// Placed fields with another kind than std's; soft rating overrides do not block adoption.
     pub clashes: Vec<KindClash>,
 }
 
-/// Every field `o` declares, on a type or a relation, with another kind than std v1's field of that name (F285): std's
-/// kind would win in a std graph (`Ontology::effective`).
+/// Fields whose kinds differ where std places them (F285). Soft rating overrides keep their own kind.
 pub fn kind_clashes(o: &Ontology) -> Vec<KindClash> {
     let mut out = Vec::new();
     let mut check = |on: &str, relation: bool, f: &FieldDecl| {
-        if let Some(s) = standard::std_field(&f.name).filter(|s| s.kind != f.kind) {
+        let placed = if relation {
+            standard::fields_of_relation(on).find(|s| s.name == f.name)
+        } else {
+            standard::fields_of_type(on).find(|s| s.name == f.name)
+        };
+        if let Some(s) = placed.filter(|s| s.kind != f.kind) {
             out.push(KindClash {
                 at: FieldAt {
                     on: on.to_string(),
@@ -105,6 +117,7 @@ fn same_as_std(s: Option<StdField>, f: &FieldDecl) -> bool {
         s.kind == f.kind
             && f.effective_role() == s.role
             && f.description.is_none()
+            && f.values.iter().all(|v| s.values.contains(&v.as_str()))
             && f.extra.is_empty()
     })
 }
@@ -124,7 +137,7 @@ pub fn fold(own: &Ontology) -> Fold {
     for mut t in core::mem::take(&mut o.types) {
         let name = t.name.clone();
         let std = standard::std_type(&name).is_some();
-        t.fields.retain(|f| {
+        t.fields.retain_mut(|f| {
             let at = FieldAt {
                 on: name.clone(),
                 relation: false,
@@ -136,6 +149,9 @@ pub fn fold(own: &Ontology) -> Fold {
                 folded_fields.push(at);
                 false
             } else {
+                if let Some(s) = placed.filter(|s| s.kind == f.kind) {
+                    f.values.retain(|v| !s.values.contains(&v.as_str()));
+                }
                 if std {
                     extended.push(at);
                 }
@@ -600,6 +616,35 @@ mod tests {
         FieldDecl::new(name, kind)
     }
 
+    #[test]
+    fn adopting_std_preserves_extended_risk_values() {
+        let mut f = field("impact", FieldKind::String);
+        f.values = vec!["low".into(), "severe".into()];
+        let o = Ontology {
+            types: vec![TypeDecl::new("risk", vec![f])],
+            ..Ontology::default()
+        };
+        let adopted = fold(&o);
+        assert_eq!(adopted.extended.len(), 1);
+        assert_eq!(
+            adopted
+                .ontology
+                .field_decl("risk", "impact")
+                .unwrap()
+                .values,
+            ["severe"]
+        );
+        assert_eq!(
+            adopted
+                .ontology
+                .effective()
+                .field_decl("risk", "impact")
+                .unwrap()
+                .values,
+            ["low", "medium", "high", "severe"]
+        );
+    }
+
     /// A graph built to the interim std sheet (the fixture beside the std table): every name std, and the person
     /// fields the sheet had, `name` among them.
     fn interim() -> Ontology {
@@ -746,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    fn a_field_with_another_kind_than_std_s_clashes_on_any_type_or_relation() {
+    fn a_field_kind_clashes_only_where_std_places_it() {
         let own = Ontology {
             types: vec![
                 TypeDecl::new("person", vec![field("aliases", FieldKind::String)]),
@@ -777,7 +822,6 @@ mod tests {
             clashes,
             [
                 ("person", false, "aliases", FieldKind::List),
-                ("widget", false, "due_on", FieldKind::Date),
                 ("works_for", true, "ends_on", FieldKind::Date),
             ]
         );
