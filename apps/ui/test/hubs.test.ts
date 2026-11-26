@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalGraph, fanLayout, findHubs, hubSize, type HubOptions } from "@/lib/graph/hubs";
-import { clearanceRadius, separateDiscs } from "@/lib/graph/clearance";
+import { clearanceRadius, separateDiscs, sizeRefresh } from "@/lib/graph/clearance";
 import { layOut } from "@/lib/graph/layout";
 import { louvainGroups, type IndexGraph } from "@/lib/graph/clusters";
 import { spineLayout, type Place } from "@/lib/graph/spine-layout";
@@ -15,6 +15,7 @@ function graph(n: number, rows: [number, number, number?, number?][]): IndexGrap
 }
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `g/${String(i).padStart(5, "0")}`);
 const options = (mode: HubOptions["mode"], degree: HubOptions["degree"] = "connections", count = 10): HubOptions => ({ mode, degree, count });
+afterEach(() => vi.useRealTimers());
 function clear(positions: Float32Array, radii: readonly number[]) {
   for (let i = 0; i < radii.length; i++) for (let j = 0; j < i; j++) {
     if (Math.hypot(positions[i * 2] - positions[j * 2], positions[i * 2 + 1] - positions[j * 2 + 1]) < (radii[i] + radii[j]) * 0.99999) {
@@ -66,6 +67,37 @@ describe("hub selection", () => {
 });
 
 describe("clearance and fans", () => {
+  it("does not reprocess pan-only frames and debounces zoom/resize projection changes", () => {
+    vi.useFakeTimers();
+    let projection: readonly [number, number] = [1, 1];
+    const refresh = vi.fn();
+    const sizes = sizeRefresh(() => projection, refresh);
+    for (let i = 0; i < 100; i++) sizes.changed();
+    vi.advanceTimersByTime(500);
+    expect(refresh).not.toHaveBeenCalled();
+    for (let i = 1; i <= 10; i++) {
+      projection = [1 + i / 10, 1];
+      sizes.changed();
+      vi.advanceTimersByTime(10);
+    }
+    expect(refresh).not.toHaveBeenCalled();
+    for (let i = 0; i < 100; i++) sizes.changed();
+    vi.advanceTimersByTime(80);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(sizes.value()).toEqual([2, 1]);
+    projection = [3, 1];
+    sizes.changed();
+    projection = [2, 1];
+    sizes.changed();
+    vi.advanceTimersByTime(80);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    projection = [4, 1];
+    sizes.changed();
+    sizes.dispose();
+    vi.advanceTimersByTime(80);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("separates 1,000 coincident variable-sized nodes deterministically without moving fixed nodes", () => {
     const discs = Array.from({ length: 1000 }, (_, i) => ({ x: 0, y: 0, radius: 2 + i % 4 }));
     const first = separateDiscs(discs);

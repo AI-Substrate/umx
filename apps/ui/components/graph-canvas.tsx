@@ -15,6 +15,7 @@ import { canvasFit, type Gesture } from "@/lib/agent";
 import { extentOf as graphExtent, type Extent } from "@/lib/graph/apply";
 import type { EdgeAttrs, NodeAttrs, ViewGraph } from "@/lib/graph/build";
 import { type Box, convexHull, placePills } from "@/lib/graph/clusters";
+import { sizeRefresh } from "@/lib/graph/clearance";
 import { curvatures, EDGE_SIZE, edgeProgram, fitsZoomRule, forcedLabels, forcedShown, HEAD, headProgram, HUB_HEAD, incomingDrawn, isSymmetric, labelAnchor, type LabelBox, labelFrame, LABEL_PX, type LabelStyle, nodeLabelBox, overlaps, paintEdgeLabel, type RelationModes, relationMode, selectedEdgeColor, SMALL_GRAPH_EDGES } from "@/lib/graph/edges";
 import { groupColor, HULL_MIN, HULL_TINT, mix, relationColor, type Skin, type Theme } from "@/lib/graph/colors";
 import { calloutIn, COLUMN_INSET, columnWidth, fitCallout, type Frame, glowRadii, glowSet, type LeaderCandidate, leaderChoice, leaderEnd, LIVE_TOTAL, liveGlow, moreCallouts, pillLook, placeLeaders, withAlpha } from "@/lib/graph/fui";
@@ -1022,7 +1023,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     };
     sigma.on("enterNode", hoverLabels);
     sigma.on("leaveNode", hoverLabels);
-    let sizeRatio: number | undefined, sizeScale: number | undefined;
+    const sizeProjection = sizeRefresh(() => [sigma.getGraphToViewportRatio(), sigma.scaleSize(1)], () => sigma.scheduleRefresh());
     setSettings({
       defaultDrawNodeLabel: (context, data, settings) => {
         const key = (data as { key?: string }).key ?? "";
@@ -1123,8 +1124,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         }
         const clearance = place?.clearance ?? data.clearance;
         if (clearance !== undefined) {
-          sizeRatio = sigma.getGraphToViewportRatio();
-          sizeScale = sigma.scaleSize(1);
+          const [sizeRatio, sizeScale] = sizeProjection.value();
           const pixels = clearance * sizeRatio * 0.78;
           out.size = Math.min(out.size, pixels / sizeScale / extentOf(shapeAt(data.shape)).reach);
         }
@@ -1159,20 +1159,17 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       if (selected && (s === selected || t === selected)) return { ...out, color: selectedEdgeColor(kind, palette), size: EDGE_SIZE.emphasis, zIndex: 2 };
       return { ...out, color: quiet ? palette.edgeStructure : palette.edge, size: quiet ? EDGE_SIZE.quiet : EDGE_SIZE.normal };
     }
-    const refreshSizes = () => sigma.scheduleRefresh();
-    // Sigma updates its bounding box after reducers run. Reprocess once if that changed the projection used above.
-    const settledSizes = () => {
-      if (sizeRatio !== undefined && (Math.abs(sigma.getGraphToViewportRatio() - sizeRatio) > 1e-8 || Math.abs(sigma.scaleSize(1) - sizeScale!) > 1e-8)) refreshSizes();
-    };
+    const refreshSizes = sizeProjection.changed;
     sigma.getCamera().on("updated", refreshSizes);
     sigma.on("resize", refreshSizes);
-    sigma.on("afterRender", settledSizes);
+    sigma.on("afterRender", refreshSizes);
     const sizeFrame = requestAnimationFrame(refreshSizes);
     return () => {
       cancelAnimationFrame(sizeFrame);
+      sizeProjection.dispose();
       sigma.getCamera().off("updated", refreshSizes);
       sigma.off("resize", refreshSizes);
-      sigma.off("afterRender", settledSizes);
+      sigma.off("afterRender", refreshSizes);
       sigma.off("beforeRender", newFrame);
       sigma.off("afterRender", drawEdgeLabels);
       sigma.off("enterNode", hoverLabels);

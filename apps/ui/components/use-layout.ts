@@ -14,6 +14,40 @@ export type Nudge = { n: number; fresh: readonly string[] };
 const NO_PAIRS: readonly SimilarityLink[] = [];
 const NO_HUBS: HubResult = { centres: [], owner: [], ms: 0 };
 
+type LayoutInputs = {
+  view: { index: IndexGraph } | null;
+  visible: Uint8Array | null;
+  edges: Uint8Array | null;
+  resolution: number;
+  spacing: number;
+  options: HubOptions;
+  similarities: readonly SimilarityLink[];
+};
+
+function sameSimilarities(a: readonly SimilarityLink[], b: readonly SimilarityLink[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  if (a.every((p, i) => p.a === b[i].a && p.b === b[i].b && p.score === b[i].score)) return true;
+  const key = (p: SimilarityLink) => JSON.stringify([p.a, p.b, p.score]);
+  const counts = new Map<string, number>();
+  for (const p of a) counts.set(key(p), (counts.get(key(p)) ?? 0) + 1);
+  for (const p of b) {
+    const k = key(p), count = counts.get(k);
+    if (!count) return false;
+    if (count === 1) counts.delete(k);
+    else counts.set(k, count - 1);
+  }
+  return true;
+}
+
+/** Reading, filtering and regrouping never move existing nodes; only explicit layout controls start afresh. */
+export function layoutRequest(before: LayoutInputs, after: LayoutInputs): "start" | "cluster" | null {
+  if (before.spacing !== after.spacing || before.options.mode !== after.options.mode || before.options.degree !== after.options.degree || before.options.count !== after.options.count) return "start";
+  const same = (a: Uint8Array | null, b: Uint8Array | null) => a === b || (a !== null && b !== null && a.length === b.length && a.every((v, i) => v === b[i]));
+  if (before.view?.index !== after.view?.index || before.resolution !== after.resolution || !same(before.visible, after.visible) || !same(before.edges, after.edges) || !sameSimilarities(before.similarities, after.similarities)) return "cluster";
+  return null;
+}
+
 /** One worker per open graph set; one running request and only the newest pending request. Results carry their
  * generation and ids, so an obsolete mode or a live renumbering can never put coordinates on the wrong nodes. */
 export function useLayout(
@@ -94,7 +128,11 @@ export function useLayout(
         const asked = state.asked.get(m.id);
         if (m.id === state.latest && asked) {
           setLouvain({ graph, value: { groups: m.groups, ms: m.ms, resolution: asked.resolution, ids: asked.ids } });
-          if (m.hubs) setHubs({ graph, value: m.hubs });
+          if (m.hubs) {
+            const centres = new Set(m.hubs.centres);
+            graph.updateEachNodeAttributes((id, a) => ({ ...a, hub: centres.has(id) }));
+            setHubs({ graph, value: m.hubs });
+          }
         }
         // Full requests send coordinates after their clusters; cluster-only requests finish here.
         if (state.runningFull) return;
@@ -129,7 +167,7 @@ export function useLayout(
     const send = (request: WorkerStart | WorkerCluster) => {
       state.busy = true;
       state.runningFull = request.kind === "start";
-      positionIndex = new Map(request.ids.filter((_k, i) => request.visible[i]).sort().map((id, i) => [id, i]));
+      positionIndex = new Map([...request.ids].sort().map((id, i) => [id, i]));
       worker.postMessage(request);
     };
     worker.onerror = (error) => {
@@ -143,12 +181,9 @@ export function useLayout(
   useEffect(() => {
     const state = live.current;
     if (!state || !view || !visible || !edges) return;
-    const old = state.sent;
-    const same = (a: Uint8Array | null, b: Uint8Array) => a !== null && a.length === b.length && a.every((v, i) => v === b[i]);
-    const dataChanged = old.view?.index !== view.index;
-    const controls = old.spacing !== spacing || old.resolution !== resolution || old.options.mode !== options.mode || old.options.degree !== options.degree || old.options.count !== options.count || old.similarities !== similarities;
-    const filters = !dataChanged && (!same(old.visible, visible) || !same(old.edges, edges));
-    if (controls || filters || dataChanged) state.request(controls || filters || state.pending?.kind === "start");
+    const request = layoutRequest(state.sent, args.current);
+    if (request) state.request(request === "start");
+    else state.sent = args.current;
   }, [view, visible, edges, resolution, spacing, options, similarities]);
 
   const nudge = view?.nudge;

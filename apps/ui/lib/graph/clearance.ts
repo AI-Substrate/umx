@@ -52,3 +52,27 @@ export function separateDiscs(discs: readonly Disc[], fixed?: Uint8Array): Disc[
 export function clearanceRadius(size: number, spacing: number): number {
   return Math.max(1, size) * (1.5 + spacing);
 }
+
+/** Cache projection sizes between reducer passes; pan-only frames do no work, zoom/resize settles once. */
+export function sizeRefresh(read: () => readonly [number, number], refresh: () => void) {
+  let value = read(), target = value;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const same = (a: readonly number[], b: readonly number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 1e-8 * Math.max(1, Math.abs(v), Math.abs(b[i])));
+  const changed = () => {
+    const next = read();
+    if (same(next, target)) return;
+    target = next;
+    clearTimeout(timer);
+    timer = undefined;
+    if (same(next, value)) return;
+    timer = setTimeout(() => {
+      timer = undefined;
+      const next = read();
+      target = next;
+      if (same(next, value)) return;
+      value = next;
+      refresh();
+    }, 80);
+  };
+  return { value: () => value, changed, dispose: () => clearTimeout(timer) };
+}
