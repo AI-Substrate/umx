@@ -2075,7 +2075,8 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
     match op {
         Op::RuleList => reply(command, services.rule_list(&ctx), |v| {
             json!({"graph": v.graph, "total": v.rows.len(), "rows": v.rows.iter().map(|r|
-                json!({"rule": r.rule, "source": r.source, "off": r.off})).collect::<Vec<_>>()})
+                json!({"rule": r.rule, "source": r.source, "off": r.off,
+                    "sentence": r.rule.sentence().as_str()})).collect::<Vec<_>>()})
         }),
         Op::RuleShow {
             name,
@@ -2841,19 +2842,58 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
             })
         }
         Op::Check {
+            rules,
+            rule,
+            after,
             lint,
             kind,
             offset,
             source_budget,
             ..
         } => {
-            let request = match lint_request(*lint, kind.as_deref(), *offset) {
+            let request = match lint_request(
+                *lint,
+                kind.as_deref(),
+                if *rules && !*lint { None } else { *offset },
+            ) {
                 Ok(request) => request,
                 Err(problem) => return Envelope::fail(command, issue(&problem, command)),
             };
+            if !rules && (rule.is_some() || after.is_some()) {
+                return Envelope::fail(
+                    command,
+                    issue(
+                        &umx_services::problems::usage_invalid(
+                            "--rule and --after go with --rules",
+                            "check",
+                        ),
+                        command,
+                    ),
+                );
+            }
+            let after = match after.as_deref().map(str::parse::<Id>).transpose() {
+                Ok(after) => after,
+                Err(_) => {
+                    return Envelope::fail(
+                        command,
+                        issue(
+                            &umx_services::problems::usage_invalid(
+                                "--after is a full node id",
+                                "check",
+                            ),
+                            command,
+                        ),
+                    );
+                }
+            };
+            let rules = rules.then(|| umx_services::RuleCheckRequest {
+                rule: rule.clone(),
+                after,
+                offset: offset.unwrap_or(0),
+            });
             reply(
                 command,
-                services.check(&ctx, request.as_ref(), *source_budget),
+                services.check_with_rules(&ctx, request.as_ref(), *source_budget, rules.as_ref()),
                 check_json,
             )
         }
@@ -3902,9 +3942,25 @@ fn retry(op: &Op) -> Command {
             })
         }
         Op::Check {
-            lint, kind, offset, ..
+            rules,
+            rule,
+            after,
+            lint,
+            kind,
+            offset,
+            ..
         } => {
             let c = Command::new("check");
+            let c = if *rules { c.word("--rules") } else { c };
+            let c = opt(c, "--rule", rule, &|c, value| {
+                let plain = value.strip_prefix("std:").unwrap_or(value);
+                match ValidName::new(plain) {
+                    Some(name) if value.starts_with("std:") => c.qualified("std:", &name),
+                    Some(name) => c.name(&name),
+                    None => c.word("<rule>"),
+                }
+            });
+            let c = opt(c, "--after", after, &|c, value| node(c, value, "<id>"));
             let c = if *lint { c.word("--lint") } else { c };
             let c = match kind.as_deref().and_then(umx_services::LintKind::parse) {
                 Some(k) => c.word("--kind").word(k.as_str()),
@@ -4688,6 +4744,7 @@ pub fn issue(p: &Problem, command: &str) -> Issue {
             let fill = match p.slots.iter().find(|(name, _)| *name == slot) {
                 Some((_, Slot::Count(n))) => Fill::count(*n),
                 Some((_, Slot::Word(w))) => Fill::text(w),
+                Some((_, Slot::Sentence(sentence))) => Fill::rule_sentence(sentence.as_str()),
                 Some((_, Slot::Command(c))) => Fill::checked_command(c.as_str()),
                 Some((_, Slot::ModelKey(k))) => {
                     let text = k.to_string();
@@ -4713,6 +4770,13 @@ pub fn issue(p: &Problem, command: &str) -> Issue {
     }
     if let Some(line) = p.line {
         issue = issue.with_line(line);
+    }
+    if let Some(rule) = &p.rule {
+        issue = issue.with_rule(umx_protocol::RuleContext {
+            name: rule.name.clone(),
+            count: rule.count,
+            nodes: rule.nodes.clone(),
+        });
     }
     if !p.candidates.is_empty() {
         issue = issue.with_candidates(p.candidates.iter().map(candidate).collect());
@@ -5231,6 +5295,9 @@ fn guide_json(g: &Guide) -> Value {
         "statuses": g.statuses.iter().map(entry).collect::<Vec<_>>(),
         "relations": relations,
         "spine": spine_line_json(&g.spine),
+        "rules": g.rules.iter().map(|rule| json!({
+            "name":rule.name,"source":rule.source,"sentence":rule.sentence,"description":rule.description,
+        })).collect::<Vec<_>>(),
     })
 }
 
@@ -5413,6 +5480,27 @@ fn check_json(checked: &umx_services::Checked) -> Value {
         v["lint"] = lint_json(lint);
     }
     v["sources"] = sources_json(&checked.sources);
+    v["rules"] = json!(
+        checked
+            .rules
+            .iter()
+            .map(|rules| {
+                let mut value = json!({
+                    "graph":rules.graph,"total":rules.total,"unmet_nodes":rules.unmet_nodes,
+                    "not_checked":rules.not_checked,"cut":rules.cut,"after":rules.after,
+                    "next":rules.next.as_ref().map(Command::as_str),
+                    "resume":rules.resume.as_ref().map(Command::as_str),
+                });
+                if let Some(rows) = &rules.rows {
+                    value["rows"] = json!(rows.iter().map(|row| json!({
+                "rule":row.rule,"node":row.node,"state":row.state,"sentence":row.sentence,
+                "next":row.next.as_str(),
+            })).collect::<Vec<_>>());
+                }
+                value
+            })
+            .collect::<Vec<_>>()
+    );
     v["spines"] = json!(
         checked
             .spines

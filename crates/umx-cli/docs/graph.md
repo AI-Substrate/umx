@@ -677,6 +677,20 @@ that one also comes back as a warning), `file`, `subject` (the id, the key's pat
 `data.spines` gives each checked graph's spine line, as `umx graph guide` shows it; it never changes the status or
 the exit code.
 
+### umx check --rules
+
+    umx check --rules --graph demo
+    umx check --rules --rule risk_rated --graph demo --offset 100
+
+Plain check includes per-graph known unmet-node counts in `data.rules`. Add `--rules` for
+up to 100 finding rows per graph, with rule, node, state, fixed sentence and a suggested fix.
+`--rule <name>` narrows active rules; `--offset` pages known rows. A cut scan returns its
+exact `--after <full node id>` continuation in `next`/`resume`. Follow the returned commands.
+An oversized node is `not_checked`, distinct from `unmet`, and scanning continues; incomplete
+totals are null. The check rereads disk and never writes or creates edges. It accepts the
+normal graph list and scope selectors. Read `umx docs get rules` for write-time warnings,
+matching budgets, symmetric edges and external ends.
+
 ### umx check --lint
 
     umx check --graph demo --lint

@@ -78,6 +78,7 @@ pub use graph_store::{NEAR_DUPLICATE, NEAR_DUPLICATE_OTHER_TYPE};
 pub use graph_store::{NodeWho, StampState, WhoListed, WhoNode, WhoRecord, WhoRow, WhoStamp};
 pub use graph_store::{NotReloaded, ReloadReport, Reloaded};
 pub use graph_store::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
+pub use graph_store::{RuleCheckRequest, RuleFinding, RulesChecked};
 pub use graph_store::{Scope, ScopeInfo, ScopeMemberInfo, SelectedRow, SourceRoots, TITLE_CHARS};
 /// A rebuild's snapshot and lists cross the daemon's threads (ws004 s09) as services types: the daemon names no
 /// umx-graph type (architect F1).
@@ -1297,6 +1298,16 @@ impl Services {
         self.graph.check(ctx, lint, source_budget)
     }
 
+    pub fn check_with_rules(
+        &self,
+        ctx: &Ctx,
+        lint: Option<&LintRequest>,
+        source_budget: Option<u64>,
+        rules: Option<&RuleCheckRequest>,
+    ) -> Outcome<Checked> {
+        self.graph.check_with_rules(ctx, lint, source_budget, rules)
+    }
+
     pub fn graph_unload(&mut self, ctx: &Ctx, alias: &str) -> Outcome<GraphUnloaded> {
         self.graph.graph_unload(ctx, alias)
     }
@@ -1379,6 +1390,10 @@ impl Services {
         let mut done = self.graph.node_add(ctx, req)?;
         let w = self.touched(&done.value.alias, done.value.node.id);
         done.notes.extend(w);
+        done.notes.extend(
+            self.graph
+                .rule_write_notes(&done.value.alias, &[done.value.node.id]),
+        );
         Ok(done)
     }
 
@@ -1632,6 +1647,20 @@ impl Services {
         node: &str,
         req: NodeEditRequest,
     ) -> Outcome<NodeEdited> {
+        let mut done = self.edit_node_without_rules(ctx, node, req)?;
+        done.notes.extend(
+            self.graph
+                .rule_write_notes(&done.value.alias, &[done.value.node.id]),
+        );
+        Ok(done)
+    }
+
+    fn edit_node_without_rules(
+        &mut self,
+        ctx: &Ctx,
+        node: &str,
+        req: NodeEditRequest,
+    ) -> Outcome<NodeEdited> {
         let mut done = self.graph.node_edit(ctx, node, req)?;
         if !done.value.changed.is_empty() {
             let w = self.touched(&done.value.alias, done.value.node.id);
@@ -1676,7 +1705,7 @@ impl Services {
             req.sets
                 .push((field, SetValue::Json(umx_core::Value::Array(list))));
         }
-        self.node_edit(ctx, node, req)
+        self.edit_node_without_rules(ctx, node, req)
     }
 
     pub fn node_note(
@@ -1822,7 +1851,12 @@ impl Services {
     }
 
     pub fn edge_delete(&mut self, ctx: &Ctx, edge: &str) -> Outcome<EdgeChanged> {
-        self.graph.edge_delete(ctx, edge)
+        let mut done = self.graph.edge_delete(ctx, edge)?;
+        done.notes.extend(
+            self.graph
+                .rule_edge_notes(&done.value.alias, &done.value.edge),
+        );
+        Ok(done)
     }
 
     /// `umx entity link <a> <b>` (ws008 E2): one `same_as` edge, in the graph the request names or `a`'s.
@@ -1876,7 +1910,19 @@ impl Services {
         edge: &str,
         req: &EdgeEditRequest,
     ) -> Outcome<EdgeChanged> {
-        self.graph.edge_edit(ctx, edge, req)
+        let mut done = self.graph.edge_edit(ctx, edge, req)?;
+        if done
+            .value
+            .changed
+            .iter()
+            .any(|field| field == "type" || field == "direction")
+        {
+            done.notes.extend(
+                self.graph
+                    .rule_edge_notes(&done.value.alias, &done.value.edge),
+            );
+        }
+        Ok(done)
     }
 
     pub fn edge_list(&self, ctx: &Ctx, req: EdgeListRequest) -> Outcome<Page<EdgeRow>> {

@@ -973,6 +973,9 @@ fn graphs(config: &Config, build: &Build, services: &umx_services::Services, row
             .or_else(|| {
                 let check = Request::op(
                     Op::Check {
+                        rules: false,
+                        rule: None,
+                        after: None,
                         lint: false,
                         sources: false,
                         source_budget: Some(budget),
@@ -1070,6 +1073,9 @@ fn named_check(
     }
     let check = Request::op(
         Op::Check {
+            rules: false,
+            rule: None,
+            after: None,
             lint: false,
             sources: false,
             source_budget: Some(budget),

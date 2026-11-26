@@ -1,6 +1,7 @@
 //! Graph shape as data. Patterns read only a node's stored values; regex execution belongs to services.
 
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
@@ -77,6 +78,60 @@ pub struct Rule {
 }
 
 impl Rule {
+    pub fn sentence(&self) -> crate::SafeText {
+        let subject = match self.pattern.types.first() {
+            Some(kind) => format!(
+                "{} {}",
+                if Self::article(kind) == "an" {
+                    "An"
+                } else {
+                    "A"
+                },
+                Self::alternatives(&self.pattern.types)
+            ),
+            None => String::from("A matching node"),
+        };
+        let shape = if let Some(field) = &self.field {
+            format!("the {field} field")
+        } else {
+            let edge = self.edge.as_deref().expect("checked shape");
+            let end = if let Some(types) = &self.from {
+                format!(
+                    "from {} {}",
+                    Self::article(&types[0]),
+                    Self::alternatives(types)
+                )
+            } else if let Some(types) = &self.to {
+                format!(
+                    "to {} {}",
+                    Self::article(&types[0]),
+                    Self::alternatives(types)
+                )
+            } else {
+                format!("to node {}", self.to_node.expect("checked shape"))
+            };
+            format!("{} {edge} edge {end}", Self::article(edge))
+        };
+        crate::SafeText::rule_sentence(&format!("{subject} should have {shape}."))
+    }
+
+    fn article(word: &str) -> &'static str {
+        if word.starts_with(['a', 'e', 'i', 'o', 'u']) {
+            "an"
+        } else {
+            "a"
+        }
+    }
+
+    fn alternatives(types: &[String]) -> String {
+        let (last, rest) = types.split_last().expect("checked type list");
+        if rest.is_empty() {
+            last.clone()
+        } else {
+            format!("{} or {last}", rest.join(", "))
+        }
+    }
+
     pub fn from_value(value: &Value) -> Option<Self> {
         Self::deserialize(value).ok()
     }
@@ -200,6 +255,40 @@ mod tests {
     use super::*;
     use alloc::vec;
     use serde_json::json;
+
+    #[test]
+    fn rule_sentences_name_types_with_articles_and_natural_lists() {
+        for (row, sentence) in [
+            (
+                json!({"name":"rated","match":{"type":["event"]},"field":"rating"}),
+                "An event should have the rating field.",
+            ),
+            (
+                json!({"name":"rated","match":{"type":["question","risk"]},"field":"rating"}),
+                "A question or risk should have the rating field.",
+            ),
+            (
+                json!({"name":"owned","match":{"type":["question","decision","action","risk"]},"edge":"owns","from":["person","organisation","team"]}),
+                "A question, decision, action or risk should have an owns edge from a person, organisation or team.",
+            ),
+            (
+                json!({"name":"raised","match":{"type":["risk"]},"edge":"raised_in","to":["event","meeting"]}),
+                "A risk should have a raised_in edge to an event or meeting.",
+            ),
+            (
+                json!({"name":"owned","match":{"type":["risk"]},"edge":"owns","from":["organisation"]}),
+                "A risk should have an owns edge from an organisation.",
+            ),
+            (
+                json!({"name":"rated","match":{"status":["open"],"tag":["origin:import"],"field":{"rating":null},"regex":{"title":"^SEC"}},"field":"rating"}),
+                "A matching node should have the rating field.",
+            ),
+        ] {
+            let rule = Rule::from_value(&row).unwrap();
+            assert!(rule.check().is_ok());
+            assert_eq!(rule.sentence().as_str(), sentence);
+        }
+    }
 
     #[test]
     fn rules_read_all_three_shapes_and_refuse_ambiguous_or_unknown_keys() {

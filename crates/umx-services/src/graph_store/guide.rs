@@ -66,6 +66,14 @@ pub struct GuideType {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GuideRule {
+    pub name: String,
+    pub source: &'static str,
+    pub sentence: String,
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Guide {
     pub alias: String,
     pub title: String,
@@ -82,6 +90,7 @@ pub struct Guide {
     pub relations: Vec<GuideEntry>,
     /// The best spine `graph spine propose` offers, with its cover (B4); a hint, never a warning.
     pub spine: super::SpineLine,
+    pub rules: Vec<GuideRule>,
 }
 
 /// A name, whether the ontology declares it, and its tally when records use it.
@@ -385,6 +394,21 @@ impl GraphStore {
             warnings.push(problems::std_entries_shown(&graph, std));
         }
         warnings.extend(self.role_hints(alias, None));
+        let mut rules: Vec<_> =
+            umx_core::rules::effective(self.central(&l.meta), &l.meta.rules, &l.meta.rules_off)
+                .into_iter()
+                .map(|rule| GuideRule {
+                    name: rule.name.clone(),
+                    source: if rule.name.starts_with("std:") {
+                        "std"
+                    } else {
+                        "graph"
+                    },
+                    sentence: rule.sentence().as_str().to_string(),
+                    description: rule.description.clone(),
+                })
+                .collect();
+        rules.sort_by(|a, b| (a.source != "std", &a.name).cmp(&(b.source != "std", &b.name)));
         Ok(Done {
             value: Guide {
                 alias: graph.as_str().to_string(),
@@ -402,6 +426,7 @@ impl GraphStore {
                 statuses,
                 relations,
                 spine: super::spine::spine_line(g, o, &graph),
+                rules,
             },
             notes: warnings,
         })

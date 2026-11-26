@@ -72,6 +72,7 @@ pub struct Checked {
     pub lint: Option<super::lint::Lint>,
     /// Usage 220: the checked graphs' cited files that changed or cannot be read. Every check reads them.
     pub sources: super::source_state::SourcesChecked,
+    pub rules: Vec<super::RulesChecked>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -839,6 +840,16 @@ impl GraphStore {
         lint: Option<&super::lint::LintRequest>,
         source_budget: Option<u64>,
     ) -> Outcome<Checked> {
+        self.check_with_rules(ctx, lint, source_budget, None)
+    }
+
+    pub fn check_with_rules(
+        &self,
+        ctx: &Ctx,
+        lint: Option<&super::lint::LintRequest>,
+        source_budget: Option<u64>,
+        rules: Option<&super::RuleCheckRequest>,
+    ) -> Outcome<Checked> {
         let single = ctx.scope.is_none() && !ctx.graph.as_deref().is_some_and(|g| g.contains(','));
         if single {
             let alias = self.select(ctx, &[])?;
@@ -858,6 +869,12 @@ impl GraphStore {
             });
             let (sources, found) = self.check_sources(&[(alias.as_str(), &read)], source_budget);
             warnings.extend(found);
+            let mut rule_checks = Vec::new();
+            if let Some(meta) = &meta {
+                let checked = self.check_rules(&alias, &read, meta, rules)?;
+                warnings.extend(checked.notes);
+                rule_checks.push(checked.value);
+            }
             let total = rows.len();
             return Ok(Done {
                 value: Checked {
@@ -866,6 +883,7 @@ impl GraphStore {
                     spines: alloc::vec![(alias.clone(), self.spine_of(&alias))],
                     lint,
                     sources,
+                    rules: rule_checks,
                 },
                 notes: warnings,
             });
@@ -917,6 +935,14 @@ impl GraphStore {
         let checked: Vec<_> = read.iter().map(|(a, g, _)| (*a, g)).collect();
         let (sources, found) = self.check_sources(&checked, source_budget);
         warnings.extend(found);
+        let mut rule_checks = Vec::new();
+        for (alias, graph, meta) in &read {
+            if let Some(meta) = meta {
+                let checked = self.check_rules(alias, graph, meta, rules)?;
+                warnings.extend(checked.notes);
+                rule_checks.push(checked.value);
+            }
+        }
         // As node list does: a saved scope's member and copy warnings, and secured graphs left out
         // (graph-addressing-expert N3).
         warnings.extend(self.scope_warnings(&scope)?);
@@ -933,6 +959,7 @@ impl GraphStore {
                 spines,
                 lint,
                 sources,
+                rules: rule_checks,
             },
             notes: warnings,
         })

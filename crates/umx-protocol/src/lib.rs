@@ -238,12 +238,15 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// rule_invalid, rule_regex_invalid, rule_vocabulary_unknown, rule_not_found, rule_name_taken, rule_matches_cut,
 /// rule_scan_cut, rule_skipped and rule_node_unchecked. Rule previews include a capped not_checked ID list and
 /// not_checked_total, continuing after unaffordable nodes; total is null when some nodes could not be checked.
+/// 107: soft rule checks on writes and final batch state; rule_unmet carries optional
+/// rule {name,count,nodes}; rule_check_cut, Check's rules/rule/after filters, check data.rules,
+/// and the same fixed rule sentence in rule list and graph guide (usage 227).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 106;
+pub const PROTOCOL: u32 = 107;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -252,7 +255,7 @@ pub const PROTOCOL: u32 = 106;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (106, 0x68b3_a846_7456_37f3);
+const WIRE_FINGERPRINT: (u32, u64) = (107, 0xc6f8_5eb7_f2eb_67e5);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -1677,6 +1680,12 @@ pub enum Op {
     /// one kind. Every check gives `data.sources` (PROTOCOL 102): the cited files that changed or cannot be read.
     /// `sources` (`--sources`) is accepted and changes nothing, so commands written for PROTOCOL 99 still run.
     Check {
+        #[serde(default, skip_serializing_if = "is_false")]
+        rules: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rule: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<String>,
         #[serde(default, skip_serializing_if = "is_false")]
         lint: bool,
         #[serde(default, skip_serializing_if = "is_false")]
@@ -3703,6 +3712,14 @@ catalogue! {
         "a rule could not check some nodes within its work limits; each is counted as not matching this call, and later nodes are still checked",
         "Rule <name> did not check <count> nodes within its work limits. Their ids are listed separately from matches.",
         "<fix>";
+    RuleUnmet => "rule_unmet", Warning, 0,
+        "a successful node write or final batch leaves a matching node without its rule's field or edge",
+        "<sentence>",
+        "<fix>";
+    RuleCheckCut => "rule_check_cut", Warning, 0,
+        "the deterministic whole-scan rule budget was reached; resume after the last fully checked node",
+        "The rule check reached its work limit. Resume after the last fully checked node.",
+        "<fix>";
     RuleSkipped => "rule_skipped", Warning, 0,
         "a stored rule exceeds this build's regex size or graph compile budget; its row is kept but not evaluated",
         "Rule <name> was skipped: <reason>. Its stored row is unchanged; remove it or re-add a smaller pattern.",
@@ -4431,7 +4448,7 @@ impl Fill {
 
     /// A comma list of names for a flag that takes one (`--columns id,title`, `ontology add field risk,issue`,
     /// `--graph a,b`): 2 to 64 parts, each passing [`Fill::name`]'s rule, joined by `,` with no spaces; else `None`.
-    /// The one way a comma reaches a message or next (F73): [`Fill::text`] never keeps one.
+    /// The one way a comma-list of names reaches a message or next (F73): [`Fill::text`] never keeps one.
     pub fn names(parts: &[&str]) -> Option<Fill> {
         ((2..=64).contains(&parts.len()) && parts.iter().all(|p| Fill::name(p).is_some()))
             .then(|| Fill(parts.join(",")))
@@ -4550,6 +4567,11 @@ impl Fill {
         Fill(clean(text, " ._/+~:=<>()_-", 300))
     }
 
+    /// A fixed rule sentence built from checked parts; only this prose slot keeps sentence commas.
+    pub fn rule_sentence(text: &str) -> Fill {
+        Fill(clean(text, " ._/+~:-,", 256))
+    }
+
     /// The longest command [`Fill::checked_command`] keeps as written; a longer one is cleaned as text.
     pub const COMMAND_MAX: usize = 300;
 
@@ -4636,11 +4658,19 @@ pub const CANDIDATE_ID: &str = "id";
 /// The key of a candidate's title: graph text, the one a secret flag on the candidate names (F234, F242).
 pub const CANDIDATE_TITLE: &str = "title";
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RuleContext {
+    pub name: String,
+    pub count: u64,
+    pub nodes: Vec<String>,
+}
+
 /// A warning or an error. Built only through [`Issue::new`] and [`Issue::fill`], so `message` and `next`
 /// are always a catalogue template filled with [`Fill`] values.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Issue {
-    code: String,
+    /// Codes never grow; omit String's capacity to keep result errors below clippy's size limit.
+    code: Box<str>,
     message: String,
     next: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4651,6 +4681,8 @@ pub struct Issue {
     /// The `umx batch` file line the issue is about (PROTOCOL 18).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rule: Option<Box<RuleContext>>,
 }
 
 impl Issue {
@@ -4676,12 +4708,13 @@ impl Issue {
             next = next.replace(&slot, value);
         }
         Issue {
-            code: spec.code.to_owned(),
+            code: spec.code.into(),
             message,
             next,
             subject: None,
             candidates: Box::default(),
             line: None,
+            rule: None,
         }
     }
 
@@ -4694,6 +4727,12 @@ impl Issue {
     /// The batch file line the issue is about.
     pub fn with_line(mut self, line: u32) -> Self {
         self.line = Some(line);
+        self
+    }
+
+    pub fn with_rule(mut self, rule: RuleContext) -> Self {
+        assert_eq!(self.code.as_ref(), "rule_unmet");
+        self.rule = Some(Box::new(rule));
         self
     }
 
@@ -5299,6 +5338,11 @@ mod tests {
             Fill::word("umx node get ?(rm)")
         );
         assert_eq!(
+            Fill::rule_sentence("A question, decision or risk should have the rating field."),
+            Fill::word("A question, decision or risk should have the rating field.")
+        );
+        assert_eq!(Fill::rule_sentence("a,b;$(x)\n"), Fill::word("a,b???x??"));
+        assert_eq!(
             Issue::new(Code::DaemonNotRunning)
                 .with_subject("/a b;c")
                 .subject(),
@@ -5828,6 +5872,9 @@ mod tests {
                 limit: Some(1),
             },
             Op::Check {
+                rules: true,
+                rule: s("rated"),
+                after: s("00000000000000000000000001"),
                 lint: true,
                 sources: true,
                 source_budget: Some(1),
@@ -6518,6 +6565,19 @@ mod tests {
                 .unwrap()
                 .include_provenance
         );
+    }
+
+    #[test]
+    fn check_rule_filters_are_optional_and_resume_round_trips() {
+        let old = r#"{"op":"check"}"#;
+        let op: Op = serde_json::from_str(old).unwrap();
+        assert_eq!(serde_json::to_string(&op).unwrap(), old);
+        let checked = json!({
+            "op":"check", "rules":true, "rule":"std:risk_owned",
+            "after":"01JC8XA4H7B3KT9M2NZ5QW6RDG", "offset":100
+        });
+        let op: Op = serde_json::from_value(checked.clone()).unwrap();
+        assert_eq!(serde_json::to_value(op).unwrap(), checked);
     }
 
     #[test]
