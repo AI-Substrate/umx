@@ -31,6 +31,7 @@ mod rename;
 mod resolve;
 mod resources;
 mod rule_check;
+mod rule_sets;
 mod rules;
 mod scopes;
 mod search;
@@ -125,6 +126,7 @@ pub(crate) use resolve::check_evidence;
 pub use resolve::{ResolveStatus, Resolved, Target};
 pub use resources::ResourceShown;
 pub use rule_check::{RuleCheckRequest, RuleFinding, RulesChecked};
+pub use rule_sets::{RuleSetChanged, RuleSetRow, RuleSetsListed};
 pub use rules::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub(crate) use scopes::SavedRead;
 pub use scopes::{Scope, ScopeInfo, ScopeMemberInfo};
@@ -174,6 +176,7 @@ pub struct Ports {
 pub struct Loaded {
     pub dir: GraphDir,
     pub meta: GraphMeta,
+    rule_sets_read: rule_sets::SetReads,
     /// The ontology umx acts on (ws008 T2, req-98): `meta.ontology` with std v1 first for a std graph
     /// ([`umx_core::Ontology::effective`]). Built at load and again by every graph.json write that stands
     /// ([`persist`]); every reader uses it ([`Loaded::ontology`]), while writes change and write `meta.ontology`.
@@ -344,6 +347,7 @@ impl Loaded {
             policy: PolicyView::file_only(meta.file_policy()),
             ontology,
             meta,
+            rule_sets_read: rule_sets::SetReads::default(),
             graph,
             edges_normalized: false,
             vectors_pending: None,
@@ -637,14 +641,25 @@ impl GraphStore {
     }
 
     pub(crate) fn files_unchanged(&self, alias: &str) -> Result<(), Problem> {
-        let moved = self.files_moved(alias);
+        let mut moved: Vec<_> = self
+            .files_moved(alias)
+            .into_iter()
+            .map(FileRef::from)
+            .collect();
+        let loaded = self.get(alias);
+        moved.extend(rule_sets::moved_sets(
+            self.ports.files.as_ref(),
+            &loaded.dir,
+            &loaded.rule_sets_read,
+            &alias_name(alias),
+        )?);
         if moved.is_empty() {
             return Ok(());
         }
         Err(problems::graph_files_changed(
             &alias_name(alias),
             &self.get(alias).dir,
-            &moved.into_iter().map(FileRef::from).collect::<Vec<_>>(),
+            &moved,
         ))
     }
 
@@ -652,8 +667,32 @@ impl GraphStore {
     /// answers from memory.
     pub(crate) fn stale_note(&self, alias: &str) -> Option<Problem> {
         let moved = self.files_moved(alias);
-        (!moved.is_empty())
-            .then(|| problems::stale_files(&alias_name(alias), &self.get(alias).dir, &moved))
+        if !moved.is_empty() {
+            return Some(problems::stale_files(
+                &alias_name(alias),
+                &self.get(alias).dir,
+                &moved,
+            ));
+        }
+        let loaded = self.get(alias);
+        match rule_sets::moved_sets(
+            self.ports.files.as_ref(),
+            &loaded.dir,
+            &loaded.rule_sets_read,
+            &alias_name(alias),
+        ) {
+            Ok(moved) if !moved.is_empty() => Some(problems::stale_set_files(
+                &alias_name(alias),
+                &loaded.dir,
+                &moved,
+            )),
+            Ok(_) => None,
+            Err(problem) => Some(problems::rule_sets_refresh_failed(
+                &alias_name(alias),
+                &loaded.dir,
+                &problem,
+            )),
+        }
     }
 
     /// [`Self::stale_note`] for each graph a read used.
@@ -987,6 +1026,8 @@ fn persist(
             touched,
             stamps: &mut loaded.stamps,
             receipts: None,
+            rule_set: None,
+            rule_set_stamps: &loaded.rule_sets_read.stamps,
         },
     )?;
     loaded.meta.umx = written.umx;
@@ -1014,6 +1055,8 @@ struct Commit<'a> {
     /// A keyed batch's receipts file (ws003 s09), written in the same set so the receipt and the batch stand or fall
     /// together.
     receipts: Option<ReceiptsWrite<'a>>,
+    rule_set: Option<rule_sets::SetWrite<'a>>,
+    rule_set_stamps: &'a [(FileRef, FileStamp)],
 }
 
 /// A keyed batch's `receipts.jsonl` (ws003 s09): its new bytes, and its stamp when the batch read it, which the set
@@ -1095,6 +1138,8 @@ fn persist_parts(
         touched,
         stamps,
         receipts,
+        rule_set,
+        rule_set_stamps,
     } = commit;
     let had = meta.umx;
     let raised = with_node_format(meta, graph);
@@ -1138,13 +1183,22 @@ fn persist_parts(
             bytes: Some(&**b),
         })
         .collect();
-    let also = match &receipts {
+    let mut also = match &receipts {
         Some(r) => {
             changes.push(r.change());
             r.also().to_vec()
         }
         None => Vec::new(),
     };
+    also.extend_from_slice(rule_set_stamps);
+    if let Some(set) = &rule_set {
+        changes.push(Change {
+            file: set.file.clone(),
+            bytes: Some(set.bytes),
+        });
+        also.retain(|(file, _)| *file != set.file);
+        also.push((set.file.clone(), set.stamp));
+    }
     let written = files.write_set_checked_also(dir, &changes, Some(stamps), &also);
     if let Ok(committed) = &written {
         feed.commit(graph, touched);
@@ -1349,6 +1403,7 @@ mod tests {
             rules: Vec::new(),
             rules_off: Vec::new(),
             hubs: Vec::new(),
+            rule_sets: Default::default(),
             umx: FORMAT_VERSION,
             id: Id(1),
             alias: "demo".into(),

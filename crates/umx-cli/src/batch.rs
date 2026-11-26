@@ -55,6 +55,7 @@ pub enum Input {
     Ops,
     Receipt,
     Spine,
+    RuleSet,
 }
 
 /// The most bytes a spine declaration file may hold: one small JSON object.
@@ -65,6 +66,7 @@ impl Input {
     fn usage(self, what: &'static str) -> Box<Envelope> {
         match self {
             Input::Spine => Box::new(crate::usage("graph spine set", what)),
+            Input::RuleSet => Box::new(crate::usage("rule set add", what)),
             Input::Ops | Input::Receipt => usage(what),
         }
     }
@@ -74,6 +76,7 @@ impl Input {
         match self {
             Input::Spine => self
                 .usage("the --file is over 64 KiB (one spine declaration is a small JSON object)"),
+            Input::RuleSet => self.usage("a rule set file holds at most 64 KiB"),
             Input::Ops | Input::Receipt => too_large(size, "bytes", MAX_BATCH_BYTES),
         }
     }
@@ -81,6 +84,7 @@ impl Input {
     fn cap(self) -> u64 {
         match self {
             Input::Spine => MAX_SPINE_BYTES,
+            Input::RuleSet => 64 * 1024,
             Input::Ops | Input::Receipt => MAX_BATCH_BYTES,
         }
     }
@@ -103,6 +107,11 @@ impl Input {
                 "the --file cannot be read",
                 "the --file is not a regular file (give - to read stdin)",
             ],
+            Input::RuleSet => [
+                "the rule set file cannot be opened",
+                "the rule set file cannot be read",
+                "the rule set file is not a regular file",
+            ],
         }
     }
 }
@@ -121,6 +130,9 @@ pub fn read(file: &str, input: Input) -> Result<Vec<u8>, Box<Envelope>> {
     let read = if file == "-" {
         if input == Input::Receipt {
             return Err(usage("--refs-from takes a receipt file, not stdin"));
+        }
+        if input == Input::RuleSet {
+            return Err(input.usage("a rule set needs a named file, not stdin"));
         }
         std::io::stdin()
             .lock()
@@ -439,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_is_read_through_the_cap_and_a_fifo_or_folder_is_refused_without_blocking() {
+    fn rule_set_and_batch_files_are_capped_and_irregular_files_are_refused_without_blocking() {
         let dir = std::env::temp_dir().join(format!("umx-batch-read-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let small = dir.join("ops.jsonl");
@@ -451,14 +463,25 @@ mod tests {
         let fifo = dir.join("fifo");
         let made = std::process::Command::new("mkfifo").arg(&fifo).status();
         // --file and --refs-from share the one read.
-        for input in [Input::Ops, Input::Receipt] {
+        for input in [Input::Ops, Input::Receipt, Input::RuleSet] {
             assert_eq!(read(small.to_str().unwrap(), input).unwrap(), b"{}\n");
             let env = read(big.to_str().unwrap(), input).unwrap_err();
-            assert_eq!(env.errors[0].code(), "batch_too_large");
+            assert_eq!(
+                env.errors[0].code(),
+                if input == Input::RuleSet {
+                    "usage_invalid"
+                } else {
+                    "batch_too_large"
+                }
+            );
             assert!(
                 env.errors[0]
                     .message()
-                    .contains(&(MAX_BATCH_BYTES + 100).to_string())
+                    .contains(&if input == Input::RuleSet {
+                        "64 KiB".into()
+                    } else {
+                        (MAX_BATCH_BYTES + 100).to_string()
+                    })
             );
             let env = read(dir.to_str().unwrap(), input).unwrap_err();
             assert_eq!(env.errors[0].code(), "usage_invalid");
@@ -472,6 +495,22 @@ mod tests {
         }
         let env = read("-", Input::Receipt).unwrap_err();
         assert!(env.errors[0].message().contains("not stdin"));
+        let env = read("-", Input::RuleSet).unwrap_err();
+        assert!(env.errors[0].message().contains("not stdin"));
+        let set = dir.join("set.json");
+        let mut bytes = b"{}".to_vec();
+        bytes.resize(65536, b' ');
+        std::fs::write(&set, &bytes).unwrap();
+        assert_eq!(read(set.to_str().unwrap(), Input::RuleSet).unwrap(), bytes);
+        bytes.push(b' ');
+        std::fs::write(&set, &bytes).unwrap();
+        assert!(
+            read(set.to_str().unwrap(), Input::RuleSet)
+                .unwrap_err()
+                .errors[0]
+                .message()
+                .contains("64 KiB")
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

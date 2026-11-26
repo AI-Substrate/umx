@@ -265,6 +265,18 @@ impl Command {
         self.push(&format!("{prefix}{}", name.as_str()))
     }
 
+    /// A rule's namespace and row name, both checked rather than arbitrary command text.
+    pub fn rule_name(self, given: &str) -> Option<Command> {
+        match given.split_once(':') {
+            Some((set, name)) => Some(self.push(&format!(
+                "{}:{}",
+                ValidName::alias(set)?.as_str(),
+                ValidName::new(name)?.as_str()
+            ))),
+            None => Some(self.name(&ValidName::new(given)?)),
+        }
+    }
+
     /// `<kind>:<name>=<text>`, or `field:<type>.<field>=<text>`: what `graph set --description` takes, with the text
     /// a placeholder.
     pub fn described(

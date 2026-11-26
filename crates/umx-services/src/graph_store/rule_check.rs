@@ -1,8 +1,7 @@
 //! Soft rule checks against a write's final graph or freshly decoded check input.
 
 use super::rules::{
-    CompiledRules, MAX_GRAPH_COMPILED_BYTES, MAX_MATCH_WORK, MAX_NODE_MATCH_WORK, compile_rules,
-    std_rules,
+    CompiledRules, MAX_GRAPH_COMPILED_BYTES, MAX_MATCH_WORK, compile_rules, std_rules,
 };
 use super::{GraphStore, alias_name};
 use crate::{Done, Outcome, problems};
@@ -74,16 +73,10 @@ struct Scan {
 pub(super) fn check_command(graph: &ValidName, rule: Option<&str>) -> Command {
     let command = Command::new("check").word("--rules");
     let command = match rule {
-        Some(rule) => {
-            let name = ValidName::new(rule.strip_prefix("std:").unwrap_or(rule))
-                .expect("checked rule name");
-            let command = command.word("--rule");
-            if rule.starts_with("std:") {
-                command.qualified("std:", &name)
-            } else {
-                command.name(&name)
-            }
-        }
+        Some(rule) => command
+            .word("--rule")
+            .rule_name(rule)
+            .expect("checked rule name"),
         None => command,
     };
     command.word("--graph").name(graph)
@@ -271,8 +264,6 @@ impl RuleChecks {
         let mut unmet = BTreeMap::<String, Counted>::new();
         let mut unchecked = BTreeMap::<String, Counted>::new();
         let mut work_left = MAX_MATCH_WORK;
-        // Reserve enough for every rule on one node, so a resume point never skips a partial node.
-        let reserve = MAX_NODE_MATCH_WORK * self.compiled.matchers.len() as u64;
         let ids: BTreeSet<_> = if self.compiled.matchers.is_empty() {
             BTreeSet::new()
         } else {
@@ -298,6 +289,14 @@ impl RuleChecks {
             if umx_core::ontology::PROVENANCE_TYPES.contains(&node.kind()) {
                 continue;
             }
+            let reserve = self
+                .compiled
+                .matchers
+                .values()
+                .map(|matcher| matcher.upper_work(node))
+                .fold(0u64, u64::saturating_add)
+                .min(MAX_MATCH_WORK);
+            // An oversized node gets a whole budget; completed rules stand and the rest are not_checked.
             if work_left < reserve {
                 cut = true;
                 break;
@@ -366,12 +365,11 @@ impl RuleChecks {
             last = Some(id);
         }
         let command = check_command(alias, request.and_then(|request| request.rule.as_deref()));
-        let resume = cut.then(|| {
-            command
-                .clone()
-                .word("--after")
-                .id(last.expect("one full node fits"))
-        });
+        let resume = if cut {
+            last.map(|id| command.clone().word("--after").id(id))
+        } else {
+            None
+        };
         let offset = request.map_or(0, |request| request.offset);
         let next = if request.is_none() {
             Some(command)
@@ -552,8 +550,110 @@ impl GraphStore {
 
 #[cfg(test)]
 mod tests {
+    use super::super::rules::MAX_NODE_MATCH_WORK;
     use super::*;
+    use alloc::{format, vec};
     use serde_json::json;
+
+    fn test_node(id: u128, note: String) -> umx_core::Node {
+        serde_json::from_value(json!({
+            "id":Id(id),"type":"risk","title":"Node","status":"open","note":note,
+            "evidence":[],"status_history":[],"created":"","updated":"","created_by":""
+        }))
+        .unwrap()
+    }
+
+    fn checks(rules: Vec<Rule>) -> RuleChecks {
+        RuleChecks {
+            compiled: compile_rules(rules.iter(), MAX_GRAPH_COMPILED_BYTES).unwrap(),
+            rules: rules
+                .into_iter()
+                .map(|rule| (rule.name.clone(), rule))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn more_than_one_hundred_cheap_rules_fit_on_the_first_node() {
+        let mut checks = checks(
+            (0..201)
+                .map(|index| {
+                    Rule::from_value(&json!({
+                        "name":format!("r_{index:03}"),"match":{"type":["risk"]},"field":"impact"
+                    }))
+                    .unwrap()
+                })
+                .collect(),
+        );
+        let graph = Graph::from_records(vec![test_node(1, String::new())], Vec::new());
+        let scan = checks.scan(
+            &graph,
+            &Ontology::default(),
+            &alias_name("demo"),
+            core::iter::once(Id(1)),
+            Some(&RuleCheckRequest::default()),
+            None,
+        );
+        assert!(!scan.report.cut);
+        assert_eq!(scan.report.total, Some(201));
+        assert_eq!(scan.report.not_checked, 0);
+        assert_eq!(scan.report.after, Some(Id(1)));
+    }
+
+    #[test]
+    fn a_pathological_node_keeps_completed_rules_and_advances_to_a_cheaper_node() {
+        let mut checks = checks(
+            (0..201)
+                .map(|index| {
+                    Rule::from_value(&json!({
+                        "name":format!("r_{index:03}"),
+                        "match":{"type":["risk"],"regex":{"note":"a{48}b"}},"field":"impact"
+                    }))
+                    .unwrap()
+                })
+                .collect(),
+        );
+        let mut states = 0;
+        for matcher in checks.compiled.matchers.values_mut() {
+            states = matcher.use_vm_for_test("note");
+        }
+        let length = ((MAX_NODE_MATCH_WORK - 1) / (2 * states)) as usize;
+        let heavy = format!("{}{}b", "x".repeat(length - 49), "a".repeat(48));
+        let graph = Graph::from_records(
+            vec![test_node(1, heavy), test_node(2, "x".into())],
+            Vec::new(),
+        );
+        let request = RuleCheckRequest {
+            offset: 150,
+            ..Default::default()
+        };
+        let scan = checks.scan(
+            &graph,
+            &Ontology::default(),
+            &alias_name("demo"),
+            [Id(1), Id(2)].into_iter(),
+            Some(&request),
+            None,
+        );
+        assert!(!scan.report.cut);
+        assert_eq!(scan.report.after, Some(Id(2)));
+        assert!(scan.report.not_checked > 0);
+        assert!(scan.unmet.len() > 150, "completed rules are not discarded");
+        assert_eq!(scan.unmet.len() + scan.unchecked.len(), 201);
+        assert!(
+            scan.unchecked
+                .values()
+                .all(|counted| counted.nodes == [Id(1)])
+        );
+        assert!(
+            scan.report
+                .rows
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|row| row.state == "not_checked")
+        );
+    }
 
     #[test]
     fn batch_rules_visit_only_incident_and_pending_final_edges() {

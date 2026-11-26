@@ -71,6 +71,15 @@ impl GraphFiles for Counted {
     fn list(&self, dir: &GraphDir) -> Result<Vec<GraphFile>, FilesError> {
         self.inner.list(dir)
     }
+    fn list_rule_sets(
+        &self,
+        dir: &GraphDir,
+    ) -> Result<umx_core::ports::RuleSetListing, FilesError> {
+        self.inner.list_rule_sets(dir)
+    }
+    fn stamp_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<FileStamp, FilesError> {
+        self.inner.stamp_ref(dir, file)
+    }
     fn resolve(&self, dir: &GraphDir) -> Result<GraphDir, FilesError> {
         self.inner.resolve(dir)
     }

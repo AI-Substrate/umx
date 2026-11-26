@@ -47,7 +47,10 @@ Checks share the deterministic 100-million-unit matching budget across active ru
 same per-node limit described below. An oversized node becomes a `not_checked` row, distinct
 from `unmet`, and emits `rule_node_unchecked`; scanning continues. A whole-scan cut emits
 `rule_check_cut`. Follow `data.rules[].next` to page the known rows, then resume after the last
-fully scanned node with `--after <id>`. The exact resume command is also returned separately.
+visited node with `--after <id>`. The exact resume command is also returned separately.
+Exact filters run before budget reservation; a matching type-only rule costs one unit.
+When one node's combined checks exceed the entire budget, completed rule results are kept,
+unaffordable rules report `not_checked` for that node, and scanning advances in fixed rule-name order.
 An incomplete scan has `total: null`; counts describe only the nodes that were checked.
 Narrowing or anchoring a regex can reduce its work, but is not required to keep writing.
 
@@ -119,16 +122,20 @@ It never appears in an error message or next command.
 ## Central rules and storage
 
 Std graphs get the central table shipped with umx; a graph without std gets none. This release
-ships that table empty. When a central rule exists, `umx rule off std:<name>` switches it off
-for this graph and `umx rule on std:<name>` restores it. Both commands are idempotent; a
-nonexistent central name is refused with `rule_not_found`.
+ships `std:risk_owned`: a risk should have an owns edge from a person, organisation or team.
+An `owner` string does not satisfy it. Use `umx edge add <owner> owns <risk>` to link the owner.
+`umx rule off std:<name>` switches a central rule off
+for this graph and `umx rule on std:<name>` restores it. Both commands are idempotent.
+Names in stored `rules_off` lists that match nothing are retained, not refused.
 
     umx rule off std:risk_owned --graph demo
     umx rule on std:risk_owned --graph demo
 
 List shows std rules first, marked `source: std`, including switched-off rows marked `off: true`,
-then graph rules marked `source: graph`. The effective rules are std's minus `rules_off`,
-plus the graph's own. Only own rows and switch-offs are stored, sorted by name.
+then set files in name order, with their stem as source, then graph rules marked `source: graph`.
+Every graph or set's `rules_off` contributes to one union, suppressing any rule with that full
+name, including another set's or the graph's own. Only own rows and own switch-offs are
+stored in graph.json, sorted by name.
 
 The first stored rule or switch-off raises graph.json to format 8. Older umx refuses that
 format rather than dropping rules. A graph with no rules keeps its format and encoding;
@@ -138,5 +145,48 @@ build's size or graph compile budget is skipped, not a reason to refuse the grap
 `rule_skipped` names its rule and gives the command that removes it. The row stays unchanged
 on disk and can be removed or re-added with a smaller pattern. If vocabulary a stored rule names is removed or renamed,
 the rule still loads and `rule_vocabulary_unknown` gives the command to declare that name.
-The same warning accompanies adding an undeclared name. Files in a graph's `rules/` folder are not read in this
-release; named rule sets and automatic hubs belong to later releases.
+The same warning accompanies adding an undeclared name. Rules remain warning-only; they never fill a hub.
+
+## Graph-local rule sets
+
+    umx rule set add ./risk_management.json --graph demo
+    umx rule set list --graph demo
+    umx rule set remove risk_management --graph demo
+
+A set file contains only `rules` and `rules_off`; omitted keys mean empty lists. For example:
+
+```json
+{
+  "rules": [
+    {"name":"rated","match":{"type":["risk"]},"field":"impact"}
+  ],
+  "rules_off": ["std:risk_owned"]
+}
+```
+
+The snake_case file stem names the set, never `std`; reserved vocabulary words such as `group`
+are allowed as set names. A row named `rated` in this file becomes `risk_management:rated`.
+Inspect it with `umx rule show risk_management:rated`, or switch it off for this graph with
+`umx rule off risk_management:rated`. Remove the whole copy with `rule set remove`, not `rule remove`.
+Turning a graph switch back on cannot undo a switch-off still present in a set.
+
+Add checks every row and regex before copying the exact file content into
+`<graph>/rules/<set>.json`. Undeclared vocabulary is stored with `rule_vocabulary_unknown`.
+Any `to_node` is a full id of an existing node in the destination graph.
+It copies, never links: changing the source or another graph's copy changes nothing here.
+Re-adding byte-identical content is unchanged and writes nothing. Different content under
+the same stem is refused; remove the old copy, then add again. Adding the first set raises
+graph.json to format 10; removal never lowers a written format.
+
+Each set has at most 64 rules and 64 KiB of content. The graph uses at most 32 valid-name
+regular set files, selected in filename order. Extra files produce one `rule_sets_cut` warning
+with their count and candidate names; invalid-name files do not count toward 32.
+At more than 1000 directory entries the whole folder is excluded with one reasoned warning.
+Add refuses a copy past either limit without writing.
+
+An unreadable or malformed file produces one `rule_set_skipped` warning naming it and the
+reason; none of its rows or switch-offs are used. Other sources load normally. Unknown keys,
+including `fill` or `hubs`, invalidate a set. Switch-offs naming no current rule are retained.
+List reads the copies fresh; check rereads both the graph and sets. Other reads use the loaded
+snapshot and warn `stale_files` after a set changes on disk; reload before writing.
+Remove can delete malformed or oversized named copies without reading their bodies.

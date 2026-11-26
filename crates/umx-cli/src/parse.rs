@@ -109,6 +109,9 @@ pub const FLAGS: &[(&str, &[&str])] = &[
     ("hub show", &["--limit", "--offset"]),
     ("hub fill", &["--after"]),
     ("hub remove", &[]),
+    ("rule set list", &[]),
+    ("rule set add", &[]),
+    ("rule set remove", &[]),
     (
         "check",
         &[
@@ -1087,10 +1090,51 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             };
             return Ok(op.with(a));
         }
+        ["rule", "set", verb, rest @ ..] => {
+            let command = match *verb {
+                "list" => "rule set list",
+                "add" => "rule set add",
+                "remove" => "rule set remove",
+                _ => {
+                    return Err(Usage {
+                        command: "rule set list",
+                        what: "rule set takes add, list or remove",
+                    });
+                }
+            };
+            let a = Args::new(command, rest)?;
+            let op = match *verb {
+                "list" => {
+                    a.positionals(0, "rule set list takes no positional arguments")?;
+                    Op::RuleSetList
+                }
+                "remove" => Op::RuleSetRemove {
+                    name: a.positionals(1, "give one set name")?.remove(0),
+                },
+                "add" => {
+                    let file = a.positionals(1, "give one rule set JSON file")?.remove(0);
+                    let name = Path::new(&file)
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .filter(|stem| !stem.is_empty() && *stem != "-")
+                        .ok_or(Usage {
+                            command,
+                            what: "give a file whose snake_case stem names the set, never std",
+                        })?
+                        .to_string();
+                    Op::RuleSetAdd {
+                        name,
+                        content: file,
+                    }
+                }
+                _ => unreachable!("known set verb"),
+            };
+            return Ok(op.with(a));
+        }
         ["rule", verb, rest @ ..] => {
             let command = known("rule", verb).ok_or(Usage {
                 command: "rule list",
-                what: "rule takes list, add, remove, off, on or show",
+                what: "rule takes list, add, remove, off, on, show or set",
             })?;
             let a = Args::new(command, rest)?;
             if *verb == "add" {
@@ -2362,6 +2406,58 @@ impl With for Op {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rule_set_commands_take_one_named_file_or_set_and_no_row_flags() {
+        let cwd = Path::new("/work");
+        let parsed = parse(
+            &[
+                "rule",
+                "set",
+                "add",
+                "./risk_management.json",
+                "--graph",
+                "g",
+            ],
+            cwd,
+        )
+        .ok()
+        .expect("set add parses");
+        assert_eq!(parsed.graph.as_deref(), Some("g"));
+        assert_eq!(
+            parsed.op,
+            Op::RuleSetAdd {
+                name: "risk_management".into(),
+                content: "./risk_management.json".into(),
+            }
+        );
+        assert_eq!(
+            parse(&["rule", "set", "list"], cwd)
+                .ok()
+                .expect("set list parses")
+                .op,
+            Op::RuleSetList
+        );
+        assert_eq!(
+            parse(&["rule", "set", "remove", "risk_management"], cwd)
+                .ok()
+                .expect("set remove parses")
+                .op,
+            Op::RuleSetRemove {
+                name: "risk_management".into()
+            }
+        );
+        for words in [
+            vec!["rule", "set", "add"],
+            vec!["rule", "set", "add", "-"],
+            vec!["rule", "set", "add", "one.json", "two.json"],
+            vec!["rule", "set", "add", "one.json", "--type", "risk"],
+            vec!["rule", "set", "list", "one"],
+            vec!["rule", "set", "remove"],
+        ] {
+            assert!(parse(&words, cwd).is_err(), "{words:?}");
+        }
+    }
 
     /// Reviewer N1 (ws004 s28): every `related_skipped` fix umx-services builds parses as printed. The list is the
     /// golden file umx-services' `every_reason_s_fix_is_a_whole_command_as_the_golden_file_lists_it` pins.

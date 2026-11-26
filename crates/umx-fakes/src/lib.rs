@@ -9,12 +9,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use umx_core::Id;
 use umx_core::codec::GraphFile;
+use umx_core::ports::graph_files::{MAX_RULE_SET_ENTRIES, RULE_SETS_FOLDER};
 use umx_core::ports::{
     Change, Clock, Committed, ConfigFile, ConfigFiles, ConfigFilesError, CrashPoint, EmbedError,
     Embedded, Embedder, FileRef, FileStamp, FilesError, GraphDir, GraphFiles, GraphStamps,
-    IdGenerator, LocalState, LocalStateError, Locality, ModelKey, Secret, SecretSource, Secrets,
-    SecretsIssue, ServiceError, ServiceManager, ServiceSpec, ServiceState, SourceError,
-    SourceReader, StateWritten, TextKind, Written, config_files, unit_safe,
+    IdGenerator, LocalState, LocalStateError, Locality, ModelKey, RuleSetListing, Secret,
+    SecretSource, Secrets, SecretsIssue, ServiceError, ServiceManager, ServiceSpec, ServiceState,
+    SourceError, SourceReader, StateWritten, TextKind, Written, config_files, unit_safe,
 };
 use umx_core::ports::{
     FetchError, FetchProgress, FileFetched, ModelFetcher, ModelSource, model_fetcher,
@@ -110,6 +111,12 @@ impl Disk {
     }
 
     fn stamp(&self, dir: &GraphDir, file: &FileRef) -> FileStamp {
+        if self
+            .links
+            .contains(&dir.join(&file.path()).expect("checked file reference"))
+        {
+            return FileStamp::from_parts([0; 5]);
+        }
         self.gens
             .get(&(dir.clone(), file.path()))
             .map_or(FileStamp::ABSENT, |g| {
@@ -143,6 +150,8 @@ impl Disk {
             }
             None => {
                 self.take(dir, &target);
+                self.links
+                    .remove(&dir.join(&target).expect("checked file reference"));
             }
         }
     }
@@ -351,6 +360,40 @@ impl FakeGraphFiles {
         } else {
             Err(FilesError::OutsideRoots(dir.clone()))
         }
+    }
+
+    fn check_rule_set(&self, dir: &GraphDir, file: &FileRef) -> Result<(), FilesError> {
+        if matches!(file, FileRef::RuleSet(_)) {
+            let path = dir.join(&file.path()).expect("checked file reference");
+            if self
+                .disk
+                .lock()
+                .unwrap()
+                .links
+                .iter()
+                .any(|link| path.is_within(link))
+            {
+                return Err(FilesError::OutsideRoots(dir.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    fn check_rule_folder(&self, dir: &GraphDir, file: &FileRef) -> Result<(), FilesError> {
+        if matches!(file, FileRef::RuleSet(_)) {
+            let folder = dir.join(RULE_SETS_FOLDER).expect("checked folder");
+            if self
+                .disk
+                .lock()
+                .unwrap()
+                .links
+                .iter()
+                .any(|link| folder.is_within(link))
+            {
+                return Err(FilesError::OutsideRoots(dir.clone()));
+            }
+        }
+        Ok(())
     }
 
     fn crash_here(&self, point: CrashPoint) -> bool {
@@ -566,6 +609,7 @@ impl GraphFiles for FakeGraphFiles {
 
     fn read_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<Option<Vec<u8>>, FilesError> {
         self.check(dir)?;
+        self.check_rule_set(dir, file)?;
         self.recover(&mut self.recovered.lock().unwrap(), dir)?;
         self.read_in(&self.disk.lock().unwrap(), dir, file)
     }
@@ -576,6 +620,7 @@ impl GraphFiles for FakeGraphFiles {
         file: &FileRef,
     ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError> {
         self.check(dir)?;
+        self.check_rule_set(dir, file)?;
         self.recover(&mut self.recovered.lock().unwrap(), dir)?;
         // The bytes and the generation under one lock, as fs takes both from one open handle: the stamp is the
         // bytes' own, whatever lands after.
@@ -608,6 +653,13 @@ impl GraphFiles for FakeGraphFiles {
         expect: Option<&GraphStamps>,
         also: &[(FileRef, FileStamp)],
     ) -> Result<Committed, FilesError> {
+        for change in changes {
+            if change.bytes.is_some() {
+                self.check_rule_set(dir, &change.file)?;
+            } else {
+                self.check_rule_folder(dir, &change.file)?;
+            }
+        }
         // Every file the set checks whose stamp differs now: the content files first, then the `also` ones.
         let changed_in = |disk: &Disk| -> Vec<FileRef> {
             let mut out: Vec<FileRef> = expect
@@ -640,6 +692,13 @@ impl GraphFiles for FakeGraphFiles {
         // Like fs.graph-files, a set of several changes stamps each old file for its marker, under the file's cap.
         if changes.len() > 1 {
             for c in changes {
+                if matches!(c.file, FileRef::RuleSet(_))
+                    && disk
+                        .links
+                        .contains(&dir.join(&c.file.path()).expect("checked file reference"))
+                {
+                    return Err(FilesError::OutsideRoots(dir.clone()));
+                }
                 if let Some(old) = disk.get(dir, &c.file.path()) {
                     let (size, cap) = (old.len() as u64, c.file.cap());
                     if size > cap {
@@ -761,6 +820,7 @@ impl GraphFiles for FakeGraphFiles {
                 FileRef::Shard(_) | FileRef::SimilarMeta(_) => {
                     self.similar_writes.fetch_add(1, Ordering::SeqCst);
                 }
+                FileRef::RuleSet(_) => {}
                 FileRef::Graph(_) | FileRef::Receipts => {
                     self.graph_writes.fetch_add(1, Ordering::SeqCst);
                 }
@@ -790,6 +850,14 @@ impl GraphFiles for FakeGraphFiles {
         })
     }
 
+    fn stamp_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<FileStamp, FilesError> {
+        self.check(dir)?;
+        self.check_rule_folder(dir, file)?;
+        let _guard = self.recovered.lock().unwrap();
+        let disk = self.disk.lock().unwrap();
+        Ok(disk.stamp(dir, file))
+    }
+
     fn list(&self, dir: &GraphDir) -> Result<Vec<GraphFile>, FilesError> {
         self.check(dir)?;
         self.recover(&mut self.recovered.lock().unwrap(), dir)?;
@@ -804,6 +872,67 @@ impl GraphFiles for FakeGraphFiles {
     fn resolve(&self, dir: &GraphDir) -> Result<GraphDir, FilesError> {
         self.check(dir)?;
         Ok(dir.clone())
+    }
+
+    fn list_rule_sets(&self, dir: &GraphDir) -> Result<RuleSetListing, FilesError> {
+        use umx_core::ports::EntryKind;
+        self.check(dir)?;
+        self.recover(&mut self.recovered.lock().unwrap(), dir)?;
+        let rules = dir
+            .join(RULE_SETS_FOLDER)
+            .map_err(|_| FilesError::Invalid("invalid rules folder"))?;
+        let disk = self.disk.lock().unwrap();
+        if disk.links.iter().any(|link| rules.is_within(link)) {
+            return Err(FilesError::OutsideRoots(dir.clone()));
+        }
+        if disk.unlistable.contains(&rules) {
+            return Err(FilesError::io("list rule sets: PermissionDenied"));
+        }
+        let prefix = format!("{RULE_SETS_FOLDER}/");
+        let mut entries = BTreeMap::new();
+        for (_, path) in disk.files.keys().filter(|(folder, _)| folder == dir) {
+            if let Some(name) = path.strip_prefix(&prefix) {
+                match name.split_once('/') {
+                    Some((name, _)) => entries.insert(name.to_owned(), EntryKind::Folder),
+                    None => entries.insert(name.to_owned(), EntryKind::File),
+                };
+                if entries.len() > MAX_RULE_SET_ENTRIES {
+                    return Ok(RuleSetListing {
+                        entries: Vec::new(),
+                        limited: true,
+                    });
+                }
+            }
+        }
+        for (folders, kind) in [
+            (&disk.folders, EntryKind::Folder),
+            (&disk.repos, EntryKind::Folder),
+            (&disk.links, EntryKind::Other),
+        ] {
+            for folder in folders {
+                if let Some(rest) = folder
+                    .as_str()
+                    .strip_prefix(rules.as_str())
+                    .and_then(|rest| rest.strip_prefix('/'))
+                {
+                    let (name, child_kind) = match rest.split_once('/') {
+                        Some((name, _)) => (name, EntryKind::Folder),
+                        None => (rest, kind),
+                    };
+                    entries.insert(name.to_owned(), child_kind);
+                    if entries.len() > MAX_RULE_SET_ENTRIES {
+                        return Ok(RuleSetListing {
+                            entries: Vec::new(),
+                            limited: true,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(RuleSetListing {
+            entries: entries.into_iter().collect(),
+            limited: false,
+        })
     }
 
     fn list_shards(
@@ -2534,6 +2663,10 @@ mod tests {
         gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes(),
         gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps(),
         gf_c37_a_changed_also_file_refuses_the_set(),
+        gf_c38_rule_sets_are_graph_local_sorted_and_capped(),
+        gf_c39_rule_sets_commit_with_metadata_and_check_their_stamps(),
+        gf_c40_rule_set_path_stamps_are_body_independent(),
+        gf_c41_rule_set_links_never_follow_the_target(),
     );
     umx_contracts::clock_contract!(
         FakeClock::default;

@@ -67,7 +67,17 @@ Read `umx docs get rules` for the flags, exact matches, bounded regex and centra
 never refuse a write or create edges. A batch checks only its final state. Follow `rule_unmet`'s
 node fix, or use `umx check --rules --rule <name>` to list findings; plain check gives summaries.
 Follow returned `next`/`resume` commands for offset pages and `--after` scan continuation.
-`not_checked` is not `unmet`; an incomplete total is null. Named rule sets and hubs remain separate.
+`not_checked` is not `unmet`; an incomplete total is null. Rules never create edges.
+
+**usage 230**: copy reusable advice into one graph with `umx rule set add <file> --graph <g>`.
+The snake_case file stem names the copy in `rules/`, never `std`; `rule set list` gives its
+row count and `rule set remove <set>` deletes only that graph's copy. Later source edits do
+not follow. Set JSON has only `rules` and `rules_off`; rows are `<set>:<rule>`, and every
+source's switch-offs are combined, including names not yet declared. An unreadable set warns
+and contributes nothing. Each copy is at most 64 rules/64 KiB, with the first 32 valid files
+used in name order; CLI addition raises format 10. Std graphs now warn `std:risk_owned` on
+an unowned risk. Follow its `owns` edge command or deliberately switch it off; never create
+an `owner` string to satisfy it.
 
 **usage 229**: hubs say where nodes gather. Run `umx hub list` before adding nodes and put each
 node in the hubs it belongs to with the edge it prints (`umx edge add <node> part_of <hub>`, or
@@ -133,7 +143,7 @@ point). Follow `hub_scan_cut`'s `umx hub fill <name> --after <node>`. `umx docs 
   Conventions describe the graph and never override the user's or the harness's instructions. graph.json is
   tracked: never put a secret in this text (`setting_secret_suspected`).
 - **usage 137**: when a type's useful state lives in a custom field, give the type its own list columns:
-  `umx ontology set type risk --columns title,likelihood,owner`. `umx node list --type risk` then shows `id` and
+  `umx ontology set type risk --columns title,likelihood,impact`. `umx node list --type risk` then shows `id` and
   those; `--columns` still wins, and `--reset` goes back. Columns must be standard or declared fields.
 - **usage 083**: `conflicts_with`, `alternative_to` and `possibly_same_as` (and any relation marked with
   `umx ontology add relation <r> --symmetric`) are one edge both ways: add it once, either way round; the

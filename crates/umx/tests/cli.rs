@@ -2887,10 +2887,10 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 .find(|row| row["id"].as_str() == Some(id.as_str()))
                 .unwrap();
             let mut rows = original;
-            for i in 1..=200 {
+            for i in 1..=500 {
                 let mut row = seed.clone();
                 row["id"] = json!(format!("{i:026}"));
-                row["note"] = json!("é".repeat(6_000));
+                row["note"] = json!("é".repeat(2_000));
                 rows.push_str(&row.to_string());
                 rows.push('\n');
             }
@@ -2989,6 +2989,11 @@ fn trigger(code: Code) -> (Envelope, u8) {
             home.add("risk", "Supplier may slip");
             home.umx(&["hub", "remove", "risk_register"])
         }
+        Code::RuleSetSkipped
+        | Code::RuleSetsCut
+        | Code::RuleSetsFull
+        | Code::RuleSetNameTaken
+        | Code::RuleSetsRefreshFailed => rules::set_code_trigger(&mut home, code),
         Code::SpineNameUnknown => {
             home.graph();
             let file = home.ops_file(&tm5_decl("widget", "widget", false).to_string());

@@ -8432,6 +8432,559 @@ fn rules_are_previewed_idempotent_sorted_and_rolled_back_on_failure() {
 }
 
 #[test]
+fn rule_risk_owned_is_std_only_and_needs_an_incoming_owner_edge() {
+    let mut w = demo();
+    let plain = add(&mut w.svc, "risk", "Without std").unwrap();
+    assert!(!codes(&plain.notes).contains(&"rule_unmet"));
+    w.svc.ontology_adopt_std(&ctx(), &[], false, &[]).unwrap();
+    let rule = w
+        .svc
+        .rule_list(&ctx())
+        .unwrap()
+        .value
+        .rows
+        .into_iter()
+        .find(|row| row.rule.name == "std:risk_owned")
+        .unwrap()
+        .rule;
+    for kind in ["person", "organisation", "team"] {
+        let owner = add(&mut w.svc, kind, "An owner").unwrap().value.node.id;
+        let risk = w
+            .svc
+            .node_add(
+                &ctx(),
+                NodeAddRequest {
+                    kind: "risk".into(),
+                    title: "Owner text is not a link".into(),
+                    sets: vec![("owner".into(), SetValue::Str("An owner".into()))],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let id = risk.value.node.id;
+        let warning = risk.notes.iter().find(|p| p.code == "rule_unmet").unwrap();
+        assert_eq!(warning.rule.as_ref().unwrap().name, "std:risk_owned");
+        assert_eq!(warning.subject.as_deref(), Some(id.to_text().as_str()));
+        assert_eq!(
+            warning.slot("sentence").as_deref(),
+            Some(rule.sentence().as_str())
+        );
+        w.svc
+            .edge_add(&ctx(), &id.to_text(), "owns", &owner.to_text(), &[])
+            .unwrap();
+        let check = umx_services::RuleCheckRequest {
+            rule: Some("std:risk_owned".into()),
+            ..Default::default()
+        };
+        let unmet = w
+            .svc
+            .check_with_rules(&ctx(), None, None, Some(&check))
+            .unwrap();
+        assert!(
+            unmet.value.rules[0]
+                .rows
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|row| row.node == id)
+        );
+        w.svc
+            .edge_add(&ctx(), &owner.to_text(), "owns", &id.to_text(), &[])
+            .unwrap();
+        let edited = w
+            .svc
+            .node_edit(
+                &ctx(),
+                &id.to_text(),
+                umx_services::NodeEditRequest {
+                    note: Some("Has a real incoming owner".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(!codes(&edited.notes).contains(&"rule_unmet"), "{kind}");
+        let met = w
+            .svc
+            .check_with_rules(&ctx(), None, None, Some(&check))
+            .unwrap();
+        assert!(
+            !met.value.rules[0]
+                .rows
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|row| row.node == id)
+        );
+    }
+    w.svc.rule_switch(&ctx(), "std:risk_owned", true).unwrap();
+    let off = add(&mut w.svc, "risk", "Deliberately off").unwrap();
+    assert!(!codes(&off.notes).contains(&"rule_unmet"));
+    w.svc.rule_switch(&ctx(), "std:risk_owned", false).unwrap();
+    let on = add(&mut w.svc, "risk", "Back on").unwrap();
+    assert!(codes(&on.notes).contains(&"rule_unmet"));
+}
+
+#[test]
+fn rule_sets_are_independent_copies_idempotent_and_never_replace_different_content() {
+    use umx_core::ports::{FileRef, RuleSetFile};
+    let mut w = demo();
+    w.svc
+        .graph_new(&ctx(), "/work/second", "second", None, false, None)
+        .unwrap();
+    let first = Ctx {
+        graph: Some("demo".into()),
+        ..ctx()
+    };
+    let second = Ctx {
+        graph: Some("second".into()),
+        ..ctx()
+    };
+    let bytes = serde_json::to_vec(&json!({
+        "rules":[{"name":"rated","match":{"type":["risk"]},"field":"impact"}]
+    }))
+    .unwrap();
+    let file = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    assert_eq!(
+        w.svc
+            .rule_set_add(&first, "kit", &bytes)
+            .unwrap()
+            .value
+            .format,
+        10
+    );
+    w.svc.rule_set_add(&second, "kit", &bytes).unwrap();
+    let before = w.files.graph_writes();
+    let metadata = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    assert!(
+        w.svc
+            .rule_set_add(&first, "kit", &bytes)
+            .unwrap()
+            .value
+            .unchanged
+    );
+    assert_eq!(w.files.graph_writes(), before);
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        metadata
+    );
+    let encoded: serde_json::Value = serde_json::from_slice(&metadata).unwrap();
+    assert_eq!(encoded["umx"], 10);
+    assert!(
+        encoded.get("rule_sets").is_none(),
+        "loaded set rows are never written into graph.json"
+    );
+    let different = br#"{"rules_off":["std:future"]}"#;
+    let refused = w.svc.rule_set_add(&first, "kit", different).unwrap_err();
+    assert_eq!(refused.code, "rule_set_name_taken");
+    assert!(
+        refused
+            .slot("fix")
+            .unwrap()
+            .contains("umx rule set remove kit --graph demo")
+    );
+    assert_eq!(
+        w.files.read_ref(&dir("/work/g"), &file).unwrap(),
+        Some(bytes.clone())
+    );
+    w.svc.rule_set_remove(&first, "kit").unwrap();
+    assert_eq!(w.files.read_ref(&dir("/work/g"), &file).unwrap(), None);
+    assert_eq!(
+        w.files.read_ref(&dir("/work/second"), &file).unwrap(),
+        Some(bytes)
+    );
+    assert_eq!(
+        w.svc.rule_set_list(&second).unwrap().value.rows[0].name,
+        "kit"
+    );
+    assert_eq!(
+        codec::decode_graph(
+            &w.files
+                .read(&dir("/work/g"), GraphFile::Graph)
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap()
+        .umx,
+        10
+    );
+}
+
+#[test]
+fn rule_sets_compose_off_names_across_sources_and_allow_reserved_namespace_stems() {
+    let mut w = demo();
+    w.svc.ontology_adopt_std(&ctx(), &[], false, &[]).unwrap();
+    let central = ["owned", "rated"].map(|name| {
+        umx_core::rules::Rule::from_value(&json!({
+            "name":format!("std:{name}"),"match":{"type":["risk"]},"field":"impact"
+        }))
+        .unwrap()
+    });
+    w.svc.set_central_rules_for_test(central.to_vec());
+    w.svc
+        .rule_add(
+            &ctx(),
+            &json!({"name":"local","match":{"type":["risk"]},"field":"impact"}),
+            false,
+        )
+        .unwrap();
+    for (name, value) in [
+        (
+            "group",
+            json!({"rules":[{"name":"kept","match":{"type":["risk"]},"field":"impact"}]}),
+        ),
+        (
+            "alpha",
+            json!({
+                "rules":[{"name":"z","match":{"type":["risk"]},"field":"impact"},{"name":"a","match":{"type":["risk"]},"field":"impact"}],
+                "rules_off":["std:owned","group:kept","local","future"]
+            }),
+        ),
+    ] {
+        w.svc
+            .rule_set_add(&ctx(), name, &serde_json::to_vec(&value).unwrap())
+            .unwrap();
+    }
+    w.svc.rule_switch(&ctx(), "alpha:z", true).unwrap();
+    w.svc.rule_switch(&ctx(), "another_future", true).unwrap();
+    let listed = w.svc.rule_list(&ctx()).unwrap().value.rows;
+    assert_eq!(
+        listed
+            .iter()
+            .map(|row| (row.rule.name.as_str(), row.source.as_str(), row.off))
+            .collect::<Vec<_>>(),
+        [
+            ("std:owned", "std", true),
+            ("std:rated", "std", false),
+            ("alpha:a", "alpha", false),
+            ("alpha:z", "alpha", true),
+            ("group:kept", "group", true),
+            ("local", "graph", true),
+        ]
+    );
+    let shown = w.svc.rule_show(&ctx(), "group:kept", 20, 0).unwrap();
+    assert_eq!(shown.value.rule.name, "group:kept");
+    w.svc.rule_set_remove(&ctx(), "alpha").unwrap();
+    let listed = w.svc.rule_list(&ctx()).unwrap().value.rows;
+    assert!(
+        !listed
+            .iter()
+            .find(|row| row.rule.name == "std:owned")
+            .unwrap()
+            .off
+    );
+    assert!(
+        !listed
+            .iter()
+            .find(|row| row.rule.name == "group:kept")
+            .unwrap()
+            .off
+    );
+    assert!(
+        !listed
+            .iter()
+            .find(|row| row.rule.name == "local")
+            .unwrap()
+            .off
+    );
+}
+
+#[test]
+fn rule_sets_refuse_bad_adds_and_exclude_a_malformed_files_switch_offs() {
+    use umx_core::ports::{Change, FileRef, RuleSetFile};
+    let mut w = demo();
+    w.svc.ontology_adopt_std(&ctx(), &[], false, &[]).unwrap();
+    w.svc.set_central_rules_for_test(vec![
+        umx_core::rules::Rule::from_value(&json!({
+            "name":"std:owned","match":{"type":["risk"]},"field":"impact"
+        }))
+        .unwrap(),
+    ]);
+    let file = FileRef::RuleSet(RuleSetFile::new("bad").unwrap());
+    for bad in [
+        json!({"hubs":[]}),
+        json!({"rules":[{"name":"bad","match":{"type":["risk"]},"fill":"hub"}]}),
+        json!({"rules":[{"name":"bad","match":{"regex":{"title":"(?"}},"field":"impact"}]}),
+        json!({"rules":[{"name":"group:bad","match":{"type":["risk"]},"field":"impact"}]}),
+    ] {
+        let before = w.files.graph_writes();
+        assert!(
+            w.svc
+                .rule_set_add(&ctx(), "bad", &serde_json::to_vec(&bad).unwrap())
+                .is_err()
+        );
+        assert_eq!(w.files.graph_writes(), before);
+        assert_eq!(w.files.read_ref(&dir("/work/g"), &file).unwrap(), None);
+    }
+    let bad = serde_json::to_vec(&json!({
+        "rules":[{"name":"bad","match":{"regex":{"title":"(?"}},"field":"impact"}],
+        "rules_off":["std:owned"]
+    }))
+    .unwrap();
+    w.files
+        .write_set(
+            &dir("/work/g"),
+            &[Change {
+                file,
+                bytes: Some(&bad),
+            }],
+        )
+        .unwrap();
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    let loaded = w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    assert_eq!(
+        loaded
+            .notes
+            .iter()
+            .filter(|note| note.code == "rule_set_skipped")
+            .count(),
+        1
+    );
+    assert!(w.svc.rule_set_list(&ctx()).unwrap().value.rows.is_empty());
+    assert!(!w.svc.rule_list(&ctx()).unwrap().value.rows[0].off);
+}
+
+#[test]
+fn rule_sets_validate_destination_nodes_and_emit_each_file_warning_once() {
+    use umx_core::ports::{FileRef, RuleSetFile};
+    let mut w = demo();
+    w.svc.ontology_adopt_std(&ctx(), &[], false, &[]).unwrap();
+    let file = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    let row = |id: Id| {
+        serde_json::to_vec(&json!({
+            "rules":[{"name":"linked","match":{"type":["risk"]},"edge":"part_of","to_node":id}]
+        }))
+        .unwrap()
+    };
+    let before = w.files.graph_writes();
+    let absent = Id(1);
+    assert_eq!(
+        w.svc
+            .rule_set_add(&ctx(), "kit", &row(absent))
+            .unwrap_err()
+            .code,
+        "node_not_found"
+    );
+    assert_eq!(w.files.graph_writes(), before);
+    assert_eq!(w.files.read_ref(&dir("/work/g"), &file).unwrap(), None);
+    let target = add(&mut w.svc, "problem", "Local target")
+        .unwrap()
+        .value
+        .node
+        .id;
+    w.svc.rule_set_add(&ctx(), "kit", &row(target)).unwrap();
+    w.files.tamper_for_tests(
+        &dir("/work/g"),
+        FileRef::RuleSet(RuleSetFile::new("bad").unwrap()),
+        b"{",
+    );
+    w.svc.graph_load(&ctx(), "/work/g", Some("demo")).unwrap();
+    let added = w
+        .svc
+        .rule_set_add(
+            &ctx(),
+            "grade",
+            br#"{"rules":[{"name":"graded","match":{"type":["risk"]},"field":"review_grade"}]}"#,
+        )
+        .unwrap();
+    assert_eq!(
+        codes(&added.notes)
+            .iter()
+            .filter(|code| **code == "rule_set_skipped")
+            .count(),
+        1
+    );
+    assert_eq!(
+        codes(&added.notes)
+            .iter()
+            .filter(|code| **code == "rule_vocabulary_unknown")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn rule_sets_enforce_row_and_byte_caps_and_cas_even_at_format_ten() {
+    use umx_core::ports::{FileRef, RuleSetFile};
+    let mut w = demo();
+    let rows = (0..65)
+        .map(|i| {
+            json!({
+                "name":format!("r_{i}"),"match":{"type":["risk"]},"field":"impact"
+            })
+        })
+        .collect::<Vec<_>>();
+    let before = w.files.graph_writes();
+    assert_eq!(
+        w.svc
+            .rule_set_add(
+                &ctx(),
+                "too_many",
+                &serde_json::to_vec(&json!({"rules":rows})).unwrap()
+            )
+            .unwrap_err()
+            .code,
+        "rule_invalid"
+    );
+    assert_eq!(w.files.graph_writes(), before);
+    let sixty_four = serde_json::to_vec(&json!({"rules":&rows[..64]})).unwrap();
+    assert_eq!(
+        w.svc
+            .rule_set_add(&ctx(), "rows", &sixty_four)
+            .unwrap()
+            .value
+            .rules,
+        64
+    );
+    let mut bytes = b"{}".to_vec();
+    bytes.resize(65536, b' ');
+    w.svc.rule_set_add(&ctx(), "bytes", &bytes).unwrap();
+    bytes.push(b' ');
+    assert_eq!(
+        w.svc
+            .rule_set_add(&ctx(), "oversized", &bytes)
+            .unwrap_err()
+            .code,
+        "rule_invalid"
+    );
+    let dir = dir("/work/g");
+    let metadata = w.files.read(&dir, GraphFile::Graph).unwrap().unwrap();
+    w.files
+        .change_before_next_marker_for_tests(&dir, GraphFile::Graph, &metadata);
+    assert_eq!(
+        w.svc.rule_set_add(&ctx(), "raced", b"{}").unwrap_err().code,
+        "graph_files_changed"
+    );
+    assert_eq!(
+        w.files
+            .read_ref(&dir, &FileRef::RuleSet(RuleSetFile::new("raced").unwrap()))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        w.files.read(&dir, GraphFile::Graph).unwrap().unwrap(),
+        metadata
+    );
+}
+
+#[test]
+fn rule_sets_use_the_first_thirty_two_and_refuse_a_thirty_third_add() {
+    use umx_core::ports::{Change, FileRef, RuleSetFile};
+    let mut w = demo();
+    for index in (0..33).rev() {
+        let file = FileRef::RuleSet(RuleSetFile::new(&format!("s_{index:02}")).unwrap());
+        w.files
+            .write_set(
+                &dir("/work/g"),
+                &[Change {
+                    file,
+                    bytes: Some(b"{}"),
+                }],
+            )
+            .unwrap();
+    }
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    let loaded = w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    let cut = loaded
+        .notes
+        .iter()
+        .find(|note| note.code == "rule_sets_cut")
+        .unwrap();
+    assert_eq!(cut.slot("count"), Some("1".into()));
+    assert_eq!(cut.candidates[0].id, "s_32");
+    let sets = w.svc.rule_set_list(&ctx()).unwrap().value.rows;
+    assert_eq!(sets.len(), 32);
+    assert_eq!(sets.first().unwrap().name, "s_00");
+    assert_eq!(sets.last().unwrap().name, "s_31");
+    let writes = w.files.graph_writes();
+    assert!(
+        w.svc
+            .rule_set_add(&ctx(), "s_32", b"{}")
+            .unwrap()
+            .value
+            .unchanged
+    );
+    assert_eq!(w.files.graph_writes(), writes);
+    assert_eq!(
+        w.svc.rule_set_list(&ctx()).unwrap().value.rows.len(),
+        32,
+        "an unchanged omitted copy stays excluded"
+    );
+    assert_eq!(
+        w.svc.rule_set_add(&ctx(), "extra", b"{}").unwrap_err().code,
+        "rule_sets_full"
+    );
+    w.svc.rule_set_remove(&ctx(), "s_00").unwrap();
+    assert_eq!(
+        w.svc
+            .rule_set_list(&ctx())
+            .unwrap()
+            .value
+            .rows
+            .last()
+            .unwrap()
+            .name,
+        "s_32"
+    );
+}
+
+#[test]
+fn rule_sets_stale_writes_are_refused_check_reads_fresh_and_oversized_copies_are_removable() {
+    use umx_core::ports::{Change, FileRef, RuleSetFile};
+    let mut w = demo();
+    let first = serde_json::to_vec(
+        &json!({"rules":[{"name":"rated","match":{"type":["risk"]},"field":"impact"}]}),
+    )
+    .unwrap();
+    w.svc.rule_set_add(&ctx(), "kit", &first).unwrap();
+    let file = FileRef::RuleSet(RuleSetFile::new("kit").unwrap());
+    w.files
+        .write_set(
+            &dir("/work/g"),
+            &[Change {
+                file: file.clone(),
+                bytes: Some(b"{}"),
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        add(&mut w.svc, "risk", "not written").unwrap_err().code,
+        "graph_files_changed"
+    );
+    let request = umx_services::RuleCheckRequest {
+        rule: Some("kit:rated".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        w.svc
+            .check_with_rules(&ctx(), None, None, Some(&request))
+            .unwrap_err()
+            .code,
+        "rule_not_found"
+    );
+    w.svc.rule_set_remove(&ctx(), "kit").unwrap();
+    assert_eq!(w.files.read_ref(&dir("/work/g"), &file).unwrap(), None);
+    w.files
+        .tamper_for_tests(&dir("/work/g"), file.clone(), &vec![b' '; 65537]);
+    let listed = w.svc.rule_set_list(&ctx()).unwrap();
+    assert!(listed.value.rows.is_empty());
+    assert!(
+        listed
+            .notes
+            .iter()
+            .any(|note| note.code == "rule_set_skipped")
+    );
+    w.svc.rule_set_remove(&ctx(), "kit").unwrap();
+    assert_eq!(w.files.read_ref(&dir("/work/g"), &file).unwrap(), None);
+}
+
+#[test]
 fn rule_regex_errors_and_missing_targets_never_write() {
     let mut w = demo();
     let before = w
@@ -8462,20 +9015,6 @@ fn rule_regex_errors_and_missing_targets_never_write() {
             .unwrap()
             .unwrap(),
         before
-    );
-    assert_eq!(
-        w.svc
-            .rule_switch(&ctx(), "std:not_here", true)
-            .unwrap_err()
-            .code,
-        "rule_not_found"
-    );
-    assert_eq!(
-        w.svc
-            .rule_switch(&ctx(), "std:not_here", false)
-            .unwrap_err()
-            .code,
-        "rule_not_found"
     );
 }
 
@@ -8922,7 +9461,7 @@ fn rule_switches_store_only_names_and_never_lower_the_graph_format() {
     let rows = w.svc.rule_list(&ctx()).unwrap().value.rows;
     assert_eq!(
         rows.iter()
-            .map(|r| (r.rule.name.as_str(), r.source, r.off))
+            .map(|r| (r.rule.name.as_str(), r.source.as_str(), r.off))
             .collect::<Vec<_>>(),
         [
             ("std:owned", "std", true),
@@ -9020,7 +9559,14 @@ fn stored_rules_survive_vocabulary_removal_and_adoption_with_load_warnings() {
             Some(0)
         );
         assert_eq!(
-            w.svc.rule_list(&ctx()).unwrap().value.rows[0]
+            w.svc
+                .rule_list(&ctx())
+                .unwrap()
+                .value
+                .rows
+                .into_iter()
+                .find(|row| row.rule.name == "named")
+                .unwrap()
                 .rule
                 .pattern
                 .types,

@@ -224,6 +224,7 @@ pub enum Written {
 pub enum FileRef {
     Graph(GraphFile),
     Shard(ShardFile),
+    RuleSet(RuleSetFile),
     /// `similar/<model@dims>/_meta.tsv`: what that folder's lists were computed from (staleness check). The `_`
     /// cannot clash with a shard name.
     SimilarMeta(ModelKey),
@@ -231,6 +232,38 @@ pub enum FileRef {
     /// [`crate::receipts`]). Read and written only by keyed batches, in the batch's own set; not a content file, so
     /// never in [`GraphStamps`] (a keyed batch checks its stamp through `also`).
     Receipts,
+}
+
+pub const RULE_SETS_FOLDER: &str = "rules";
+pub const MAX_RULE_SET_ENTRIES: usize = 1000;
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RuleSetFile(String);
+
+impl RuleSetFile {
+    pub fn new(name: &str) -> Option<Self> {
+        crate::rules::set_name_ok(name).then(|| Self(name.to_string()))
+    }
+
+    pub fn from_file_name(name: &str) -> Option<Self> {
+        Self::new(name.strip_suffix(".json")?)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+
+    pub fn file_name(&self) -> String {
+        format!("{}.json", self.0)
+    }
+}
+
+/// Raw, untrusted entry names so invalid stems can be reported without opening their files.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RuleSetListing {
+    pub entries: Vec<(String, EntryKind)>,
+    /// Past 1000 directory entries, the entire folder is excluded rather than chosen in OS order.
+    pub limited: bool,
 }
 
 /// The receipts file's name.
@@ -258,6 +291,7 @@ impl FileRef {
             FileRef::Graph(GraphFile::Nodes | GraphFile::Edges) => RECORDS_CAP,
             FileRef::Graph(GraphFile::GitIgnore) => GITIGNORE_CAP,
             FileRef::Shard(_) => SHARD_CAP,
+            FileRef::RuleSet(_) => crate::rules::MAX_RULE_SET_BYTES,
             FileRef::SimilarMeta(_) => SIMILAR_META_CAP,
             FileRef::Receipts => RECEIPTS_CAP,
         }
@@ -269,6 +303,9 @@ impl FileRef {
         match self {
             FileRef::Graph(f) => f.file_name().to_string(),
             FileRef::Shard(s) => s.to_string(),
+            FileRef::RuleSet(set) => {
+                format!("{RULE_SETS_FOLDER}/{}", set.file_name())
+            }
             FileRef::SimilarMeta(key) => {
                 format!("{}/{SIMILAR_META}", ShardKind::Similar.folder(key))
             }
@@ -281,6 +318,7 @@ impl FileRef {
         match self {
             FileRef::Graph(_) | FileRef::Receipts => None,
             FileRef::Shard(s) => Some(s.folder()),
+            FileRef::RuleSet(_) => Some(RULE_SETS_FOLDER.to_string()),
             FileRef::SimilarMeta(key) => Some(ShardKind::Similar.folder(key)),
         }
     }
@@ -302,6 +340,9 @@ impl FileRef {
             return Some(FileRef::Receipts);
         }
         let (top, rest) = path.split_once('/')?;
+        if top == RULE_SETS_FOLDER {
+            return RuleSetFile::from_file_name(rest).map(FileRef::RuleSet);
+        }
         let kind = [ShardKind::Vectors, ShardKind::Similar]
             .into_iter()
             .find(|k| k.top() == top)?;
@@ -439,6 +480,9 @@ pub trait GraphFiles: Send + Sync {
         dir: &GraphDir,
         file: &FileRef,
     ) -> Result<(Option<Vec<u8>>, FileStamp), FilesError>;
+    /// A file's physical path stamp without reading its body or recovering a pending write, even over its byte
+    /// cap. Final symlinks are stamped as links, never followed; a symlink on the way is refused.
+    fn stamp_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<FileStamp, FilesError>;
     /// A content file's bytes and stamp: [`GraphFiles::read_ref_stamped`]. A default only: adapters never override
     /// it, so there is one stamped read.
     fn read_stamped(
@@ -453,6 +497,9 @@ pub trait GraphFiles: Send + Sync {
     fn stamps(&self, dir: &GraphDir) -> Result<GraphStamps, FilesError>;
     /// The graph files present in the folder, in `GraphFile` order; empty if the folder does not exist.
     fn list(&self, dir: &GraphDir) -> Result<Vec<GraphFile>, FilesError>;
+    /// Graph-local `rules/` entries in filename order, without following symlinks or reading bodies.
+    /// Missing is empty. More than 1000 entries returns an empty, limited listing.
+    fn list_rule_sets(&self, dir: &GraphDir) -> Result<RuleSetListing, FilesError>;
     /// The folder's physical identity: every spelling of one folder (symlinks, `/tmp` and `/private/tmp`) gives
     /// the same value, and resolving it again gives it unchanged. The folder need not exist yet.
     fn resolve(&self, dir: &GraphDir) -> Result<GraphDir, FilesError>;

@@ -142,6 +142,11 @@ fn rule_changed_json(v: &umx_services::RuleChanged) -> Value {
     json!({"graph": v.graph, "name": v.name, "unchanged": v.unchanged, "format": v.format})
 }
 
+fn rule_set_changed_json(v: &umx_services::RuleSetChanged) -> Value {
+    json!({"graph": v.graph, "name": v.name, "rules": v.rules,
+        "unchanged": v.unchanged, "format": v.format})
+}
+
 fn layer(repo: bool) -> FileLayer {
     if repo {
         FileLayer::Repo
@@ -459,6 +464,16 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
         Op::RuleRemove { name } => {
             reply(command, services.rule_remove(&ctx, name), rule_changed_json)
         }
+        Op::RuleSetAdd { name, content } => reply(
+            command,
+            services.rule_set_add(&ctx, name, content.as_bytes()),
+            rule_set_changed_json,
+        ),
+        Op::RuleSetRemove { name } => reply(
+            command,
+            services.rule_set_remove(&ctx, name),
+            rule_set_changed_json,
+        ),
         Op::RuleOff { name } => reply(
             command,
             services.rule_switch(&ctx, name, true),
@@ -2183,6 +2198,10 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
                 json!({"rule": r.rule, "source": r.source, "off": r.off,
                     "sentence": r.rule.sentence().as_str()})).collect::<Vec<_>>()})
         }),
+        Op::RuleSetList => reply(command, services.rule_set_list(&ctx), |v| {
+            json!({"graph": v.graph, "total": v.rows.len(), "columns": ["name", "rules"],
+                "rows": v.rows.iter().map(|row| json!({"name": row.name, "rules": row.rules})).collect::<Vec<_>>()})
+        }),
         Op::RuleShow {
             name,
             limit,
@@ -3836,25 +3855,36 @@ fn retry(op: &Op) -> Command {
             name(alias(Command::new("graph spine remove"), a), n, "<name>")
         }
         Op::RuleList => Command::new("rule list"),
+        Op::RuleSetList => Command::new("rule set list"),
+        Op::RuleSetAdd { .. } => Command::new("rule set add").word("<file>"),
+        Op::RuleSetRemove { name: n } => alias(Command::new("rule set remove"), n),
         Op::RuleAdd { dry_run, .. } => {
             let c = Command::new("rule add").word("<name>");
             if *dry_run { c.word("--dry-run") } else { c }
         }
-        Op::RuleRemove { name: n } => name(Command::new("rule remove"), n, "<name>"),
-        Op::RuleOff { .. } => Command::new("rule off").word("<std:name>"),
-        Op::RuleOn { .. } => Command::new("rule on").word("<std:name>"),
         Op::HubList => Command::new("hub list"),
         Op::HubSet { name: n, .. } => name(Command::new("hub set"), n, "<name>"),
         Op::HubShow { name: n, .. } => name(Command::new("hub show"), n, "<name>"),
         Op::HubFill { name: n, .. } => name(Command::new("hub fill"), n, "<name>"),
         Op::HubRemove { name: n } => name(Command::new("hub remove"), n, "<name>"),
+        Op::RuleRemove { name: n } => Command::new("rule remove")
+            .rule_name(n)
+            .unwrap_or_else(|| Command::new("rule remove").word("<name>")),
+        Op::RuleOff { name: n } => Command::new("rule off")
+            .rule_name(n)
+            .unwrap_or_else(|| Command::new("rule off").word("<name>")),
+        Op::RuleOn { name: n } => Command::new("rule on")
+            .rule_name(n)
+            .unwrap_or_else(|| Command::new("rule on").word("<name>")),
         Op::RuleShow {
             name: n,
             limit,
             offset,
         } => number(
             number(
-                name(Command::new("rule show"), n, "<name>"),
+                Command::new("rule show")
+                    .rule_name(n)
+                    .unwrap_or_else(|| Command::new("rule show").word("<name>")),
                 "--limit",
                 limit,
             ),

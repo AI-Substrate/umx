@@ -82,6 +82,7 @@ pub use graph_store::{NodeWho, StampState, WhoListed, WhoNode, WhoRecord, WhoRow
 pub use graph_store::{NotReloaded, ReloadReport, Reloaded};
 pub use graph_store::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub use graph_store::{RuleCheckRequest, RuleFinding, RulesChecked};
+pub use graph_store::{RuleSetChanged, RuleSetRow, RuleSetsListed};
 pub use graph_store::{Scope, ScopeInfo, ScopeMemberInfo, SelectedRow, SourceRoots, TITLE_CHARS};
 /// A rebuild's snapshot and lists cross the daemon's threads (ws004 s09) as services types: the daemon names no
 /// umx-graph type (architect F1).
@@ -2680,6 +2681,23 @@ impl Services {
 
     pub fn rule_list(&self, ctx: &Ctx) -> Outcome<RulesListed> {
         self.graph.rule_list(ctx)
+    }
+
+    pub fn rule_set_list(&self, ctx: &Ctx) -> Outcome<RuleSetsListed> {
+        self.graph.rule_set_list(ctx)
+    }
+
+    pub fn rule_set_add(
+        &mut self,
+        ctx: &Ctx,
+        name: &str,
+        content: &[u8],
+    ) -> Outcome<RuleSetChanged> {
+        self.graph.rule_set_add(ctx, name, content)
+    }
+
+    pub fn rule_set_remove(&mut self, ctx: &Ctx, name: &str) -> Outcome<RuleSetChanged> {
+        self.graph.rule_set_remove(ctx, name)
     }
 
     #[cfg(any(test, feature = "test-hooks"))]

@@ -29,9 +29,11 @@ pub const FORMAT_FORMER: u32 = 7;
 pub const FORMAT_RULES: u32 = 8;
 /// Hub declarations (`hubs`). Older readers must not discard them on a write.
 pub const FORMAT_HUBS: u32 = 9;
+/// Graph-local rule sets. The sets themselves are stored separately in `rules/`.
+pub const FORMAT_RULE_SETS: u32 = 10;
 
 /// The newest graph.json format this build reads and writes, as `"umx"`.
-pub const FORMAT_VERSION: u32 = FORMAT_HUBS;
+pub const FORMAT_VERSION: u32 = FORMAT_RULE_SETS;
 
 /// At most this many former aliases, and as many former paths: a rename past it drops the oldest.
 pub const MAX_FORMER: usize = 16;
@@ -45,7 +47,8 @@ const _: () = assert!(
         && FORMAT_SPINES < FORMAT_FORMER
         && FORMAT_FORMER < FORMAT_RULES
         && FORMAT_RULES < FORMAT_HUBS
-        && FORMAT_VERSION == FORMAT_HUBS
+        && FORMAT_HUBS < FORMAT_RULE_SETS
+        && FORMAT_VERSION == FORMAT_RULE_SETS
 );
 
 /// The format the content needs: [`FORMAT_EMBEDDING`] with an `embedding` section, [`FORMAT_FIELD_ROLES`] with a
@@ -56,7 +59,9 @@ impl GraphMeta {
     pub fn needed_format(&self) -> u32 {
         let roles =
             self.ontology.has_roles() || self.embedding.as_ref().is_some_and(|e| e.text_form >= 2);
-        if !self.hubs.is_empty() {
+        if !self.rule_sets.is_empty() {
+            FORMAT_RULE_SETS
+        } else if !self.hubs.is_empty() {
             FORMAT_HUBS
         } else if !self.rules.is_empty() || !self.rules_off.is_empty() {
             FORMAT_RULES
@@ -152,6 +157,9 @@ pub struct GraphMeta {
     pub rules_off: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hubs: Vec<crate::hubs::Hub>,
+    /// Loaded separately from the graph folder; never embedded into graph.json.
+    #[serde(skip)]
+    pub rule_sets: BTreeMap<String, crate::rules::RuleSet>,
 }
 
 /// graph.json's `embedding` section. When present, all three known keys are written, so a secured or open graph

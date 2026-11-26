@@ -22,7 +22,7 @@ pub use embedder::{
 pub use graph_files::{
     Change, Committed, CrashPoint, EntryKind, FileRef, FileStamp, FilesError, FindLimits, Found,
     FoundGraph, GraphDir, GraphFiles, GraphStamps, RELOCATE_INSIDE_ITSELF, RELOCATE_PARENT_MISSING,
-    RELOCATE_TARGET_EXISTS, Written,
+    RELOCATE_TARGET_EXISTS, RuleSetFile, RuleSetListing, Written,
 };
 pub use id::IdGenerator;
 pub use local_state::{LocalState, LocalStateError, StateWritten};

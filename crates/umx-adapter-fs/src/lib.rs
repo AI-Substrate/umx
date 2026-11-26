@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use umx_core::codec::GraphFile;
+use umx_core::ports::graph_files::{MAX_RULE_SET_ENTRIES, RULE_SETS_FOLDER};
 use umx_core::ports::{
     Change, Committed, CrashPoint, EntryKind, FileRef, FileStamp, FilesError, FindLimits, Found,
     FoundGraph, GraphDir, GraphFiles, GraphStamps, ModelKey, RELOCATE_INSIDE_ITSELF,
-    RELOCATE_PARENT_MISSING, RELOCATE_TARGET_EXISTS, Written,
+    RELOCATE_PARENT_MISSING, RELOCATE_TARGET_EXISTS, RuleSetListing, Written,
 };
 use umx_core::scan::FOUND_GRAPH_JSON_CAP;
 use umx_core::vectors::{ShardFile, ShardKind};
@@ -524,8 +525,14 @@ fn parent_of(folder: &Path, file: &FileRef) -> Result<PathBuf, ()> {
     match file {
         FileRef::Graph(_) | FileRef::Receipts => Ok(folder.to_path_buf()),
         FileRef::Shard(s) => space_folder(folder, s.kind(), s.key()),
+        FileRef::RuleSet(_) => rules_folder(folder),
         FileRef::SimilarMeta(key) => space_folder(folder, ShardKind::Similar, key),
     }
+}
+
+fn rules_folder(folder: &Path) -> Result<PathBuf, ()> {
+    let out = folder.join(RULE_SETS_FOLDER);
+    if is_symlink(&out) { Err(()) } else { Ok(out) }
 }
 
 /// `embeddings/<model@dims>` or `similar/<model@dims>` inside the graph folder, refusing a symlink on the way.
@@ -1069,6 +1076,30 @@ impl FsGraphFiles {
         changes: &[Change<'_>],
         (expect, also): (Option<&GraphStamps>, &[(FileRef, FileStamp)]),
     ) -> Result<Committed, FilesError> {
+        for change in changes
+            .iter()
+            .filter(|change| change.bytes.is_some() && matches!(change.file, FileRef::RuleSet(_)))
+        {
+            let parent = parent_of(folder, &change.file)
+                .map_err(|()| FilesError::OutsideRoots(dir.clone()))?;
+            let path = parent.join(
+                change
+                    .file
+                    .path()
+                    .rsplit('/')
+                    .next()
+                    .expect("checked file reference"),
+            );
+            match fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(FilesError::OutsideRoots(dir.clone()));
+                }
+                Ok(_) => {}
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {}
+                Err(error) => return Err(io_error_at("stat", &change.file, error)),
+            }
+        }
         if let [one] = changes
             && fast_path()
         {
@@ -1110,7 +1141,10 @@ impl FsGraphFiles {
             };
             let failing = match &c.file {
                 FileRef::Graph(f) => self.temp_refused(*f),
-                FileRef::Shard(_) | FileRef::SimilarMeta(_) | FileRef::Receipts => false,
+                FileRef::Shard(_)
+                | FileRef::RuleSet(_)
+                | FileRef::SimilarMeta(_)
+                | FileRef::Receipts => false,
             };
             let name = c.file.path();
             let what = name.rsplit('/').next().unwrap_or(&name);
@@ -1508,6 +1542,28 @@ impl GraphFiles for FsGraphFiles {
         self.write_set_in(&mut recovered, dir, &folder, changes, (expect, also))
     }
 
+    fn stamp_ref(&self, dir: &GraphDir, file: &FileRef) -> Result<FileStamp, FilesError> {
+        let folder = self.check(dir)?;
+        let _guard = self.recovered.lock().unwrap();
+        let parent =
+            parent_of(&folder, file).map_err(|()| FilesError::OutsideRoots(dir.clone()))?;
+        let path = parent.join(
+            file.path()
+                .rsplit('/')
+                .next()
+                .expect("checked file reference"),
+        );
+        match fs::symlink_metadata(path) {
+            Ok(metadata) => Ok(stamp_of(&metadata)),
+            Err(error)
+                if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
+            {
+                Ok(FileStamp::ABSENT)
+            }
+            Err(error) => Err(io_error_at("stat", file, error)),
+        }
+    }
+
     fn list(&self, dir: &GraphDir) -> Result<Vec<GraphFile>, FilesError> {
         let folder = self.check(dir)?;
         let mut recovered = self.recovered.lock().unwrap();
@@ -1528,6 +1584,45 @@ impl GraphFiles for FsGraphFiles {
     fn resolve(&self, dir: &GraphDir) -> Result<GraphDir, FilesError> {
         let folder = self.check(dir)?;
         dir_of(folder).ok_or_else(|| FilesError::io("resolve folder: not a UTF-8 path"))
+    }
+
+    fn list_rule_sets(&self, dir: &GraphDir) -> Result<RuleSetListing, FilesError> {
+        let folder = self.check(dir)?;
+        let mut recovered = self.recovered.lock().unwrap();
+        self.recover(&mut recovered, &folder)?;
+        let rules = rules_folder(&folder).map_err(|()| FilesError::OutsideRoots(dir.clone()))?;
+        let entries = match fs::read_dir(rules) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(RuleSetListing::default()),
+            Err(e) => return Err(FilesError::io(format!("list rule sets: {}", e.kind()))),
+        };
+        let mut out = Vec::new();
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| FilesError::io(format!("list rule sets: {}", e.kind())))?;
+            if out.len() == MAX_RULE_SET_ENTRIES {
+                return Ok(RuleSetListing {
+                    entries: Vec::new(),
+                    limited: true,
+                });
+            }
+            let kind = entry
+                .file_type()
+                .map_err(|e| FilesError::io(format!("list rule sets: {}", e.kind())))?;
+            let kind = if kind.is_file() {
+                EntryKind::File
+            } else if kind.is_dir() {
+                EntryKind::Folder
+            } else {
+                EntryKind::Other
+            };
+            out.push((entry.file_name().to_string_lossy().into_owned(), kind));
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(RuleSetListing {
+            entries: out,
+            limited: false,
+        })
     }
 
     fn list_shards(
@@ -2580,6 +2675,10 @@ mod tests {
         gf_c35_a_set_with_receipts_is_all_or_nothing_across_crashes(),
         gf_c36_a_receipts_only_set_writes_and_keeps_the_content_stamps(),
         gf_c37_a_changed_also_file_refuses_the_set(),
+        gf_c38_rule_sets_are_graph_local_sorted_and_capped(),
+        gf_c39_rule_sets_commit_with_metadata_and_check_their_stamps(),
+        gf_c40_rule_set_path_stamps_are_body_independent(),
+        gf_c41_rule_set_links_never_follow_the_target(),
     );
 
     /// graph.json and nodes.jsonl with old bytes, then a two-file set crashed after its marker; returns the folder.

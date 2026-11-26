@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "name": "std:risk_owned",
+    "match": { "type": ["risk"] },
+    "edge": "owns",
+    "from": ["person", "organisation", "team"]
+  }
+]

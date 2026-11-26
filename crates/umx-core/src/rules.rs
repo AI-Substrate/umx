@@ -9,8 +9,55 @@ use serde::{Deserialize, Serialize};
 use crate::{Node, Value};
 
 pub const MAX_RULES: usize = 64;
+pub const MAX_RULE_SETS: usize = 32;
+pub const MAX_RULE_SET_BYTES: u64 = 64 << 10;
 pub const MAX_REGEX_CHARS: usize = 256;
 pub const MAX_REGEXES: usize = 4;
+
+pub fn name_ok(name: &str) -> bool {
+    match name.split_once(':') {
+        Some((set, rule)) => crate::name::is_snake_case(set) && crate::name::is_valid_name(rule),
+        None => crate::name::is_valid_name(name),
+    }
+}
+
+pub fn set_name_ok(name: &str) -> bool {
+    name != "std" && crate::name::is_snake_case(name)
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleSet {
+    #[serde(default)]
+    pub rules: Vec<Rule>,
+    #[serde(default)]
+    pub rules_off: Vec<String>,
+}
+
+impl RuleSet {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
+        let set: Self = serde_json::from_slice(bytes)
+            .map_err(|_| "invalid JSON, unknown keys, or a field with the wrong type")?;
+        set.check()?;
+        Ok(set)
+    }
+
+    pub fn check(&self) -> Result<(), &'static str> {
+        if self.rules.len() > MAX_RULES {
+            return Err("a rule set holds at most 64 rules");
+        }
+        stored_ok(&self.rules, &self.rules_off)
+    }
+
+    /// Loaded names are qualified; the separately copied source bytes remain unchanged.
+    pub fn qualified(mut self, set: &crate::ValidName) -> Self {
+        for rule in &mut self.rules {
+            rule.name = format!("{}:{}", set.as_str(), rule.name);
+        }
+        self.rules.sort_by(|a, b| a.name.cmp(&b.name));
+        self
+    }
+}
 
 fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -138,9 +185,8 @@ impl Rule {
 
     /// The reason is always a fixed sentence, never input text.
     pub fn check(&self) -> Result<(), &'static str> {
-        let plain = self.name.strip_prefix("std:").unwrap_or(&self.name);
-        if !crate::name::is_valid_name(plain) {
-            return Err("a rule name is snake_case");
+        if !name_ok(&self.name) {
+            return Err("a rule name is snake_case, optionally qualified by a set");
         }
         let p = &self.pattern;
         if p.regex.len() > MAX_REGEXES {
@@ -224,29 +270,39 @@ pub fn stored_ok(rules: &[Rule], off: &[String]) -> Result<(), &'static str> {
     let mut names = BTreeSet::new();
     for rule in rules {
         rule.check()?;
-        if rule.name.starts_with("std:") || !names.insert(&rule.name) {
-            return Err("graph rule names are unique and cannot use the std: prefix");
+        if rule.name.contains(':') || !names.insert(&rule.name) {
+            return Err("stored rule names are unique and unqualified");
         }
     }
     let mut names = BTreeSet::new();
     for name in off {
-        if !name
-            .strip_prefix("std:")
-            .is_some_and(crate::name::is_valid_name)
-            || !names.insert(name)
-        {
-            return Err("rules_off holds unique std:<name> entries");
+        if !name_ok(name) || !names.insert(name) {
+            return Err("rules_off holds unique rule names");
         }
     }
     Ok(())
 }
 
-/// Central rules first, then the graph's own, without persisting the effective list.
-pub fn effective<'a>(central: &'a [Rule], own: &'a [Rule], off: &[String]) -> Vec<&'a Rule> {
+/// Central, filename-ordered sets, then graph rules, minus switch-offs from every source.
+pub fn effective<'a>(
+    central: &'a [Rule],
+    sets: &'a BTreeMap<String, RuleSet>,
+    own: &'a [Rule],
+    off: &[String],
+) -> Vec<&'a Rule> {
+    let off = off_names(sets, off);
     central
         .iter()
-        .filter(|r| !off.contains(&r.name))
+        .chain(sets.values().flat_map(|set| &set.rules))
         .chain(own)
+        .filter(|r| !off.contains(r.name.as_str()))
+        .collect()
+}
+
+pub fn off_names<'a>(sets: &'a BTreeMap<String, RuleSet>, off: &'a [String]) -> BTreeSet<&'a str> {
+    off.iter()
+        .chain(sets.values().flat_map(|set| &set.rules_off))
+        .map(String::as_str)
         .collect()
 }
 
@@ -336,15 +392,85 @@ mod tests {
             Rule::from_value(&json!({"name":"rated","match":{"type":["risk"]},"field":"rating"}))
                 .unwrap(),
         ];
-        let rules = effective(&std, &own, &["std:owned".into()]);
+        let sets = BTreeMap::new();
+        let rules = effective(&std, &sets, &own, &["std:owned".into()]);
         assert_eq!(
             rules.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
             ["std:rated", "rated"]
         );
-        assert_eq!(effective(&[], &own, &[]), [&own[0]]);
+        assert_eq!(effective(&[], &BTreeMap::new(), &own, &[]), [&own[0]]);
         assert_eq!(std.len(), 2);
         assert!(stored_ok(&own, &["std:owned".into()]).is_ok());
         assert!(stored_ok(&std, &[]).is_err());
-        assert!(stored_ok(&own, &["owned".into()]).is_err());
+        assert!(stored_ok(&own, &["owned".into(), "other:unknown".into()]).is_ok());
+    }
+
+    #[test]
+    fn rule_sets_compose_in_filename_order_and_switch_off_every_source() {
+        let row = |name: &str| {
+            Rule::from_value(&json!({"name":name,"match":{"type":["risk"]},"field":"rating"}))
+                .unwrap()
+        };
+        let central = vec![row("std:rated")];
+        let own = vec![row("local"), row("kept")];
+        let sets = BTreeMap::from([
+            (
+                "zeta".into(),
+                RuleSet {
+                    rules: vec![row("rated")],
+                    rules_off: vec!["alpha:gone".into(), "local".into(), "future:unknown".into()],
+                }
+                .qualified(&crate::ValidName::new("zeta").unwrap()),
+            ),
+            (
+                "alpha".into(),
+                RuleSet {
+                    rules: vec![row("gone"), row("kept")],
+                    rules_off: vec!["std:rated".into()],
+                }
+                .qualified(&crate::ValidName::new("alpha").unwrap()),
+            ),
+        ]);
+        assert_eq!(
+            effective(&central, &sets, &own, &[])
+                .iter()
+                .map(|rule| rule.name.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha:kept", "zeta:rated", "kept"]
+        );
+        assert_eq!(
+            effective(&central, &sets, &own, &["zeta:rated".into()])
+                .iter()
+                .map(|rule| rule.name.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha:kept", "kept"]
+        );
+        assert_eq!(sets["zeta"].rules_off[2], "future:unknown");
+    }
+
+    #[test]
+    fn a_set_refuses_unknown_keys_duplicate_or_qualified_rows_and_bad_switch_names() {
+        let row = json!({"name":"rated","match":{"type":["risk"]},"field":"rating"});
+        let set: RuleSet = serde_json::from_value(json!({
+            "rules":[row.clone()],
+            "rules_off":["rated","std:owned","another:missing"]
+        }))
+        .unwrap();
+        assert!(set.check().is_ok());
+        for value in [
+            json!({"rules":[row.clone(),row.clone()]}),
+            json!({"rules":[{"name":"other:rated","match":{"type":["risk"]},"field":"rating"}]}),
+            json!({"rules_off":["other:bad:rule"]}),
+            json!({"rules_off":["rated","rated"]}),
+            json!({"hubs":[]}),
+            json!({"fill":true}),
+            json!({"rules":[{"name":"rated","match":{"type":["risk"]},"field":"rating","fill":false}]}),
+        ] {
+            assert!(
+                serde_json::from_value::<RuleSet>(value.clone())
+                    .map_or(true, |set| set.check().is_err()),
+                "{value}"
+            );
+        }
     }
 }

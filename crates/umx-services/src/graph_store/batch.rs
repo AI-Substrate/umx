@@ -2377,6 +2377,7 @@ impl GraphStore {
             instance,
             feed,
             stamps,
+            rule_sets_read,
             ..
         } = target.expect("selected graph is loaded");
         let floor = g
@@ -2844,6 +2845,8 @@ impl GraphStore {
                         touched,
                         stamps,
                         receipts: receipts_write,
+                        rule_set: None,
+                        rule_set_stamps: &rule_sets_read.stamps,
                     },
                 ) {
                     Ok(written) => {
