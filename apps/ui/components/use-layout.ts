@@ -15,7 +15,7 @@ const NO_PAIRS: readonly SimilarityLink[] = [];
 const NO_HUBS: HubResult = { centres: [], owner: [], ms: 0 };
 
 type LayoutInputs = {
-  view: { index: IndexGraph } | null;
+  view: { index: IndexGraph; ids: readonly string[] } | null;
   visible: Uint8Array | null;
   edges: Uint8Array | null;
   resolution: number;
@@ -40,11 +40,16 @@ function sameSimilarities(a: readonly SimilarityLink[], b: readonly SimilarityLi
   return true;
 }
 
-/** Reading, filtering and regrouping never move existing nodes; only explicit layout controls start afresh. */
-export function layoutRequest(before: LayoutInputs, after: LayoutInputs): "start" | "cluster" | null {
+/** Regrouping keeps its geometry; controls or the first usable similarity data can replace a full fan layout. */
+export function layoutRequest(before: LayoutInputs, after: LayoutInputs, similarityFallback = false): "start" | "cluster" | null {
   if (before.spacing !== after.spacing || before.options.mode !== after.options.mode || before.options.degree !== after.options.degree || before.options.count !== after.options.count) return "start";
+  const pairsChanged = !sameSimilarities(before.similarities, after.similarities);
+  if (similarityFallback && after.options.mode === "similarity" && pairsChanged) {
+    const shown = new Set(after.view?.ids.filter((_id, i) => after.visible?.[i]));
+    if (after.similarities.some((p) => p.a !== p.b && Number.isFinite(p.score) && p.score > 0 && shown.has(p.a) && shown.has(p.b))) return "start";
+  }
   const same = (a: Uint8Array | null, b: Uint8Array | null) => a === b || (a !== null && b !== null && a.length === b.length && a.every((v, i) => v === b[i]));
-  if (before.view?.index !== after.view?.index || before.resolution !== after.resolution || !same(before.visible, after.visible) || !same(before.edges, after.edges) || !sameSimilarities(before.similarities, after.similarities)) return "cluster";
+  if (before.view?.index !== after.view?.index || before.resolution !== after.resolution || !same(before.visible, after.visible) || !same(before.edges, after.edges) || pairsChanged) return "cluster";
   return null;
 }
 
@@ -66,7 +71,7 @@ export function useLayout(
   const args = useRef({ view, visible, edges, resolution, spacing, options, similarities });
   useEffect(() => { args.current = { view, visible, edges, resolution, spacing, options, similarities }; });
   const live = useRef<{
-    worker: Worker; busy: boolean; next: number; latest: number; runningFull: boolean;
+    worker: Worker; busy: boolean; next: number; latest: number; runningFull: boolean; similarityFallback: boolean;
     pending: WorkerStart | WorkerCluster | null;
     sent: typeof args.current;
     asked: Map<number, { resolution: number; ids: readonly string[] }>;
@@ -79,7 +84,7 @@ export function useLayout(
     if (!graph || !args.current.view || !args.current.visible || !args.current.edges) return;
     const worker = new Worker(new URL("../lib/graph/layout.worker.ts", import.meta.url), { type: "module" });
     const state: NonNullable<typeof live.current> = {
-      worker, busy: false, next: 0, latest: 0, runningFull: false, pending: null, sent: args.current,
+      worker, busy: false, next: 0, latest: 0, runningFull: false, similarityFallback: false, pending: null, sent: args.current,
       asked: new Map(), nudges: new Map(),
       request: (full, keep = false) => {
         const a = args.current, v = a.view;
@@ -128,11 +133,6 @@ export function useLayout(
         const asked = state.asked.get(m.id);
         if (m.id === state.latest && asked) {
           setLouvain({ graph, value: { groups: m.groups, ms: m.ms, resolution: asked.resolution, ids: asked.ids } });
-          if (m.hubs) {
-            const centres = new Set(m.hubs.centres);
-            graph.updateEachNodeAttributes((id, a) => ({ ...a, hub: centres.has(id) }));
-            setHubs({ graph, value: m.hubs });
-          }
         }
         // Full requests send coordinates after their clusters; cluster-only requests finish here.
         if (state.runningFull) return;
@@ -149,6 +149,7 @@ export function useLayout(
           return a;
         }, { attributes: ["x", "y"] });
         if (m.kind === "done") {
+          state.similarityFallback = m.hubs.fallback === true;
           setLayout({ graph, value: { progress: 1, done: true, ms: m.ms, iterations: m.iterations, capped: m.capped } });
           setHubs({ graph, value: m.hubs });
         } else setLayout({ graph, value: { progress: m.progress, done: false } });
@@ -181,7 +182,7 @@ export function useLayout(
   useEffect(() => {
     const state = live.current;
     if (!state || !view || !visible || !edges) return;
-    const request = layoutRequest(state.sent, args.current);
+    const request = layoutRequest(state.sent, args.current, state.similarityFallback);
     if (request) state.request(request === "start");
     else state.sent = args.current;
   }, [view, visible, edges, resolution, spacing, options, similarities]);

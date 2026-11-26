@@ -43,7 +43,7 @@ describe("layout worker boundary", () => {
     const first = run(request);
     expect(first.ids).toEqual([...request.ids].sort());
     expect(new Set(Array.from({ length: 30 }, (_, i) => `${first.positions[i * 2]},${first.positions[i * 2 + 1]}`)).size).toBe(30);
-    const before = { ...request, view: { index: request.graph } };
+    const before = { ...request, view: { index: request.graph, ids: request.ids } };
     const visible = request.visible.slice();
     visible[5] = 1;
     visible[3] = 0;
@@ -74,7 +74,7 @@ describe("layout worker boundary", () => {
         { a: request.ids[0], b: request.ids[1], score: 0.8 },
         { a: request.ids[0], b: request.ids[2], score: 0.9 },
       ];
-      const before = { ...request, view: { index: request.graph }, similarities };
+      const before = { ...request, view: { index: request.graph, ids: request.ids }, similarities };
       expect(layoutRequest(before, { ...before, similarities: similarities.map((p) => ({ ...p })) })).toBeNull();
       expect(layoutRequest(before, { ...before, similarities: [...similarities].reverse() })).toBeNull();
       const changed = similarities.map((p) => ({ ...p, score: p.score - 0.1 }));
@@ -88,16 +88,50 @@ describe("layout worker boundary", () => {
     }
   });
 
-  it("refreshes hub metadata after live changes without moving existing nodes", () => {
+  it("publishes hub flags and owners only with full geometry, not when filters or clustering change", () => {
+    for (const mode of ["degree", "similarity"] as const) {
+      const request = fixture(30, mode);
+      const first = run(request);
+      expect(first.hubs.centres.length).toBeGreaterThan(0);
+      const visible = request.visible.slice();
+      visible[request.ids.indexOf(first.hubs.centres[0])] = 0;
+      for (const change of [{ visible }, { resolution: 2 }, { graph: { ...request.graph, similarity: undefined } }]) {
+        replies.length = 0;
+        worker.onmessage!(new MessageEvent("message", { data: { ...request, ...change, kind: "cluster", id: 20 } }));
+        expect(replies).toHaveLength(1);
+        expect(replies[0]).toMatchObject({ kind: "clusters", id: 20 });
+        expect(replies[0]).not.toHaveProperty("hubs");
+        expect(replies[0]).not.toHaveProperty("positions");
+      }
+    }
+  });
+
+  it("replaces degree-fallback fans once when usable similarity pairs arrive", () => {
     const request = fixture(30, "similarity");
+    request.graph.similarity = undefined;
     const first = run(request);
-    expect(first.hubs.fallback).not.toBe(true);
-    replies.length = 0;
-    worker.onmessage!(new MessageEvent("message", { data: {
-      ...request, kind: "cluster", id: 20, graph: { ...request.graph, similarity: undefined },
-    } }));
-    expect(replies).toHaveLength(1);
-    expect(replies[0]).toMatchObject({ kind: "clusters", id: 20, hubs: { fallback: true } });
+    expect(first.hubs.fallback).toBe(true);
+    const before = { ...request, view: { index: request.graph, ids: request.ids } };
+    const similarities = [
+      { a: request.ids[29], b: request.ids[27], score: 0.8 },
+      { a: request.ids[29], b: request.ids[28], score: 0.9 },
+    ];
+    const after = { ...before, similarities };
+    expect(layoutRequest(before, after, true)).toBe("start");
+    const second = run({ ...request, similarities });
+    expect(second.hubs.fallback).not.toBe(true);
+    expect(second.hubs.centres).toEqual([request.ids[29]]);
+    expect(second.hubs.centres).not.toEqual(first.hubs.centres);
+    expect(layoutRequest(after, { ...after, similarities: similarities.map((p) => ({ ...p })) }, false)).toBeNull();
+    expect(layoutRequest(after, { ...after, similarities: similarities.map((p) => ({ ...p, score: p.score - 0.1 })) }, false)).toBe("cluster");
+    for (const unusable of [
+      [{ ...similarities[0], score: 0 }],
+      [{ ...similarities[0], b: "closed/node" }],
+      [{ ...similarities[0], b: similarities[0].a }],
+    ]) expect(layoutRequest(before, { ...after, similarities: unusable }, true)).toBe("cluster");
+    const visible = request.visible.slice();
+    visible[29] = 0;
+    expect(layoutRequest(before, { ...after, visible }, true)).toBe("cluster");
   });
 
   it("returns canonical ids, reproducible coordinates and request generations when modes change", () => {
