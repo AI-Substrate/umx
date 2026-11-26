@@ -59,6 +59,16 @@ describe("LAN admission", () => {
     expect((await visit(gate, login(password))).status).toBe(303);
   });
 
+  it("refuses mismatched password bytes without throwing and accepts only the exact password", async () => {
+    const gate = lanGate({ password, hosts: [host] });
+    for (const value of ["", `${password}A`, `\u00e9${password.slice(1)}`, `${password.slice(0, -1)}2`]) {
+      const rejected = await visit(gate, login(value));
+      expect(rejected.status).toBe(403);
+      expect(rejected.headers["set-cookie"]).toBeUndefined();
+    }
+    expect((await visit(gate, login(password))).status).toBe(303);
+  });
+
   it("never trusts forwarding headers, a foreign Host or a foreign Origin, even with a session", async () => {
     const gate = lanGate({ password, hosts: [host] });
     expect((await visit(gate, { headers: { "x-forwarded-for": "127.0.0.1" } })).status).toBe(401);

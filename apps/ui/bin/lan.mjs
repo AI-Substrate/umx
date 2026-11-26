@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
@@ -29,7 +29,6 @@ export function readPassword(home) {
   }
 }
 
-const digest = (text) => createHash("sha256").update(text).digest();
 const loopback = (ip) => ip?.startsWith("127.") || ip === "::1" || ip?.startsWith("::ffff:127.");
 
 const PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -51,7 +50,7 @@ function answer(res, status, body, extra = {}) {
 
 /** Socket addresses only: forwarded headers are never evidence of a local client. */
 export function lanGate({ password, hosts, now = Date.now }) {
-  const expected = digest(password);
+  const expected = Buffer.from(password);
   const sessions = new Map();
   const failures = new Map();
   return async (req, res) => {
@@ -98,8 +97,8 @@ export function lanGate({ password, hosts, now = Date.now }) {
       answer(res, 400, "Could not read the password.");
       return false;
     }
-    const supplied = new URLSearchParams(body).get("password") ?? "";
-    if (!timingSafeEqual(expected, digest(supplied))) {
+    const supplied = Buffer.from(new URLSearchParams(body).get("password") ?? "");
+    if (supplied.length !== expected.length || !timingSafeEqual(expected, supplied)) {
       answer(res, 403, PAGE.replace("<form", '<p role="alert">Incorrect password.</p><form'));
       return false;
     }
