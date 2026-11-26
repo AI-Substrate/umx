@@ -144,6 +144,8 @@ pub struct StatusMoved {
     pub alias: String,
     pub id: Id,
     pub change: StatusMove,
+    /// The edges umx added because the move made the node match a named hub (PRD 003 hubs).
+    pub hub_edges: Vec<super::HubJoin>,
 }
 
 /// One row of `node history`: `kind` is `created` or `status`. `from` is None on the created row.
@@ -874,7 +876,19 @@ impl GraphStore {
             &self.now(),
             &mut warnings,
         )?;
-        let stored = self.write_node(ctx, &alias, n, evidence_start)?;
+        let l = self.get(&alias);
+        let joiner = Some(super::hubs::Joiner::new(&l.meta, &l.graph));
+        let stored = self.write_node_joining(ctx, &alias, n, evidence_start, joiner)?;
+        let (stored_node, hub_edges) = stored.value;
+        warnings.extend(super::hubs::retired_notes(
+            &self.get(&alias).meta,
+            &stored_node,
+            &graph,
+        ));
+        let stored = Done {
+            value: stored_node,
+            notes: stored.notes,
+        };
         // The reply shows the pointer as stored, with the session the write stamped on it (R345-2).
         change.evidence = stored
             .value
@@ -883,7 +897,12 @@ impl GraphStore {
             .and_then(|v| v.get("evidence").cloned());
         warnings.extend(stored.notes);
         Ok(Done {
-            value: StatusMoved { alias, id, change },
+            value: StatusMoved {
+                alias,
+                id,
+                change,
+                hub_edges,
+            },
             notes: warnings,
         })
     }

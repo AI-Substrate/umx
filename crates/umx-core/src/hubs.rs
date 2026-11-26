@@ -11,6 +11,10 @@ use crate::rules::{Pattern, Rule};
 pub const MAX_HUBS: usize = 64;
 /// The edge field umx sets on each edge it adds for a hub, naming the hub. Only umx writes it.
 pub const AUTO_ADDED_BY: &str = "auto_added_by";
+/// Statuses that retire a node (umx has no node delete: a node that no longer holds moves to one of these). A named
+/// hub whose node is retired still gathers members; umx says so, with `umx hub remove <name>` as the next.
+pub const RETIRED_STATUSES: &[&str] = &["ruled_out", "superseded"];
+
 /// The relation a named hub's members join it by when none is given.
 pub const DEFAULT_VIA: &str = "part_of";
 

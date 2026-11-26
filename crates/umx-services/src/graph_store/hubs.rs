@@ -11,7 +11,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 use umx_core::codec::GraphFile;
-use umx_core::hubs::{AUTO_ADDED_BY, DEFAULT_VIA, Hub, MAX_HUBS};
+use umx_core::hubs::{AUTO_ADDED_BY, DEFAULT_VIA, Hub, MAX_HUBS, RETIRED_STATUSES};
 use umx_core::ontology::PROVENANCE_TYPES;
 use umx_core::rules::Pattern;
 use umx_core::ui::Touched;
@@ -167,6 +167,8 @@ pub(super) fn joined_hints(joins: &[HubJoin], graph: &ValidName) -> Vec<Problem>
 /// longer compiles, or whose node is gone, adds nothing.
 pub(super) struct Joiner {
     hubs: Vec<(Hub, Id, RuleMatcher)>,
+    /// Every named hub's (name, node), for the retired warning.
+    named: Vec<(String, Id)>,
 }
 
 impl Joiner {
@@ -181,7 +183,24 @@ impl Joiner {
                 Some((h.clone(), node, matcher))
             })
             .collect();
-        Self { hubs }
+        let named = meta
+            .hubs
+            .iter()
+            .filter_map(|h| Some((h.name.clone(), h.node?)))
+            .collect();
+        Self { hubs, named }
+    }
+
+    /// `hub_node_retired` for each named hub whose node `node` is, when its status retires it.
+    pub(super) fn retired(&self, node: &Node, graph: &ValidName) -> Vec<Problem> {
+        if !RETIRED_STATUSES.contains(&node.status.as_str()) {
+            return Vec::new();
+        }
+        self.named
+            .iter()
+            .filter(|(_, id)| *id == node.id)
+            .map(|(hub, _)| problems::hub_node_retired(hub, &node.status, graph))
+            .collect()
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -357,13 +376,34 @@ pub(super) fn hub_rows(meta: &GraphMeta, g: &Graph, graph: &ValidName) -> Vec<Hu
         .collect()
 }
 
-/// `hub_node_missing` for each named hub whose node is not in the graph: a load, `hub list`, `hub show` and
-/// `hub fill` say so; the graph always loads.
+/// `hub_node_missing` for each named hub whose node is not in the graph (a hand edit or a merge removed it), and
+/// `hub_node_retired` for each whose node was moved to a retiring status: load, `umx check`, `hub list`, `hub show`
+/// and `hub fill` say so; the graph always loads.
 pub(super) fn missing_notes(meta: &GraphMeta, g: &Graph, graph: &ValidName) -> Vec<Problem> {
     meta.hubs
         .iter()
-        .filter(|h| h.node.is_some_and(|id| g.node(id).is_none()))
-        .map(|h| problems::hub_node_missing(&h.name, graph))
+        .filter_map(|h| {
+            let id = h.node?;
+            match g.node(id) {
+                None => Some(problems::hub_node_missing(&h.name, graph)),
+                Some(n) if RETIRED_STATUSES.contains(&n.status()) => {
+                    Some(problems::hub_node_retired(&h.name, n.status(), graph))
+                }
+                Some(_) => None,
+            }
+        })
+        .collect()
+}
+
+/// [`Joiner::retired`] for one node, after a status move.
+pub(super) fn retired_notes(meta: &GraphMeta, node: &Node, graph: &ValidName) -> Vec<Problem> {
+    if !RETIRED_STATUSES.contains(&node.status.as_str()) {
+        return Vec::new();
+    }
+    meta.hubs
+        .iter()
+        .filter(|h| h.node == Some(node.id))
+        .map(|h| problems::hub_node_retired(&h.name, &node.status, graph))
         .collect()
 }
 
@@ -626,6 +666,12 @@ impl GraphStore {
     ) -> Done<HubFilled> {
         let graph = alias_name(alias);
         notes.extend(joined_hints(&joined, &graph));
+        // The edges umx just added can meet or break a graph rule at either end, as an edge add's would.
+        if !joined.is_empty() {
+            let mut ids: Vec<Id> = joined.iter().map(|j| j.node).collect();
+            ids.extend(hub.node);
+            notes.extend(self.rule_write_notes(alias, &ids));
+        }
         let after = found.cut.then_some(found.last).flatten();
         if let Some(at) = after {
             notes.push(problems::hub_scan_cut(

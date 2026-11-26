@@ -1213,6 +1213,11 @@ impl Run<'_, '_> {
             let raised = anchor.map(|a| (self.raised_in_edge(line, id, &a, session), a));
             self.place_edges(&mut r, edge, raised);
         }
+        // PRD 003 hubs: a resolved add edits the node it found, so it joins only the hubs the change makes it match.
+        if !changed.is_empty() {
+            let session = self.session(line, &mut warnings)?;
+            self.join_hubs(line, id, Some(&before), session, &mut r);
+        }
         if !held.is_empty() {
             warnings.push(problems::on_key_field_held(&self.graph, id, &held));
         }
@@ -1539,6 +1544,7 @@ impl Run<'_, '_> {
             .pair(line, node.as_deref(), node_ref.as_deref(), "node", true)?
             .expect("a needed node");
         let mut candidate = self.b.graph().node(id).expect("resolved").to_node();
+        let before = candidate.clone();
         let evidence_start = candidate.evidence.len();
         let changed = candidate.status != req.status;
         let mut warnings = Vec::new();
@@ -1576,6 +1582,13 @@ impl Run<'_, '_> {
         )?;
         self.replace_node(line, candidate, false, evidence_start, &mut warnings)?;
         let mut result = row(line, "node status");
+        if changed {
+            let session = self.session(line, &mut warnings)?;
+            self.join_hubs(line, id, Some(&before), session, &mut result);
+            if let Some(after) = self.b.graph().node(id) {
+                warnings.extend(self.joiner.retired(&after.to_node(), &self.graph));
+            }
+        }
         result.id = Some(id);
         if changed {
             result.changed.push("status".into());
