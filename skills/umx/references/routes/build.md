@@ -78,6 +78,7 @@ and contributes nothing. Each copy is at most 64 rules/64 KiB, with the first 32
 used in name order; CLI addition raises format 10. Std graphs now warn `std:risk_owned` on
 an unowned risk. Follow its `owns` edge command or deliberately switch it off; never create
 an `owner` string to satisfy it.
+To bring an existing graph into shape, run `umx check --rules` and work through each row's `next`.
 
 **usage 229**: hubs say where nodes gather. Run `umx hub list` before adding nodes and put each
 node in the hubs it belongs to with the edge it prints (`umx edge add <node> part_of <hub>`, or

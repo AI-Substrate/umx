@@ -9,7 +9,8 @@ No write is refused because a node does not meet a rule.
     umx rule add risk_rated --type risk --field rating --graph demo
     umx rule list --graph demo
     umx rule show risk_rated --graph demo --limit 50 --offset 0
-    umx rule remove risk_rated --graph demo
+
+Remove it with `umx rule remove` (after the checks below, in this walk-through).
 
 To declare `rating`, use `umx ontology add field risk rating:string --graph demo`.
 Rule names are snake_case. A different row under an existing name is refused; remove it before
@@ -24,6 +25,7 @@ Removing an absent graph rule is also unchanged.
     umx check --rules --graph demo
     umx check --rules --rule risk_rated --graph demo
     umx check --rules --rule risk_rated --graph demo --offset 100
+    umx rule remove risk_rated --graph demo
 
 Plain `check` includes each graph's known count of unmet nodes and the command that lists them.
 `--rules` returns up to 100 finding rows, with rule, node, state, fixed sentence and a suggested
@@ -108,8 +110,9 @@ that were checked. The rule can still be stored.
 Give exactly one shape: `--field <field>`, or `--edge <relation>` with exactly one of
 `--from <types>`, `--to <types>` or `--to-node <node>`. An incoming `from` or outgoing
 `to` names allowed node types. `--to-node` accepts a full id, a unique prefix of at least six
-characters or an address for one existing node in this graph, and stores its full id; it is still
-a warn-only shape, not an automatic hub.
+characters or an address for one existing node in this graph, and stores its full id. It only
+warns; it never adds the edge. To have umx add matching nodes to a node, declare a hub instead
+(`umx hub set <name> --node <node> --type risk`, `umx docs get hubs`).
 
     umx rule add risk_register --type risk --edge part_of --to-node <full node id> --graph demo
 
@@ -128,8 +131,8 @@ An `owner` string does not satisfy it. Use `umx edge add <owner> owns <risk>` to
 for this graph and `umx rule on std:<name>` restores it. Both commands are idempotent.
 Names in stored `rules_off` lists that match nothing are retained, not refused.
 
-    umx rule off std:risk_owned --graph demo
-    umx rule on std:risk_owned --graph demo
+    umx rule off std:<name> --graph demo
+    umx rule on std:<name> --graph demo
 
 List shows std rules first, marked `source: std`, including switched-off rows marked `off: true`,
 then set files in name order, with their stem as source, then graph rules marked `source: graph`.
@@ -191,3 +194,18 @@ including `fill` or `hubs`, invalidate a set. Switch-offs naming no current rule
 List reads the copies fresh; check rereads both the graph and sets. Other reads use the loaded
 snapshot and warn `stale_files` after a set changes on disk; reload before writing.
 Remove can delete malformed or oversized named copies without reading their bodies.
+
+Hubs, where umx adds matching nodes itself, are their own
+declaration, never a rule: `umx docs get hubs`.
+
+## Meetings
+
+A graph that records meetings can ask to be reminded when a point comes in with no meeting. This rule is
+ordinary and never forced; add it only where nodes come from meetings:
+
+    umx rule add from_a_meeting --type question,decision,action,risk --edge raised_in --to meeting,segment,event,transcript --graph demo
+
+A decision added with no `raised_in` then warns `rule_unmet`, whose next is the `umx edge add` that links it, and
+`umx check --rules --rule from_a_meeting --graph demo` lists every point not yet tied to a meeting. Link points as
+you add them with `--raised-in <meeting>` on `umx node add` or `umx batch`. Each meeting is also a hub for what
+was raised in it, and sits on the graph's meeting spine (`umx docs get hubs`, `umx docs get time`).
