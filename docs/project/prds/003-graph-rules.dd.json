@@ -10,12 +10,12 @@
         "status": "draft",
         "updated": "2026-11-26",
         "owner": "project lead",
-        "summary": "Rules say what a well-shaped graph looks like, as data. A rule is one row: nodes that match this pattern should have this field, or this edge. umx carries a central set with std, and each graph mixes in its own, adding rules and switching central ones off, all stored in that graph's graph.json. A rule that is not met never fails a write: umx warns and names the command that puts the graph back in shape. A hub is a rule whose fix needs no choice, so umx applies it and says so. This PRD also gives std's risk a likelihood, an impact, an owner held as an `owns` edge and a `mitigates` relation. Each row is the desired state; every row is `planned`, since none of it is built."
+        "summary": "Rules say what a well-shaped graph looks like, as data. A rule is one row: nodes that match this pattern should have this field, or this edge. umx carries a central set with std, and each graph mixes in its own, adding rules and switching central ones off, all stored in that graph's graph.json. A rule that is not met never fails a write: umx warns and names the command that puts the graph back in shape. A hub is a declared place where nodes gather: one named node such as a risk register, or every node of a type such as each meeting. umx adds matching nodes to a named hub itself and says so. This PRD also gives std's risk a likelihood, an impact, an owner held as an `owns` edge and a `mitigates` relation. Each row is the desired state; every row is `planned`, since none of it is built."
       }
     },
     {
       "name": "why",
-      "value": "umx already tells a writer when a graph is out of shape, and each case is written in Rust. `anchor_undated` says a meeting should have a start date. `segment_without_parent` says a segment should be part of a meeting. Both are one of two shapes: this kind of node should have this field, or this edge. A third case needs a code change and a release, and a graph cannot state its own.\n\nThe case that started this is the risk. A risk should be owned by a person, a team or an organisation in the graph, as an edge. Today nothing says so, and the docs show the owner held as text, which links to nothing.\n\nThe project lead ruled on 2026-11-26: rules are data; there are central rules, and a graph mixes in its own, which can add rules and delete central ones, stored with the graph; rules run on the writes that can break one (a node added or edited, an edge removed) and when `umx check --rules` is run; a broken rule is a warning with a suggested fix, never a failure; a hub is a rule that joins matching nodes itself; and a rule's pattern takes exact matches and regex.\n\nThe rules guide two things. They guide the graph's shape, the same way for every reader. And they guide the feedback an agent gets: each warning carries the next command to run, so an agent is led to a well-shaped graph one step at a time.\n\nRules must not make a graph rigid, inflexible or unworkable. An agent has agency in how it designs its graph; rules are hints and nudges toward a good shape, never a fence (project lead, 2026-11-26). So a rule never blocks a write, every central rule can be switched off, anything umx adds for a rule can be deleted by hand and stays deleted, and an agent that ignores a nudge loses nothing but the reminder.\n\nThe first real user is an agent on a live engagement, which will build that engagement's risks with these rules once they ship (project lead, 2026-11-26)."
+      "value": "umx already tells a writer when a graph is out of shape, and each case is written in Rust. `anchor_undated` says a meeting should have a start date. `segment_without_parent` says a segment should be part of a meeting. Both are one of two shapes: this kind of node should have this field, or this edge. A third case needs a code change and a release, and a graph cannot state its own.\n\nThe case that started this is the risk. A risk should be owned by a person, a team or an organisation in the graph, as an edge. Today nothing says so, and the docs show the owner held as text, which links to nothing.\n\nThe project lead ruled on 2026-11-26: rules are data; there are central rules, and a graph mixes in its own, which can add rules and delete central ones, stored with the graph; rules run on the writes that can break one (a node added or edited, an edge removed) and when `umx check --rules` is run; a broken rule is a warning with a suggested fix, never a failure; a named hub joins matching nodes itself and marks the edge as auto-added; and a rule's pattern takes exact matches and regex.\n\nThe rules guide two things. They guide the graph's shape, the same way for every reader. And they guide the feedback an agent gets: each warning carries the next command to run, so an agent is led to a well-shaped graph one step at a time.\n\nRules must not make a graph rigid, inflexible or unworkable. An agent has agency in how it designs its graph; rules are hints and nudges toward a good shape, never a fence (project lead, 2026-11-26). So a rule never blocks a write, every central rule can be switched off, anything umx adds for a rule can be deleted by hand and stays deleted, and an agent that ignores a nudge loses nothing but the reminder.\n\nThe first real user is an agent on a live engagement, which will build that engagement's risks with these rules once they ship (project lead, 2026-11-26)."
     },
     {
       "name": "actors",
@@ -58,7 +58,7 @@
         },
         {
           "id": "g-5",
-          "goal": "A hub collects the nodes that belong in it without the writer doing anything, and umx says each time it does."
+          "goal": "An agent can see where things gather in a graph: its hubs. A named hub collects the nodes that belong in it and umx says each time it does."
         },
         {
           "id": "g-6",
@@ -91,7 +91,7 @@
         },
         {
           "id": "ng-5",
-          "text": "umx removing or editing anything because of a rule. A fill rule only ever adds the one edge it names."
+          "text": "umx removing or editing anything because of a rule. A rule never writes. A named hub only ever adds the one edge it is declared through."
         },
         {
           "id": "ng-6",
@@ -133,7 +133,7 @@
         {
           "id": "rules-03",
           "title": "A regex is bounded and reads the same everywhere",
-          "statement": "A rule's regex uses one dialect, with no look-around and no back-references, so a match takes time in proportion to the text and a pulled graph.json cannot hang umx. It is at most 256 characters, searches anywhere in the text unless anchored, and is case sensitive unless it says otherwise. A regex that does not compile is refused when the rule is added, naming the position, and nothing is written. Matching has a fixed work limit, the same on every machine. A node whose text is too long for a rule's regex to finish inside that limit is not checked for that rule: it counts as not matching, the scan goes on past it, and it is always reported by id, in the fill reply, as its own kind of row in `umx check --rules`, and as a warning on the write that touches it. One long note never stops a rule from working on the rest of the graph.",
+          "statement": "A rule's regex uses one dialect, with no look-around and no back-references, so a match takes time in proportion to the text and a pulled graph.json cannot hang umx. It is at most 256 characters, searches anywhere in the text unless anchored, and is case sensitive unless it says otherwise. A regex that does not compile is refused when the rule is added, naming the position, and nothing is written. Matching has a fixed work limit, the same on every machine. A node whose text is too long for a rule's regex to finish inside that limit is not checked for that rule: it counts as not matching, the scan goes on past it, and it is always reported by id, in a hub's reply, as its own kind of row in `umx check --rules`, and as a warning on the write that touches it. One long note never stops a rule from working on the rest of the graph.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
@@ -255,74 +255,75 @@
         },
         {
           "id": "rules-15",
-          "title": "A hub is a rule that umx applies itself",
-          "statement": "A rule whose shape is an edge to one named node may carry `fill`. Its fix has nothing left to choose, so umx makes the edge itself instead of warning. The named node is the hub; it is an ordinary node of any type, so a spine places it as it places any other node and it can sit on a spine. `fill` is refused on any other shape. There is no separate hub list or hub command.",
+          "title": "A hub is a declared place where nodes gather",
+          "statement": "A hub is an ordinary node that other nodes gather around; its members are the nodes with an edge of one named relation to it. Hubs are informational: they tell an agent where things cluster (a new risk belongs in the risk register) so the graph is well structured and easy to walk later. A graph declares its hubs in graph.json, each with a name, in one of two forms. A named hub: this one node is a hub, with its members joined by a relation, `part_of` unless another is given. A type hub: every node of this type is a hub, with its members joined by a named relation, as every `meeting` is a hub for the nodes `raised_in` it. A graph may have many hubs, many of one type, and a node may be in several at once. `umx hub set`, `umx hub list`, `umx hub show <name>` (its hub nodes and their members) and `umx hub remove <name>` manage them. A hub is not a rule: it says where things gather, not what a node should have, and it never warns.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
-          "done_when": "`umx rule add risk_register --type risk --edge part_of --to-node <hub> --fill` is accepted; `--fill` on a rule with `--from person` is refused.",
-          "source": "Project lead 2026-11-26 (hub fill is a rule; fill auto-joins nodes that belong in a hub)"
+          "done_when": "A graph declares `risk_register` as a named hub and `meetings` as a type hub over `meeting` through `raised_in`; `umx hub list` shows both, and `umx hub show meetings` lists each meeting with the nodes raised in it; a risk raised in a meeting and joined to the register appears under both.",
+          "source": "Project lead 2026-11-26 (hubs tell agents where to cluster; many hubs, many of one type; every meeting is a hub)",
+          "note": "This replaces the first draft, where a hub was a rule with a `fill` flag. That shape could name only one node and could not say that every meeting is a hub. Auto-adding moves from rules to named hubs (rules-16, rules-17); a rule now only ever warns."
         },
         {
           "id": "rules-16",
-          "title": "Creating a hub joins the nodes that already match, and lists them",
-          "statement": "Adding a fill rule adds the edge for every node its pattern matches that lacks one, in one write, all or nothing. The reply lists the nodes joined, with a total. A graph too large to scan in one call is never refused: the rule is stored, the nodes reached (in node id order) are joined in that one write, and the reply says the scan was cut, with a warning whose next is the `umx rule fill <name> --after <node>` that carries on from there.",
+          "title": "A named hub can collect the nodes that match a pattern",
+          "statement": "A named hub may carry a pattern, in the same form a rule's `match` takes. Declaring it joins every node the pattern matches that is not yet a member, in one write, all or nothing, and the reply lists the nodes joined, with a total. A graph too large to scan in one call is never refused: the hub is stored, the nodes reached (in node id order) are joined in that one write, and the reply says the scan was cut, with a warning whose next is the `umx hub fill <name> --after <node>` that carries on from there. A type hub takes no pattern: with many hubs of one type umx cannot know which one a node belongs to.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
-          "done_when": "Adding a risk register rule to a graph with three risks adds three edges and lists the three risks.",
-          "source": "Design brief (creating a hub backfills the existing matching nodes and lists them)"
+          "done_when": "`umx hub set risk_register --node <id> --type risk` on a graph with three risks adds three edges and lists the three risks; `--type meeting --via raised_in` with a pattern is refused as a declaration umx cannot act on.",
+          "source": "Design brief (creating a hub backfills the existing matching nodes and lists them); Project lead 2026-11-26"
         },
         {
           "id": "rules-17",
-          "title": "A new or edited node that belongs in a hub is joined, and told",
-          "statement": "When `umx node add`, `umx node edit` or `umx batch` leaves a node matching a fill rule with no edge to its hub, umx adds the edge in the same write. The reply carries the hint `rule_filled`, naming the rule and the hub, with a `next` that lists the hub's members, and the reply's data names the edge added.",
+          "title": "A node that belongs in a hub is added to it, and umx says so",
+          "statement": "When `umx node add`, `umx node edit` or `umx batch` leaves a node matching a named hub's pattern and not yet a member, umx adds the edge in the same write. The reply says so: a hint, `hub_joined`, naming the hub, with a next that lists the hub's members, and the reply's data names the edge added. A node raised in a meeting and matching the risk register's pattern is linked to its meeting by the writer and added to the register by umx: the two kinds of hub do not interfere.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
-          "done_when": "Adding a risk to a graph with a risk register rule stores the node and its edge to the register in one write and returns the hint; editing a node's type to risk does the same.",
-          "source": "Design brief (node add tells you when a node was auto-added to a hub); Project lead 2026-11-26 (node edit also checks)",
-          "note": "`rule_filled` is a hint, not a warning. Nothing is out of shape and there is nothing to fix: umx did the fix. A hint is how umx says so without changing the reply's status, and it still names a next command. `rule_unmet` stays a warning."
+          "done_when": "Adding a risk to a graph with a risk register hub stores the node and its edge to the register in one write and returns the hint; editing a node's type to risk does the same; adding it with `--raised-in <meeting>` gives both edges.",
+          "source": "Design brief (node add tells you when a node was auto-added to a hub); Project lead 2026-11-26 (it adds the link and tells you: I auto-added this to this hub)",
+          "note": "`hub_joined` is a hint, not a warning. Nothing is out of shape and there is nothing to fix: umx did it. A hint is how umx says so without changing the reply's status."
         },
         {
           "id": "rules-18",
-          "title": "An auto edge says which rule made it",
-          "statement": "Each edge a fill rule adds carries `filled_by` with the rule's name. Only umx sets it: a write that sets it by hand is refused. Edge lists show it and can filter on it.",
+          "title": "An auto-added edge says so",
+          "statement": "Each edge umx adds for a hub carries the property `auto_added_by` with the hub's name. Only umx sets it: a write that sets it by hand is refused. Edge lists show it and can filter on it. An edge an agent adds by hand does not carry it, so the two can always be told apart.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
-          "done_when": "`umx edge list --where filled_by=risk_register` lists exactly the edges that rule added; `umx edge add ... --set filled_by=x` is refused.",
-          "source": "Design brief (auto edges are marked as auto-filled)"
+          "done_when": "`umx edge list --where auto_added_by=risk_register` lists exactly the edges umx added for that hub; `umx edge add ... --set auto_added_by=x` is refused.",
+          "source": "Design brief (auto edges are marked as auto-filled); Project lead 2026-11-26 (the edge has a property saying umx auto-added it)"
         },
         {
           "id": "rules-19",
-          "title": "umx never removes an auto edge",
-          "statement": "umx never deletes an edge a fill rule added: not when the rule is removed or switched off, not when the node is retyped or renamed out of the pattern, not on load and not on check. Removing a fill rule says how many of its edges remain and how to list them. Anyone may delete an auto edge by hand, as any edge.",
+          "title": "umx never removes a hub edge",
+          "statement": "umx never deletes an edge it added for a hub: not when the hub is removed, not when the node is retyped or renamed out of the pattern, not on load and not on check. Removing a hub says how many of its auto-added edges remain and how to list them. Anyone may delete one by hand, as any edge.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
-          "done_when": "After a fill rule is removed, every edge it added is still in edges.jsonl with its `filled_by`.",
+          "done_when": "After a hub is removed, every edge umx added for it is still in edges.jsonl with its `auto_added_by`.",
           "source": "Design brief (umx never removes an auto edge itself)"
         },
         {
           "id": "rules-20",
-          "title": "Fill happens at three moments and never behind your back",
-          "statement": "umx fills only when a fill rule is added, when a node is added or edited, and when `umx rule fill <name>` is run (each call one write; on a large graph it stops at the scan limit and its next continues with `--after`, and a node that already has the edge is skipped, so it is safe to repeat). It never fills on a read, on load, on check or on an edge write. So an auto edge deleted by hand is not put back: the delete warns `rule_unmet` once, and a matching node that arrives by a git merge is not joined until asked. Both show in `umx check --rules` as `rule_unmet`, whose next is `umx rule fill <name>`.",
+          "title": "umx adds to a hub at three moments and never behind your back",
+          "statement": "umx adds hub edges only when a named hub with a pattern is declared, when a node is added or edited, and when `umx hub fill <name>` is run (each call one write; on a large graph it stops at the scan limit and its next continues with `--after`, and a node that is already a member is skipped, so it is safe to repeat). It never adds on a read, on load, on check or on an edge write. So an auto-added edge deleted by hand is not put back, and a matching node that arrives by a git merge is not joined until asked. `umx hub show <name>` lists the nodes that match the pattern and are not members, with `umx hub fill <name>` as the next.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
-          "done_when": "Deleting an auto edge and then reading, loading and checking the graph leaves it deleted; `umx rule fill risk_register` restores it.",
+          "done_when": "Deleting an auto-added edge and then reading, loading and checking the graph leaves it deleted; `umx hub show risk_register` lists that node as not a member; `umx hub fill risk_register` restores it.",
           "source": "Project lead 2026-11-26"
         },
         {
           "id": "rules-21",
           "title": "Deleting a hub node is allowed, and says what it leaves behind",
-          "statement": "A node that a rule names as its hub can be deleted like any node. The delete warns that the rule now names a node that is gone, with the command that removes the rule as its next. Until then the rule fills nothing and warns nothing on writes, and `umx rule list` and `umx check --rules` show it as naming a missing node. The graph always loads.",
+          "statement": "A node that a named hub names can be deleted like any node. The delete warns that the hub now names a node that is gone, with the command that removes the hub as its next. Until then the hub adds nothing, and `umx hub list` shows it as naming a missing node. The graph always loads.",
           "actor": "a-builder",
           "priority": "should",
           "state": "planned",
-          "done_when": "Deleting the risk register node succeeds with a warning naming `umx rule remove risk_register`; adding a risk afterwards stores it with no fill and no error; the graph reloads.",
-          "source": "Project lead 2026-11-26 (hints and nudges, not rigid graphs); replaces an earlier draft that refused the delete"
+          "done_when": "Deleting the risk register node succeeds with a warning naming `umx hub remove risk_register`; adding a risk afterwards stores it with no edge added and no error; the graph reloads.",
+          "source": "Project lead 2026-11-26 (hints and nudges, not rigid graphs)"
         },
         {
           "id": "rules-22",
@@ -368,7 +369,7 @@
         {
           "id": "rules-26",
           "title": "Docs and the skill teach how to use rules",
-          "statement": "This work is not done until the docs and the umx skill teach it. The docs gain a rules topic that covers writing a rule, patterns and regex, switching a central rule off, setting up a hub, reading a rule warning and fixing a graph up with `umx check --rules`. The errors topic lists `rule_unmet` and `rule_filled`; the ontology topic covers declared values and the new risk fields and `mitigates`; the organise topic shows a risk's owner as an `owns` edge. The umx skill tells an agent to read the guide's rules before writing, to act on a rule warning's next, how to add a rule or a hub to a graph, and how to bring an existing graph into shape.",
+          "statement": "This work is not done until the docs and the umx skill teach it. The docs gain a rules topic that covers writing a rule, patterns and regex, switching a central rule off, setting up a hub, reading a rule warning and fixing a graph up with `umx check --rules`. The errors topic lists `rule_unmet` and `hub_joined`; hubs have their own topic (rules-32); the ontology topic covers declared values and the new risk fields and `mitigates`; the organise topic shows a risk's owner as an `owns` edge. The umx skill tells an agent to read the guide's rules before writing, to act on a rule warning's next, how to add a rule or a hub to a graph, and how to bring an existing graph into shape.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
@@ -388,7 +389,7 @@
         {
           "id": "rules-28",
           "title": "A graph can hold named rule sets, each one file in its folder",
-          "statement": "A rule set is one JSON file in the graph folder's `rules/` folder, named `<set>.json`, with the same two keys graph.json uses: `rules` (rows) and `rules_off` (names of rules to switch off, central ones included). umx reads every set file in that folder, in name order. A set's rule is named `<set>:<rule>`, so the graph can switch one off by name. The files are committed with the graph, so every reader gets the same rules. A set file may not hold a fill rule, since a hub names one node of one graph. A set file umx cannot read is reported with the reason and none of its rules are used.",
+          "statement": "A rule set is one JSON file in the graph folder's `rules/` folder, named `<set>.json`, with the same two keys graph.json uses: `rules` (rows) and `rules_off` (names of rules to switch off, central ones included). umx reads every set file in that folder, in name order. A set's rule is named `<set>:<rule>`, so the graph can switch one off by name. The files are committed with the graph, so every reader gets the same rules. A set file holds rules only, never a hub, since a hub can name one node of one graph. A set file umx cannot read is reported with the reason and none of its rules are used.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
@@ -408,13 +409,54 @@
         {
           "id": "rules-30",
           "title": "A graph that records meetings is set up for them by the skill",
-          "statement": "Meetings are recorded often, and each meeting is a hub for what came up in it. There are many of them, so this is not a fill rule (which names one node): it is a rule that ends at a type, and the writer supplies which meeting. This applies only when nodes come from a meeting, and none of it is forced: the skill prompts it, the rules can express it, and nothing fails when it is not done. The umx skill tells an agent, when nodes come from a meeting, to make sure of three things. There is one hub node for that meeting: a `meeting` node with `starts_on`, found first and made only if missing. That node is on the graph's meeting time spine, declared once, so every meeting sits on it in date order. And every node taken from the meeting is linked to it, or to its segment, with `raised_in`, using `--raised-in` on the add or the batch so the link is made in the same write. The skill also offers, for a graph that wants the reminder, the graph rule `umx rule add from_a_meeting --type question,decision,action,risk --edge raised_in --to meeting,segment,event,transcript`, so a point added with no meeting warns `rule_unmet` with the `umx edge add` that links it, and `umx check --rules` lists every point not yet tied to a meeting. umx adds nothing new for this: the spine, `raised_in` and `--raised-in` exist, and the rule is an ordinary rule.",
+          "statement": "Meetings are recorded often, and each meeting is a hub for what came up in it. There are many of them, so they are a type hub (rules-15): umx adds nothing to a meeting by itself, and the writer supplies which meeting. This applies only when nodes come from a meeting, and none of it is forced: the skill prompts it, the rules can express it, and nothing fails when it is not done. The umx skill tells an agent, when nodes come from a meeting, to make sure of three things. There is one hub node for that meeting: a `meeting` node with `starts_on`, found first and made only if missing. That node is on the graph's meeting time spine, declared once, so every meeting sits on it in date order. And every node taken from the meeting is linked to it, or to its segment, with `raised_in`, using `--raised-in` on the add or the batch so the link is made in the same write. The skill also offers, for a graph that wants the reminder, the graph rule `umx rule add from_a_meeting --type question,decision,action,risk --edge raised_in --to meeting,segment,event,transcript`, so a point added with no meeting warns `rule_unmet` with the `umx edge add` that links it, and `umx check --rules` lists every point not yet tied to a meeting. umx adds nothing new for this: the spine, `raised_in` and `--raised-in` exist, and the rule is an ordinary rule.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
           "done_when": "Following the skill's ingest route on two transcripts gives two meeting nodes on one declared spine and every extracted node with a `raised_in` edge to its meeting or segment; ingesting the same meeting twice makes one meeting node; a graph with no meetings, and one that skips these steps, gets no error and no failed write. In a graph that added `from_a_meeting`, a decision added by hand with no `raised_in` warns, and `umx check --rules` lists it.",
           "source": "Project lead 2026-11-26 (meetings all go into the meeting spine; nodes from a meeting link to it; meetings are hubs too, and there are many)",
           "note": "Not a central rule and never forced: it applies only where nodes come from a meeting (project lead, 2026-11-26, q-08). A meeting with no `starts_on` cannot be placed on a time spine, which `anchor_undated` already warns."
+        },
+        {
+          "id": "rules-31",
+          "title": "Adding to a hub by hand is one ordinary edge",
+          "statement": "A node is put in a hub by hand with the edge the hub is declared through: `umx edge add <node> part_of <hub>` for a hub such as the risk register, and `raised_in` (or `--raised-in` on the add) for a meeting. There is no separate hub add command. `umx hub list` and `umx hub show` print that exact command for each hub, so an agent never has to work it out.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "`umx hub show risk_register` prints the `umx edge add <node> part_of <id>` that adds a member; running it makes the node a member with no `auto_added_by`.",
+          "source": "Project lead 2026-11-26 (no hub add command unless agents are not getting it)",
+          "note": "If agents turn out not to find this, a `umx hub add` that writes the same edge is the fallback."
+        },
+        {
+          "id": "rules-32",
+          "title": "Hubs are told to agents: in the guide, the docs and the skill",
+          "statement": "`umx graph guide` lists the graph's hubs, each with what gathers there, the relation and the command that adds a member, so an agent that has a risk learns there is a risk register before it writes. The docs gain a hubs topic that explains what a hub is, the two forms, auto-adding and its `auto_added_by` mark, adding by hand, and that a hub may or may not be on a spine. The umx skill tells an agent to read the hubs before adding nodes, to put a node in the hubs it belongs to, and how to set a hub up.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "The guide of a graph with a risk register and meeting hubs lists both with their commands; `umx docs get hubs` exists and every command in it runs as written; the skill's build and ingest routes name hubs.",
+          "source": "Project lead 2026-11-26 (the hubs concept should be described well in the documentation and the skill)"
+        },
+        {
+          "id": "rules-33",
+          "title": "A hub may sit on a spine, and need not",
+          "statement": "A hub is an ordinary node, so a spine places it as it places any node. Some hubs are on a spine, as meetings are on the meeting time spine; others, such as a risk register, are on none. A hub's members are placed on a spine in their own right, whatever the hub does: a risk in the register can be on the time spine through the meeting it was raised in. An edge umx added for a hub is never read by a spine as a node's parent or as its place, so joining a hub never moves a node on a spine.",
+          "actor": "a-builder",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "With a meeting spine declared, each meeting hub is placed by its date, the risk register is unplaced, and a risk raised in a meeting keeps its place on the spine before and after umx adds it to the register.",
+          "source": "Project lead 2026-11-26 (some hubs sit on spines like meetings, others do not; members may be on a spine)"
+        },
+        {
+          "id": "rules-34",
+          "title": "umx serves which nodes are hubs, for the view",
+          "statement": "A read of the graph can ask for its hubs and get, for each declaration, its name, its form, its relation and its hub nodes, and for any node whether it is a hub and through which relation its members attach. This is what the graph view (PRD 004) draws declared hubs from, with the spine on or off. It reads only declarations and edges, never degree or similarity.",
+          "actor": "a-operator",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "The view's data for a graph with a risk register and three meetings names four hub nodes with their relations; a graph with no hubs declared names none.",
+          "source": "Prime's capture of the project lead, 2026-11-26 (the daemon must serve which nodes are hubs and through which relation)"
         }
       ]
     },
@@ -426,7 +468,7 @@
           "question": "Is a hub a rule with `fill`, or its own `umx hub` noun?",
           "default": "A rule with `fill`: one list, one format, one check.",
           "status": "answered",
-          "answer": "A rule with `fill` (project lead, 2026-11-26)."
+          "answer": "First answered as a rule with `fill`. Replaced later the same day, once the project lead said every meeting is a hub: hubs are their own short list with two forms, and auto-adding belongs to named hubs (rules-15 to rules-21, rules-31 to rules-34)."
         },
         {
           "id": "q-02",
@@ -447,7 +489,7 @@
           "question": "Which relation joins a node to a hub? `part_of` is what the docs show, and it is also what spines read as inside, so a risk in a register would count as inside it.",
           "default": "The rule names the relation, and the docs show `part_of`.",
           "status": "answered",
-          "answer": "`part_of` is fine: a node can be part of many things (project lead, 2026-11-26). std gains no new relation for hubs. One care for the build: a hub that collects a spine's anchor type gives each anchor a second `part_of` parent, so a spine must not read a `filled_by` edge as the anchor's parent."
+          "answer": "`part_of` is fine: a node can be part of many things (project lead, 2026-11-26). std gains no new relation for hubs. One care for the build: a hub that collects a spine's anchor type gives each anchor a second `part_of` parent, so a spine must not read an auto-added edge as the anchor's parent (rules-33)."
         },
         {
           "id": "q-05",
@@ -506,6 +548,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "From the engine seat's questions: a large graph is never refused for size, so backfill, `rule fill` and `check --rules` stop at the scan limit and continue from a resume point (rules-08, rules-16, rules-20); a stored regex over the size limit is skipped with a warning and the graph loads (rules-14, the prime's ruling); a node too long for a regex to finish is reported as not checked and passed over, never a stop (rules-03)."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "Hubs reset with the project lead, in five answers: a hub is a declared place where nodes gather, informational, in two forms (one named node, or every node of a type such as each meeting); a named hub auto-adds matching nodes, marks the edge `auto_added_by` and says so; meetings auto-add nothing; adding by hand is the ordinary edge; a hub may or may not be on a spine. rules-15 to rules-21 rewritten and rules-31 to rules-34 added. A hub is no longer a rule with `fill`; a rule only warns."
         }
       ]
     }
