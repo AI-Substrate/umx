@@ -19,16 +19,16 @@ use umx_core::ui::Touched;
 use umx_core::{Command, GraphMeta, Id, Node, Ontology, Problem, ValidName, Value};
 
 const MAX_COMPILED_BYTES: usize = 1 << 20;
-const MAX_GRAPH_COMPILED_BYTES: usize = 8 << 20;
+pub(super) const MAX_GRAPH_COMPILED_BYTES: usize = 8 << 20;
 const MAX_DFA_CACHE_BYTES: usize = 64 << 10;
-const MAX_NODE_MATCH_WORK: u64 = 1_000_000;
-const MAX_MATCH_WORK: u64 = 100_000_000;
+pub(super) const MAX_NODE_MATCH_WORK: u64 = 1_000_000;
+pub(super) const MAX_MATCH_WORK: u64 = 100_000_000;
 const MAX_NOT_CHECKED: usize = 100;
 
 pub struct RuleMatcher {
     rule: Rule,
     regex: BTreeMap<String, CompiledRegex>,
-    work_left: u64,
+    pub(super) work_left: u64,
 }
 
 struct CompiledRegex {
@@ -152,7 +152,7 @@ impl RuleMatcher {
         Some(())
     }
 
-    fn matches_stored(&mut self, node: umx_graph::NodeRef<'_>) -> Option<bool> {
+    pub(super) fn matches_stored(&mut self, node: umx_graph::NodeRef<'_>) -> Option<bool> {
         let pattern = &self.rule.pattern;
         if (!pattern.types.is_empty() && !pattern.types.iter().any(|t| t == node.kind()))
             || (!pattern.status.is_empty() && !pattern.status.iter().any(|s| s == node.status()))
@@ -217,14 +217,14 @@ impl RuleMatcher {
     }
 }
 
-struct CompiledRules {
-    matchers: BTreeMap<String, RuleMatcher>,
+pub(super) struct CompiledRules {
+    pub(super) matchers: BTreeMap<String, RuleMatcher>,
     skipped: BTreeMap<String, &'static str>,
     remaining: usize,
 }
 
 impl CompiledRules {
-    fn notes(&self, graph: &ValidName) -> Vec<Problem> {
+    pub(super) fn notes(&self, graph: &ValidName) -> Vec<Problem> {
         self.skipped
             .iter()
             .map(|(name, reason)| problems::rule_skipped(name, reason, graph))
@@ -232,7 +232,7 @@ impl CompiledRules {
     }
 }
 
-fn compile_rules<'a>(
+pub(super) fn compile_rules<'a>(
     rules: impl Iterator<Item = &'a Rule>,
     budget: usize,
 ) -> Result<CompiledRules, Problem> {
@@ -391,7 +391,10 @@ pub(super) fn stored_notes(meta: &GraphMeta, graph: &ValidName) -> Result<Vec<Pr
     Ok(notes)
 }
 
-fn std_rules<'a>(central: &'a [Rule], meta: &'a GraphMeta) -> impl Iterator<Item = &'a Rule> {
+pub(super) fn std_rules<'a>(
+    central: &'a [Rule],
+    meta: &'a GraphMeta,
+) -> impl Iterator<Item = &'a Rule> {
     central
         .iter()
         .filter(|rule| !meta.rules_off.contains(&rule.name))
@@ -399,7 +402,7 @@ fn std_rules<'a>(central: &'a [Rule], meta: &'a GraphMeta) -> impl Iterator<Item
 }
 
 impl GraphStore {
-    fn central(&self, meta: &GraphMeta) -> &[Rule] {
+    pub(super) fn central(&self, meta: &GraphMeta) -> &[Rule] {
         if meta.ontology.std_version().is_some() {
             &self.central_rules
         } else {

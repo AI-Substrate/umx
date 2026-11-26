@@ -55,4 +55,4 @@ pub use id::Id;
 pub use locator::{Format, Locator, LocatorKind};
 pub use model::{Edge, EmbedderRule, GraphEmbedding, GraphMeta, Legacy, Node, Policy, Visibility};
 pub use ontology::{FieldDecl, FieldKind, Ontology, Role, TypeDecl};
-pub use problem::{Command, IdText, Problem, SafeText, Slot, ValidName};
+pub use problem::{Command, IdText, Problem, RuleContext, SafeText, Slot, ValidName};

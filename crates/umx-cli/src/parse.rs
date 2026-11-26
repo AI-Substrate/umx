@@ -31,7 +31,7 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 30] = [
+const SWITCHES: [&str; 31] = [
     "--clear-values",
     "--same-graph",
     "--raise",
@@ -57,6 +57,7 @@ const SWITCHES: [&str; 30] = [
     "--graphfile",
     "--redact",
     "--lint",
+    "--rules",
     "--sources",
     "--related",
     "--no-related",
@@ -91,7 +92,18 @@ pub const FLAGS: &[(&str, &[&str])] = &[
     ("rule off", &[]),
     ("rule on", &[]),
     ("rule show", &["--limit", "--offset"]),
-    ("check", &["--lint", "--sources", "--kind", "--offset"]),
+    (
+        "check",
+        &[
+            "--lint",
+            "--sources",
+            "--rules",
+            "--rule",
+            "--after",
+            "--kind",
+            "--offset",
+        ],
+    ),
     (
         "neighbours",
         &[
@@ -1115,16 +1127,28 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
             a.positionals(0, "this command takes no arguments")?;
             // F139: --kind and --offset page --lint's findings.
             let lint = a.switches.iter().any(|s| s == "--lint");
+            let rules = a.switches.iter().any(|s| s == "--rules");
+            let rule = a.one("--rule");
+            let after = a.one("--after");
             let sources = a.switches.iter().any(|s| s == "--sources");
             let kind = a.one("--kind");
             let offset = a.number("--offset")?;
-            if !lint && (kind.is_some() || offset.is_some()) {
+            if (!lint && kind.is_some()) || (!lint && !rules && offset.is_some()) {
                 return Err(Usage {
                     command: "check",
-                    what: "--kind and --offset go with --lint",
+                    what: "--kind goes with --lint; --offset goes with --lint or --rules",
+                });
+            }
+            if !rules && (rule.is_some() || after.is_some()) {
+                return Err(Usage {
+                    command: "check",
+                    what: "--rule and --after go with --rules",
                 });
             }
             return Ok(Op::Check {
+                rules,
+                rule,
+                after,
                 lint,
                 sources,
                 source_budget: None,

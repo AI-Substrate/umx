@@ -1,8 +1,8 @@
 # Rules: graph shape as data
 
 A rule names the nodes it is about and one thing those nodes should have: a field, or an edge.
-This release stores rules and previews their patterns. It does not yet check rules on writes or
-create edges automatically. No write is refused because a node does not meet a rule.
+Rules warn on writes and can be checked explicitly. They never create or remove edges.
+No write is refused because a node does not meet a rule.
 
 ## Add and inspect
 
@@ -17,7 +17,44 @@ adding the replacement. Adding the identical row returns `unchanged: true` and w
 Removing an absent graph rule is also unchanged.
 
 `--graph` chooses one graph. Without it, normal graph selection applies. `--by` records the caller;
-`--scope` is not supported. The graph stores at most 64 rules of its own.
+`--scope` is not supported for rule management. The graph stores at most 64 rules of its own.
+
+## Check and fix
+
+    umx check --rules --graph demo
+    umx check --rules --rule risk_rated --graph demo
+    umx check --rules --rule risk_rated --graph demo --offset 100
+
+Plain `check` includes each graph's known count of unmet nodes and the command that lists them.
+`--rules` returns up to 100 finding rows, with rule, node, state, fixed sentence and a suggested
+node edit or edge add. Commands contain the real node id and placeholders for values still
+needed. They never execute automatically. `--rule` narrows the active rules by name.
+Check reads the graph files again, writes nothing, and accepts normal graph/scope selection.
+
+Node add and edit check the affected node. Edge deletion and a relation- or direction-changing edge edit
+check both local ends. No other write triggers rule checks. A batch checks only its final
+state, once, so adding a node and its required edge together does not produce a stale warning.
+Dry-run batches report the same checks without writing; provisional ids appear as `line:N`.
+
+An unmet shape emits `rule_unmet`, a warning with exit code 0. Its message is the exact fixed
+sentence shown by rule list and graph guide. Status, tag, field and regex pattern keys are not
+included in that sentence. Its structured `rule` field contains the name,
+total count and up to 100 node ids. A single write's warning names its subject and gives that
+node's fix. A batch has one warning per unmet rule and a command that lists the unmet nodes.
+Descriptions remain untrusted data and never become the warning message or next command.
+
+Checks share the deterministic 100-million-unit matching budget across active rules, with the
+same per-node limit described below. An oversized node becomes a `not_checked` row, distinct
+from `unmet`, and emits `rule_node_unchecked`; scanning continues. A whole-scan cut emits
+`rule_check_cut`. Follow `data.rules[].next` to page the known rows, then resume after the last
+fully scanned node with `--after <id>`. The exact resume command is also returned separately.
+An incomplete scan has `total: null`; counts describe only the nodes that were checked.
+Narrowing or anchoring a regex can reduce its work, but is not required to keep writing.
+
+A field is present when its stored value is not null. Symmetric relations satisfy either
+direction. For type-based edge shapes an external far end counts without resolving its type
+or loading another graph; an exact `--to-node` target remains local. Provenance nodes are
+never rule subjects.
 
 ## Patterns
 
@@ -102,4 +139,4 @@ build's size or graph compile budget is skipped, not a reason to refuse the grap
 on disk and can be removed or re-added with a smaller pattern. If vocabulary a stored rule names is removed or renamed,
 the rule still loads and `rule_vocabulary_unknown` gives the command to declare that name.
 The same warning accompanies adding an undeclared name. Files in a graph's `rules/` folder are not read in this
-release; named rule sets and automatic fill belong to later releases.
+release; named rule sets and automatic hubs belong to later releases.

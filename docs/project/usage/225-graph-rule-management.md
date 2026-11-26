@@ -2,10 +2,11 @@
 id: 225
 title: Declare graph rules and preview their patterns before changing graph shape
 route: build
-status: current
+status: superseded
 source: Graph rules design, 2026-11-26
 reqs: []
 supersedes: none
+superseded_by: 227
 ---
 ## Do
 Read `umx docs get rules`. Add a field or edge rule with `umx rule add`; undeclared vocabulary

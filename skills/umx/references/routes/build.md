@@ -60,9 +60,14 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 **usage 225**: declare desired shape with `umx rule add`. Undeclared vocabulary is kept
 with `rule_vocabulary_unknown` and a declaring next; use it if it fits the graph's design.
 Preview the pattern with `--dry-run` and `umx rule show`; `umx rule list` marks std's and the
-graph's own rules. The first stored rule raises the graph to format 8. This release stores
-and previews rules only: no write-time checks, automatic fill or named rule sets yet.
+graph's own rules. The first stored rule raises the graph to format 8.
 Read `umx docs get rules` for the flags, exact matches, bounded regex and central switch-offs.
+
+**usage 227** supersedes usage 225: rules now warn on node add/edit and edge deletion/retyping/reversal,
+never refuse a write or create edges. A batch checks only its final state. Follow `rule_unmet`'s
+node fix, or use `umx check --rules --rule <name>` to list findings; plain check gives summaries.
+Follow returned `next`/`resume` commands for offset pages and `--after` scan continuation.
+`not_checked` is not `unmet`; an incomplete total is null. Named rule sets and hubs remain separate.
 
 - See it: `umx ontology show`.
 - **usage 007**: the vocabulary is soft. A write with an undeclared name warns `off_vocabulary_type` (or

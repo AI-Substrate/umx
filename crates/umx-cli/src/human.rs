@@ -223,6 +223,25 @@ pub fn render(env: &Envelope, out: Style, err: Style) -> (String, String) {
         for g in env.data["spines"].as_array().into_iter().flatten() {
             stdout.push_str(&spine_line(&g["graph"], &g["spine"], out));
         }
+        for rules in env.data["rules"].as_array().into_iter().flatten() {
+            stdout.push_str(&format!(
+                "rules {}: {} known unmet nodes; {} not checked\n",
+                clean(&text(&rules["graph"])),
+                clean(&text(&rules["unmet_nodes"])),
+                clean(&text(&rules["not_checked"])),
+            ));
+            if let Some(rows) = rules["rows"].as_array().filter(|rows| !rows.is_empty()) {
+                stdout.push_str(&table(
+                    &["rule", "node", "state", "sentence", "next"],
+                    rows,
+                    rules,
+                    out,
+                ));
+            }
+            if let Some(next) = rules["next"].as_str() {
+                stdout.push_str(&format!("next: {}\n", clean(next)));
+            }
+        }
     }
     let mut stderr = String::new();
     for issue in &env.warnings {
@@ -669,6 +688,10 @@ fn guide(d: &Value, style: Style) -> String {
                 }
             }
         }
+    }
+    if let Some(rows) = d["rules"].as_array().filter(|rows| !rows.is_empty()) {
+        out.push_str(&format!("\n{}\n", style.paint(HEADING, "Rules")));
+        out.push_str(&table(&["name", "source", "sentence"], rows, d, style));
     }
     out.push_str(&format!("\n{}\n", style.paint(HEADING, "Spine")));
     out.push_str(&spine_line(&g["alias"], &d["spine"], style));

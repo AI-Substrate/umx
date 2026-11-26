@@ -503,6 +503,7 @@ struct Run<'a, 'g> {
     nodes: bool,
     edges: bool,
     touched: Vec<Id>,
+    rule_touched: BTreeSet<Id>,
     /// Each touched node with the first line that touched it (ws002 X1, review R3: a batch's segment hint names it).
     touched_at: BTreeMap<Id, u32>,
     session: Option<Id>,
@@ -568,6 +569,9 @@ fn issue_bound(p: &Problem) -> usize {
     1024 + 700 * p.slots.len()
         + p.subject.as_ref().map_or(0, |s| s.len())
         + p.candidates.iter().map(|c| 64 + c.id.len()).sum::<usize>()
+        + p.rule.as_ref().map_or(0, |rule| {
+            128 + rule.name.len() + rule.nodes.iter().map(|node| node.len() + 4).sum::<usize>()
+        })
 }
 
 /// A ref's entry in the reply's ref map: the ref (at most 32), its id and the JSON around them.
@@ -1571,6 +1575,14 @@ impl Run<'_, '_> {
         let current = self.live_edge(&edge)?;
         check_changeable(&current)?;
         check_deletable(self.b.graph(), &self.graph, &current)?;
+        self.rule_touched.extend(
+            [
+                current.from_graph.is_none().then_some(current.from),
+                current.to_graph.is_none().then_some(current.to),
+            ]
+            .into_iter()
+            .flatten(),
+        );
         if self.capture_sentence() {
             self.record_sentence(line, "edge delete", &current);
         }
@@ -1614,6 +1626,19 @@ impl Run<'_, '_> {
             self.record_sentence(line, "edge edit", &edited);
         }
         if !changed.is_empty() {
+            if changed
+                .iter()
+                .any(|field| field == "type" || field == "direction")
+            {
+                self.rule_touched.extend(
+                    [
+                        current.from_graph.is_none().then_some(current.from),
+                        current.to_graph.is_none().then_some(current.to),
+                    ]
+                    .into_iter()
+                    .flatten(),
+                );
+            }
             let session = self.session(line, &mut warnings)?;
             edited.record_edit(session);
             self.forget(&current);
@@ -1840,6 +1865,13 @@ impl Run<'_, '_> {
         }
         if p.subject.as_deref().is_some_and(names_drawn) {
             p.subject = None;
+        }
+        if let Some(rule) = &mut p.rule {
+            for node in &mut rule.nodes {
+                if let Some(line) = node.parse::<Id>().ok().and_then(|id| self.minted.get(&id)) {
+                    *node = format!("line:{line}");
+                }
+            }
         }
         for c in &mut p.candidates {
             if let Some(line) = c.id.parse::<Id>().ok().and_then(|id| self.minted.get(&id)) {
@@ -2197,6 +2229,7 @@ impl GraphStore {
             .collect();
         local_aliases.extend(formers);
         let now = self.now();
+        let mut rule_checks = self.rule_checks(&self.graphs[&alias].meta);
         let files = self.ports.files.clone();
         let id_port = self.ports.ids.clone();
         let sources = self.source_check(&alias);
@@ -2373,6 +2406,7 @@ impl GraphStore {
                 nodes: false,
                 edges: false,
                 touched: Vec::new(),
+                rule_touched: BTreeSet::new(),
                 touched_at: BTreeMap::new(),
                 session: None,
             };
@@ -2456,6 +2490,11 @@ impl GraphStore {
                     .collect();
                 match run.apply(line, op) {
                     Ok((r, mut w)) => {
+                        if matches!(r.op, "node add" | "node edit")
+                            && let Some(id) = r.id
+                        {
+                            run.rule_touched.insert(id);
+                        }
                         rows.push(r);
                         w.extend(other_warnings.remove(&line).unwrap_or_default());
                         w.extend(
@@ -2505,6 +2544,32 @@ impl GraphStore {
             if run.b.unfilled() != 0 {
                 run.b.rollback();
                 return Err(alloc::vec![problems::internal("batch_unfilled")]);
+            }
+            // Collect stable ids before prepare merges rows and changes edge handles.
+            let rule_edges = rule_checks.batch_edge_ids(
+                run.b.graph(),
+                &run.rule_touched,
+                run.added_edges.iter().filter_map(|((from, _, to), id)| {
+                    ((from.graph.is_none() && run.rule_touched.contains(&from.node))
+                        || (to.graph.is_none() && run.rule_touched.contains(&to.node)))
+                    .then_some(*id)
+                }),
+            );
+            if run.b.prepare().is_err() {
+                run.b.rollback();
+                return Err(alloc::vec![problems::internal("batch_rule_prepare")]);
+            }
+            for problem in rule_checks.write_notes(
+                run.b.graph(),
+                run.o,
+                &run.graph,
+                run.rule_touched.iter().copied(),
+                Some(&rule_edges),
+            ) {
+                warned += 1;
+                if warnings.len() < MAX_BATCH_WARNINGS {
+                    warnings.push(bounded(problem));
+                }
             }
             // ws008 E1: each key a touched node now shares with another of its type, once per pair. Counted and
             // capped with the line warnings, before the reply bound, so a dry run reports them too.

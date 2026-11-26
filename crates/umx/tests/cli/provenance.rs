@@ -151,6 +151,9 @@ fn provenance_opt_in_reaches_each_read_and_raw_writes_are_refused() {
             alias: "demo".into(),
         },
         umx_protocol::Op::Check {
+            rules: false,
+            rule: None,
+            after: None,
             lint: false,
             sources: false,
             source_budget: None,

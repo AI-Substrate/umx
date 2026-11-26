@@ -7,6 +7,7 @@ use crate::codec::{DecodeReason, GraphFile};
 use crate::id::{ID_LEN, Id, normalise_id_text};
 use crate::name::{is_snake_case, is_valid_name};
 use crate::ports::{FilesError, GraphDir};
+use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -102,11 +103,25 @@ impl SafeText {
     /// Text umx built from its own words and checked parts (a batch ref's reason, plan 205): [`SafeText::lossy`]'s
     /// rule, keeping `_` as well.
     pub fn words(text: &str) -> SafeText {
+        Self::prose(text, false)
+    }
+
+    /// Generated rule prose keeps its own commas; graph text still uses the ordinary sanitizer.
+    pub(crate) fn rule_sentence(text: &str) -> SafeText {
+        Self::prose(text, true)
+    }
+
+    fn prose(text: &str, commas: bool) -> SafeText {
         SafeText(
             text.chars()
                 .take(256)
                 .map(|c| {
-                    if c.is_ascii_alphanumeric() || c == ' ' || c == '_' || SAFE_PUNCT.contains(c) {
+                    if c.is_ascii_alphanumeric()
+                        || c == ' '
+                        || c == '_'
+                        || SAFE_PUNCT.contains(c)
+                        || (commas && c == ',')
+                    {
                         c
                     } else {
                         '?'
@@ -380,6 +395,8 @@ pub enum Slot {
     Word(&'static str),
     /// A list of umx's own words, shown joined by ` or `.
     Words(Vec<&'static str>),
+    /// A fixed rule sentence built from checked rule parts, never its description.
+    Sentence(SafeText),
     Command(Command),
     /// An OS or adapter error, made safe.
     Os(SafeText),
@@ -442,7 +459,7 @@ impl fmt::Display for Slot {
             Slot::Word(w) => f.write_str(w),
             Slot::Words(ws) => f.write_str(&ws.join(" or ")),
             Slot::Command(c) => f.write_str(c.as_str()),
-            Slot::Os(e) | Slot::Key(e) => f.write_str(e.as_str()),
+            Slot::Os(e) | Slot::Key(e) | Slot::Sentence(e) => f.write_str(e.as_str()),
             Slot::RepoHint(Some(url)) => write!(f, " Its address hints repo {}.", url.as_str()),
             Slot::RepoHint(None) => f.write_str(" Its address has a repo hint that is not shown."),
             Slot::Decode(r) => write!(f, "{r}"),
@@ -471,6 +488,13 @@ pub struct Candidate {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct RuleContext {
+    pub name: String,
+    pub count: u64,
+    pub nodes: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Problem {
     pub code: &'static str,
     /// Slot name (as in the catalogue template, without `<>`) to value.
@@ -481,6 +505,7 @@ pub struct Problem {
     pub candidates: Vec<Candidate>,
     /// The line of a `umx batch` file the problem is about (req-88); None for every other command.
     pub line: Option<u32>,
+    pub rule: Option<Box<RuleContext>>,
 }
 
 impl Problem {
@@ -491,6 +516,7 @@ impl Problem {
             subject: None,
             candidates: Vec::new(),
             line: None,
+            rule: None,
         }
     }
 

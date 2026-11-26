@@ -317,6 +317,8 @@ pub const CODES: &[&str] = &[
     "rule_scan_cut",
     "rule_skipped",
     "rule_node_unchecked",
+    "rule_unmet",
+    "rule_check_cut",
     "spine_main_taken",
     "spine_not_found",
     "spine_builtin_candidate",
@@ -3503,6 +3505,10 @@ pub fn rule_matches_cut(fix: Command) -> Problem {
 
 pub fn rule_scan_cut() -> Problem {
     Problem::new("rule_scan_cut")
+}
+
+pub fn rule_check_cut(fix: Command) -> Problem {
+    Problem::new("rule_check_cut").with("fix", Slot::Command(fix))
 }
 
 pub fn rule_node_unchecked(given: &str, count: usize, fix: Command) -> Problem {

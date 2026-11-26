@@ -2859,6 +2859,45 @@ fn trigger(code: Code) -> (Envelope, u8) {
                 "--dry-run",
             ])
         }
+        Code::RuleUnmet => {
+            home.graph();
+            home.ok(&[
+                "rule", "add", "rated", "--type", "risk", "--field", "impact",
+            ]);
+            home.umx(&["node", "add", "--type", "risk", "--title", "Unrated"])
+        }
+        Code::RuleCheckCut => {
+            let path = home.graph();
+            let id = home.add("risk", "Seed");
+            home.ok(&[
+                "rule",
+                "add",
+                "bounded_check",
+                "--match",
+                r"note=\b(a{8}){8}b",
+                "--field",
+                "impact",
+            ]);
+            home.ok(&["graph", "unload", "demo"]);
+            let file = Path::new(&path).join("nodes.jsonl");
+            let original = fs::read_to_string(&file).unwrap();
+            let seed = original
+                .lines()
+                .map(|line| umx_protocol::parse_json(line).unwrap())
+                .find(|row| row["id"].as_str() == Some(id.as_str()))
+                .unwrap();
+            let mut rows = original;
+            for i in 1..=200 {
+                let mut row = seed.clone();
+                row["id"] = json!(format!("{i:026}"));
+                row["note"] = json!("é".repeat(6_000));
+                rows.push_str(&row.to_string());
+                rows.push('\n');
+            }
+            fs::write(file, rows).unwrap();
+            home.ok(&["graph", "load", &path]);
+            home.umx(&["check", "--rules", "--rule", "bounded_check"])
+        }
         Code::RuleSkipped => {
             let path = home.graph();
             home.ok(&["graph", "unload", "demo"]);
@@ -5694,6 +5733,8 @@ mod node_edge;
 mod ontology_std;
 #[path = "cli/provenance.rs"]
 mod provenance;
+#[path = "cli/rules.rs"]
+mod rules;
 #[path = "cli/search_query.rs"]
 mod search_query;
 #[path = "cli/secrets.rs"]
