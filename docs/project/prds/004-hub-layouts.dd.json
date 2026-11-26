@@ -71,12 +71,12 @@
         {
           "id": "hub-01",
           "title": "Choose a layout in the view",
-          "statement": "A labelled, keyboard-accessible Layout control offers Normal, Degree hubs, Similarity hubs and Declared hubs. Similarity hubs is the initial choice. Degree hubs alone shows a sub-choice: Most incoming, Most outgoing or Most connections. The chosen mode, sub-choice and Hubs count survive a reload with the existing view settings, without putting graph names in the URL. The spine selector remains independent.",
+          "statement": "A labelled, keyboard-accessible Layout control offers Normal, Degree hubs, Similarity hubs and Declared hubs. Normal is the initial choice. Degree hubs alone shows a sub-choice: Most incoming, Most outgoing or Most connections. The chosen mode, sub-choice and Hubs count survive a reload with the existing view settings, without putting graph names in the URL. The spine selector remains independent.",
           "actor": "a-operator",
           "priority": "must",
           "state": "shipped",
           "done_when": "Using the keyboard, select each mode and each degree sub-choice, reload and get the same pick; selecting or clearing a spine does not change that pick, and selecting a layout does not change the spine pick.",
-          "source": "Project lead 2026-11-26 (four layout modes); existing view-settings and spine behaviour"
+          "source": "Project lead 2026-11-26 (four layout modes; latest ruling makes Normal the default while real hubs take priority); existing view-settings and spine behaviour"
         },
         {
           "id": "hub-02",
@@ -139,7 +139,7 @@
           "state": "planned",
           "done_when": "After rules-15 and rules-18 are delivered and their data is available to the view, a fixture distinguishes filled part_of edges from manual ones, recognises a declared hub with one member, and preserves a shared member as one selectable node with all its edges.",
           "source": "PRD 003 rules-15, rules-18; project lead 2026-11-26 (real declared hubs)",
-          "note": "Deferred until PRD 003's rules slice 3 and any separately agreed data exposure; not an initial UI delivery gate."
+          "note": "On hold while the project lead clarifies the hub design. A proposed filled_by and rule-to-hub serving contract is not final and has not been implemented. The part_of preview remains; no provenance integration is an initial UI delivery gate."
         },
         {
           "id": "hub-08",
@@ -159,7 +159,8 @@
           "priority": "must",
           "state": "in-progress",
           "done_when": "For every mode on a two-spine fixture, switch between spines and None. A hub with neighbours in earlier and later bands never reverses or changes their band order, crowded bands and the shelf stay clear, and None restores that mode's reproducible non-spine layout.",
-          "source": "Project lead 2026-11-26 (spine order wins along its axis); PR #71"
+          "source": "Project lead 2026-11-26 (spine order wins along its axis); PR #71",
+          "note": "The initial delivery uses the existing aspect-aware band grid in every spine view, keeping hub members adjacent within bands. Circular fans are limited to spine-off views. This removes a regression where serialised fans collapsed a multi-band spine into a thin strip; further fan projection is deferred."
         },
         {
           "id": "hub-10",
@@ -211,7 +212,7 @@
           "question": "How many hubs should the view select, and how should similarity influence degree ranking and the initial mode?",
           "default": "Select up to ten centres and assign a shared neighbour to the highest-ranked eligible hub.",
           "status": "answered",
-          "answer": "Project lead 2026-11-26: add an adjustable Hubs count, default 10; rank by degree but favour nodes central to a similarity cluster when data exists, otherwise plain degree. Keep Degree hubs and Similarity hubs separate, initially choose Similarity hubs, and fall back to Degree hubs (Most connections), not Normal, when similarity data is absent. Prime approved a bounded 25% centrality boost. Shared neighbours keep a deterministic primary fan."
+          "answer": "Project lead 2026-11-26: add an adjustable Hubs count, default 10; rank by degree but favour nodes central to a similarity cluster when data exists, otherwise plain degree. Keep Degree hubs and Similarity hubs separate, and fall back to Degree hubs (Most connections), not Normal, when Similarity hubs has no data. Prime approved a bounded 25% centrality boost. Shared neighbours keep a deterministic primary fan. The later priority ruling supersedes the earlier Similarity-default choice: Normal is now the initial layout, automatic hubs stay available but are no longer being polished, and real-hub design is on hold for clarification."
         },
         {
           "id": "q-02",
@@ -238,6 +239,11 @@
           "date": "2026-11-26",
           "by": "pij-cognitive-locust",
           "change": "Recorded approval and initial UI delivery: controls, Normal, Degree and Similarity selection, the declared preview, reproducible rigid fans and adjustable hub count. Spacing, spine, existing-interaction and full performance acceptance evidence remains in progress; real fill provenance remains deferred. Aligned q-02's default fallback with the answered q-01."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "project lead",
+          "change": "Normal becomes the initial layout; automatic hub modes remain optional and further polish stops. Restored the existing aspect-aware spine band grid after the hub-specific fan projection caused a thin-strip regression. Real-hub integration is on hold until the hub design is clarified; no proposed protocol change has been implemented in the view."
         }
       ]
     }
