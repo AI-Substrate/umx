@@ -400,6 +400,17 @@
           "state": "planned",
           "done_when": "Adding one set file to two graphs gives each its own copy; changing the original changes neither graph; `umx rule set remove` leaves the other graph untouched.",
           "source": "Project lead 2026-11-26 (graph by graph; keep them individual; sharing can be solved later if it is an issue)"
+        },
+        {
+          "id": "rules-30",
+          "title": "A graph that records meetings is set up for them by the skill",
+          "statement": "Meetings are recorded often, and each meeting is a hub for what came up in it. There are many of them, so this is not a fill rule (which names one node): it is a rule that ends at a type, and the writer supplies which meeting. This applies only when nodes come from a meeting, and none of it is forced: the skill prompts it, the rules can express it, and nothing fails when it is not done. The umx skill tells an agent, when nodes come from a meeting, to make sure of three things. There is one hub node for that meeting: a `meeting` node with `starts_on`, found first and made only if missing. That node is on the graph's meeting time spine, declared once, so every meeting sits on it in date order. And every node taken from the meeting is linked to it, or to its segment, with `raised_in`, using `--raised-in` on the add or the batch so the link is made in the same write. The skill also offers, for a graph that wants the reminder, the graph rule `umx rule add from_a_meeting --type question,decision,action,risk --edge raised_in --to meeting,segment,event,transcript`, so a point added with no meeting warns `rule_unmet` with the `umx edge add` that links it, and `umx check --rules` lists every point not yet tied to a meeting. umx adds nothing new for this: the spine, `raised_in` and `--raised-in` exist, and the rule is an ordinary rule.",
+          "actor": "a-agent",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Following the skill's ingest route on two transcripts gives two meeting nodes on one declared spine and every extracted node with a `raised_in` edge to its meeting or segment; ingesting the same meeting twice makes one meeting node; a graph with no meetings, and one that skips these steps, gets no error and no failed write. In a graph that added `from_a_meeting`, a decision added by hand with no `raised_in` warns, and `umx check --rules` lists it.",
+          "source": "Project lead 2026-11-26 (meetings all go into the meeting spine; nodes from a meeting link to it; meetings are hubs too, and there are many)",
+          "note": "Not a central rule and never forced: it applies only where nodes come from a meeting (project lead, 2026-11-26, q-08). A meeting with no `starts_on` cannot be placed on a time spine, which `anchor_undated` already warns."
         }
       ]
     },
@@ -454,6 +465,13 @@
           "default": "No, not in this PRD: two sets.",
           "status": "answered",
           "answer": "Yes. A set is a rules file in the graph's own `rules/` folder, copied in graph by graph and kept individual; sharing between graphs can be solved later if it is an issue (project lead, 2026-11-26). See rules-28 and rules-29."
+        },
+        {
+          "id": "q-08",
+          "question": "Is the rule that a question, decision, action or risk should be tied to a meeting a central rule, on for every std graph, or one the agent adds to a graph that records meetings?",
+          "default": "The agent adds it per graph, as the skill tells it to; a graph with no meetings never sees the warning.",
+          "status": "answered",
+          "answer": "Not central. Only when nodes come from a meeting: make sure there is a hub node for that meeting and that it is on the meeting time spine. It is prompted in the skill and the rules can support it, but it is not forced and nothing fails without it (project lead, 2026-11-26)."
         }
       ]
     },
@@ -464,6 +482,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "First draft, from the design note of the same day and the project lead's rulings while it was written. One PRD in three parts: the rules engine (rules-01 to rules-14), hubs as fill rules (rules-15 to rules-21) and the std risk additions (rules-22 to rules-25), with docs and the skill in rules-26 and the fix-up of existing graphs in rules-27. q-01 to q-07 answered. Named rule sets are rules-28 and rules-29. After the prime's review the same day: an edge delete and a relation change are checked too, at both ends (rules-07); `rule_filled` stays a hint, with the reason (rules-17); a hub is an ordinary node a spine can place (rules-15)."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "Added rules-30 and q-08: meetings as many hubs, the meeting spine and the `from_a_meeting` rule, set up by the skill (project lead, 2026-11-26)."
         }
       ]
     }
