@@ -52,7 +52,7 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    or `umx node find "<title>" --type meeting`) and made only if missing. A meeting spine, declared once if
    `umx graph spine show <graph>` has none: `umx graph spine set <graph> --file meetings-spine.json` with
    `{"name": "meetings", "title": "Meetings", "main": true, "anchors": {"type": "meeting"}, "order":
-   ["starts_on"], "place": ["raised_in"]}`. And every point linked with `--raised-in` (above). Offer a graph that
+   ["starts_on"], "place": ["raised_in"]}` (`"main": true` only if the graph has no main spine yet; a second one is refused with `spine_main_taken`, so use `false` then). And every point linked with `--raised-in` (above). Offer a graph that
    wants the reminder `umx rule add from_a_meeting --type question,decision,action,risk --edge raised_in --to
    meeting,segment,event,transcript`; then `umx check --rules` lists every point not tied to a meeting. Skip all
    of it for nodes that did not come from a meeting.

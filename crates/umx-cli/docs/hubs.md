@@ -96,7 +96,7 @@ add it only if missing, with `starts_on`. Declare the meetings hub once (above) 
     umx graph spine set demo --file meetings-spine.json
 
 with `{"name": "meetings", "title": "Meetings", "main": true, "anchors": {"type": "meeting"}, "order":
-["starts_on"], "place": ["raised_in"]}` in the file. Then link every point with `--raised-in <meeting>`. The
+["starts_on"], "place": ["raised_in"]}` in the file (`"main": true` only if the graph has no main spine yet; a second one is refused with `spine_main_taken`, so use `false` then). Then link every point with `--raised-in <meeting>`. The
 optional `from_a_meeting` rule warns about a point with no meeting (`umx docs get rules`).
 
 ## Hubs and spines

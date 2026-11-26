@@ -34,7 +34,7 @@ umx hub set meetings --type-hub meeting --via raised_in --graph demo
 umx batch --file points.jsonl --raised-in 01JZ0000000000000000000002 --graph demo
 ```
 where `meetings-spine.json` holds
-`{"name": "meetings", "title": "Meetings", "main": true, "anchors": {"type": "meeting"}, "order": ["starts_on"], "place": ["raised_in"]}`.
+`{"name": "meetings", "title": "Meetings", "main": true, "anchors": {"type": "meeting"}, "order": ["starts_on"], "place": ["raised_in"]}` (`"main": true` only if the graph has no main spine yet; a second one is refused with `spine_main_taken`, so use `false` then).
 
 ## Why
 Meetings come up often, and each one is where its points gather. One node per meeting on one time spine keeps
