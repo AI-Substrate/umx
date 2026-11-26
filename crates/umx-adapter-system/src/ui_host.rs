@@ -310,13 +310,33 @@ fn run_with_timeout(command: &mut Command, input: Option<&str>) -> Result<(), Ui
     }
 }
 
-/// The ready line, exactly `{"ready":true,"port":N}`.
-pub fn ready_port(line: &str) -> Option<u16> {
-    let port = line
+/// The ready line, with optional LAN IPv4 URLs. URL characters need no JSON escaping.
+pub fn ready(line: &str) -> Option<(u16, Vec<String>)> {
+    let fields = line
         .trim_end()
         .strip_prefix("{\"ready\":true,\"port\":")?
         .strip_suffix('}')?;
-    port.parse().ok().filter(|p| *p > 0)
+    let (port, urls) = fields
+        .split_once(",\"lan_urls\":")
+        .map_or((fields, None), |(port, urls)| (port, Some(urls)));
+    let port = port.parse::<u16>().ok().filter(|p| *p > 0)?;
+    let urls = match urls {
+        None | Some("[]") => Vec::new(),
+        Some(urls) => urls
+            .strip_prefix("[\"")?
+            .strip_suffix("\"]")?
+            .split("\",\"")
+            .map(|url| {
+                let address = url
+                    .strip_prefix("http://")?
+                    .strip_suffix(&format!(":{port}/"))?;
+                let ip = address.parse::<std::net::Ipv4Addr>().ok()?;
+                (url == format!("http://{ip}:{port}/") && !ip.is_loopback() && !ip.is_unspecified())
+                    .then(|| url.to_owned())
+            })
+            .collect::<Option<Vec<_>>>()?,
+    };
+    Some((port, urls))
 }
 
 /// The answer to a launch code, exactly `{"code":"armed"}` or `{"code":"tab"}`.
@@ -329,7 +349,7 @@ pub fn code_answer(line: &str) -> Option<UiCodeUse> {
 }
 
 enum Said {
-    Ready(u16),
+    Ready(u16, Vec<String>),
     Code(UiCodeUse),
     /// Stdout ended before the ready line.
     Closed,
@@ -452,8 +472,8 @@ impl UiHost for SystemUiHost {
                         return;
                     }
                     Ok(_) => {
-                        if let Some(port) = ready_port(&text) {
-                            let _ = said.send(Said::Ready(port));
+                        if let Some((port, urls)) = ready(&text) {
+                            let _ = said.send(Said::Ready(port, urls));
                             // Then only answers to launch codes count; the rest is read and dropped, so the server
                             // never blocks on a full pipe.
                             loop {
@@ -475,11 +495,11 @@ impl UiHost for SystemUiHost {
         let deadline = Instant::now() + Duration::from_millis(launch.ready_ms);
         loop {
             match heard.recv_timeout(Duration::from_millis(20)) {
-                Ok(Said::Ready(port)) => {
+                Ok(Said::Ready(port, lan_urls)) => {
                     let id = self.next.fetch_add(1, Ordering::SeqCst);
                     server.heard = Some(heard);
                     self.servers().insert(id, server);
-                    return Ok(UiServed { id, port });
+                    return Ok(UiServed { id, port, lan_urls });
                 }
                 Ok(Said::Code(_)) => {}
                 Ok(Said::Closed) | Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -806,7 +826,12 @@ case "$(cat "$d/mode")" in
   silent) cat > /dev/null; kill -s TERM 0 ;;
   dies) exit 3 ;;
   ends) echo noise; printf '{"ready":true,"port":%s}\n' "$port"; sleep 0.2; kill -s TERM 0 ;;
-  *) echo "a line before"; printf '{"ready":true,"port":%s}\n' "$port"
+  *) echo "a line before"
+     if [ "${UMX_UI_LAN:-}" = 1 ]; then
+       printf '{"ready":true,"port":%s,"lan_urls":["http://192.0.2.10:%s/"]}\n' "$port" "$port"
+     else
+       printf '{"ready":true,"port":%s}\n' "$port"
+     fi
      while IFS= read -r l; do
        echo "$l" >> "$d/stdin"
        case "$l" in
@@ -1191,15 +1216,38 @@ esac
 
     #[test]
     fn only_the_exact_ready_line_counts() {
-        assert_eq!(ready_port("{\"ready\":true,\"port\":4747}\n"), Some(4747));
+        assert_eq!(
+            ready("{\"ready\":true,\"port\":4747}\n"),
+            Some((4747, vec![]))
+        );
+        assert_eq!(
+            ready(
+                "{\"ready\":true,\"port\":4747,\"lan_urls\":[\"http://192.0.2.10:4747/\",\"http://192.0.2.11:4747/\"]}\n"
+            ),
+            Some((
+                4747,
+                vec![
+                    "http://192.0.2.10:4747/".into(),
+                    "http://192.0.2.11:4747/".into()
+                ]
+            ))
+        );
+        assert_eq!(
+            ready("{\"ready\":true,\"port\":4747,\"lan_urls\":[]}"),
+            Some((4747, vec![]))
+        );
         for bad in [
             "{\"ready\":true,\"port\":0}",
             "{\"ready\":false,\"port\":1}",
             " {\"ready\":true,\"port\":1}",
             "{\"ready\":true,\"port\":70000}",
+            "{\"ready\":true,\"port\":4747,\"lan_urls\":[\"http://evil.example:4747/\"]}",
+            "{\"ready\":true,\"port\":4747,\"lan_urls\":[\"http://192.0.2.10:9999/\"]}",
+            "{\"ready\":true,\"port\":4747,\"lan_urls\":[\"http://127.0.0.1:4747/\"]}",
+            "{\"ready\":true,\"port\":4747,\"lan_urls\":[\"http://192.0.2.10:4747/\",\"http://foreign/\"]}",
             "ready",
         ] {
-            assert_eq!(ready_port(bad), None, "{bad}");
+            assert_eq!(ready(bad), None, "{bad}");
         }
     }
 }

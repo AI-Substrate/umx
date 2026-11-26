@@ -49,6 +49,7 @@ A module missing at its path: say so and stop. Never improvise a route from memo
 | `umx rule list` `umx rule add` `umx rule remove` `umx rule off` `umx rule on` `umx rule show` | build |
 | `umx scope save` `umx scope list` `umx scope show` `umx scope delete` `umx entity key` `umx entity link` `umx entity unlink` `umx entity deny` `umx entity undeny` `umx entity show` `umx graph primary` `umx graph rename` `umx graph move` | multi-graph |
 | `umx graph scan` `umx graph guide` `umx graph list` `umx graph load` `umx node get` `umx node list` `umx node find` `umx search` `umx node history` `umx node who` `umx who` `umx edge list` `umx edge show` `umx neighbours` `umx walk` `umx path` `umx resolve` `umx ui` `umx ui focus` `umx ui highlight` `umx ui filter` `umx ui fit` `umx ui clear` `umx ui open` `umx ui selection` `umx ui status` `umx ui stop` `umx similarity pairs` | explore |
+| `umx ui lan-password` | start |
 | `umx doctor` `umx version` `umx daemon status` `umx daemon service` `umx daemon stop` `umx daemon restart` `umx graph unload` `umx graph forget` `umx check` `umx config show` `umx config set` `umx config unset` `umx config check` `umx config import` `umx embeddings repair` `umx embeddings reembed` `umx embeddings probe` `umx embeddings status` `umx graph confirm-policy` `umx similarity rebuild` | doctor |
 
 A route may use verbs homed elsewhere; the home is where a verb is explained in context. A test in the

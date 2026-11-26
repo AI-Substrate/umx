@@ -4984,6 +4984,7 @@ pub const COMMANDS: &[&str] = &[
     "ui",
     "ui status",
     "ui stop",
+    "ui lan-password",
     "scope",
     "entity",
 ];

@@ -105,6 +105,7 @@ pub fn uh_c2_the_server_gets_no_secret_and_the_port_is_reported<P: UiHost, S: Ui
         .serve(&stage.launch(Server::Ready, Some(47_471)))
         .expect("serve");
     assert_eq!(server.port, 47_471);
+    assert!(server.lan_urls.is_empty());
     assert!(host.running(&server));
     let seen = stage.argv_and_env_seen();
     assert!(
@@ -126,6 +127,11 @@ pub fn uh_c2_the_server_gets_no_secret_and_the_port_is_reported<P: UiHost, S: Ui
     assert!(any.port > 0);
     assert_ne!(any.id, server.id);
     host.stop(&any);
+    let mut launch = stage.launch(Server::Ready, Some(47_471));
+    launch.env.push(("UMX_UI_LAN".into(), "1".into()));
+    let lan = host.serve(&launch).expect("serve on LAN");
+    assert_eq!(lan.lan_urls, ["http://192.0.2.10:47471/"]);
+    host.stop(&lan);
 }
 
 pub fn uh_c3_stop_or_dropping_the_host_leaves_no_process<P: UiHost, S: UiStage>(

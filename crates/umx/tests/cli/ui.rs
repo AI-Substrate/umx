@@ -4,6 +4,31 @@
 
 use super::*;
 
+#[test]
+fn ui_lan_password_is_local_private_reused_and_rotated_without_a_daemon() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = Home::new("ui-lan-password");
+    let (first, exit) = home.umx(&["ui", "lan-password"]);
+    assert_eq!(exit, 0, "{}", first.to_json());
+    let password = first.data["password"].as_str().unwrap();
+    assert_eq!(password.len(), 14);
+    let path = first.data["path"].as_str().unwrap();
+    assert_eq!(
+        fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let (again, exit) = home.umx(&["ui", "lan-password"]);
+    assert_eq!(exit, 0);
+    assert_eq!(again.data["password"], password);
+    let (rotated, exit) = home.umx(&["ui", "lan-password", "--rotate"]);
+    assert_eq!(exit, 0);
+    assert_ne!(rotated.data["password"], password);
+    let (bad, exit) = home.umx(&["ui", "lan-password", "--unknown"]);
+    assert_eq!((exit, bad.errors[0].code()), (2, "usage_invalid"));
+    let (lan, exit) = home.umx(&["ui", "--lan", "--no-open"]);
+    assert_eq!((exit, lan.errors[0].code()), (3, "daemon_not_running"));
+}
+
 /// ws009 s2 (plan 095): `umx ui` refuses before it starts anything, each refusal with a next: the daemon down,
 /// an alias that is not loaded, a folder that is missing or not built, and no node. `--no-open` with JSON is fine: the
 /// URL holds no secret.

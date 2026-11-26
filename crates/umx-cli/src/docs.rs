@@ -650,6 +650,7 @@ mod tests {
         "ui",
         "ui status",
         "ui stop",
+        "ui lan-password",
     ];
 
     /// agents-start-here and every topic, as (topic, markdown).

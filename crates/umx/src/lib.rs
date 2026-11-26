@@ -168,6 +168,15 @@ pub fn run(
         [ui, verb, rest @ ..] if ui == "ui" && umx_cli::UI_LOCAL_VERBS.contains(&verb.as_str()) => {
             match umx_cli::ui_local_flags(verb, rest) {
                 Ok(()) if verb == "stop" => umx_cli::emit(&ui::stop(&config), output),
+                Ok(()) if verb == "lan-password" => {
+                    let env = ui::lan::password(&config, rest == ["--rotate"]);
+                    if !output.json && env.errors.is_empty() {
+                        println!("{}", env.data["password"].as_str().unwrap_or_default());
+                        0
+                    } else {
+                        umx_cli::emit(&env, output)
+                    }
+                }
                 Ok(()) => umx_cli::emit(&ui::status(&config), output),
                 Err(usage) => umx_cli::emit(&usage, output),
             }
@@ -191,6 +200,7 @@ pub fn run(
                         graphs: flags.graphs,
                         port: flags.port,
                         no_open: flags.no_open,
+                        lan: flags.lan,
                         report_to: None,
                         notes: notes.clone(),
                     };
@@ -204,6 +214,30 @@ pub fn run(
                             }
                         }
                         started = started.settle_hints();
+                    }
+                    if flags.lan && started.errors.is_empty() {
+                        let urls = started.data["lan_urls"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        eprintln!(
+                            "umx ui: LAN URLs: {}",
+                            if urls.is_empty() {
+                                "no LAN IPv4 address found"
+                            } else {
+                                &urls
+                            }
+                        );
+                        eprintln!(
+                            "umx ui: password file: {}. Run umx ui lan-password to show it.",
+                            config.home.join("ui-lan-password").display()
+                        );
+                        eprintln!(
+                            "umx ui: WARNING: plain HTTP exposes the password and graph data to network sniffing. Use only a trusted LAN."
+                        );
                     }
                     if !output.json && started.errors.is_empty() {
                         println!(
@@ -231,6 +265,7 @@ pub fn run(
                         graphs: flags.graphs,
                         port: flags.port,
                         no_open: flags.no_open,
+                        lan: flags.lan,
                         report_to: flags.report_to,
                         notes: notes.clone(),
                     };
