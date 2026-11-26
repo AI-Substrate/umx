@@ -277,7 +277,7 @@
         {
           "id": "rules-17",
           "title": "A node that belongs in a hub is added to it, and umx says so",
-          "statement": "When `umx node add`, `umx node edit` or `umx batch` leaves a node matching a named hub's pattern and not yet a member, umx adds the edge in the same write. The reply says so: a hint, `hub_joined`, naming the hub, with a next that lists the hub's members, and the reply's data names the edge added. A node raised in a meeting and matching the risk register's pattern is linked to its meeting by the writer and added to the register by umx: the two kinds of hub do not interfere.",
+          "statement": "When `umx node add` (or an add in a batch) makes a node that matches a named hub's pattern, umx adds the edge in the same write. `umx node edit` (or an edit in a batch) does the same only when that edit makes the node match: it did not match before and does after. An edit to a node that already matched joins nothing, so an auto-added edge deleted by hand is never put back by a later edit (rules-20). The reply says so: a hint, `hub_joined`, naming the hub, with a next that lists the hub's members, and the reply's data names the edge added. A node raised in a meeting and matching the risk register's pattern is linked to its meeting by the writer and added to the register by umx: the two kinds of hub do not interfere.",
           "actor": "a-agent",
           "priority": "must",
           "state": "planned",
@@ -451,7 +451,7 @@
         {
           "id": "rules-34",
           "title": "umx serves which nodes are hubs, for the view",
-          "statement": "A read of the graph can ask for its hubs and get, for each declaration, its name, its form, its relation and its hub nodes, and for any node whether it is a hub and through which relation its members attach. This is what the graph view (PRD 004) draws declared hubs from, with the spine on or off. It reads only declarations and edges, never degree or similarity.",
+          "statement": "The data the graph view already reads when it opens a graph carries the graph's hub declarations: for each, its name, its form, its relation, and the node id (a named hub) or the type (a type hub). From that and the nodes and edges it already holds, the view knows which nodes are hubs and which nodes are their members, with no extra read. This is what the graph view (PRD 004) draws declared hubs from, with the spine on or off. It uses only declarations and edges, never degree or similarity. `umx hub list` gives an agent the same declarations, with counts and the command that adds a member.",
           "actor": "a-operator",
           "priority": "must",
           "state": "planned",
@@ -553,6 +553,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "Hubs reset with the project lead, in five answers: a hub is a declared place where nodes gather, informational, in two forms (one named node, or every node of a type such as each meeting); a named hub auto-adds matching nodes, marks the edge `auto_added_by` and says so; meetings auto-add nothing; adding by hand is the ordinary edge; a hub may or may not be on a spine. rules-15 to rules-21 rewritten and rules-31 to rules-34 added. A hub is no longer a rule with `fill`; a rule only warns."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "From the hubs coder's questions: an edit joins a node to a hub only when the edit makes it match (rules-17), and hub declarations ride in the data the view already reads (rules-34)."
         }
       ]
     }
