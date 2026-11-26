@@ -21,7 +21,7 @@ export type WorkerStart = {
 export type WorkerCluster = Omit<WorkerStart, "kind"> & { kind: "cluster" };
 export type WorkerNudge = { kind: "nudge"; id: number; n: number; edges: Uint32Array; positions: Float32Array; sizes: Float32Array; fixed: Uint8Array; spacing?: number };
 export type WorkerRequest = WorkerStart | WorkerCluster | WorkerNudge;
-export type HubResult = { centres: string[]; owner: [string, string][]; ms: number; fallback?: boolean };
+export type HubResult = { centres: string[]; owner: [string, string][]; ms: number; fallback?: boolean; preview?: boolean };
 export type WorkerMessage =
   | { kind: "clusters"; id: number; groups: Groups; ms: number }
   | { kind: "tick"; id: number; ids: readonly string[]; positions: Float32Array; progress: number }
@@ -55,6 +55,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     owner: [],
     ms: Math.round(performance.now() - hubStart),
     fallback: plan.fallback,
+    preview: plan.preview,
   };
   plan.owner.forEach((head, i) => { if (head >= 0) hubs.owner.push([ids[i], ids[head]]); });
   // Hidden nodes need coordinates too: revealing one is a cluster-only update, not another full layout.

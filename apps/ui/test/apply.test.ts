@@ -1,11 +1,11 @@
 // Live changes applied to the graph on screen in place (lib/graph/apply.ts, plan 127).
 import { describe, expect, it } from "vitest";
-import { applyNudge, applyRows, applySnapshot, changeText, extentOf, goneAfterRead, nudgeInput, qualifyRows, remapGroups, reopen } from "@/lib/graph/apply";
-import { buildGraph, chipCounts, counts, indexGraph, openByGraphId, shownMask } from "@/lib/graph/build";
+import { applyNudge, applyRows, applySnapshot, changeText, extentOf, goneAfterRead, nudgeInput, qualifyRows, remapGroups, reopen, snapAfter } from "@/lib/graph/apply";
+import { buildGraph, chipCounts, counts, indexGraph, neighbourLinks, openByGraphId, shownMask } from "@/lib/graph/build";
 import { NO_FILTERS } from "@/lib/graph/filters";
 import { qid } from "@/lib/graph/keys";
 import { nudge } from "@/lib/graph/layout";
-import type { EdgeRow, ExternalRow, NodeRow, Snapshot } from "@/lib/types";
+import type { EdgeRow, ExternalRow, Neighbour, NodeRow, Snapshot } from "@/lib/types";
 
 const id = (c: string) => `01${c.repeat(24)}`;
 const [rA, rB, rC, rD, rX] = ["A", "B", "C", "D", "X"].map(id);
@@ -39,6 +39,32 @@ const dense = (g: ReturnType<typeof base>) => {
 };
 
 describe("applying rows in place", () => {
+  it("preserves attribution through qualification and updates/removes it without moving nodes", () => {
+    const g = base(), before = g.mapNodes((key, a) => [key, a.x, a.y]);
+    const row = qualifyRows("demo", { nodes: [], edges: [[rE1, "addresses", rB, rA, "register"]] }, new Set(["demo"]));
+    const out = applyRows(g, row, NOTHING);
+    expect(out.edges.edited).toBe(1);
+    expect(g.getEdgeAttribute(E1, "autoAddedBy")).toBe("register");
+    const n: Neighbour = { kind: "node", way: "in", edge: rE1, relation: "addresses", id: rB, graph: id("Z"), graphAlias: "demo", local: true, type: "option", title: "Beta", status: "open" };
+    const links = () => neighbourLinks(new Map([[id("Z"), "demo"]]), "demo", new Set(), { graph: g, node: A });
+    expect(links().edgeOrigin(n)).toBe("register");
+    applyRows(g, { nodes: [], edges: [[E1, "addresses", B, A]] }, NOTHING);
+    expect(links().edgeOrigin(n)).toBeNull();
+    expect(g.mapNodes((key, a) => [key, a.x, a.y])).toEqual(before);
+    expect(qualifyRows("demo", { nodes: [], edges: [], external: [[rE3, "part_of", "demo", rA, "other", rB, "register"]] }, new Set(["demo", "other"])).edges[0][4]).toBe("register");
+  });
+
+  it("keeps declaration metadata current on empty live replies, including an authoritative empty list", () => {
+    const initial = snap([[rA, "meeting", "Meeting", "open"]], []);
+    const g = buildGraph(initial).graph;
+    const outcome = applyRows(g, { nodes: [], edges: [] }, NOTHING);
+    const declared = snapAfter(initial, outcome, { hubs: [{ name: "meetings", form: "type", via: "raised_in", type: "meeting" }] });
+    expect([...indexGraph(g, undefined, [declared]).declared!]).toEqual([1]);
+    const cleared = snapAfter(declared, outcome, { hubs: [] });
+    expect([...indexGraph(g, undefined, [cleared]).declared!]).toEqual([0]);
+    expect(snapAfter(declared, outcome, {}).hubs).toEqual(declared.hubs);
+  });
+
   it("adds, edits and removes nodes and edges on the same graph instance, renumbering nodes densely", () => {
     const g = base();
     const out = applyRows(

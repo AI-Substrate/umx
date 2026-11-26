@@ -15,13 +15,29 @@ export function hubCount(value: number): number {
 export const LAYOUT_MODES = [["normal", "Normal"], ["degree", "Degree hubs"], ["similarity", "Similarity hubs"], ["declared", "Declared hubs"]] as const;
 export const DEGREE_MODES = [["incoming", "Most incoming"], ["outgoing", "Most outgoing"], ["connections", "Most connections"]] as const;
 export type SimilarityLink = { a: string; b: string; score: number };
-export type HubPlan = { centres: number[]; owner: Int32Array; fallback?: boolean };
+export type HubPlan = { centres: number[]; owner: Int32Array; fallback?: boolean; preview?: boolean };
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
 /** Degree is by distinct neighbour, not number of parallel edges. A local maximum wins ties by graph-qualified id. */
 export function findHubs(g: IndexGraph, ids: readonly string[], options: HubOptions, resolution: number, seed: number, pairs: readonly SimilarityLink[] = []): HubPlan {
   const owner = new Int32Array(g.n).fill(-1);
   if (options.mode === "normal") return { centres: [], owner };
+  if (options.mode === "declared" && g.declared) {
+    const incoming = Array.from({ length: g.n }, () => new Set<number>());
+    for (let e = 0; e < g.edges.length / 2; e++) {
+      const a = g.edges[e * 2], b = g.edges[e * 2 + 1];
+      if (a !== b && (g.declared[b] === 1 ? g.membership?.[e] : g.declared[b] < 0 && g.partOf[e])) incoming[b].add(a);
+    }
+    const real = Array.from({ length: g.n }, (_, i) => i).filter((i) => g.declared![i] === 1).sort((a, b) => compare(ids[a], ids[b]));
+    const preview = Array.from({ length: g.n }, (_, i) => i)
+      .filter((i) => g.declared![i] < 0 && incoming[i].size >= 2)
+      .sort((a, b) => incoming[b].size - incoming[a].size || compare(ids[a], ids[b]))
+      .slice(0, hubCount(options.count));
+    const centres = [...real, ...preview];
+    for (const h of centres) owner[h] = h;
+    for (const h of centres) for (const i of [...incoming[h]].sort((a, b) => compare(ids[a], ids[b]))) if (owner[i] < 0) owner[i] = h;
+    return { centres, owner, preview: g.declared.includes(-1) };
+  }
   const incoming = Array.from({ length: g.n }, () => new Set<number>());
   const outgoing = Array.from({ length: g.n }, () => new Set<number>());
   const adjacent = Array.from({ length: g.n }, () => new Set<number>());
@@ -91,7 +107,7 @@ export function findHubs(g: IndexGraph, ids: readonly string[], options: HubOpti
     .slice(0, hubCount(options.count));
   for (const h of centres) owner[h] = h;
   for (const h of centres) for (const i of options.mode === "declared" ? incoming[h] : adjacent[h]) if (owner[i] < 0) owner[i] = h;
-  return { centres, owner };
+  return { centres, owner, ...(options.mode === "declared" ? { preview: true } : {}) };
 }
 
 /** Fans are packed as whole discs so clearing a crowded hub never destroys its rings. Nodes outside any fan
@@ -141,12 +157,12 @@ export function canonicalGraph(g: IndexGraph, ids: readonly string[], visible: U
   const order = Array.from({ length: g.n }, (_, i) => i).filter((i) => visible[i]).sort((a, b) => compare(ids[a], ids[b]));
   const at = new Int32Array(g.n).fill(-1);
   order.forEach((i, j) => { at[i] = j; });
-  const rows: { a: number; b: number; part: number; similarity: number }[] = [];
+  const rows: { a: number; b: number; part: number; similarity: number; membership: number }[] = [];
   for (let e = 0; e < g.edges.length / 2; e++) {
     const a = at[g.edges[e * 2]], b = at[g.edges[e * 2 + 1]];
-    if (edges[e] && a >= 0 && b >= 0 && a !== b) rows.push({ a, b, part: g.partOf[e], similarity: g.similarity?.[e] ?? 0 });
+    if (edges[e] && a >= 0 && b >= 0 && a !== b) rows.push({ a, b, part: g.partOf[e], similarity: g.similarity?.[e] ?? 0, membership: g.membership?.[e] ?? 0 });
   }
-  rows.sort((a, b) => a.a - b.a || a.b - b.b || a.part - b.part || a.similarity - b.similarity);
+  rows.sort((a, b) => a.a - b.a || a.b - b.b || a.part - b.part || a.similarity - b.similarity || a.membership - b.membership);
   const parts = g.part ? [...new Set(order.map((i) => g.part![i]))].sort((a, b) => {
     const first = (p: number) => ids[order.find((i) => g.part![i] === p)!];
     return compare(first(a), first(b));
@@ -156,6 +172,8 @@ export function canonicalGraph(g: IndexGraph, ids: readonly string[], visible: U
     edges: Uint32Array.from(rows.flatMap((e) => [e.a, e.b])),
     partOf: Uint8Array.from(rows.map((e) => e.part)),
     similarity: Float32Array.from(rows.map((e) => e.similarity)),
+    ...(g.declared ? { declared: Int8Array.from(order.map((i) => g.declared![i])) } : {}),
+    ...(g.membership ? { membership: Uint8Array.from(rows.map((e) => e.membership)) } : {}),
     ...(g.part ? { part: Int32Array.from(order.map((i) => parts.indexOf(g.part![i]))) } : {}),
   };
   return { graph, order, ids: order.map((i) => ids[i]) };

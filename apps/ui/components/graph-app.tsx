@@ -587,7 +587,7 @@ export function GraphApp() {
           ...v,
           graph: r.graph,
           ids: r.ids,
-          index: indexGraph(r.graph, ranks),
+          index: indexGraph(r.graph, ranks, r.snaps),
           seed: hash(key),
           snaps: r.snaps,
           aliases: target,
@@ -714,7 +714,7 @@ export function GraphApp() {
       setView({
         graph: built.graph,
         ids: built.ids,
-        index: indexGraph(built.graph, ranks),
+        index: indexGraph(built.graph, ranks, snaps),
         seed: hash(key),
         snaps,
         aliases: open,
@@ -958,7 +958,7 @@ export function GraphApp() {
   // Neighbours on the canvas (lib/graph/build neighbourLinks): a link in any open graph, never a guessed copy.
   const securedIds = useMemo(() => new Set((graphs ?? []).filter((g) => g.secured).map((g) => g.id)), [graphs]);
   const links = useMemo(
-    () => neighbourLinks(view?.open ?? new Map(), selected ? aliasOfKey(selected) : null, securedIds),
+    () => neighbourLinks(view?.open ?? new Map(), selected ? aliasOfKey(selected) : null, securedIds, view && selected ? { graph: view.graph, node: selected } : undefined),
     [view, selected, securedIds],
   );
 
@@ -1046,7 +1046,7 @@ export function GraphApp() {
                 snaps: prev.snaps.map((sn) => (sn.graph === alias ? snap : sn)),
                 omitted: new Map(prev.omitted).set(alias, omitted),
                 ids: outcome.ids,
-                index: indexGraph(v.graph, prev.ranks),
+                index: indexGraph(v.graph, prev.ranks, prev.snaps.map((sn) => sn.graph === alias ? snap : sn)),
                 nudge: { n, fresh: outcome.fresh },
                 data: prev.data + 1,
                 changes: new Map(prev.changes).set(alias, (prev.changes?.get(alias) ?? 0) + 1),
@@ -1595,14 +1595,14 @@ export function GraphApp() {
       const box = document.querySelector(".sigma-host")?.getBoundingClientRect();
       const aspect = box && box.width > 0 && box.height > 0 ? box.width / box.height : undefined;
       for (const [alias, places] of spineNow) {
-        const nodes: { key: string; id: string; x: number; y: number }[] = [];
+        const nodes: { key: string; id: string; x: number; y: number; clearance?: number }[] = [];
         g.forEachNode((k, a) => {
-          if (a.graph === alias && !a.hidden) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y });
+          if (a.graph === alias && !a.hidden) nodes.push({ key: k, id: unq(k).id, x: a.x, y: a.y, clearance: a.clearance });
         });
-        const laid = spineLayout(alias, nodes, places, spread, aspect, hubOwners, spacing);
+        const laid = spineLayout(alias, nodes, places, spread, aspect, hubOwners, spacing, layoutOptions.mode !== "normal");
         g.updateEachNodeAttributes((k, a) => {
           const p = laid.at.get(k);
-          if (p) { [a.x, a.y] = [p.x, p.y]; a.clearance = laid.clearance; }
+          if (p) { [a.x, a.y] = [p.x, p.y]; a.clearance = laid.radii?.get(k) ?? laid.clearance; }
           return a;
         });
         if (laid.axis) axes.push(laid.axis);
@@ -1616,7 +1616,7 @@ export function GraphApp() {
       setFit((f) => ({ nodes: [], n: (f?.n ?? 0) + 1 }));
     }
     applyMerge(g, mergeEntities && layout.done ? entities : NO_ENTITIES);
-  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread, hubOwners, spacing]);
+  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread, hubOwners, spacing, layoutOptions.mode]);
   // Shadow connections (ws009 M1c, plan 169). ShadowReads owns the reads (review B2 to B4): the data belongs to
   // the open set it was read over, a new set drops it, Off stops and drops it, and only the newest read lands. Read
   // again on events: a new set, a live change or an Apply (10 s after the last), and the refresh button. Under Hold the
@@ -1908,6 +1908,7 @@ export function GraphApp() {
             onLayout={setLayoutOptions}
             hubCount={hubs.centres.length}
             hubFallback={hubs.fallback ?? false}
+            hubPreview={hubs.preview ?? view?.snaps.some((s) => s.hubs === undefined) ?? false}
             onSpacing={setSpacing}
             louvainMs={louvain?.ms ?? null}
             clustering={view !== null && grouping === "louvain" && (louvain === null || louvain.resolution !== resolution)}

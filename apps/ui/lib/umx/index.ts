@@ -152,12 +152,12 @@ export const IDS_MAX = 500;
 export const NODE_COLUMNS = "id,type,title,status,updated,entity_key";
 /** The edge columns a snapshot reads: an edge's ends and where they are, never its titles or sentence, which the view
  * reads per node when it needs them (a full row is about 2.5 times the bytes). */
-export const EDGE_COLUMNS = "id,type,from,to,graph_id,from_graph,to_graph,from_state,to_state";
+export const EDGE_COLUMNS = "id,type,from,to,graph_id,from_graph,to_graph,from_state,to_state,auto_added_by";
 /** Edges by id. The subset has no id binding on a relationship, so this scans the edges once per id (lib/rows sizes
  * the reads to the work budget). The ends' graphs (aliases) say whether the edge is drawn: both open on the canvas.
  * Naming the other open graphs too (`--graph a,b`) is what lets umx follow an external edge at all. */
 export const EDGES_BY_ID =
-  "MATCH (a)-[r]->(b) WHERE r.id IN $ids AND r.graph = $graph RETURN r.id AS id, r.graph AS owner, label(r) AS type, a.id AS from, b.id AS to, a.graph AS from_graph, b.graph AS to_graph";
+  "MATCH (a)-[r]->(b) WHERE r.id IN $ids AND r.graph = $graph RETURN r.id AS id, r.graph AS owner, label(r) AS type, a.id AS from, b.id AS to, a.graph AS from_graph, b.graph AS to_graph, r.auto_added_by AS auto_added_by";
 
 /** Shadows per node the view reads (ws009 M1c): Selected shows the top 5 of what it may draw, so it reads 10, as umx
  * cuts to k before the view drops linked, same-entity and hidden ends (embeddings-expert E1). */

@@ -45,6 +45,7 @@ type Props = {
   onLayout: (value: HubOptions) => void;
   hubCount: number;
   hubFallback: boolean;
+  hubPreview?: boolean;
   louvainMs: number | null;
   /** A Louvain run for the current settings is still on its way. */
   clustering: boolean;
@@ -116,8 +117,8 @@ export function Sidebar({ searchRef, ...p }: Props) {
             {DEGREE_MODES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
         </label> : null}
-        {p.layout.mode === "declared" ? <p className="text-xs text-muted-foreground">Inferred part_of preview; not yet verified by fill rules.</p> : null}
-        {p.layout.mode !== "normal" ? <label className="flex items-center justify-between gap-2 text-sm">
+        {p.layout.mode === "declared" ? <p className="text-xs text-muted-foreground">{p.hubPreview ? "Legacy part_of preview: this daemon does not serve hub declarations." : "Members follow each hub's declared relation."}</p> : null}
+        {p.layout.mode !== "normal" && (p.layout.mode !== "declared" || p.hubPreview) ? <label className="flex items-center justify-between gap-2 text-sm">
           <span>Hubs</span>
           <input type="number" aria-label="Hubs" min={1} max={100} step={1} value={p.layout.count} onChange={(e) => {
             const count = e.currentTarget.valueAsNumber;
@@ -125,7 +126,7 @@ export function Sidebar({ searchRef, ...p }: Props) {
           }} className="w-20 rounded-md border bg-background px-2 py-1 text-right tabular-nums focus-visible:outline-2 focus-visible:outline-ring" />
         </label> : null}
         {p.layout.mode !== "normal" ? <p className="text-xs text-muted-foreground" role="status">
-          {p.hubCount > 0 ? `${number.format(p.hubCount)} hub${p.hubCount === 1 ? "" : "s"}` : p.hubFallback ? "No eligible degree hubs." : `No ${p.layout.mode === "declared" ? "part_of" : p.layout.mode} hubs available; using Normal.`}
+          {p.hubCount > 0 ? `${number.format(p.hubCount)} hub${p.hubCount === 1 ? "" : "s"}` : p.hubFallback ? "No eligible degree hubs." : p.layout.mode === "declared" && !p.hubPreview ? "No declared hubs are visible." : `No ${p.layout.mode === "declared" ? "part_of" : p.layout.mode} hubs available; using Normal.`}
         </p> : null}
         {p.hubFallback ? <p className="text-xs text-muted-foreground" role="status">No similarity data; using Degree hubs (most connections).</p> : null}
       </div>

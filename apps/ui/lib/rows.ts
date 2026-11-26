@@ -6,9 +6,9 @@ import { flaggedNodes, shownTitle } from "@/lib/flagged-read";
 import { keysOf } from "@/lib/graph/entities";
 import { MAX_CHANGE_IDS } from "@/lib/live";
 import { BODY_MAX } from "@/lib/http";
-import type { EdgeRow, NodeRow } from "@/lib/types";
+import type { EdgeRow, HubDeclaration, NodeRow } from "@/lib/types";
 import { MAX_OPEN } from "@/lib/graph/keys";
-import { symmetricOf } from "@/lib/snapshot";
+import { ontologyOf } from "@/lib/snapshot";
 import { alias, IDS_MAX, nodeId, type createUmx, UmxError } from "@/lib/umx";
 
 type Reader = ReturnType<typeof createUmx>;
@@ -28,8 +28,9 @@ export type RowsReply = {
   graph: string;
   nodes: NodeRow[];
   edges: EdgeRow[];
-  external?: [string, string, string, string, string, string][];
+  external?: [string, string, string, string, string, string, (string | null)?][];
   symmetric?: string[];
+  hubs?: HubDeclaration[];
 };
 
 const badBody = (why: string) => new UmxError("ui_bad_rows", `The row request was refused: ${why}.`, null, 400);
@@ -110,7 +111,7 @@ export function createRows(deps: RowsDeps) {
     while (left.length > 0) {
       const size = Math.min(edgeChunk.get(chunkKey) ?? EDGE_CHUNK, IDS_MAX);
       const ids = left.slice(0, size);
-      type E = { id: unknown; owner?: unknown; type: unknown; from: unknown; to: unknown; from_graph: unknown; to_graph: unknown };
+      type E = { id: unknown; owner?: unknown; type: unknown; from: unknown; to: unknown; from_graph: unknown; to_graph: unknown; auto_added_by?: unknown };
       let rows: E[];
       try {
         rows = await query<E>("edges by id", g, ids, others);
@@ -130,16 +131,22 @@ export function createRows(deps: RowsDeps) {
         // An edge with both ends in this graph, as the snapshot's edgePlace "local"; one to another open graph is
         // external (plan 133). Anything else is not drawn, and so reads as gone.
         if (fg === g && tg === g) {
-          if (asked.edges.delete(id)) edges.push([id, str(r.type), str(r.from), str(r.to)]);
+          if (asked.edges.delete(id)) {
+            const row: EdgeRow = [id, str(r.type), str(r.from), str(r.to)];
+            if (typeof r.auto_added_by === "string") row.push(r.auto_added_by);
+            edges.push(row);
+          }
         } else if (open.has(fg) && open.has(tg) && asked.edges.delete(id)) {
-          external.push([id, str(r.type), fg, str(r.from), tg, str(r.to)]);
+          const row: NonNullable<RowsReply["external"]>[number] = [id, str(r.type), fg, str(r.from), tg, str(r.to)];
+          if (typeof r.auto_added_by === "string") row.push(r.auto_added_by);
+          external.push(row);
         }
       }
     }
     // Every change's request reads the graph's symmetric relations too, even one with no ids: declaring a relation
     // symmetric (umx ontology add relation r --symmetric) can touch no row at all (review B1).
-    const symmetric = await symmetricOf(deps.read, g);
-    return others.length > 0 ? { graph: g, nodes, edges, external, symmetric } : { graph: g, nodes, edges, symmetric };
+    const ontology = await ontologyOf(deps.read, g);
+    return others.length > 0 ? { graph: g, nodes, edges, external, ...ontology } : { graph: g, nodes, edges, ...ontology };
   };
 }
 

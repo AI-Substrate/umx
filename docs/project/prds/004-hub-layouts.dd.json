@@ -136,10 +136,10 @@
           "statement": "When umx serves a graph's hubs (PRD 003 rules-34), Declared hubs draws every declared hub node fanned with its members. A hub node is one a declaration names, or any node of a type a declaration names, so a graph with many meetings shows many hubs. A hub's members are the nodes with an edge of that hub's relation into it (part_of for a risk register, raised_in for a meeting), whether an agent added the edge or umx did; the auto_added_by mark is shown in edge details and does not decide membership. Nothing is inferred from degree or similarity. It works with the spine on and off (hub-09): a hub that is on the spine stays on its axis place, a hub that is not sits clear of it, and members keep their own bands. A node in several hubs is drawn once, with all its edges.",
           "actor": "a-operator",
           "priority": "should",
-          "state": "planned",
+          "state": "in-progress",
           "done_when": "After rules-15 and rules-34 are delivered, a fixture with a risk register and three meetings shows four hubs; each fans the nodes linked through its declared relation, hand-added and auto-added alike; a risk raised in a meeting and in the register is one selectable node with both edges; a graph with no hubs declared says so; all of it holds with a spine shown and hidden.",
           "source": "PRD 003 head 580caa9248e8d616357403c9c6b93428928c09ee, rules-15, rules-33 and rules-34; project lead 2026-11-26 (settled declaration-based hub model)",
-          "note": "The declaration model replaces the abandoned fill-rule provenance proposal. Integration follows rules-34's served data; hub-06 is the stopgap. The view performs no membership writes. Declared hubs are not truncated by the automatic Hubs count, and hub-09 must be complete when hub-07 ships."
+          "note": "The declaration model replaces the abandoned fill-rule provenance proposal. UI mapping and rendering use rules-34 declarations in the existing ontology read, with no membership writes or extra graph-read round trip. Named and type expansion, manual and auto-added members, attribution details, shared nodes, empty declarations and uncapped hubs pass contract tests and production-browser fixtures. Combined validation against the protocol-108 daemon remains pending; hub-07 is not yet marked shipped. Declared hubs are not truncated by the automatic Hubs count, and hub-09 must be complete when hub-07 ships."
         },
         {
           "id": "hub-08",
@@ -157,10 +157,10 @@
           "statement": "Every layout works with the selected spine shown or hidden. When shown, anchor and band order along the spine's axis takes precedence: a fan stays within a member's own band and may be clipped into arcs or multiple rings rather than pulling that member to the hub's band. Anchors remain on the axis; unplaced nodes remain on the unplaced shelf. Turning the spine off restores the chosen layout, not an unrelated mode.",
           "actor": "a-operator",
           "priority": "must",
-          "state": "in-progress",
+          "state": "shipped",
           "done_when": "For every mode on a two-spine fixture, switch between spines and None. A hub with neighbours in earlier and later bands never reverses or changes their band order, crowded bands and the shelf stay clear, and None restores that mode's reproducible non-spine layout.",
           "source": "Project lead 2026-11-26 (spine order wins along its axis); PR #71",
-          "note": "The initial delivery uses the existing aspect-aware band grid in every spine view, keeping hub members adjacent within bands. Circular fans are limited to spine-off views. This removes a regression where serialised fans collapsed a multi-band spine into a thin strip; further fan projection is deferred."
+          "note": "Band-constrained fan projection preserves the aspect-aware band widths and minimum vertical extent. Anchors remain on the axis, members stay in their own bands and unplaced nodes stay on the shelf; None restores the free layout. Synthetic production-browser fixtures cover all four modes with both spines, and the declared-hub fixture includes a shelf hub and a shared member. Normal retains its existing band grid."
         },
         {
           "id": "hub-10",
@@ -249,6 +249,11 @@
           "date": "2026-11-26",
           "by": "pij-cognitive-locust",
           "change": "Aligned hub-06 and hub-07 with the settled PRD 003 declaration model and platypus review: named-node and type hubs, every incoming edge of the declared relation regardless of origin, shared members, and spine-on/off fans. Updated the current summary, rationale and q-01 to remove the abandoned fill-rule premise. Delivery states are unchanged; hub-07 is planned and hub-09 remains in-progress until spine fans are delivered."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "pij-cognitive-locust",
+          "change": "Implemented the settled declaration-based UI mapping, incoming-via membership and attribution details without a new read. Delivered band-constrained fans with both spines and retained Normal grid behaviour; hub-09 is shipped. Hub-07 is in-progress pending combined protocol-108 daemon validation. All 582 UI tests, types, lint and production build pass; synthetic production-browser fixtures cover declared hubs, shared members, empty and legacy metadata, 17 uncapped hubs and every mode on both spines. Full hub-03, hub-11 and hub-12 acceptance states are unchanged."
         }
       ]
     }

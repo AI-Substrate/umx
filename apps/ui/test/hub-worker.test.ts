@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { WorkerMessage, WorkerRequest, WorkerStart } from "@/lib/graph/layout.worker";
-import { HUB_DEFAULTS, type LayoutMode } from "@/lib/graph/hubs";
+import { HUB_DEFAULTS, hubSize, type LayoutMode } from "@/lib/graph/hubs";
 import { layoutRequest } from "@/components/use-layout";
+import { spineLayout, type Place } from "@/lib/graph/spine-layout";
+import { clearanceRadius } from "@/lib/graph/clearance";
 
 const replies: WorkerMessage[] = [];
 const worker = {
@@ -151,11 +153,31 @@ describe("layout worker boundary", () => {
     it(`finishes all four modes on ${n} synthetic nodes within the existing safety budget`, () => {
       for (const mode of ["normal", "degree", "similarity", "declared"] as const) {
         const request = fixture(n, mode, n === 747 ? 30 : 10);
+        if (mode === "declared") {
+          const step = Math.ceil(n / (n === 747 ? 30 : 10));
+          request.graph.declared = Int8Array.from(request.ids.map((_id, i) => i % step === 0 ? 1 : 0));
+          request.graph.membership = request.graph.partOf;
+          request.options.count = 1;
+        }
         const result = run(request);
         expect(result.capped, `${mode}: ${result.ms}ms`).toBe(false);
         expect(result.ms).toBeLessThan(request.budgetMs);
         expect(result.positions.length).toBe(n * 2);
         expect(result.positions.every(Number.isFinite)).toBe(true);
+        if (mode === "declared") {
+          expect(result.hubs.centres.length).toBeGreaterThan(request.options.count);
+          const heads = new Set(result.hubs.centres);
+          const nodes = result.ids.map((key, i) => ({
+            key, id: key, x: result.positions[i * 2], y: result.positions[i * 2 + 1],
+            clearance: clearanceRadius(heads.has(key) ? hubSize(4) : 4, request.spacing),
+          }));
+          const owners = new Map(result.hubs.owner);
+          const places = new Map<string, Place>(nodes.map((node, i) => [node.id, { band: i >= n * 0.95 ? null : i % 5, by: "field", anchor: i < 5 }]));
+          const started = performance.now();
+          const projected = spineLayout("g", nodes, places, 1, 1.8, owners, request.spacing, true);
+          expect(projected.at.size).toBe(n);
+          console.info(`declared-spine-proof nodes=${n} projection_ms=${Math.round(performance.now() - started)}`);
+        }
         console.info(`hub-proof nodes=${n} mode=${mode} total_ms=${result.ms} hub_ms=${result.hubs.ms} heap_mb=${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}`);
       }
     }, 120_000);
