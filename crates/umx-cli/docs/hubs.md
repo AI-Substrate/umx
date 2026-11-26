@@ -88,6 +88,17 @@ the hub nodes (`--limit` 1 to 1000), each with its members, and for a named hub 
 matching nodes that are not members. `umx ontology show` carries the declarations under `hubs`
 too, which is what the graph view draws declared hubs from.
 
+## Meetings
+
+When nodes come from a meeting: find its one `meeting` node first (`umx node find "<title>" --type meeting`) and
+add it only if missing, with `starts_on`. Declare the meetings hub once (above) and the meeting spine once:
+
+    umx graph spine set demo --file meetings-spine.json
+
+with `{"name": "meetings", "title": "Meetings", "main": true, "anchors": {"type": "meeting"}, "order":
+["starts_on"], "place": ["raised_in"]}` in the file. Then link every point with `--raised-in <meeting>`. The
+optional `from_a_meeting` rule warns about a point with no meeting (`umx docs get rules`).
+
 ## Hubs and spines
 
 A hub is an ordinary node, so a spine places it as it places any node: meetings sit on a meeting

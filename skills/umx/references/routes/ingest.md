@@ -47,6 +47,15 @@ from. The daemon must be running and the target graph loaded (`/umx start`, `/um
    `umx hub set meetings --type-hub meeting --via raised_in` (set it once if the graph records meetings and
    has none), and a named hub such as a risk register gathers its matches by itself (`hub_joined`). Put a
    point in any other hub it belongs to with the edge `hub list` prints.
+   **usage 231**: when the nodes come from a meeting, make sure of three things before the points go in. One
+   `meeting` node with `starts_on`, found first (`umx node list --type meeting --where 'starts_on=<date-time>'`
+   or `umx node find "<title>" --type meeting`) and made only if missing. A meeting spine, declared once if
+   `umx graph spine show <graph>` has none: `umx graph spine set <graph> --file meetings-spine.json` with
+   `{"name": "meetings", "title": "Meetings", "main": true, "anchors": {"type": "meeting"}, "order":
+   ["starts_on"], "place": ["raised_in"]}`. And every point linked with `--raised-in` (above). Offer a graph that
+   wants the reminder `umx rule add from_a_meeting --type question,decision,action,risk --edge raised_in --to
+   meeting,segment,event,transcript`; then `umx check --rules` lists every point not tied to a meeting. Skip all
+   of it for nodes that did not come from a meeting.
 7. Finish with `umx node list` and `umx edge list --from <node>` on the nodes you touched, and report the ids
    you added or changed.
 8. **usage 091**: a write that warns `secret_suspected` still happened, but that field is held from hosted

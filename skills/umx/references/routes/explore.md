@@ -2,6 +2,11 @@
 
 Job: find what a graph says. Reads never change a graph.
 
+**usage 227, usage 229**: read a graph's shape before you trust a gap. `umx graph guide <graph>` lists its rules (as
+fixed sentences) and its hubs (where things gather, with the edge that adds a member). `umx check --rules` lists
+every node out of shape with the command that fixes it; `umx hub list` and `umx hub show <name>` list each hub's
+nodes and members (a meeting with what was raised in it, the risk register with its risks).
+
 **usage 154**: reads hide provenance by default. Ask for `--provenance` on that read to inspect session
 or agent records and derived node-to-session `authored_by`/`edited_by` links. It never widens graph scope.
 Search exposes provenance through exact matches only; `node find --provenance` matches their titles.
