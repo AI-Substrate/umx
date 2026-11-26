@@ -166,12 +166,12 @@
         {
           "id": "rules-06",
           "title": "Rules are managed with umx rule",
-          "statement": "`umx rule list` shows the rules in force, std's first, each marked as std's or the graph's own, with switched-off central rules shown as off. `umx rule add <name>` declares a rule from flags for its pattern and its shape; `umx rule remove <name>` drops one of the graph's own; `umx rule off std:<name>` and `umx rule on std:<name>` switch a central rule. `umx rule show <name>` prints the rule and the nodes its pattern matches now, and `umx rule add ... --dry-run` prints the same and writes nothing. Adding a rule that is already there the same way writes nothing and says so. A name in a rule that is neither the graph's vocabulary nor std's is refused, with the command that declares it.",
+          "statement": "`umx rule list` shows the rules in force, std's first, each marked as std's or the graph's own, with switched-off central rules shown as off. `umx rule add <name>` declares a rule from flags for its pattern and its shape; `umx rule remove <name>` drops one of the graph's own; `umx rule off std:<name>` and `umx rule on std:<name>` switch a central rule. `umx rule show <name>` prints the rule and the nodes its pattern matches now, and `umx rule add ... --dry-run` prints the same and writes nothing. Adding a rule that is already there the same way writes nothing and says so. A rule that names a type, status, relation or field that is neither the graph's vocabulary nor std's is stored all the same, as the soft vocabulary stores an off-vocabulary write, with the warning `rule_vocabulary_unknown` naming the rule and the command that declares the name. `--to-node` takes a node as every command does (its id, a unique prefix or its address) and is refused when it names no node, or more than one, in this graph, since there is then nothing to store.",
           "actor": "a-builder",
           "priority": "must",
           "state": "planned",
-          "done_when": "Each command above works as written on a std graph; a setup script that adds the same rules twice changes nothing the second time; `--dry-run` leaves graph.json byte for byte the same.",
-          "source": "Project lead 2026-11-26"
+          "done_when": "Each command above works as written on a std graph; a setup script that adds the same rules twice changes nothing the second time; `--dry-run` leaves graph.json byte for byte the same; a rule added for a type not yet declared is stored and warns with the `umx ontology add type` that declares it.",
+          "source": "Project lead 2026-11-26 (hints and nudges); prime ruling 2026-11-26 (rule add stores undeclared vocabulary and warns)"
         },
         {
           "id": "rules-07",
@@ -495,7 +495,7 @@
         {
           "date": "2026-11-26",
           "by": "rules designer",
-          "change": "The project lead's principle added to Why and as g-7: rules are hints and nudges, agents keep agency, graphs must not become rigid. rules-21 changed to match: deleting a hub node is allowed and warns, where the draft refused it. Also recorded from the slice 1 review, by the prime's ruling: a stored rule that names vocabulary no longer declared loads with a warning, never a refusal."
+          "change": "The project lead's principle added to Why and as g-7: rules are hints and nudges, agents keep agency, graphs must not become rigid. rules-21 changed to match: deleting a hub node is allowed and warns, where the draft refused it. rules-06 changed the same way: `umx rule add` stores a rule that names undeclared vocabulary and warns, where the draft refused it. Also recorded from the slice 1 review, by the prime's ruling: a stored rule that names vocabulary no longer declared loads with a warning, never a refusal."
         }
       ]
     }
