@@ -10,12 +10,12 @@
         "status": "accepted",
         "updated": "2026-11-26",
         "owner": "pij-cognitive-locust",
-        "summary": "The graph view gives nodes real room and lets the operator choose a natural layout or an Obsidian-style fan around hubs found by connections, similarity or graph rules. Initial modes, hub selection, controls and reproducible free-layout fans are delivered; complete spacing, spine, interaction and performance acceptance evidence remains in progress. Rule-provenance integration is deferred."
+        "summary": "The graph view gives nodes real room and lets the operator choose a natural layout or an Obsidian-style fan around hubs found by connections, similarity or graph declarations. Initial modes, hub selection, controls and reproducible free-layout fans are delivered; complete spacing, spine, interaction and performance acceptance evidence remains in progress. Declaration-aware integration is planned."
       }
     },
     {
       "name": "why",
-      "value": "Nodes still sit on top of one another even at maximum spacing, and the logical fan-out is not readable. The operator wants the shape of an Obsidian graph: hubs with their things fanned around them, while unrelated nodes are free to settle where their links take them.\n\nThe view already has force layout, spacing, similarity links and a spine with its own spread control. PR #71 kept a 747-node, 30-band spine from becoming a thin strip; PR #58 reduced per-graph fetch time from 1.9-13 seconds to 0.05-0.4 seconds. Hub layouts must keep those gains, not add a second round of graph reads or flatten a timeline into circles.\n\nA layout hub is not always a declared hub. Degree and similarity suggest centres for a view. PRD 003 rules-15 and rules-18 define real hubs through fill rules and the filled_by provenance of their edges, which are not built yet. This PRD keeps that boundary visible and does not implement graph rules."
+      "value": "Nodes still sit on top of one another even at maximum spacing, and the logical fan-out is not readable. The operator wants the shape of an Obsidian graph: hubs with their things fanned around them, while unrelated nodes are free to settle where their links take them.\n\nThe view already has force layout, spacing, similarity links and a spine with its own spread control. PR #71 kept a 747-node, 30-band spine from becoming a thin strip; PR #58 reduced per-graph fetch time from 1.9-13 seconds to 0.05-0.4 seconds. Hub layouts must keep those gains, not add a second round of graph reads or flatten a timeline into circles.\n\nA layout hub is not always a declared hub. Degree and similarity suggest centres for a view. PRD 003 rules-15, rules-33 and rules-34 define real hubs through named-node or type-hub declarations and serve their membership relations to the view. Every edge of the declared relation into a hub node counts as membership, whether hand-added or auto-added. This PRD keeps that boundary visible and does not implement backend hub declarations or membership writes."
     },
     {
       "name": "actors",
@@ -49,7 +49,7 @@
       "value": [
         {
           "id": "ng-1",
-          "text": "The graph-rules engine, fill writes, a new hub node type, or any graph mutation to produce a layout. Those remain in PRD 003."
+          "text": "Backend hub-declaration and auto-add behaviour belong to PRD 003. The view creates no hub node type and performs no graph mutation to produce a layout."
         },
         {
           "id": "ng-2",
@@ -122,24 +122,24 @@
         {
           "id": "hub-06",
           "title": "Declared mode has an honest part_of preview",
-          "statement": "Until rule provenance is available to the view, Declared hubs uses nodes with at least two distinct incoming part_of neighbours as candidate centres and fans those children around their parent. The control explains that this is an inferred part_of preview, not proof of a fill rule. With no candidates it says so and leaves nodes in Normal positions. The preview creates no rules or edges.",
+          "statement": "Until umx serves a graph's declared hubs (PRD 003 rules-34), Declared hubs uses nodes with at least two distinct incoming part_of neighbours as candidate centres and fans those children around their parent. The control explains that this is an inferred part_of preview, not a declared hub. With no candidates it says so and leaves nodes in Normal positions. The preview declares no hubs and creates no edges.",
           "actor": "a-operator",
           "priority": "must",
           "state": "shipped",
           "done_when": "In a fixture with parent nodes, part_of children and unrelated outgoing edges, the preview centres parents and fans only their children; outgoing part_of links and duplicate edges do not invent a hub. The UI identifies the preview and handles a graph with no candidate without hiding nodes.",
-          "source": "Project lead 2026-11-26 (incoming part_of fallback until PRD 003 slice 3)",
-          "note": "The initial UI delivery uses this preview; hub-07 is the later provenance-aware integration."
+          "source": "Project lead 2026-11-26 (incoming part_of fallback until PRD 003 rules-34 serves hub declarations)",
+          "note": "The initial UI delivery uses this preview; hub-07 is the later declaration-aware integration."
         },
         {
           "id": "hub-07",
-          "title": "Real declared hubs use fill provenance when available",
-          "statement": "When the view can read PRD 003's fill-rule provenance, Declared hubs recognises the rule's named target as an ordinary hub node and its incoming part_of edges carrying filled_by as membership, without inferring membership from degree or node type. The same layout mode and spine behaviour remain. A node may belong to several declared hubs without being duplicated on screen.",
+          "title": "Declared hubs come from the graph's hub declarations",
+          "statement": "When umx serves a graph's hubs (PRD 003 rules-34), Declared hubs draws every declared hub node fanned with its members. A hub node is one a declaration names, or any node of a type a declaration names, so a graph with many meetings shows many hubs. A hub's members are the nodes with an edge of that hub's relation into it (part_of for a risk register, raised_in for a meeting), whether an agent added the edge or umx did; the auto_added_by mark is shown in edge details and does not decide membership. Nothing is inferred from degree or similarity. It works with the spine on and off (hub-09): a hub that is on the spine stays on its axis place, a hub that is not sits clear of it, and members keep their own bands. A node in several hubs is drawn once, with all its edges.",
           "actor": "a-operator",
           "priority": "should",
           "state": "planned",
-          "done_when": "After rules-15 and rules-18 are delivered and their data is available to the view, a fixture distinguishes filled part_of edges from manual ones, recognises a declared hub with one member, and preserves a shared member as one selectable node with all its edges.",
-          "source": "PRD 003 rules-15, rules-18; project lead 2026-11-26 (real declared hubs)",
-          "note": "On hold while the project lead clarifies the hub design. A proposed filled_by and rule-to-hub serving contract is not final and has not been implemented. The part_of preview remains; no provenance integration is an initial UI delivery gate."
+          "done_when": "After rules-15 and rules-34 are delivered, a fixture with a risk register and three meetings shows four hubs; each fans the nodes linked through its declared relation, hand-added and auto-added alike; a risk raised in a meeting and in the register is one selectable node with both edges; a graph with no hubs declared says so; all of it holds with a spine shown and hidden.",
+          "source": "PRD 003 head 580caa9248e8d616357403c9c6b93428928c09ee, rules-15, rules-33 and rules-34; project lead 2026-11-26 (settled declaration-based hub model)",
+          "note": "The declaration model replaces the abandoned fill-rule provenance proposal. Integration follows rules-34's served data; hub-06 is the stopgap. The view performs no membership writes. Declared hubs are not truncated by the automatic Hubs count, and hub-09 must be complete when hub-07 ships."
         },
         {
           "id": "hub-08",
@@ -212,7 +212,7 @@
           "question": "How many hubs should the view select, and how should similarity influence degree ranking and the initial mode?",
           "default": "Select up to ten centres and assign a shared neighbour to the highest-ranked eligible hub.",
           "status": "answered",
-          "answer": "Project lead 2026-11-26: add an adjustable Hubs count, default 10; rank by degree but favour nodes central to a similarity cluster when data exists, otherwise plain degree. Keep Degree hubs and Similarity hubs separate, and fall back to Degree hubs (Most connections), not Normal, when Similarity hubs has no data. Prime approved a bounded 25% centrality boost. Shared neighbours keep a deterministic primary fan. The later priority ruling supersedes the earlier Similarity-default choice: Normal is now the initial layout, automatic hubs stay available but are no longer being polished, and real-hub design is on hold for clarification."
+          "answer": "Project lead 2026-11-26: add an adjustable Hubs count, default 10; rank by degree but favour nodes central to a similarity cluster when data exists, otherwise plain degree. Keep Degree hubs and Similarity hubs separate, and fall back to Degree hubs (Most connections), not Normal, when Similarity hubs has no data. Prime approved a bounded 25% centrality boost. Shared neighbours keep a deterministic primary fan. The later priority ruling supersedes the earlier Similarity-default choice: Normal is now the initial layout, automatic hubs stay available but are no longer being polished, and real hubs follow PRD 003's settled declaration model."
         },
         {
           "id": "q-02",
@@ -244,9 +244,13 @@
           "date": "2026-11-26",
           "by": "project lead",
           "change": "Normal becomes the initial layout; automatic hub modes remain optional and further polish stops. Restored the existing aspect-aware spine band grid after the hub-specific fan projection caused a thin-strip regression. Real-hub integration is on hold until the hub design is clarified; no proposed protocol change has been implemented in the view."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "pij-cognitive-locust",
+          "change": "Aligned hub-06 and hub-07 with the settled PRD 003 declaration model and platypus review: named-node and type hubs, every incoming edge of the declared relation regardless of origin, shared members, and spine-on/off fans. Updated the current summary, rationale and q-01 to remove the abandoned fill-rule premise. Delivery states are unchanged; hub-07 is planned and hub-09 remains in-progress until spine fans are delivered."
         }
       ]
     }
-  ],
-  "references": []
+  ]
 }
