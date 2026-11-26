@@ -136,10 +136,10 @@
           "statement": "When umx serves a graph's hubs (PRD 003 rules-34), Declared hubs draws every declared hub node fanned with its members. A hub node is one a declaration names, or any node of a type a declaration names, so a graph with many meetings shows many hubs. A hub's members are the nodes with an edge of that hub's relation into it (part_of for a risk register, raised_in for a meeting), whether an agent added the edge or umx did; the auto_added_by mark is shown in edge details and does not decide membership. Nothing is inferred from degree or similarity. It works with the spine on and off (hub-09): a hub that is on the spine stays on its axis place, a hub that is not sits clear of it, and members keep their own bands. A node in several hubs is drawn once, with all its edges.",
           "actor": "a-operator",
           "priority": "should",
-          "state": "in-progress",
+          "state": "shipped",
           "done_when": "After rules-15 and rules-34 are delivered, a fixture with a risk register and three meetings shows four hubs; each fans the nodes linked through its declared relation, hand-added and auto-added alike; a risk raised in a meeting and in the register is one selectable node with both edges; a graph with no hubs declared says so; all of it holds with a spine shown and hidden.",
           "source": "PRD 003 head 580caa9248e8d616357403c9c6b93428928c09ee, rules-15, rules-33 and rules-34; project lead 2026-11-26 (settled declaration-based hub model)",
-          "note": "The declaration model replaces the abandoned fill-rule provenance proposal. UI mapping and rendering use rules-34 declarations in the existing ontology read, with no membership writes or extra graph-read round trip. Named and type expansion, manual and auto-added members, attribution details, shared nodes, empty declarations and uncapped hubs pass contract tests and production-browser fixtures. Combined validation against the protocol-108 daemon remains pending; hub-07 is not yet marked shipped. Declared hubs are not truncated by the automatic Hubs count, and hub-09 must be complete when hub-07 ships."
+          "note": "The declaration model replaces the abandoned fill-rule provenance proposal. UI mapping and rendering use rules-34 declarations in the existing ontology read, with no membership writes or extra graph-read round trip. Verified end-to-end against the protocol-108 daemon (cb826aa): named and type expansion, manual and auto-added members, auto_added_by details, shared nodes, empty declarations, uncapped hubs, live event streaming and both spine-on and spine-off rendering (hub-09 shipped)."
         },
         {
           "id": "hub-08",
@@ -254,6 +254,11 @@
           "date": "2026-11-26",
           "by": "pij-cognitive-locust",
           "change": "Implemented the settled declaration-based UI mapping, incoming-via membership and attribution details without a new read. Delivered band-constrained fans with both spines and retained Normal grid behaviour; hub-09 is shipped. Hub-07 is in-progress pending combined protocol-108 daemon validation. All 582 UI tests, types, lint and production build pass; synthetic production-browser fixtures cover declared hubs, shared members, empty and legacy metadata, 17 uncapped hubs and every mode on both spines. Full hub-03, hub-11 and hub-12 acceptance states are unchanged."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "pij-cognitive-locust",
+          "change": "Rebased onto main cb826aa (protocol 108) and completed unmocked end-to-end validation against the protocol-108 daemon, including live /api/events streaming of auto-joined hub edges, real /snapshot, /rows and /spines reads, NodePanel attribution, spine-on/off restoration and authoritative empty declarations. Marked hub-07 shipped alongside hub-09; 591 UI tests, types, lint, production build and project-doc checks pass."
         }
       ]
     }
