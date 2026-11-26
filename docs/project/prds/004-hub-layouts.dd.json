@@ -71,7 +71,7 @@
         {
           "id": "hub-01",
           "title": "Choose a layout in the view",
-          "statement": "A labelled, keyboard-accessible Layout control offers Normal, Degree hubs, Similarity hubs and Declared hubs. Normal is the initial choice. Degree hubs alone shows a sub-choice: Most incoming, Most outgoing or Most connections. The chosen mode and sub-choice survive a reload with the existing view settings, without putting graph names in the URL. The spine selector remains independent.",
+          "statement": "A labelled, keyboard-accessible Layout control offers Normal, Degree hubs, Similarity hubs and Declared hubs. Similarity hubs is the initial choice. Degree hubs alone shows a sub-choice: Most incoming, Most outgoing or Most connections. The chosen mode, sub-choice and Hubs count survive a reload with the existing view settings, without putting graph names in the URL. The spine selector remains independent.",
           "actor": "a-operator",
           "priority": "must",
           "state": "planned",
@@ -101,12 +101,13 @@
         {
           "id": "hub-04",
           "title": "Degree hubs follow the chosen direction",
-          "statement": "Degree hubs ranks candidate centres by distinct incoming neighbours, distinct outgoing neighbours or distinct neighbours in either direction, as selected. Self-links do not count and parallel links to the same neighbour count once. Each chosen hub fans all its visible immediate neighbours around it. The rule for selecting several centres is deterministic, with stable node-id tie-breaks.",
+          "statement": "Degree hubs ranks candidate centres by distinct incoming neighbours, distinct outgoing neighbours or distinct neighbours in either direction, as selected. When similarity data exists, degree receives a bounded boost favouring nodes central to their similarity cluster; without it, ranking is plain degree. Self-links do not count and parallel links to the same neighbour count once. Up to the chosen Hubs count are selected, with stable node-id tie-breaks, and their visible immediate neighbours fan around them.",
           "actor": "a-operator",
           "priority": "must",
           "state": "planned",
-          "done_when": "A directed fixture has different leaders for incoming, outgoing and total connections; each sub-choice puts the appropriate leader at its fan's centre. Self-links and duplicate parallel links change none of those counts, and tied candidates are ordered by stable id.",
-          "source": "Project lead 2026-11-26 (most incoming, outgoing or connections)"
+          "done_when": "Without similarity data, a directed fixture has different leaders for incoming, outgoing and total connections; each sub-choice puts the appropriate leader at its fan's centre. Self-links and duplicate parallel links change none of those counts, and tied candidates are ordered by stable id. With similarity data, an equally connected node central to its cluster is preferred.",
+          "source": "Project lead 2026-11-26 (most incoming, outgoing or connections; centrality preference)",
+          "note": "The approved ranking is degree multiplied by 1 plus up to 25% of normalised within-cluster similarity centrality. Nodes need at least two distinct neighbours to be useful centres."
         },
         {
           "id": "hub-05",
@@ -115,8 +116,8 @@
           "actor": "a-operator",
           "priority": "must",
           "state": "planned",
-          "done_when": "A fixture with two similarity clusters and a structurally high-degree outsider centres each cluster on its highest within-cluster similarity total, not on the outsider; an unscored similar_to fixture also works. With no similarity links or usable similarity data, the mode says that no similarity hubs are available and leaves nodes in Normal positions, with no embedder or extra similarity request.",
-          "source": "Project lead 2026-11-26 (central member of a similarity cluster; reuse daemon data)"
+          "done_when": "A fixture with two similarity clusters and a structurally high-degree outsider centres each cluster on its highest within-cluster similarity total, not on the outsider; an unscored similar_to fixture also works. With no similarity links or usable similarity data, the mode falls back to Degree hubs using Most connections and shows a small note saying so, with no embedder or extra similarity request.",
+          "source": "Project lead 2026-11-26 (central member of a similarity cluster; reuse daemon data; plain-degree fallback)"
         },
         {
           "id": "hub-06",
@@ -189,6 +190,16 @@
           "state": "planned",
           "done_when": "Measure all initial modes against the same-base Normal baseline on synthetic 747-node/30-band, 1,000-node dense and 10,000-node sparse graphs with matched conditions. Record total and hub-detection time, cap status, memory and main-thread responsiveness; complete below the existing budgets, add no snapshot or similarity requests, and introduce no hub-related main-thread task over 50 ms. Rapid mode changes followed by a graph switch show only the latest result and a bounded pending queue.",
           "source": "Project lead 2026-11-26 (big-graph speed); PR #58, PR #71; components/use-layout.ts safety budgets"
+        },
+        {
+          "id": "hub-13",
+          "title": "Choose how many hubs to show",
+          "statement": "A keyboard-accessible Hubs count setting selects up to that many eligible centres, defaults to 10 and is adjustable from 1 to 100. Degree mode selects the highest-ranked candidates; Similarity mode selects the strongest cluster centres. A graph with fewer eligible hubs shows only those it has; increasing the setting never invents or duplicates a node.",
+          "actor": "a-operator",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "On a fixture with more than ten eligible centres, the default selects ten, changing Hubs to three selects three, and a reload keeps three. A graph with two eligible centres still shows only two at a setting of ten; out-of-range or fractional stored settings restore the default.",
+          "source": "Project lead 2026-11-26 (the X most connected, default 10, adjustable)"
         }
       ]
     },
@@ -197,9 +208,10 @@
       "value": [
         {
           "id": "q-01",
-          "question": "How many degree hubs should a graph select, and how should a neighbour shared by several fans choose its primary centre?",
-          "default": "Use local degree maxima with at least two distinct neighbours, highest selected degree first and stable id ties; assign a shared neighbour to the highest-ranked eligible hub. Do not add another user control initially.",
-          "status": "open"
+          "question": "How many hubs should the view select, and how should similarity influence degree ranking and the initial mode?",
+          "default": "Select up to ten centres and assign a shared neighbour to the highest-ranked eligible hub.",
+          "status": "answered",
+          "answer": "Project lead 2026-11-26: add an adjustable Hubs count, default 10; rank by degree but favour nodes central to a similarity cluster when data exists, otherwise plain degree. Keep Degree hubs and Similarity hubs separate, initially choose Similarity hubs, and fall back to Degree hubs (Most connections), not Normal, when similarity data is absent. Prime approved a bounded 25% centrality boost. Shared neighbours keep a deterministic primary fan."
         },
         {
           "id": "q-02",
@@ -216,6 +228,11 @@
           "date": "2026-11-26",
           "by": "pij-cognitive-locust",
           "change": "First draft. PRD-only review precedes implementation; rule-provenance integration is explicitly deferred."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "project lead",
+          "change": "Answered q-01: adjustable Hubs count defaults to 10; similarity-centrality preference with plain-degree fallback; separate modes with Similarity hubs as the initial choice. Added hub-13 and amended hub-01, hub-04 and hub-05. All delivery states remain planned."
         }
       ]
     }
