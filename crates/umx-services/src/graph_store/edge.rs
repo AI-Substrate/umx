@@ -1097,7 +1097,7 @@ impl GraphStore {
                 && wheres.iter().all(|(field, raw)| {
                     edge.field(field).is_some_and(|v| {
                         v.as_str() == Some(raw.as_str())
-                            || (!v.is_string() && v.to_string() == *raw)
+                            || (!v.is_string() && raw.as_str() == v.to_string().as_str())
                     })
                 })
                 && from.is_none_or(|node| {
