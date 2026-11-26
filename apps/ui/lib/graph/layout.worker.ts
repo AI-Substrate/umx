@@ -1,5 +1,5 @@
 import { type Groups, type IndexGraph, louvainGroups } from "@/lib/graph/clusters";
-import { canonicalGraph, fanLayout, findHubs, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
+import { canonicalGraph, fanLayout, findHubs, hubSize, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
 import { type Keep, layOut, nudge } from "@/lib/graph/layout";
 
 export type WorkerStart = {
@@ -57,7 +57,8 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   plan.owner.forEach((head, i) => { if (head >= 0) hubs.owner.push([ids[i], ids[head]]); });
   post({ kind: "clusters", id: m.id, groups, ms: clusterMs, ...(m.kind === "cluster" ? { hubs } : {}) });
   if (m.kind === "cluster") return;
-  const sizes = Float32Array.from(order.map((i) => m.sizes[i]));
+  const centres = new Set(plan.centres);
+  const sizes = Float32Array.from(order.map((i, j) => centres.has(j) ? hubSize(m.sizes[i]) : m.sizes[i]));
   const keep = m.keep ? {
     positions: Float32Array.from(order.flatMap((i) => [m.keep!.positions[i * 2], m.keep!.positions[i * 2 + 1]])),
     fixed: Uint8Array.from(order.map((i) => m.keep!.fixed[i])),

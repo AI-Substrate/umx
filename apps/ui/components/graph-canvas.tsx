@@ -28,7 +28,7 @@ import { Lru } from "@/lib/lru";
 import { cn } from "@/lib/utils";
 import { anchorLabels, rowsLabelled, type SpineAxis } from "@/lib/graph/spine-layout";
 import { SPACING } from "@/lib/graph/spacing";
-import type { LayoutMode } from "@/lib/graph/hubs";
+import { hubSize, type LayoutMode } from "@/lib/graph/hubs";
 
 export type CanvasPalette = {
   theme: Theme;
@@ -141,6 +141,7 @@ type Props = {
   shadows?: { pairs: readonly Pair[]; hover?: (node: string) => Pair[] } | null;
   spacing?: number;
   layoutMode?: LayoutMode;
+  spineKey?: string;
   /** The selected node's drawn edges past the forced labels (the panel's "+n edges"), told whenever it may change. */
   onUnlabelled?: (n: number) => void;
 };
@@ -337,7 +338,7 @@ const NO_PLACES: ReadonlyMap<string, Place> = new Map();
 /** A thread's width, in screen pixels: confirmed, and picked by "Show across graphs" (ws009 M2 design point 1). */
 const THREAD = { normal: 1.2, emphasis: 2.4 };
 
-function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "similarity", onUnlabelled, spineAxes = NO_AXES }: Props) {
+function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "similarity", spineKey = "", onUnlabelled, spineAxes = NO_AXES }: Props) {
   const sigma = useSigma<NodeAttrs, EdgeAttrs>();
   // Merged places (ws009 M2), recomputed lazily after any node change (layout, visibility, live), read by the reducers
   // and the overlays.
@@ -388,6 +389,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
   // counts those changes, so the label drawer knows its forced set is stale.
   const curves = useRef<Map<string, number>>(new Map());
   const edgesChanged = useRef(0);
+  const nodeLabelBoxes = useRef<LabelBox[]>([]);
 
   useEffect(() => {
     const lassoEnded = () => {
@@ -501,18 +503,18 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     };
   }, [sigma, graph, palette, onLasso]);
 
-  const spacingFrame = useRef<{ graph: ViewGraph; spacing: number; mode: LayoutMode; box: Extent | null }>({ graph, spacing, mode: layoutMode, box: null });
+  const spacingFrame = useRef<{ graph: ViewGraph; spacing: number; mode: LayoutMode; spine: string; box: Extent | null }>({ graph, spacing, mode: layoutMode, spine: spineKey, box: null });
   // Keep the frame while spacing changes: automatic normalization would otherwise cancel the increased distances.
   useEffect(() => {
     const frame = spacingFrame.current;
-    if (frame.graph !== graph || frame.mode !== layoutMode) frame.box = null;
+    if (frame.graph !== graph || frame.mode !== layoutMode || frame.spine !== spineKey) frame.box = null;
     else if (frame.spacing !== spacing && !hold) frame.box ??= graphExtent(graph);
-    [frame.graph, frame.spacing, frame.mode] = [graph, spacing, layoutMode];
+    [frame.graph, frame.spacing, frame.mode, frame.spine] = [graph, spacing, layoutMode, spineKey];
     if (!hold && !frame.box && !cameraTo && sigma.getCustomBBox() === null) return;
     sigma.setCustomBBox(hold ?? frame.box);
     if (cameraTo) sigma.getCamera().setState(cameraTo);
     sigma.refresh();
-  }, [sigma, graph, hold, cameraTo, spacing, layoutMode]);
+  }, [sigma, graph, hold, cameraTo, spacing, layoutMode, spineKey]);
   useEffect(() => {
     if (!cameraOut) return;
     const read = () => sigma.getCamera().getState();
@@ -526,20 +528,9 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
   const fitAll = useRef<(duration: number) => void>(() => {});
   useEffect(() => {
     fitAll.current = (duration: number) => {
-      if (spineAxes.length > 0) {
-        // A spine: every shown node and each line's ends, measured on screen, with room past the last band's labels.
-        sigma.refresh();
-        const points = [...graph.filterNodes((_n, a) => !a.hidden).map((id) => graph.getNodeAttributes(id)), ...spineAxes.flatMap((a) => [{ x: a.x0, y: a.y }, { x: a.x1, y: a.y }])];
-        const target = screenBox(sigma, points, SPINE_PAD);
-        if (target) void sigma.getCamera().animate(target, { duration });
-        return;
-      }
-      if (!hold && !spacingFrame.current.box) {
-        void sigma.getCamera().animatedReset({ duration });
-        return;
-      }
-      // Every shown node, however far graphs opened since have spread past the held frame.
-      const target = framedBox(sigma, graph, graph.filterNodes((_n, a) => !a.hidden), Infinity);
+      sigma.refresh();
+      const points = [...graph.filterNodes((_n, a) => !a.hidden).map((id) => graph.getNodeAttributes(id)), ...spineAxes.flatMap((a) => [{ x: a.x0, y: a.y }, { x: a.x1, y: a.y }])];
+      const target = screenBox(sigma, points, spineAxes.length > 0 ? SPINE_PAD : [40, 40, 40]);
       if (target) void sigma.getCamera().animate(target, { duration });
     };
   }, [sigma, graph, hold, spineAxes]);
@@ -738,6 +729,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       let drawn = 0;
       pills.forEach(({ hull, text, p, w, box }, i) => {
         if (!keep[i]) return;
+        if (box[0] < 0 || box[1] < 0 || box[2] > width || box[3] > height || nodeLabelBoxes.current.some((b) => overlaps(b, { x0: box[0], y0: box[1], x1: box[2], y1: box[3] }))) return;
         const look = pillLook(palette.skin === "fui", palette, groups.colors?.[hull.rank] ?? groupColor(hull.rank, groups.sizes[hull.rank], palette.theme), MAX_GROUP_LABELS);
         if (drawn >= look.cap) return;
         drawn++;
@@ -858,10 +850,34 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     let anchorBoxes: LabelBox[] = [];
     let rowsRoom = false;
     let anchorsDue = false;
-    const shapeSize = (data: { size: number; shape?: unknown }) => data.size * extentOf(shapeAt(typeof data.shape === "string" ? data.shape : undefined)).halfWidth;
+    let hubsDue = false;
+    const hubLabels = new Map<string, { text: string; box: LabelBox }>();
+    // Sigma adds 3px after this radius; leave 8px past the actual shape, including enlarged hubs.
+    const shapeSize = (data: { size: number; shape?: unknown }) => data.size * extentOf(shapeAt(data.shape)).halfWidth + 5;
     const newFrame = () => {
       nodeLabels = [];
+      nodeLabelBoxes.current = nodeLabels;
       anchorsDue = spineAxes.length > 0;
+      hubsDue = spineAxes.length === 0;
+      hubLabels.clear();
+    };
+    const holdHubs = () => {
+      hubsDue = false;
+      const { labelSize, labelWeight, labelFont } = sigma.getSettings();
+      const ctx = sigma.getCanvases().labels.getContext("2d")!;
+      ctx.font = `${labelWeight} ${labelSize}px ${labelFont}`;
+      const { width } = sigma.getDimensions();
+      const shown = graph.filterNodes((_k, a) => a.hub === true && !a.hidden).map((key) => {
+        const d = sigma.getNodeDisplayData(key)!;
+        const v = sigma.framedGraphToViewport(d);
+        return { key, ...v, size: shapeSize({ ...d, size: sigma.scaleSize(d.size) }), label: d.label };
+      }).filter((a) => a.label && !called?.has(a.key));
+      for (const a of shown) {
+        let room = Math.min(180, width - a.x - a.size - 11);
+        for (const b of shown) if (b.x > a.x && Math.abs(b.y - a.y) < labelSize * 1.1) room = Math.min(room, b.x - b.size - a.x - a.size - 11);
+        const text = ctx.measureText(a.label!).width <= room ? a.label! : fitCallout(a.label!, room, (t) => ctx.measureText(t).width, 400);
+        hubLabels.set(a.key, { text, box: nodeLabelBox(a.x, a.y, a.size, labelSize, ctx.measureText(text).width) });
+      }
     };
     // Each anchor's label width, and its cut text by width: measured once per label, not every frame.
     const labelWidths = new Map<string, number>();
@@ -1014,7 +1030,10 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         const zoomedOut = sigma.getCamera().ratio >= LABEL_RATIO;
         if (zoomedOut && !data.forceLabel && heads.has(key)) return;
         // Beside the shape's right edge (a wide shape reaches past the node's radius).
-        const at = { ...data, size: data.size * extentOf(shapeAt("shape" in data ? data.shape : undefined)).halfWidth };
+        const at = { ...data, size: shapeSize(data) };
+        if (hubsDue) holdHubs();
+        const hub = hubLabels.get(key);
+        if (hub) at.label = hub.text;
         if (anchorsDue) holdAnchors();
         if (spineAxes.length > 0 && key !== selected) {
           context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
@@ -1032,6 +1051,9 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         if (at.label && key !== selected) {
           context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
           const box = nodeLabelBox(at.x, at.y, at.size, settings.labelSize, context.measureText(at.label).width);
+          const { width, height } = sigma.getDimensions();
+          if (box.x0 < 0 || box.y0 < 0 || box.x1 > width || box.y1 > height) return;
+          if (!hub && [...hubLabels.values()].some((h) => overlaps(h.box, box))) return;
           if (nodeLabels.some((b) => overlaps(b, box))) return;
         }
         drawDiscNodeLabel(context, at, settings);
@@ -1094,6 +1116,11 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
             out.zIndex = 0;
           } else out.zIndex = Math.max(Number(out.zIndex ?? 0), 1) + 1;
         } else out.size = data.size;
+        if (data.hub) {
+          out.size = hubSize(out.size);
+          out.forceLabel = true;
+          out.zIndex = Math.max(Number(out.zIndex ?? 0), 2);
+        }
         const clearance = place?.clearance ?? data.clearance;
         if (clearance !== undefined) {
           sizeRatio = sigma.getGraphToViewportRatio();

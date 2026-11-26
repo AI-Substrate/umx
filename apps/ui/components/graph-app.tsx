@@ -2082,6 +2082,7 @@ export function GraphApp() {
                 layoutDone={layout.done}
                 spacing={spacing}
                 layoutMode={layoutOptions.mode}
+                spineKey={[...spineShown].map(([alias, name]) => `${alias}/${name ?? ""}`).join(",")}
                 onUnlabelled={setUnlabelled}
                 offRelations={filters.relations}
                 relationModes={relationModes}
