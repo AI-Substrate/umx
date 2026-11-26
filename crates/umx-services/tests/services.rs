@@ -7694,3 +7694,816 @@ fn a_request_reads_the_policy_record_again_after_it_is_written() {
         .unwrap();
     assert_eq!(to_state(&w), None, "lowered: shown");
 }
+#[test]
+fn rules_are_previewed_idempotent_sorted_and_rolled_back_on_failure() {
+    let mut w = demo();
+    w.svc
+        .ontology_add_field(&ctx(), "risk", "rating:string", None)
+        .unwrap();
+    let risk = add(&mut w.svc, "risk", "SEC-42 launch")
+        .unwrap()
+        .value
+        .node
+        .id;
+    let bytes = |w: &World| {
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap()
+    };
+    let before = bytes(&w);
+    let writes = w.files.graph_writes();
+    let row = json!({"name":"rated","match":{"type":["risk"],"regex":{"title":"SEC-[0-9]+"}},"field":"rating"});
+    let preview = w.svc.rule_add(&ctx(), &row, true).unwrap().value;
+    assert_eq!(preview.nodes, [risk]);
+    assert!(preview.dry_run);
+    assert_eq!(bytes(&w), before);
+    assert_eq!(w.files.graph_writes(), writes);
+    let added = w.svc.rule_add(&ctx(), &row, false).unwrap().value;
+    assert_eq!(added.format, 8);
+    assert!(!added.unchanged);
+    let after = bytes(&w);
+    let writes = w.files.graph_writes();
+    assert!(w.svc.rule_add(&ctx(), &row, false).unwrap().value.unchanged);
+    assert_eq!((bytes(&w), w.files.graph_writes()), (after.clone(), writes));
+    let mut different = row.clone();
+    different["match"]["regex"]["title"] = json!("other");
+    assert_eq!(
+        w.svc.rule_add(&ctx(), &different, false).unwrap_err().code,
+        "rule_name_taken"
+    );
+    w.files.fail_writes(true);
+    let next = json!({"name":"aaa","match":{"type":["risk"]},"field":"rating"});
+    assert_eq!(
+        w.svc.rule_add(&ctx(), &next, false).unwrap_err().code,
+        "write_failed"
+    );
+    assert_eq!(w.svc.rule_list(&ctx()).unwrap().value.rows.len(), 1);
+    w.files.fail_writes(false);
+    assert_eq!(bytes(&w), after);
+    w.svc.rule_add(&ctx(), &next, false).unwrap();
+    let stored = codec::decode_graph(&bytes(&w)).unwrap();
+    assert_eq!(
+        stored
+            .rules
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
+        ["aaa", "rated"]
+    );
+    assert!(stored.rules_off.is_empty());
+    w.svc.rule_remove(&ctx(), "aaa").unwrap();
+    w.svc.rule_remove(&ctx(), "rated").unwrap();
+    assert_eq!(codec::decode_graph(&bytes(&w)).unwrap().umx, 8);
+    let before = bytes(&w);
+    assert!(w.svc.rule_remove(&ctx(), "rated").unwrap().value.unchanged);
+    assert_eq!(bytes(&w), before);
+}
+
+#[test]
+fn rule_regex_errors_and_missing_targets_never_write() {
+    let mut w = demo();
+    let before = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    for pattern in ["(", "(?=risk)", r"(risk)\1", "a{1000000000}"] {
+        let row = json!({"name":"test_rule","match":{"regex":{"title":pattern}},"edge":"owns","from":["person"]});
+        let error = w.svc.rule_add(&ctx(), &row, false).unwrap_err();
+        assert_eq!(error.code, "rule_regex_invalid", "{pattern}: {error:?}");
+        assert!(error.slots.iter().any(|(key, _)| *key == "position"));
+    }
+    let long =
+        json!({"name":"test_rule","match":{"regex":{"title":"a".repeat(257)}},"field":"step"});
+    assert_eq!(
+        w.svc.rule_add(&ctx(), &long, false).unwrap_err().code,
+        "rule_regex_invalid"
+    );
+    let absent = json!({"name":"test_rule","match":{"type":["risk"]},"edge":"part_of","to_node":"00000000000000000000000001"});
+    assert_eq!(
+        w.svc.rule_add(&ctx(), &absent, false).unwrap_err().code,
+        "node_not_found"
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(
+        w.svc
+            .rule_switch(&ctx(), "std:not_here", true)
+            .unwrap_err()
+            .code,
+        "rule_not_found"
+    );
+    assert_eq!(
+        w.svc
+            .rule_switch(&ctx(), "std:not_here", false)
+            .unwrap_err()
+            .code,
+        "rule_not_found"
+    );
+}
+
+#[test]
+fn rule_patterns_combine_exact_fields_status_facets_and_unicode_regex_with_linear_scans() {
+    let mut w = demo();
+    w.svc.ontology_adopt_std(&ctx(), &[], false, &[]).unwrap();
+    let node = w
+        .svc
+        .node_add(
+            &ctx(),
+            NodeAddRequest {
+                kind: "risk".into(),
+                title: "SEC-42".into(),
+                note: Some("Café".into()),
+                sets: vec![("rating".into(), SetValue::Str("high".into()))],
+                tags: vec!["origin:imported".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .value
+        .node;
+    let row = json!({"name":"test_rule","match":{"type":["risk","question"],"status":["open"],
+        "tag":["origin:*"],"field":{"rating":"high"},"regex":{"title":"^SEC-[0-9]+","note":r"\bCafé\b"}},
+        "edge":"owns","from":["person"]});
+    let rule = umx_core::rules::Rule::from_value(&row).unwrap();
+    let mut matcher = umx_services::RuleMatcher::new(&rule).unwrap();
+    assert_eq!(matcher.matches(&node), Some(true));
+    let mut other = node.clone();
+    other.status = "delivered".into();
+    assert_eq!(matcher.matches(&other), Some(false));
+    other = node.clone();
+    other.fields.insert("rating".into(), json!(3));
+    assert_eq!(matcher.matches(&other), Some(false));
+    other = node.clone();
+    other.fields.remove("tags");
+    assert_eq!(matcher.matches(&other), Some(false));
+    other = node.clone();
+    other.title = "xSEC-42".into();
+    assert_eq!(matcher.matches(&other), Some(false));
+    other = node.clone();
+    other.kind = "person".into();
+    assert_eq!(matcher.matches(&other), Some(false));
+    let mut anywhere = rule.clone();
+    anywhere
+        .pattern
+        .regex
+        .insert("title".into(), "SEC-[0-9]+".into());
+    let mut anywhere = umx_services::RuleMatcher::new(&anywhere).unwrap();
+    other = node.clone();
+    other.title = "prefix SEC-42 suffix".into();
+    assert_eq!(anywhere.matches(&other), Some(true));
+    other.title = "sec-42".into();
+    assert_eq!(anywhere.matches(&other), Some(false));
+    let nodes: Vec<_> = (0..10_000)
+        .map(|id| {
+            let mut node = node.clone();
+            node.id = Id(id);
+            node
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| matcher.matches(node) == Some(true))
+            .count(),
+        10_000
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(60));
+    eprintln!(
+        "rules: 10000 bounded regex matches in {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn hand_edited_bad_rule_regex_is_refused_when_the_graph_loads() {
+    let mut w = demo();
+    let mut meta = codec::decode_graph(
+        &w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    meta.rules.push(
+        umx_core::rules::Rule::from_value(&json!({
+            "name":"test_rule","match":{"regex":{"title":"(?=x)"}},"field":"step"
+        }))
+        .unwrap(),
+    );
+    let bytes = codec::encode_graph(&meta);
+    w.files
+        .write(&dir("/work/g"), GraphFile::Graph, &bytes)
+        .unwrap();
+    assert_eq!(
+        w.svc.graph_load(&ctx(), "/work/g", None).unwrap_err().code,
+        "rule_regex_invalid"
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        bytes
+    );
+}
+
+#[test]
+fn rule_previews_only_link_pages_after_the_rule_is_stored() {
+    let mut w = demo();
+    for i in 0..101 {
+        add(&mut w.svc, "risk", &format!("Risk {i}")).unwrap();
+    }
+    let row = json!({"name":"rated","match":{"type":["risk"]},"field":"step"});
+    let before = w.files.read(&dir("/work/g"), GraphFile::Graph).unwrap();
+    let preview = w.svc.rule_add(&ctx(), &row, true).unwrap();
+    assert_eq!(preview.value.total, Some(101));
+    assert_eq!(preview.value.nodes.len(), 100);
+    assert!(preview.value.next.is_none());
+    assert!(!preview.notes.iter().any(|p| p.code == "rule_matches_cut"));
+    w.files.fail_writes(true);
+    assert_eq!(
+        w.svc.rule_add(&ctx(), &row, false).unwrap_err().code,
+        "write_failed"
+    );
+    w.files.fail_writes(false);
+    assert_eq!(
+        w.files.read(&dir("/work/g"), GraphFile::Graph).unwrap(),
+        before
+    );
+    assert!(w.svc.rule_list(&ctx()).unwrap().value.rows.is_empty());
+    let added = w.svc.rule_add(&ctx(), &row, false).unwrap();
+    assert!(added.value.next.is_some());
+    assert!(added.notes.iter().any(|p| p.code == "rule_matches_cut"));
+    let next = w.svc.rule_show(&ctx(), "rated", 100, 100).unwrap();
+    assert_eq!(next.value.nodes.len(), 1);
+    assert_eq!(next.value.total, Some(101));
+}
+
+#[test]
+fn rule_scans_skip_unaffordable_nodes_without_charging_unread_notes_or_dfa_state_visits() {
+    let mut w = demo();
+    let base = add(&mut w.svc, "risk", "Base").unwrap().value.node;
+    let mut nodes: Vec<_> = w
+        .svc
+        .loaded_graph("demo")
+        .unwrap()
+        .nodes()
+        .map(|n| n.to_node())
+        .collect();
+    let first = nodes.iter().map(|n| n.id.0).max().unwrap() + 1;
+    for i in 0..110 {
+        let mut node = base.clone();
+        node.id = Id(first + i);
+        node.note = "é".repeat(50_000);
+        nodes.push(node);
+    }
+    let mut after = base;
+    after.id = Id(first + 110);
+    after.note = format!("{}b", "a".repeat(64));
+    let after_id = after.id;
+    nodes.push(after);
+    let bytes = codec::encode_nodes(&nodes);
+    assert!(bytes.len() > 10 * 1024 * 1024);
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    w.files
+        .write(&dir("/work/g"), GraphFile::Nodes, &bytes)
+        .unwrap();
+    w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+
+    let exact = w
+        .svc
+        .rule_add(
+            &ctx(),
+            &json!({
+                "name":"exact", "match":{"type":["risk"]}, "field":"step"
+            }),
+            true,
+        )
+        .unwrap();
+    assert_eq!(exact.value.total, Some(112));
+    assert_eq!(exact.value.not_checked_total, 0);
+    let filtered = w.svc.rule_add(&ctx(), &json!({
+        "name":"filtered", "match":{"type":["person"],"regex":{"note":r"\b(a{8}){8}b"}}, "field":"step"
+    }), true).unwrap();
+    assert_eq!(filtered.value.total, Some(0));
+    assert_eq!(filtered.value.not_checked_total, 0);
+    let dfa = w
+        .svc
+        .rule_add(
+            &ctx(),
+            &json!({
+                "name":"dfa", "match":{"regex":{"note":"(a{8}){8}b"}}, "field":"step"
+            }),
+            true,
+        )
+        .unwrap();
+    assert_eq!(dfa.value.total, Some(1));
+    assert_eq!(dfa.value.nodes, vec![after_id]);
+    assert_eq!(dfa.value.not_checked_total, 0);
+
+    let row = json!({"name":"bounded","match":{"regex":{"note":r"\b(a{8}){8}b"}},"field":"step"});
+    let before = w.files.read(&dir("/work/g"), GraphFile::Graph).unwrap();
+    let preview = w.svc.rule_add(&ctx(), &row, true).unwrap();
+    assert_eq!(preview.value.total, None);
+    assert_eq!(preview.value.nodes, vec![after_id]);
+    assert_eq!(preview.value.not_checked_total, 110);
+    assert_eq!(preview.value.not_checked.len(), 100);
+    assert_eq!(preview.value.not_checked[0], Id(first));
+    assert_eq!(preview.value.not_checked[99], Id(first + 99));
+    assert!(preview.value.next.is_none());
+    assert!(preview.notes.iter().any(|p| p.code == "rule_scan_cut"));
+    let warning = preview
+        .notes
+        .iter()
+        .find(|p| p.code == "rule_node_unchecked")
+        .unwrap();
+    assert_eq!(warning.slot("count").as_deref(), Some("110"));
+    assert_eq!(warning.slot("fix").as_deref(), Some("umx docs get rules"));
+    assert_eq!(
+        w.files.read(&dir("/work/g"), GraphFile::Graph).unwrap(),
+        before
+    );
+    let added = w.svc.rule_add(&ctx(), &row, false).unwrap();
+    assert!(added.notes.iter().any(|p| p.code == "rule_scan_cut"));
+    let warning = added
+        .notes
+        .iter()
+        .find(|p| p.code == "rule_node_unchecked")
+        .unwrap();
+    assert_eq!(
+        warning.slot("fix").as_deref(),
+        Some("umx rule show bounded --graph demo")
+    );
+    let shown = w.svc.rule_show(&ctx(), "bounded", 100, 0).unwrap();
+    assert_eq!(shown.value.total, None);
+    assert_eq!(shown.value.nodes, vec![after_id]);
+    assert_eq!(shown.value.not_checked, preview.value.not_checked);
+    assert_eq!(shown.value.not_checked_total, 110);
+    assert!(shown.notes.iter().any(|p| p.code == "rule_scan_cut"));
+}
+
+#[test]
+fn rule_dfa_cache_exhaustion_does_not_skip_later_ordinary_nodes() {
+    let mut w = demo();
+    let mut node = add(&mut w.svc, "risk", "Base").unwrap().value.node;
+    let rule = umx_core::rules::Rule::from_value(&json!({
+        "name":"bounded",
+        "match":{"regex":{"note":"[ab]*a[ab]{10}z|x{512}y"}},
+        "field":"step"
+    }))
+    .unwrap();
+    let mut state = 17u32;
+    node.note = (0..50_000)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            if state >> 31 == 0 { 'a' } else { 'b' }
+        })
+        .collect();
+    let mut matcher = umx_services::RuleMatcher::new(&rule).unwrap();
+    assert_eq!(matcher.matches(&node), None);
+    node.note = format!("{}{}", "c".repeat(2_500), "x".repeat(32));
+    assert_eq!(
+        umx_services::RuleMatcher::new(&rule)
+            .unwrap()
+            .matches(&node),
+        Some(false)
+    );
+    assert_eq!(matcher.matches(&node), Some(false));
+}
+
+#[test]
+fn oversized_stored_regexes_warn_and_remain_removable_without_rewriting_on_load() {
+    let mut w = demo();
+    let mut meta = codec::decode_graph(
+        &w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    for (name, pattern) in [
+        ("huge", "a{1000000000}".into()),
+        ("long", "a".repeat(257)),
+        ("small", "risk".into()),
+    ] {
+        meta.rules.push(
+            umx_core::rules::Rule::from_value(&json!({
+                "name":name,"match":{"regex":{"title":pattern}},"field":"step"
+            }))
+            .unwrap(),
+        );
+    }
+    let bytes = codec::encode_graph(&meta);
+    w.files
+        .write(&dir("/work/g"), GraphFile::Graph, &bytes)
+        .unwrap();
+    let loaded = w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    let skipped: Vec<_> = loaded
+        .notes
+        .iter()
+        .filter(|p| p.code == "rule_skipped")
+        .collect();
+    assert_eq!(skipped.len(), 2);
+    assert_eq!(skipped[0].slot("name").as_deref(), Some("huge"));
+    assert_eq!(
+        skipped[0].slot("fix").as_deref(),
+        Some("umx rule remove huge --graph demo")
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        bytes
+    );
+    let shown = w.svc.rule_show(&ctx(), "huge", 100, 0).unwrap();
+    assert_eq!(shown.value.total, None);
+    assert!(shown.notes.iter().any(|p| p.code == "rule_skipped"));
+    assert_eq!(w.svc.rule_list(&ctx()).unwrap().value.rows.len(), 3);
+    w.svc.rule_remove(&ctx(), "huge").unwrap();
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    assert_eq!(w.svc.rule_list(&ctx()).unwrap().value.rows.len(), 2);
+}
+
+#[test]
+fn graph_regex_compile_budget_refuses_add_without_changing_stored_rules() {
+    let mut w = demo();
+    let mut refused = None;
+    for i in 0..64 {
+        let row = json!({"name":format!("rule_{i:02}"),"match":{"regex":{
+            "a":"a{4000}","b":"a{4000}","c":"a{4000}","d":"a{4000}"
+        }},"field":"step"});
+        let before = w.files.read(&dir("/work/g"), GraphFile::Graph).unwrap();
+        match w.svc.rule_add(&ctx(), &row, false) {
+            Ok(_) => {}
+            Err(error) => {
+                assert!(i > 0);
+                assert_eq!(error.code, "rule_regex_invalid");
+                assert!(error.slot("reason").unwrap().contains("graph's 8 MiB"));
+                assert_eq!(
+                    w.files.read(&dir("/work/g"), GraphFile::Graph).unwrap(),
+                    before
+                );
+                refused = Some(row);
+                break;
+            }
+        }
+    }
+    let row = refused.expect("the graph compile budget must bind before the 64-rule cap");
+    let mut earlier = row.clone();
+    earlier["name"] = json!("aaaa_first");
+    let added = w.svc.rule_add(&ctx(), &earlier, false).unwrap();
+    let skipped_at_add: Vec<_> = added
+        .notes
+        .iter()
+        .filter(|p| p.code == "rule_skipped")
+        .map(|p| p.slot("name").unwrap())
+        .collect();
+    assert_eq!(skipped_at_add.len(), 1);
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    let loaded = w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    let skipped_at_load: Vec<_> = loaded
+        .notes
+        .iter()
+        .filter(|p| p.code == "rule_skipped")
+        .map(|p| p.slot("name").unwrap())
+        .collect();
+    assert_eq!(skipped_at_add, skipped_at_load);
+    assert!(!skipped_at_load.iter().any(|name| name == "aaaa_first"));
+    let mut meta = codec::decode_graph(
+        &w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    meta.rules
+        .push(umx_core::rules::Rule::from_value(&row).unwrap());
+    let bytes = codec::encode_graph(&meta);
+    w.svc.graph_unload(&ctx(), "demo").unwrap();
+    w.files
+        .write(&dir("/work/g"), GraphFile::Graph, &bytes)
+        .unwrap();
+    let loaded = w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    assert!(
+        loaded.notes.iter().any(
+            |p| p.code == "rule_skipped" && p.slot("reason").unwrap().contains("graph's 8 MiB")
+        )
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        bytes
+    );
+}
+
+#[test]
+fn rule_switches_store_only_names_and_never_lower_the_graph_format() {
+    let mut w = demo();
+    w.svc.ontology_adopt_std(&ctx(), &[], false, &[]).unwrap();
+    let central = ["owned", "rated"].map(|name| {
+        umx_core::rules::Rule::from_value(&json!({
+            "name":format!("std:{name}"),"match":{"type":["risk"]},"field":"step"
+        }))
+        .unwrap()
+    });
+    w.svc.set_central_rules_for_test(central.to_vec());
+    let first = w.svc.rule_switch(&ctx(), "std:owned", true).unwrap();
+    assert!(!first.value.unchanged);
+    assert_eq!(first.value.format, 8);
+    let bytes = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    let meta = codec::decode_graph(&bytes).unwrap();
+    assert!(meta.rules.is_empty());
+    assert_eq!(meta.rules_off, ["std:owned"]);
+    assert!(
+        w.svc
+            .rule_switch(&ctx(), "std:owned", true)
+            .unwrap()
+            .value
+            .unchanged
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        bytes
+    );
+    let own = json!({"name":"local","match":{"type":["risk"]},"field":"step"});
+    w.svc.rule_add(&ctx(), &own, false).unwrap();
+    let rows = w.svc.rule_list(&ctx()).unwrap().value.rows;
+    assert_eq!(
+        rows.iter()
+            .map(|r| (r.rule.name.as_str(), r.source, r.off))
+            .collect::<Vec<_>>(),
+        [
+            ("std:owned", "std", true),
+            ("std:rated", "std", false),
+            ("local", "graph", false)
+        ]
+    );
+    w.files.fail_writes(true);
+    assert_eq!(
+        w.svc
+            .rule_switch(&ctx(), "std:owned", false)
+            .unwrap_err()
+            .code,
+        "write_failed"
+    );
+    assert!(w.svc.rule_list(&ctx()).unwrap().value.rows[0].off);
+    w.files.fail_writes(false);
+    assert!(
+        !w.svc
+            .rule_switch(&ctx(), "std:owned", false)
+            .unwrap()
+            .value
+            .unchanged
+    );
+    let bytes = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    assert!(
+        w.svc
+            .rule_switch(&ctx(), "std:owned", false)
+            .unwrap()
+            .value
+            .unchanged
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        bytes
+    );
+    let meta = codec::decode_graph(&bytes).unwrap();
+    assert_eq!(meta.umx, 8);
+    assert!(meta.rules_off.is_empty());
+    assert_eq!(meta.rules.len(), 1);
+    assert!(
+        !serde_json::from_slice::<serde_json::Value>(&bytes)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .contains_key("rules_off")
+    );
+}
+
+#[test]
+fn stored_rules_survive_vocabulary_removal_and_adoption_with_load_warnings() {
+    for mapping in [false, true] {
+        let mut w = demo();
+        w.svc
+            .ontology_add_type(&ctx(), "individual", &[], None)
+            .unwrap();
+        let row = json!({"name":"named","match":{"type":["individual"]},"field":"step"});
+        w.svc.rule_add(&ctx(), &row, false).unwrap();
+        if mapping {
+            w.svc
+                .ontology_adopt_std(&ctx(), &["individual=person".into()], false, &[])
+                .unwrap();
+        } else {
+            w.svc.ontology_remove_type(&ctx(), "individual").unwrap();
+        }
+        let before = w
+            .files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap();
+        w.svc.graph_unload(&ctx(), "demo").unwrap();
+        let loaded = w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+        let warning = loaded
+            .notes
+            .iter()
+            .find(|p| p.code == "rule_vocabulary_unknown")
+            .unwrap();
+        assert_eq!(
+            warning.slot("fix").as_deref(),
+            Some("umx ontology add type individual --graph demo")
+        );
+        assert_eq!(
+            w.svc
+                .rule_show(&ctx(), "named", 100, 0)
+                .unwrap()
+                .value
+                .total,
+            Some(0)
+        );
+        assert_eq!(
+            w.svc.rule_list(&ctx()).unwrap().value.rows[0]
+                .rule
+                .pattern
+                .types,
+            ["individual"]
+        );
+        assert_eq!(
+            w.files
+                .read(&dir("/work/g"), GraphFile::Graph)
+                .unwrap()
+                .unwrap(),
+            before
+        );
+        let repeated = w.svc.rule_add(&ctx(), &row, false).unwrap();
+        assert!(repeated.value.unchanged);
+        assert!(
+            repeated
+                .notes
+                .iter()
+                .any(|p| p.code == "rule_vocabulary_unknown")
+        );
+    }
+}
+
+#[test]
+fn rule_targets_resolve_prefixes_and_addresses_and_facets_need_no_declaration() {
+    let mut w = demo();
+    let target = add(&mut w.svc, "finding", "Register")
+        .unwrap()
+        .value
+        .node
+        .id;
+    let id = target.to_text();
+    let row =
+        json!({"name":"register","match":{"tag":["custom:*"]},"edge":"part_of","to_node":&id[..6]});
+    let added = w.svc.rule_add(&ctx(), &row, false).unwrap();
+    assert_eq!(added.value.rule.to_node, Some(target));
+    let edges = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Edges)
+        .unwrap()
+        .unwrap();
+    let full = json!({"name":"register","match":{"tag":["custom:*"]},"edge":"part_of","to_node":format!("umx:demo/{id}")});
+    assert!(
+        w.svc
+            .rule_add(&ctx(), &full, false)
+            .unwrap()
+            .value
+            .unchanged
+    );
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Edges)
+            .unwrap()
+            .unwrap(),
+        edges
+    );
+    add(&mut w.svc, "finding", "Second register").unwrap();
+    let ambiguous = json!({"name":"ambiguous","match":{"type":["finding"]},"edge":"part_of","to_node":&id[..6]});
+    assert_eq!(
+        w.svc.rule_add(&ctx(), &ambiguous, false).unwrap_err().code,
+        "id_ambiguous"
+    );
+    let mut selected = ctx();
+    selected.graph = Some("demo".into());
+    let other = json!({"name":"other","match":{"type":["finding"]},"edge":"part_of","to_node":format!("umx:other/{id}")});
+    assert!(w.svc.rule_add(&selected, &other, false).is_err());
+    assert_eq!(w.svc.rule_list(&ctx()).unwrap().value.rows.len(), 1);
+}
+
+#[test]
+fn rule_reads_report_stale_files_without_rewriting_them() {
+    let mut w = demo();
+    let row = json!({"name":"rated","match":{"type":["risk"]},"field":"step"});
+    w.svc.rule_add(&ctx(), &row, false).unwrap();
+    let before = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    let mut meta = codec::decode_graph(&before).unwrap();
+    meta.title = "Changed outside umx".into();
+    let changed = codec::encode_graph(&meta);
+    w.files
+        .write(&dir("/work/g"), GraphFile::Graph, &changed)
+        .unwrap();
+    for notes in [
+        w.svc.rule_list(&ctx()).unwrap().notes,
+        w.svc.rule_show(&ctx(), "rated", 100, 0).unwrap().notes,
+        w.svc.rule_add(&ctx(), &row, true).unwrap().notes,
+    ] {
+        assert!(notes.iter().any(|p| p.code == "stale_files"));
+    }
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        changed
+    );
+}
+
+#[test]
+fn rule_add_keeps_undeclared_vocabulary_and_warns_with_each_declaring_command() {
+    let mut w = demo();
+    let row =
+        json!({"name":"loose","match":{"type":["widget"],"status":["queued"]},"field":"extra"});
+    let before = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    let preview = w.svc.rule_add(&ctx(), &row, true).unwrap();
+    assert_eq!(preview.notes.len(), 3);
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    let added = w.svc.rule_add(&ctx(), &row, false).unwrap();
+    assert_eq!(added.notes.len(), 3);
+    assert!(
+        added
+            .notes
+            .iter()
+            .all(|p| p.code == "rule_vocabulary_unknown"
+                && p.slot("rule").as_deref() == Some("loose"))
+    );
+    assert_eq!(
+        added
+            .notes
+            .iter()
+            .map(|p| p.slot("fix").unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "umx ontology add type widget --graph demo",
+            "umx ontology add status queued --graph demo",
+            "umx ontology add field widget extra:string --graph demo",
+        ]
+    );
+    let stored = w
+        .files
+        .read(&dir("/work/g"), GraphFile::Graph)
+        .unwrap()
+        .unwrap();
+    assert_ne!(stored, before);
+    assert_eq!(codec::decode_graph(&stored).unwrap().rules[0].name, "loose");
+    assert!(w.svc.rule_add(&ctx(), &row, false).unwrap().value.unchanged);
+    assert_eq!(
+        w.files
+            .read(&dir("/work/g"), GraphFile::Graph)
+            .unwrap()
+            .unwrap(),
+        stored
+    );
+}

@@ -94,6 +94,17 @@ fn cwd_dir(cwd: &Option<String>) -> Option<GraphDir> {
     cwd.as_deref().and_then(|c| GraphDir::parse(c).ok())
 }
 
+fn rule_shown_json(v: &umx_services::RuleShown) -> Value {
+    json!({"graph": v.graph, "rule": v.rule, "nodes": v.nodes, "total": v.total,
+        "not_checked": v.not_checked, "not_checked_total": v.not_checked_total,
+        "offset": v.offset, "limit": v.limit, "next": v.next.as_ref().map(|c| c.to_string()),
+        "unchanged": v.unchanged, "dry_run": v.dry_run, "format": v.format})
+}
+
+fn rule_changed_json(v: &umx_services::RuleChanged) -> Value {
+    json!({"graph": v.graph, "name": v.name, "unchanged": v.unchanged, "format": v.format})
+}
+
 fn layer(repo: bool) -> FileLayer {
     if repo {
         FileLayer::Repo
@@ -402,6 +413,24 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
             command,
             services.scope_save(&ctx, name, *replace),
             scope_json,
+        ),
+        Op::RuleAdd { rule, dry_run } => reply(
+            command,
+            services.rule_add(&ctx, rule, *dry_run),
+            rule_shown_json,
+        ),
+        Op::RuleRemove { name } => {
+            reply(command, services.rule_remove(&ctx, name), rule_changed_json)
+        }
+        Op::RuleOff { name } => reply(
+            command,
+            services.rule_switch(&ctx, name, true),
+            rule_changed_json,
+        ),
+        Op::RuleOn { name } => reply(
+            command,
+            services.rule_switch(&ctx, name, false),
+            rule_changed_json,
         ),
         Op::ScopeDelete { name } => reply(
             command,
@@ -2044,6 +2073,24 @@ fn read_in(services: &Services, request: &Request, ctx: Ctx) -> Envelope {
         return Envelope::fail(command, issue(&problem, command));
     }
     match op {
+        Op::RuleList => reply(command, services.rule_list(&ctx), |v| {
+            json!({"graph": v.graph, "total": v.rows.len(), "rows": v.rows.iter().map(|r|
+                json!({"rule": r.rule, "source": r.source, "off": r.off})).collect::<Vec<_>>()})
+        }),
+        Op::RuleShow {
+            name,
+            limit,
+            offset,
+        } => reply(
+            command,
+            services.rule_show(
+                &ctx,
+                name,
+                limit.unwrap_or(DEFAULT_LIMIT),
+                offset.unwrap_or(0),
+            ),
+            rule_shown_json,
+        ),
         Op::ScopeList => reply(command, services.scope_list(), |scopes| {
             list(
                 &["name", "members"],
@@ -3629,6 +3676,27 @@ fn retry(op: &Op) -> Command {
         Op::GraphSpineRemove { alias: a, name: n } => {
             name(alias(Command::new("graph spine remove"), a), n, "<name>")
         }
+        Op::RuleList => Command::new("rule list"),
+        Op::RuleAdd { dry_run, .. } => {
+            let c = Command::new("rule add").word("<name>");
+            if *dry_run { c.word("--dry-run") } else { c }
+        }
+        Op::RuleRemove { name: n } => name(Command::new("rule remove"), n, "<name>"),
+        Op::RuleOff { .. } => Command::new("rule off").word("<std:name>"),
+        Op::RuleOn { .. } => Command::new("rule on").word("<std:name>"),
+        Op::RuleShow {
+            name: n,
+            limit,
+            offset,
+        } => number(
+            number(
+                name(Command::new("rule show"), n, "<name>"),
+                "--limit",
+                limit,
+            ),
+            "--offset",
+            offset,
+        ),
         Op::OntologyRemoveType { name: n } => {
             name(Command::new("ontology remove").word("type"), n, "<name>")
         }

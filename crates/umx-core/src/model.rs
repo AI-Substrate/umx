@@ -25,9 +25,11 @@ pub const FORMAT_SPINES: u32 = 6;
 /// A renamed or moved graph: graph.json's `former_aliases` and `former_paths` (ws006 S23, req-56, architect). An older
 /// umx refuses the graph rather than drop its redirects on its next write.
 pub const FORMAT_FORMER: u32 = 7;
+/// Graph rules and central rule switch-offs. Older readers must not discard either on a write.
+pub const FORMAT_RULES: u32 = 8;
 
 /// The newest graph.json format this build reads and writes, as `"umx"`.
-pub const FORMAT_VERSION: u32 = FORMAT_FORMER;
+pub const FORMAT_VERSION: u32 = FORMAT_RULES;
 
 /// At most this many former aliases, and as many former paths: a rename past it drops the oldest.
 pub const MAX_FORMER: usize = 16;
@@ -39,7 +41,8 @@ const _: () = assert!(
         && FORMAT_FIELD_ROLES < FORMAT_LOCATORS
         && FORMAT_LOCATORS < FORMAT_SPINES
         && FORMAT_SPINES < FORMAT_FORMER
-        && FORMAT_VERSION == FORMAT_FORMER
+        && FORMAT_FORMER < FORMAT_RULES
+        && FORMAT_VERSION == FORMAT_RULES
 );
 
 /// The format the content needs: [`FORMAT_EMBEDDING`] with an `embedding` section, [`FORMAT_FIELD_ROLES`] with a
@@ -50,7 +53,9 @@ impl GraphMeta {
     pub fn needed_format(&self) -> u32 {
         let roles =
             self.ontology.has_roles() || self.embedding.as_ref().is_some_and(|e| e.text_form >= 2);
-        if !self.former_aliases.is_empty() || !self.former_paths.is_empty() {
+        if !self.rules.is_empty() || !self.rules_off.is_empty() {
+            FORMAT_RULES
+        } else if !self.former_aliases.is_empty() || !self.former_paths.is_empty() {
             FORMAT_FORMER
         } else if !self.spines.is_empty() {
             FORMAT_SPINES
@@ -136,6 +141,10 @@ pub struct GraphMeta {
     /// `root:repo` pointers into them. Left out when none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub former_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<crate::rules::Rule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules_off: Vec<String>,
 }
 
 /// graph.json's `embedding` section. When present, all three known keys are written, so a secured or open graph

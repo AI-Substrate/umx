@@ -63,11 +63,13 @@ pub enum DecodeReason {
     /// The file is past what umx holds in memory: 4 GiB of node lines, or 4,294,967,295 records (u32 handles and
     /// offsets).
     TooLarge,
+    Rule(&'static str),
 }
 
 impl fmt::Display for DecodeReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            DecodeReason::Rule(reason) => write!(f, "invalid graph rule: {reason}"),
             DecodeReason::Syntax => f.write_str("not valid JSON"),
             DecodeReason::Data => f.write_str("a field is missing, unknown or of the wrong type"),
             DecodeReason::Eof => f.write_str("the record ends early"),
@@ -191,6 +193,12 @@ fn decode_graph_with_version(bytes: &[u8], supported: u32) -> Result<GraphMeta, 
         line: e.line(),
         column: e.column(),
         reason: reason(&e),
+    })?;
+    crate::rules::stored_ok(&meta.rules, &meta.rules_off).map_err(|reason| DecodeError {
+        file: GraphFile::Graph,
+        line: 1,
+        column: 1,
+        reason: DecodeReason::Rule(reason),
     })?;
     // Format 1 has no `embedding` key: one there is a hand edit, refused like any other unknown key in format 1.
     // Stored spines umx could not have written (a hand edit, R366-3) are refused the same way.
@@ -495,12 +503,10 @@ mod tests {
 
     /// ws006 S23 (architect): graph.json with a former alias or path is written at the former format and refused by a
     /// reader one format older; with neither, both keys are left out and the format is not raised; a hand edit that
-    /// adds one below the format, or one umx could not have written, is refused as Data. It is this build's format
-    /// (the last row of model.rs's format table).
+    /// adds one below the format, or one umx could not have written, is refused as Data.
     #[test]
     fn the_former_format_is_written_for_a_redirect_and_refused_by_an_older_reader() {
         use crate::model::{FORMAT_FORMER, MAX_FORMER};
-        assert_eq!(FORMAT_VERSION, FORMAT_FORMER);
         let meta = decode_graph(V1.as_bytes()).unwrap();
         let plain = encode_graph(&meta);
         let text = core::str::from_utf8(&plain).unwrap();
@@ -806,6 +812,8 @@ mod tests {
             spines: Vec::new(),
             former_aliases: Vec::new(),
             former_paths: Vec::new(),
+            rules: Vec::new(),
+            rules_off: Vec::new(),
             umx: 1,
             id: Id(7),
             alias: "demo".into(),
@@ -831,6 +839,60 @@ mod tests {
         }
     }
 
+    #[test]
+    fn rules_raise_format_only_when_used_and_older_readers_refuse_them() {
+        let mut meta = decode_graph(V1.as_bytes()).unwrap();
+        let before = encode_graph(&meta);
+        assert_eq!(encode_graph(&decode_graph(&before).unwrap()), before);
+        meta.rules.push(
+            crate::rules::Rule::from_value(&serde_json::json!({
+                "name": "rated", "match": {"type": ["risk"]}, "field": "rating"
+            }))
+            .unwrap(),
+        );
+        let written = encode_graph(&meta);
+        assert_eq!(
+            decode_graph(&written).unwrap().umx,
+            crate::model::FORMAT_RULES
+        );
+        assert_eq!(
+            decode_graph_with_version(&written, 7).unwrap_err().reason,
+            DecodeReason::NewerFormat(8)
+        );
+        meta.rules.clear();
+        meta.rules_off.push("std:owned".into());
+        assert_eq!(
+            decode_graph(&encode_graph(&meta)).unwrap().umx,
+            crate::model::FORMAT_RULES
+        );
+        meta.rules_off.clear();
+        assert_eq!(encode_graph(&meta), before);
+    }
+
+    #[test]
+    fn hand_edited_rules_have_a_reason_and_cannot_exceed_the_cap() {
+        let mut meta = decode_graph(V1.as_bytes()).unwrap();
+        let rule = crate::rules::Rule::from_value(&serde_json::json!({
+            "name": "rated", "match": {"type": ["risk"]}, "field": "rating"
+        }))
+        .unwrap();
+        meta.rules = (0..65)
+            .map(|i| crate::rules::Rule {
+                name: alloc::format!("rated_{i}"),
+                ..rule.clone()
+            })
+            .collect();
+        assert_eq!(
+            decode_graph(&encode_graph(&meta)).unwrap_err().reason,
+            DecodeReason::Rule("a graph holds at most 64 rules of its own")
+        );
+        meta.rules = alloc::vec![rule.clone(), rule];
+        assert!(matches!(
+            decode_graph(&encode_graph(&meta)).unwrap_err().reason,
+            DecodeReason::Rule(_)
+        ));
+    }
+
     fn described_meta() -> GraphMeta {
         let mut ontology = Ontology::starter();
         ontology.types[0]
@@ -851,6 +913,8 @@ mod tests {
             spines: Vec::new(),
             former_aliases: Vec::new(),
             former_paths: Vec::new(),
+            rules: Vec::new(),
+            rules_off: Vec::new(),
             umx: 1,
             id: Id(7),
             alias: "demo".into(),
@@ -1028,6 +1092,8 @@ mod tests {
             spines: Vec::new(),
             former_aliases: Vec::new(),
             former_paths: Vec::new(),
+            rules: Vec::new(),
+            rules_off: Vec::new(),
             umx: FORMAT_VERSION,
             id: Id(7),
             alias: "demo".into(),

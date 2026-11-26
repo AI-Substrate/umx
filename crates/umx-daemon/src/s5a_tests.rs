@@ -237,7 +237,11 @@ fn writes(op: &Op) -> Writes {
         | Op::EntityUndeny { .. }
         | Op::GraphSpineSet { .. }
         | Op::GraphSpineConfirm { .. }
-        | Op::GraphSpineRemove { .. } => Content,
+        | Op::GraphSpineRemove { .. }
+        | Op::RuleAdd { dry_run: false, .. }
+        | Op::RuleRemove { .. }
+        | Op::RuleOff { .. }
+        | Op::RuleOn { .. } => Content,
         Op::GraphNew { .. }
         | Op::GraphLoad { .. }
         | Op::GraphUnload { .. }
@@ -251,6 +255,7 @@ fn writes(op: &Op) -> Writes {
         | Op::GraphConfirmPolicy { .. }
         | Op::SimilarityRebuild
         | Op::Batch { dry_run: true, .. }
+        | Op::RuleAdd { dry_run: true, .. }
         | Op::EntityLink { dry_run: true, .. }
         | Op::OntologyAdoptStd { dry_run: true, .. }
         | Op::EmbeddingsAllow { .. }
@@ -266,6 +271,8 @@ fn writes(op: &Op) -> Writes {
         | Op::RootAdd { .. }
         | Op::RootRemove { .. } => Elsewhere,
         Op::GraphList { .. }
+        | Op::RuleList
+        | Op::RuleShow { .. }
         | Op::NodeGet { .. }
         | Op::NodeList { .. }
         | Op::NodeFind { .. }

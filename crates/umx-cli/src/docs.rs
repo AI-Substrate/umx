@@ -12,6 +12,12 @@ struct Topic {
 
 const TOPICS: &[Topic] = &[
     Topic {
+        name: "rules",
+        title: "Graph rules",
+        summary: "Declare, preview, list and remove graph rules; bounded regex patterns and central rule switch-offs.",
+        markdown: || include_str!("../docs/rules.md").to_owned(),
+    },
+    Topic {
         name: "entity",
         title: "Entities across graphs",
         summary: "Entity keys: one thing in many graphs, entity key add/remove, finding nodes that share a key.",
@@ -246,6 +252,7 @@ pub fn agents_start_here() -> Envelope {
 /// Words that are not a docs topic but whose help is one: the query verbs are in explore; `umx check --help` is in the graph topic, and the
 /// top-level commands are in start.
 const HELP_ALIASES: &[(&str, &str)] = &[
+    ("rule", "rules"),
     ("neighbours", "explore"),
     ("walk", "explore"),
     ("path", "explore"),
@@ -261,6 +268,7 @@ const HELP_ALIASES: &[(&str, &str)] = &[
 
 /// The nouns `umx --help` lists, each with its topic's summary.
 const HELP_NOUNS: &[&str] = &[
+    "rule",
     "entity",
     "scope",
     "graph",
@@ -725,7 +733,7 @@ mod tests {
                 Some(
                     &("graph" | "node" | "edge" | "ontology" | "check" | "config" | "embeddings"
                     | "similarity" | "neighbours" | "walk" | "path" | "search" | "query"
-                    | "scope" | "resolve" | "root" | "entity" | "resource" | "who"),
+                    | "scope" | "resolve" | "root" | "entity" | "resource" | "who" | "rule"),
                 ) => crate::parse::parse(&words, std::path::Path::new("/")).is_ok(),
                 Some(&"batch") => crate::parse::batch(&words[1..]).is_ok(),
                 Some(&"ui")
@@ -1164,6 +1172,7 @@ mod tests {
     /// docs topic that does not exist.
     fn unknown_verbs(page: &str) -> Vec<String> {
         let nouns = [
+            "rule",
             "graph",
             "node",
             "edge",

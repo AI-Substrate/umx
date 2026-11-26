@@ -29,6 +29,7 @@ mod registry;
 mod rename;
 mod resolve;
 mod resources;
+mod rules;
 mod scopes;
 mod search;
 mod secrets;
@@ -118,6 +119,7 @@ pub use rename::{Moved, Renamed};
 pub(crate) use resolve::check_evidence;
 pub use resolve::{ResolveStatus, Resolved, Target};
 pub use resources::ResourceShown;
+pub use rules::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub(crate) use scopes::SavedRead;
 pub use scopes::{Scope, ScopeInfo, ScopeMemberInfo};
 pub(crate) use search::ReadScope;
@@ -371,6 +373,7 @@ impl Loaded {
 pub struct GraphStore {
     ports: Ports,
     graphs: BTreeMap<String, Loaded>,
+    central_rules: Vec<umx_core::rules::Rule>,
     /// Idle time after which a graph unloads itself; 0 means never.
     idle_ms: u64,
     /// The folders graphs may live in, as the composition configured them; named in `path_outside_roots`.
@@ -438,6 +441,7 @@ impl GraphStore {
             ports,
             reload,
             graphs: BTreeMap::new(),
+            central_rules: umx_core::standard::std_rules(),
             idle_ms: 0,
             roots: Vec::new(),
             unsaved: Vec::new(),
@@ -1336,6 +1340,8 @@ mod tests {
             spines: Vec::new(),
             former_aliases: Vec::new(),
             former_paths: Vec::new(),
+            rules: Vec::new(),
+            rules_off: Vec::new(),
             umx: FORMAT_VERSION,
             id: Id(1),
             alias: "demo".into(),

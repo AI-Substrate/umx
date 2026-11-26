@@ -1,0 +1,261 @@
+//! Graph shape as data. Patterns read only a node's stored values; regex execution belongs to services.
+
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
+use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
+
+use crate::{Node, Value};
+
+pub const MAX_RULES: usize = 64;
+pub const MAX_REGEX_CHARS: usize = 256;
+pub const MAX_REGEXES: usize = 4;
+
+fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pattern {
+    #[serde(default, rename = "type", skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub status: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tag: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub field: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub regex: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rule {
+    pub name: String,
+    #[serde(rename = "match")]
+    pub pattern: Pattern,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub field: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub edge: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub from: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub to: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub to_node: Option<crate::Id>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<String>,
+}
+
+impl Rule {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        Self::deserialize(value).ok()
+    }
+
+    /// The reason is always a fixed sentence, never input text.
+    pub fn check(&self) -> Result<(), &'static str> {
+        let plain = self.name.strip_prefix("std:").unwrap_or(&self.name);
+        if !crate::name::is_valid_name(plain) {
+            return Err("a rule name is snake_case");
+        }
+        let p = &self.pattern;
+        if p.regex.len() > MAX_REGEXES {
+            return Err("a rule has at most 4 regex fields");
+        }
+        if p.types.is_empty()
+            && p.status.is_empty()
+            && p.tag.is_empty()
+            && p.field.is_empty()
+            && p.regex.is_empty()
+        {
+            return Err("match needs at least one nonempty pattern key");
+        }
+        if p.types
+            .iter()
+            .chain(&p.status)
+            .any(|s| !crate::name::is_valid_name(s))
+            || self
+                .field
+                .iter()
+                .chain(&self.edge)
+                .any(|s| !crate::name::is_valid_name(s))
+            || p.field
+                .keys()
+                .chain(p.regex.keys())
+                .any(|s| !crate::name::is_valid_name(s))
+        {
+            return Err("types, statuses, fields and relations are snake_case names");
+        }
+        if p.tag.iter().any(|t| {
+            crate::tags::Pattern::parse(t).is_err()
+                || crate::tags::Pattern::parse(t).is_ok_and(|p| p.text() != *t)
+        }) {
+            return Err("a tag pattern is a canonical tag or facet:*");
+        }
+        let selectors = usize::from(self.from.is_some())
+            + usize::from(self.to.is_some())
+            + usize::from(self.to_node.is_some());
+        match (&self.field, &self.edge) {
+            (Some(_), None) if selectors == 0 => {}
+            (None, Some(_)) if selectors == 1 => {}
+            _ => return Err("give a field, or an edge with exactly one of from, to or to_node"),
+        }
+        for types in self.from.iter().chain(&self.to) {
+            if types.is_empty() || types.iter().any(|s| !crate::name::is_valid_name(s)) {
+                return Err("from and to each need a nonempty list of snake_case type names");
+            }
+        }
+        if self.description.as_ref().is_some_and(|d| {
+            d.chars().count() > crate::ontology::MAX_DESCRIPTION_CHARS || d.contains(['\n', '\r'])
+        }) {
+            return Err("a description is one line of at most 500 characters");
+        }
+        Ok(())
+    }
+}
+
+impl Pattern {
+    pub fn matches_exact(&self, node: &Node) -> bool {
+        (self.types.is_empty() || self.types.contains(&node.kind))
+            && (self.status.is_empty() || self.status.contains(&node.status))
+            && (self.tag.is_empty()
+                || node.fields.get(crate::tags::TAGS).is_some_and(|v| {
+                    let tags = crate::tags::stored_tags(v);
+                    self.tag.iter().any(|p| {
+                        crate::tags::Pattern::parse(p)
+                            .is_ok_and(|p| tags.iter().any(|t| p.matches(t)))
+                    })
+                }))
+            && self
+                .field
+                .iter()
+                .all(|(key, value)| node.fields.get(key) == Some(value))
+    }
+}
+
+pub fn stored_ok(rules: &[Rule], off: &[String]) -> Result<(), &'static str> {
+    if rules.len() > MAX_RULES {
+        return Err("a graph holds at most 64 rules of its own");
+    }
+    let mut names = BTreeSet::new();
+    for rule in rules {
+        rule.check()?;
+        if rule.name.starts_with("std:") || !names.insert(&rule.name) {
+            return Err("graph rule names are unique and cannot use the std: prefix");
+        }
+    }
+    let mut names = BTreeSet::new();
+    for name in off {
+        if !name
+            .strip_prefix("std:")
+            .is_some_and(crate::name::is_valid_name)
+            || !names.insert(name)
+        {
+            return Err("rules_off holds unique std:<name> entries");
+        }
+    }
+    Ok(())
+}
+
+/// Central rules first, then the graph's own, without persisting the effective list.
+pub fn effective<'a>(central: &'a [Rule], own: &'a [Rule], off: &[String]) -> Vec<&'a Rule> {
+    central
+        .iter()
+        .filter(|r| !off.contains(&r.name))
+        .chain(own)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use serde_json::json;
+
+    #[test]
+    fn rules_read_all_three_shapes_and_refuse_ambiguous_or_unknown_keys() {
+        for row in [
+            json!({"name":"rated","match":{"type":["risk"]},"field":"rating"}),
+            json!({"name":"owned","match":{"type":["risk"]},"edge":"owns","from":["person","team"]}),
+            json!({"name":"register","match":{"regex":{"title":"^SEC-[0-9]+"}},"edge":"part_of","to_node":"00000000000000000000000001"}),
+            json!({"name":"four","match":{"regex":{"a":"x","b":"x","c":"x","d":"x"}},"field":"rating"}),
+        ] {
+            let rule = Rule::from_value(&row).unwrap();
+            assert!(rule.check().is_ok());
+            assert_eq!(serde_json::to_value(&rule).unwrap(), row);
+        }
+        for row in [
+            json!({"name":"bad","match":{},"field":"rating"}),
+            json!({"name":"bad","match":{"type":["risk"]},"field":"rating","edge":"owns","from":["person"]}),
+            json!({"name":"bad","match":{"type":["risk"]},"edge":"owns"}),
+            json!({"name":"bad","match":{"type":["risk"]},"edge":"owns","from":[]}),
+            json!({"name":"bad","match":{"type":["risk"]},"edge":"owns","from":["person"],"to":["team"]}),
+            json!({"name":"bad","match":{"type":["risk"]},"field":"rating","fill":false}),
+            json!({"name":"bad","match":{"type":["risk"]},"field":"rating","edge":null}),
+            json!({"name":"bad","match":{"type":["risk"]},"field":"rating","description":null}),
+            json!({"name":"bad","match":{"regex":{"a":"x","b":"x","c":"x","d":"x","e":"x"}},"field":"rating"}),
+        ] {
+            assert!(
+                Rule::from_value(&row).is_none_or(|r| r.check().is_err()),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn effective_rules_subtract_central_names_without_overriding_or_writing_rows() {
+        let std = vec![
+            Rule::from_value(
+                &json!({"name":"std:owned","match":{"type":["risk"]},"field":"owner"}),
+            )
+            .unwrap(),
+            Rule::from_value(
+                &json!({"name":"std:rated","match":{"type":["risk"]},"field":"rating"}),
+            )
+            .unwrap(),
+        ];
+        let own = vec![
+            Rule::from_value(&json!({"name":"rated","match":{"type":["risk"]},"field":"rating"}))
+                .unwrap(),
+        ];
+        let rules = effective(&std, &own, &["std:owned".into()]);
+        assert_eq!(
+            rules.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            ["std:rated", "rated"]
+        );
+        assert_eq!(effective(&[], &own, &[]), [&own[0]]);
+        assert_eq!(std.len(), 2);
+        assert!(stored_ok(&own, &["std:owned".into()]).is_ok());
+        assert!(stored_ok(&std, &[]).is_err());
+        assert!(stored_ok(&own, &["owned".into()]).is_err());
+    }
+}

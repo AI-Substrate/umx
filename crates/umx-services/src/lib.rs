@@ -77,6 +77,7 @@ pub use graph_store::{LINT_PAGE, Lint, LintKind, LintRequest, LintRow, RangePair
 pub use graph_store::{NEAR_DUPLICATE, NEAR_DUPLICATE_OTHER_TYPE};
 pub use graph_store::{NodeWho, StampState, WhoListed, WhoNode, WhoRecord, WhoRow, WhoStamp};
 pub use graph_store::{NotReloaded, ReloadReport, Reloaded};
+pub use graph_store::{RuleChanged, RuleEntry, RuleMatcher, RuleShown, RulesListed};
 pub use graph_store::{Scope, ScopeInfo, ScopeMemberInfo, SelectedRow, SourceRoots, TITLE_CHARS};
 /// A rebuild's snapshot and lists cross the daemon's threads (ws004 s09) as services types: the daemon names no
 /// umx-graph type (architect F1).
@@ -2626,6 +2627,42 @@ impl Services {
         name: &str,
     ) -> Outcome<SpineRemoved> {
         self.graph.graph_spine_remove(ctx, alias, name)
+    }
+
+    pub fn rule_list(&self, ctx: &Ctx) -> Outcome<RulesListed> {
+        self.graph.rule_list(ctx)
+    }
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn set_central_rules_for_test(&mut self, rules: Vec<umx_core::rules::Rule>) {
+        self.graph.set_central_rules_for_test(rules);
+    }
+
+    pub fn rule_show(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Outcome<RuleShown> {
+        self.graph.rule_show(ctx, name, limit, offset)
+    }
+
+    pub fn rule_add(
+        &mut self,
+        ctx: &Ctx,
+        rule: &umx_core::Value,
+        dry_run: bool,
+    ) -> Outcome<RuleShown> {
+        self.graph.rule_add(ctx, rule, dry_run)
+    }
+
+    pub fn rule_remove(&mut self, ctx: &Ctx, name: &str) -> Outcome<RuleChanged> {
+        self.graph.rule_remove(ctx, name)
+    }
+
+    pub fn rule_switch(&mut self, ctx: &Ctx, name: &str, off: bool) -> Outcome<RuleChanged> {
+        self.graph.rule_switch(ctx, name, off)
     }
 
     /// `ontology set field <type> <field> --role data|content` (D56, req-97): each node whose embedded text the

@@ -231,15 +231,19 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// relative evidence and locator paths may start with `..` and reach anywhere in the graph's git repo (usage 223).
 /// 103: `evidence_sources` is reserved on nodes and edges (`n.evidence_sources` in `umx query`); new code
 /// `evidence_sources_field_kept` (warning) for a record that already holds its own field of that name (usage 224).
-/// 105 (slice 1 holds 104): ordered string field `values` in ontology show and graph guide; `--values` on
+/// 105: ordered string field `values` in ontology show and graph guide; `--values` on
 /// OntologyAddField and OntologySetField, `--clear-values`, optional set role, and
 /// `field_value_off_vocabulary` (warning), `field_values_invalid` (declaration error; usage 226).
+/// 106: graph rule management: RuleList, RuleAdd (including dry_run), RuleRemove, RuleOff, RuleOn and RuleShow;
+/// rule_invalid, rule_regex_invalid, rule_vocabulary_unknown, rule_not_found, rule_name_taken, rule_matches_cut,
+/// rule_scan_cut, rule_skipped and rule_node_unchecked. Rule previews include a capped not_checked ID list and
+/// not_checked_total, continuing after unaffordable nodes; total is null when some nodes could not be checked.
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 105;
+pub const PROTOCOL: u32 = 106;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -248,7 +252,7 @@ pub const PROTOCOL: u32 = 105;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (105, 0xbf24_8de8_d765_df44);
+const WIRE_FINGERPRINT: (u32, u64) = (106, 0x68b3_a846_7456_37f3);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -2017,6 +2021,25 @@ pub enum Op {
         alias: String,
         name: String,
     },
+    RuleList,
+    RuleAdd {
+        rule: Value,
+        dry_run: bool,
+    },
+    RuleRemove {
+        name: String,
+    },
+    RuleOff {
+        name: String,
+    },
+    RuleOn {
+        name: String,
+    },
+    RuleShow {
+        name: String,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    },
     /// `umx entity link <a> <b>` (ws008 E2): stores one `same_as` edge between two nodes, usually in two graphs, in
     /// the graph the request names (`--graph`), else in `a`'s. `dry_run` (ws008 E2b F179) checks it and reports what
     /// it would store and warn, writing nothing.
@@ -2320,6 +2343,12 @@ impl Op {
         "graph move",
         "ontology adopt-std",
         "resource refresh",
+        "rule list",
+        "rule add",
+        "rule remove",
+        "rule off",
+        "rule on",
+        "rule show",
     ];
 
     /// Labels only the graph view sends (ws009 S6): no CLI verb, so no example, help, flags row or skill home.
@@ -2420,6 +2449,12 @@ impl Op {
             Op::GraphMove { .. } => 79,
             Op::OntologyAdoptStd { .. } => 80,
             Op::ResourceRefresh { .. } => 81,
+            Op::RuleList => 82,
+            Op::RuleAdd { .. } => 83,
+            Op::RuleRemove { .. } => 84,
+            Op::RuleOff { .. } => 85,
+            Op::RuleOn { .. } => 86,
+            Op::RuleShow { .. } => 87,
         }]
     }
 
@@ -2437,6 +2472,8 @@ impl Op {
                 | Op::GraphGuide { .. }
                 | Op::GraphSpinePropose { .. }
                 | Op::GraphSpineShow { .. }
+                | Op::RuleList
+                | Op::RuleShow { .. }
                 | Op::Resolve { .. }
                 | Op::Query { .. }
                 | Op::Search { .. }
@@ -2511,6 +2548,10 @@ impl Op {
                 | Op::GraphSpineSet { .. }
                 | Op::GraphSpineConfirm { .. }
                 | Op::GraphSpineRemove { .. }
+                | Op::RuleAdd { .. }
+                | Op::RuleRemove { .. }
+                | Op::RuleOff { .. }
+                | Op::RuleOn { .. }
         )
     }
 
@@ -3629,6 +3670,42 @@ catalogue! {
     SourceMissing => "source_missing", Warning, 0,
         "check found cited local files that cannot be read now; data.sources lists them with what reading them gave",
         "<count> cited files in <graph> cannot be read now; the first is <id> at <place>. Restore the file or fix what cites it.",
+        "<fix>";
+    RuleInvalid => "rule_invalid", Error, 1,
+        "a rule has an invalid shape, name, cap, description or target; nothing was written",
+        "Invalid rule: <reason>. Nothing changed.",
+        "umx docs get rules";
+    RuleRegexInvalid => "rule_regex_invalid", Error, 1,
+        "a rule regex has invalid or unsupported syntax, exceeds 256 characters or the compile size limit",
+        "Rule regex at position <position>: <reason>. Nothing changed.",
+        "umx docs get rules";
+    RuleNotFound => "rule_not_found", Error, 1,
+        "there is no graph or central rule with the requested name",
+        "No rule named <name> was found.",
+        "umx rule list";
+    RuleVocabularyUnknown => "rule_vocabulary_unknown", Warning, 0,
+        "a rule names vocabulary neither the graph nor std declares; add and load keep it with the declaring command",
+        "Rule <rule> names undeclared <at> <name>. Declare it if intended.",
+        "<fix>";
+    RuleNameTaken => "rule_name_taken", Error, 1,
+        "a graph rule already has this name but a different row; remove it before adding the changed row",
+        "Rule <name> already has a different declaration. Nothing changed.",
+        "umx rule remove <name>";
+    RuleMatchesCut => "rule_matches_cut", Hint, 0,
+        "a stored rule's preview shows only one page of matching nodes; the total and next page are reported",
+        "More nodes match this rule than this page shows.",
+        "<fix>";
+    RuleScanCut => "rule_scan_cut", Hint, 0,
+        "a rule preview skipped nodes over its per-node or whole-scan work budget; not_checked lists their ids up to its cap",
+        "Some nodes were not checked within the work limits. The matching-node total is unknown; see not_checked and not_checked_total.",
+        "umx docs get rules";
+    RuleNodeUnchecked => "rule_node_unchecked", Warning, 0,
+        "a rule could not check some nodes within its work limits; each is counted as not matching this call, and later nodes are still checked",
+        "Rule <name> did not check <count> nodes within its work limits. Their ids are listed separately from matches.",
+        "<fix>";
+    RuleSkipped => "rule_skipped", Warning, 0,
+        "a stored rule exceeds this build's regex size or graph compile budget; its row is kept but not evaluated",
+        "Rule <name> was skipped: <reason>. Its stored row is unchanged; remove it or re-add a smaller pattern.",
         "<fix>";
     // ws008 TM5 (req-149): declared spines.
     SpineNameUnknown => "spine_name_unknown", Error, 1,
@@ -6178,6 +6255,25 @@ mod tests {
                 limit: Some(5),
             },
             Op::NodeWho { node: "n".into() },
+            Op::RuleList,
+            Op::RuleAdd {
+                rule: json!({"name":"rated","match":{"type":["risk"]},"field":"impact"}),
+                dry_run: true,
+            },
+            Op::RuleRemove {
+                name: "rated".into(),
+            },
+            Op::RuleOff {
+                name: "std:owned".into(),
+            },
+            Op::RuleOn {
+                name: "std:owned".into(),
+            },
+            Op::RuleShow {
+                name: "rated".into(),
+                limit: Some(10),
+                offset: Some(2),
+            },
         ]
     }
 
@@ -6278,6 +6374,12 @@ mod tests {
             Op::OntologyAdoptStd { .. } => 89,
             Op::OntologyAddTag { .. } => 90,
             Op::ResourceRefresh { .. } => 91,
+            Op::RuleList => 92,
+            Op::RuleAdd { .. } => 93,
+            Op::RuleRemove { .. } => 94,
+            Op::RuleOff { .. } => 95,
+            Op::RuleOn { .. } => 96,
+            Op::RuleShow { .. } => 97,
         }
     }
 
@@ -6423,7 +6525,7 @@ mod tests {
         let seen: std::collections::BTreeSet<usize> = ops.iter().map(variant).collect();
         assert_eq!(
             (seen.len(), ops.len()),
-            (92, 92),
+            (98, 98),
             "one sample per Op variant"
         );
         let now = (PROTOCOL, fnv1a(wire_samples().as_bytes()));

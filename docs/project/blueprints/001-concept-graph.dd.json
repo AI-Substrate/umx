@@ -162,7 +162,7 @@
 						"../prds/001-concept-graph.dd.json#requirements/req-76"
 					],
 					"state": "planned",
-					"note": "Workstream 001. s05 for graph, node, edge, ontology."
+					"note": "Workstream 001. s05 for graph, node, edge, ontology. Rule matching pins regex-syntax and regex-automata exactly with default features disabled, alloc and Unicode enabled. Rust-dialect patterns use bounded Thompson NFAs and a cache-bounded lazy DFA with PikeVM fallback, under graph compile and deterministic scan budgets; both libraries are pure computation with no port or adapter."
 				},
 				{
 					"id": "c-port-graph-files",

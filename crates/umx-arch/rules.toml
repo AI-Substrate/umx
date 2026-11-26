@@ -191,7 +191,7 @@ external = []
 name = "umx-services"
 # umx-query: the umx query capability (ws005 s04, architect).
 workspace = ["umx-core", "umx-graph", "umx-query"]
-external = []
+external = ["regex-syntax", "regex-automata"]
 
 [[crate]]
 name = "umx-contracts"
