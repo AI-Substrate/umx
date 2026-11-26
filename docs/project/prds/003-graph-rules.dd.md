@@ -29,7 +29,7 @@ The rules guide two things. They guide the graph's shape, the same way for every
 
 Rules must not make a graph rigid, inflexible or unworkable. An agent has agency in how it designs its graph; rules are hints and nudges toward a good shape, never a fence (project lead, 2026-11-26). So a rule never blocks a write, every central rule can be switched off, anything umx adds for a rule can be deleted by hand and stays deleted, and an agent that ignores a nudge loses nothing but the reminder.
 
-The first real user is the AFP agent in Work IQ, which will build risks from the AFP engagement with these rules once they ship (project lead, 2026-11-26).
+The first real user is an agent on a live engagement, which will build that engagement's risks with these rules once they ship (project lead, 2026-11-26).
 
 <a id="actors"></a>
 
