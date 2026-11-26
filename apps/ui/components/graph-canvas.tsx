@@ -338,7 +338,7 @@ const NO_PLACES: ReadonlyMap<string, Place> = new Map();
 /** A thread's width, in screen pixels: confirmed, and picked by "Show across graphs" (ws009 M2 design point 1). */
 const THREAD = { normal: 1.2, emphasis: 2.4 };
 
-function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "similarity", spineKey = "", onUnlabelled, spineAxes = NO_AXES }: Props) {
+function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "normal", spineKey = "", onUnlabelled, spineAxes = NO_AXES }: Props) {
   const sigma = useSigma<NodeAttrs, EdgeAttrs>();
   // Merged places (ws009 M2), recomputed lazily after any node change (layout, visibility, live), read by the reducers
   // and the overlays.

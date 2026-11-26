@@ -98,8 +98,6 @@ export function spineLayout(
   // Spread pushes rows apart by s and columns by sqrt(s): labels run across, so rows need the room more.
   const row = (h / ROWS) * s * Math.sqrt(spacing / 1.6);
   const col = (h / ROWS) * FAN * Math.sqrt(s) * Math.sqrt(spacing / 1.6);
-  if (hubs.size > 0) return spineFans(graph, nodes, places, hubs, row, col, cx, cy);
-
   const bands = [...new Set(nodes.map((n) => places.get(n.id)?.band).filter((b): b is number => typeof b === "number"))].sort((a, b) => a - b);
   const members = new Map<number, { key: string; x: number; y: number }[]>();
   const anchors = new Map<number, string[]>();
@@ -136,8 +134,8 @@ export function spineLayout(
   for (const [band, list] of members) {
     const mid = column.get(band)!;
     const k = fanOf(list.length, 2 * rows);
-    // Kept in the order the force layout had them across, so neighbours stay near; then split above and below.
-    list.sort((a, b) => a.x - b.x || a.key.localeCompare(b.key));
+    // Keep hub members together, but retain the spine's aspect-aware grid instead of serialising whole fans.
+    list.sort((a, b) => (hubs.size > 0 ? (hubs.get(a.key) ?? a.key).localeCompare(hubs.get(b.key) ?? b.key) : 0) || a.x - b.x || a.key.localeCompare(b.key));
     const size = Math.ceil(list.length / k);
     for (let j = 0; j < k; j++) {
       const x = mid + (j - (k - 1) / 2 + shiftOf(k)) * col;
@@ -163,74 +161,6 @@ export function spineLayout(
       ? { graph, y: cy, x0: left, x1: left + w, bands: bands.map((b) => column.get(b)!), anchors: [...anchors.values()].flat().sort(), pitch: row }
       : null;
   return { at, axis, clearance: Math.min(row, col) * 0.45 };
-}
-
-/** A fan never borrows another band's x range. When its hub is elsewhere, its members circle a projected centre
- * in their own band; an anchor always keeps its own centre on the axis. */
-function spineFans(
-  graph: string, nodes: readonly { key: string; id: string; x: number; y: number }[],
-  places: ReadonlyMap<string, Place>, hubs: ReadonlyMap<string, string>, row: number, col: number, cx: number, cy: number,
-): { at: Map<string, At>; axis: SpineAxis | null; clearance: number } {
-  const bands = new Map<number, typeof nodes[number][]>();
-  const shelf: typeof nodes[number][] = [];
-  for (const n of [...nodes].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) {
-    const band = places.get(n.id)?.band;
-    if (band === null || band === undefined) shelf.push(n);
-    else {
-      const list = bands.get(band);
-      if (list) list.push(n);
-      else bands.set(band, [n]);
-    }
-  }
-  const at = new Map<string, At>(), centres: number[] = [], anchors: string[] = [];
-  const pitch = Math.max(row, col);
-  let right = 0, bottom = 0;
-  for (const [, list] of [...bands].sort(([a], [b]) => a - b)) {
-    const groups = new Map<string, typeof list>();
-    const free: typeof list = [];
-    for (const n of list) {
-      const head = places.get(n.id)?.anchor ? n.key : hubs.get(n.key);
-      if (!head) free.push(n);
-      else {
-        const group = groups.get(head);
-        if (group) group.push(n);
-        else groups.set(head, [n]);
-      }
-    }
-    const start = right;
-    for (const [head, members] of [...groups].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-      const children = members.filter((n) => n.key !== head);
-      const offsets: At[] = [];
-      for (let ring = 1; offsets.length < children.length; ring++) {
-        const radius = ring * pitch;
-        const count = Math.min(children.length - offsets.length, Math.max(1, Math.floor(Math.PI / Math.asin(0.5 / ring))));
-        for (let i = 0; i < count; i++) offsets.push({ x: Math.cos(i * 2 * Math.PI / count) * radius, y: Math.sin(i * 2 * Math.PI / count) * radius });
-      }
-      const reach = offsets.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.y)), 0) + pitch / 2;
-      const x = right + reach;
-      for (const n of members) if (n.key === head) at.set(n.key, { x, y: 0 });
-      children.forEach((n, i) => at.set(n.key, { x: x + offsets[i].x, y: offsets[i].y }));
-      bottom = Math.min(bottom, -reach);
-      right += reach * 2 + pitch;
-    }
-    const columns = Math.max(1, Math.ceil(Math.sqrt(free.length)));
-    free.forEach((n, i) => {
-      const y = (Math.floor(i / columns) - Math.floor(free.length / columns) / 2) * pitch;
-      at.set(n.key, { x: right + ((i % columns) + 0.5) * pitch, y });
-      bottom = Math.min(bottom, y);
-    });
-    if (free.length > 0) right += columns * pitch + pitch;
-    centres.push((start + right) / 2);
-    for (const n of list) if (places.get(n.id)?.anchor) anchors.push(n.key);
-  }
-  const width = Math.max(right, Math.ceil(Math.sqrt(shelf.length)) * pitch, pitch);
-  const shelfColumns = Math.max(1, Math.floor(width / pitch));
-  shelf.forEach((n, i) => at.set(n.key, { x: ((i % shelfColumns) + 0.5) * pitch, y: bottom - 2 * pitch - Math.floor(i / shelfColumns) * pitch }));
-  for (const p of at.values()) { p.x += cx - width / 2; p.y += cy; }
-  return {
-    at, clearance: Math.min(row, col) * 0.45,
-    axis: centres.length > 0 ? { graph, y: cy, x0: cx - width / 2, x1: cx + width / 2, bands: centres.map((x) => x + cx - width / 2), anchors, pitch: row } : null,
-  };
 }
 
 /** An anchor's label narrower than this (px) is not cut to fit before the next anchor: it runs past it, to at most

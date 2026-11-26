@@ -7,7 +7,7 @@ import { rng } from "@/lib/graph/rng";
 export type LayoutMode = "normal" | "degree" | "similarity" | "declared";
 export type DegreeMode = "incoming" | "outgoing" | "connections";
 export type HubOptions = { mode: LayoutMode; degree: DegreeMode; count: number };
-export const HUB_DEFAULTS: HubOptions = { mode: "similarity", degree: "connections", count: 10 };
+export const HUB_DEFAULTS: HubOptions = { mode: "normal", degree: "connections", count: 10 };
 export const hubSize = (size: number) => Math.max(size, 10) * 1.6;
 export function hubCount(value: number): number {
   return Number.isInteger(value) && value >= 1 && value <= 100 ? value : HUB_DEFAULTS.count;

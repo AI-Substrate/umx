@@ -88,13 +88,17 @@ describe("clearance and fans", () => {
     }
   });
 
-  it("spine fans keep anchors on-axis, cross-band members in order and unplaced nodes on the shelf", () => {
+  it("keeps the Normal spine's vertical spread and band geometry when hubs are selected", () => {
     const n = 120;
     const nodes = ids(n).map((key, i) => ({ key, id: String(i), x: i % 7, y: i % 11 }));
     const places = new Map<string, Place>(nodes.map((node, i) => [node.id, { band: i >= 110 ? null : i % 3, by: "field", anchor: i < 3 }]));
     const owners = new Map(nodes.map((node) => [node.key, nodes[0].key]));
     for (const spread of [1, 4]) {
       const result = spineLayout("g", nodes, places, spread, 1.8, owners, 1.6);
+      const normal = spineLayout("g", nodes, places, spread, 1.8);
+      expect(result.axis).toEqual(normal.axis);
+      const height = (at: typeof result.at) => Math.max(...[...at.values()].map((p) => p.y)) - Math.min(...[...at.values()].map((p) => p.y));
+      expect(height(result.at)).toBe(height(normal.at));
       const a = result.axis!;
       for (let i = 0; i < 3; i++) expect(result.at.get(nodes[i].key)!.y).toBe(a.y);
       const bandXs = [0, 1, 2].map((band) => nodes.filter((node) => places.get(node.id)!.band === band).map((node) => result.at.get(node.key)!.x));
@@ -123,6 +127,8 @@ describe("canonical layout and settings", () => {
   });
 
   it("persists mode, direction and count without accepting arbitrary fragment input", () => {
+    expect(writeLook({ layout: "normal" })).toBe("");
+    expect(readLook(writeLook({ layout: "similarity" }))).toEqual({ layout: "similarity" });
     const look = { layout: "degree" as const, degree: "incoming" as const, hubs: 3 };
     expect(readLook(writeLook(look))).toEqual(look);
     expect(readLook("#layout=script&degree=sideways&hubs=2.5")).toEqual({});
