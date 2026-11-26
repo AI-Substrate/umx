@@ -317,13 +317,14 @@
         },
         {
           "id": "rules-21",
-          "title": "Deleting a hub node is allowed, and says what it leaves behind",
-          "statement": "A node that a named hub names can be deleted like any node. The delete warns that the hub now names a node that is gone, with the command that removes the hub as its next. Until then the hub adds nothing, and `umx hub list` shows it as naming a missing node. The graph always loads.",
+          "title": "A hub whose node is retired or gone says so",
+          "statement": "umx has no node delete: a node is retired by moving it to `ruled_out` or `superseded`. When a named hub's node is retired, umx warns `hub_node_retired`, with the command that removes the hub as its next: at the move (single and in a batch), on load, in `umx check`, in `umx hub list` and in `umx hub show`. Nothing is forced: the hub keeps gathering members until an agent removes it. When a named hub's node is gone from the graph altogether (a hand edit or a merge), the hub adds nothing and umx warns `hub_node_missing` in the same places, with the same next. The graph always loads.",
           "actor": "a-builder",
           "priority": "should",
-          "state": "in-progress",
-          "done_when": "Deleting the risk register node succeeds with a warning naming `umx hub remove risk_register`; adding a risk afterwards stores it with no edge added and no error; the graph reloads.",
-          "source": "Project lead 2026-11-26 (hints and nudges, not rigid graphs)"
+          "state": "shipped",
+          "done_when": "Moving the risk register node to `superseded` succeeds with `hub_node_retired` naming `umx hub remove risk_register`, and a risk added afterwards still joins it; removing the node's line by hand and reloading warns `hub_node_missing`, adds nothing for a new risk, and the graph loads; `umx check` reports both.",
+          "source": "Project lead 2026-11-26 (hints and nudges, not rigid graphs); hubs coder 2026-11-26 (umx has no node delete)",
+          "note": "The first wording spoke of deleting the hub's node. umx retires nodes and never deletes them, so the row now covers a retired node and a node gone by hand edit or merge."
         },
         {
           "id": "rules-22",
@@ -558,6 +559,11 @@
           "date": "2026-11-26",
           "by": "rules designer",
           "change": "From the hubs coder's questions: an edit joins a node to a hub only when the edit makes it match (rules-17), and hub declarations ride in the data the view already reads (rules-34)."
+        },
+        {
+          "date": "2026-11-26",
+          "by": "rules designer",
+          "change": "rules-21 reworded and marked shipped: umx has no node delete, so the row covers a named hub whose node is retired (`hub_node_retired`) or gone by hand edit or merge (`hub_node_missing`). The earlier wording, about deleting the node, was the designer's mistake."
         }
       ]
     }
