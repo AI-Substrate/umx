@@ -327,6 +327,7 @@ pub const CODES: &[&str] = &[
     "hub_unjoined",
     "hub_scan_cut",
     "hub_node_missing",
+    "hub_node_retired",
     "hub_edges_remain",
     "rule_set_skipped",
     "rule_sets_cut",
@@ -3708,6 +3709,21 @@ pub fn hub_node_missing(hub: &str, graph: &ValidName) -> Problem {
     };
     Problem::new("hub_node_missing")
         .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("fix", Slot::Command(cmd.word("--graph").name(graph)))
+        .subject(hub)
+}
+
+/// A named hub whose node was moved to a retiring status (`ruled_out`, `superseded`): umx has no node delete, so
+/// this is how a hub's node goes away. It still gathers members until the hub is removed.
+pub fn hub_node_retired(hub: &str, status: &str, graph: &ValidName) -> Problem {
+    let cmd = Command::new("hub remove");
+    let cmd = match ValidName::new(hub) {
+        Some(name) => cmd.name(&name),
+        None => cmd.word("<name>"),
+    };
+    Problem::new("hub_node_retired")
+        .with("hub", Slot::name_or(hub, "(that hub)"))
+        .with("status", Slot::name_or(status, "(a retired status)"))
         .with("fix", Slot::Command(cmd.word("--graph").name(graph)))
         .subject(hub)
 }

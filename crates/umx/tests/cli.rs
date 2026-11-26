@@ -2957,6 +2957,12 @@ fn trigger(code: Code) -> (Envelope, u8) {
             home.ok(&["graph", "load", &path]);
             home.umx(&["hub", "show", "risk_register"])
         }
+        Code::HubNodeRetired => {
+            home.graph();
+            let hub = home.add("topic", "Risk register");
+            home.ok(&["hub", "set", "risk_register", "--node", &hub]);
+            home.umx(&["node", "status", &hub, "ruled_out", "--reason", "replaced"])
+        }
         Code::HubScanCut => {
             home.graph();
             let lines: String = (0..1001)

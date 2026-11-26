@@ -1146,6 +1146,7 @@ impl GraphStore {
             canonical_keys(&mut n, super::tags::is_std(l.ontology()));
             let evidence_start = before.evidence.len();
             let allows = self.secret_allows();
+            let mut joiner = super::hubs::Joiner::new(&l.meta, &l.graph);
             let done = self.attributed_write(ctx, alias, |batch, session, next, now, meta| {
                 if node_changed {
                     warnings.extend(
@@ -1177,6 +1178,29 @@ impl GraphStore {
                     anchor.as_ref(),
                     &|id, title| super::secrets::title_suspect(|| &allows, meta.id, id, title),
                 );
+                // PRD 003 hubs: a resolved add is an edit of the node it found; it joins only the hubs the change
+                // makes it match.
+                let held: Vec<(&str, Id)> = parent_edge
+                    .iter()
+                    .chain(&raised_in_edge)
+                    .filter(|e| e.edge.to_graph.is_none())
+                    .map(|e| (e.edge.kind.as_str(), e.edge.to))
+                    .collect();
+                let hub_edges = if node_changed && !joiner.is_empty() {
+                    super::hubs::join_in(
+                        batch,
+                        &mut joiner,
+                        &n,
+                        Some(&before),
+                        &held,
+                        session,
+                        next,
+                        now,
+                        &ctx.by,
+                    )
+                } else {
+                    Vec::new()
+                };
                 Ok(NodeAdded {
                     alias: alias.to_string(),
                     node: if node_changed { n } else { before.clone() },
@@ -1184,10 +1208,11 @@ impl GraphStore {
                     raised_in_edge,
                     resolved: true,
                     changed,
-                    hub_edges: Vec::new(),
+                    hub_edges,
                 })
             })?;
             warnings.extend(done.notes);
+            warnings.extend(super::hubs::joined_hints(&done.value.hub_edges, &graph));
             done.value
         } else {
             NodeAdded {

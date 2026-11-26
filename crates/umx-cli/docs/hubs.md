@@ -49,9 +49,10 @@ umx adds a node to a named hub with a pattern at three moments, and no others:
 
 - `umx hub set` (the backfill above) and `umx hub fill <name>`;
 - `umx node add` and `umx batch` node adds, when the new node matches;
-- `umx node edit` and batch node edits, when the edit makes the node match (it did not before).
+- `umx node edit`, `umx node status`, a `node add --on-key resolve` that changes the node it finds, and their batch
+  lines, when the change makes the node match (it did not before).
 
-The edge is added in the same write as the node. The reply says so with the hint `hub_joined`,
+The edge is added in the same write as the node, and the graph's rules check it as they check an edge add. The reply says so with the hint `hub_joined`,
 naming the hub, with `umx hub show <name>` as its next; its data names each edge under
 `hub_edges`. Each such edge carries the field `auto_added_by: <hub name>`. Only umx sets it: an
 `edge add --set auto_added_by=...` or `edge edit --set auto_added_by=...` is refused with
@@ -99,6 +100,10 @@ on a spine.
     umx hub remove risk_register --graph demo
 
 Removing a hub drops its declaration; its auto-added edges stay, and `hub_edges_remain` gives the
-`edge list --where` that lists them. A named hub whose node is no longer in the graph adds nothing;
-`hub_node_missing` says so on load, `hub list`, `hub show` and `hub fill`, with `umx hub remove
-<name>` as its next. The graph always loads.
+`edge list --where` that lists them.
+
+umx has no node delete: a node that no longer holds is retired to `ruled_out` or `superseded`. Retiring a
+named hub's node warns `hub_node_retired` at the move, and on load, `umx check`, `hub list` and `hub show`,
+with `umx hub remove <name>` as its next; the hub still gathers members until you remove it. A named hub
+whose node is no longer in the graph at all (a hand edit or a merge) adds nothing; `hub_node_missing` says
+so on load, `umx check`, `hub list`, `hub show` and `hub fill`. The graph always loads.

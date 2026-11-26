@@ -1088,6 +1088,10 @@ fn run_in_ctx(services: &mut Services, request: &Request, ctx: Ctx) -> Envelope 
                 if let Some(evidence) = &c.evidence {
                     data["evidence"] = evidence.clone();
                 }
+                // PRD 003 hubs: only when the move made umx add the node to a hub.
+                if !v.hub_edges.is_empty() {
+                    data["hub_edges"] = hub_joins_json(&v.hub_edges);
+                }
                 data
             })
         }
@@ -3714,13 +3718,16 @@ fn retry(op: &Op) -> Command {
             limit,
             offset,
             along,
-            ..
+            wheres,
         } => {
             let c = opt(Command::new("edge list"), "--from", from, &|c, v| {
                 node(c, v, "<node>")
             });
             let c = opt(c, "--to", to, &|c, v| node(c, v, "<node>"));
-            let c = opt(c, "--type", kind, &|c, v| name(c, v, "<relation>"));
+            let mut c = opt(c, "--type", kind, &|c, v| name(c, v, "<relation>"));
+            for _ in wheres {
+                c = c.word("--where").word("<expr>");
+            }
             let c = along_words(c, along);
             number(
                 number(columns(c, cols), "--limit", limit),
@@ -6915,6 +6922,21 @@ mod retry_tests {
         assert_eq!(
             retry(&op).as_str(),
             "umx node list --type problem --where <expr> --columns id,evidence_kinds --limit 5 --offset 10"
+        );
+        // Hub follow-up: edge list's retry keeps each --where, as node list's does.
+        let op = Op::EdgeList {
+            from: None,
+            to: None,
+            kind: Some("part_of".into()),
+            columns: None,
+            limit: None,
+            offset: None,
+            along: None,
+            wheres: vec!["auto_added_by=risk_register".into()],
+        };
+        assert_eq!(
+            retry(&op).as_str(),
+            "umx edge list --type part_of --where <expr>"
         );
         // R1: a dry-run link's retry keeps --dry-run, so following graph_ambiguous's next never writes.
         let op = Op::EntityLink {

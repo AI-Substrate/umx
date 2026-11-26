@@ -1221,6 +1221,7 @@ impl GraphStore {
         let mut warnings = edge_warnings;
         warnings.extend(set_notes);
         warnings.extend(super::rules::stored_notes(&meta, &graph_name)?);
+        warnings.extend(super::hubs::missing_notes(&meta, &graph, &graph_name));
         if !ignore_hides_temp_files(ignore.as_deref()) {
             rows.push(CheckRow {
                 kind: "gitignore_line_missing",

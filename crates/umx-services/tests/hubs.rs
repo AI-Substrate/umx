@@ -636,3 +636,168 @@ fn a_large_backfill_is_cut_and_continued_with_after() {
         1001
     );
 }
+
+fn high_register(w: &mut World) -> Id {
+    let hub = add(w, "topic", "High risks", None).node.id;
+    let mut req = set("high_risks", Some(hub), None, None);
+    req.pattern = Some(json!({"status": ["agreed"]}));
+    w.svc.hub_set(&ctx(), req).unwrap();
+    hub
+}
+
+/// Follow-up: a node add that resolves on its entity key edits the node it found, so it joins the hubs the change
+/// makes it match, single and in a batch; one that changes nothing joins nothing.
+#[test]
+fn on_key_resolved_adds_join_hubs_the_enrichment_makes_them_match() {
+    let mut w = demo();
+    let hub = add(&mut w, "topic", "Severe", None).node.id;
+    let mut req = set("severe", Some(hub), None, None);
+    req.pattern = Some(json!({"field": {"severity": "high"}}));
+    w.svc.hub_set(&ctx(), req).unwrap();
+    let keyed = |title: &str, key: &str, severity: Option<&str>| {
+        let mut sets = vec![("entity_key".to_string(), SetValue::Raw(key.into()))];
+        if let Some(s) = severity {
+            sets.push(("severity".into(), SetValue::Raw(s.into())));
+        }
+        NodeAddRequest {
+            kind: "risk".into(),
+            title: title.into(),
+            sets,
+            on_key_resolve: true,
+            ..Default::default()
+        }
+    };
+    let first = w
+        .svc
+        .node_add(&ctx(), keyed("Supplier", "ref:sup-1", None))
+        .unwrap()
+        .value
+        .node
+        .id;
+    assert!(auto(&w, "severe").is_empty());
+    let again = w
+        .svc
+        .node_add(&ctx(), keyed("Supplier", "ref:sup-1", Some("high")))
+        .unwrap();
+    assert!(again.value.resolved);
+    assert_eq!(again.value.hub_edges.len(), 1);
+    assert!(codes(&again.notes).contains(&"hub_joined"));
+    assert_eq!(auto(&w, "severe"), [(first, "part_of".into(), hub)]);
+    let second = w
+        .svc
+        .node_add(&ctx(), keyed("Vendor", "ref:sup-2", None))
+        .unwrap()
+        .value
+        .node
+        .id;
+    let done = batch(
+        &mut w,
+        vec![BatchLine {
+            line: 1,
+            op: BatchOp::NodeAdd {
+                id: None,
+                created: None,
+                ref_name: None,
+                req: keyed("Vendor", "ref:sup-2", Some("high")),
+                parent_ref: None,
+            },
+        }],
+        false,
+    );
+    assert_eq!(done.value.rows[0].hub_edges.len(), 1);
+    let mut want = vec![
+        (first, "part_of".to_string(), hub),
+        (second, "part_of".into(), hub),
+    ];
+    want.sort();
+    assert_eq!(auto(&w, "severe"), want);
+}
+
+/// Follow-up: a status move that makes a node match a named hub joins it, single and in a batch.
+#[test]
+fn status_moves_join_hubs_they_make_a_node_match() {
+    let mut w = demo();
+    let hub = high_register(&mut w);
+    let a = add(&mut w, "risk", "A", None).node.id;
+    let b = add(&mut w, "risk", "B", None).node.id;
+    assert!(auto(&w, "high_risks").is_empty());
+    let moved = w
+        .svc
+        .node_status(&ctx(), &a.to_text(), "agreed", Some("reviewed"), None)
+        .unwrap();
+    assert_eq!(moved.value.hub_edges.len(), 1);
+    assert!(codes(&moved.notes).contains(&"hub_joined"));
+    let done = batch(
+        &mut w,
+        vec![BatchLine {
+            line: 1,
+            op: BatchOp::NodeStatus {
+                node: Some(b.to_text()),
+                node_ref: None,
+                req: umx_services::NodeStatusRequest {
+                    status: "agreed".into(),
+                    reason: Some("reviewed".into()),
+                    label: None,
+                    anchor: None,
+                    evidence: None,
+                    evidence_kind: None,
+                },
+            },
+        }],
+        false,
+    );
+    assert_eq!(done.value.rows[0].hub_edges.len(), 1);
+    let mut want = vec![(a, "part_of".to_string(), hub), (b, "part_of".into(), hub)];
+    want.sort();
+    assert_eq!(auto(&w, "high_risks"), want);
+}
+
+/// Follow-up: the edges hub set and hub fill add are checked against the graph's rules, as an edge add's would be.
+#[test]
+fn hub_set_and_fill_check_rules_on_the_nodes_they_join() {
+    let mut w = demo();
+    let rule = json!({"name":"rated","match":{"type":["risk"]},"field":"rating"});
+    w.svc.rule_add(&ctx(), &rule, false).unwrap();
+    add(&mut w, "risk", "Unrated", None);
+    let hub = add(&mut w, "topic", "Risk register", None).node.id;
+    let mut req = set("risk_register", Some(hub), None, None);
+    req.pattern = Some(json!({"type": ["risk"]}));
+    let done = w.svc.hub_set(&ctx(), req).unwrap();
+    assert_eq!(done.value.joined_total, 1);
+    assert!(
+        codes(&done.notes).contains(&"rule_unmet"),
+        "{:?}",
+        codes(&done.notes)
+    );
+}
+
+/// Follow-up (rules-21): umx has no node delete; retiring a named hub's node warns with `hub remove` as the next, at
+/// the move and on hub list and check; a hub node gone by a hand edit warns on check too.
+#[test]
+fn retiring_or_losing_a_hub_node_warns_on_the_move_list_and_check() {
+    let mut w = demo();
+    let hub = register(&mut w);
+    let moved = w
+        .svc
+        .node_status(&ctx(), &hub.to_text(), "ruled_out", Some("replaced"), None)
+        .unwrap();
+    let retired = moved
+        .notes
+        .iter()
+        .find(|p| p.code == "hub_node_retired")
+        .expect("warned at the move");
+    assert!(format!("{retired:?}").contains("hub remove"));
+    assert!(codes(&w.svc.hub_list(&ctx()).unwrap().notes).contains(&"hub_node_retired"));
+    let checked = w.svc.check(&ctx(), None, None).unwrap();
+    assert!(codes(&checked.notes).contains(&"hub_node_retired"));
+    let mut meta = codec::decode_graph(&graph_json(&w)).unwrap();
+    meta.hubs[0].node = Some(Id(424_242));
+    w.files.tamper_for_tests(
+        &GraphDir::parse("/work/g").unwrap(),
+        GraphFile::Graph,
+        &codec::encode_graph(&meta),
+    );
+    w.svc.graph_load(&ctx(), "/work/g", None).unwrap();
+    let checked = w.svc.check(&ctx(), None, None).unwrap();
+    assert!(codes(&checked.notes).contains(&"hub_node_missing"));
+}

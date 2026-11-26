@@ -3817,6 +3817,10 @@ catalogue! {
         "a named hub names a node no longer in the graph; it adds nothing until it is removed or set again",
         "Hub <hub> names a node that is no longer in the graph.",
         "<fix>";
+    HubNodeRetired => "hub_node_retired", Warning, 0,
+        "a named hub's node was retired (ruled_out or superseded); the hub still gathers members until it is removed",
+        "Hub <hub> names a node that is now <status>. Remove the hub if it no longer applies.",
+        "<fix>";
     HubEdgesRemain => "hub_edges_remain", Warning, 0,
         "edges umx added for a hub stay after the hub is removed or moved; umx never removes them",
         "<count> edge(s) umx added for hub <hub> remain.",
