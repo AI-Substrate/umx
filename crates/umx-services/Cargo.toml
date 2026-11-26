@@ -10,6 +10,8 @@ umx-core.workspace = true
 umx-graph.workspace = true
 # umx query (req-27, ws005 s04); no type of the fork crosses umx-query's API.
 umx-query.workspace = true
+regex-syntax.workspace = true
+regex-automata.workspace = true
 
 [features]
 # Timing only, enabled by umx-bench; not a production entry point.

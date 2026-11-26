@@ -2796,6 +2796,80 @@ fn trigger(code: Code) -> (Envelope, u8) {
             fs::remove_file(Path::new(&path).join("notes.md")).unwrap();
             home.umx(&["check"])
         }
+        Code::RuleInvalid => {
+            home.graph();
+            home.umx(&["rule", "add", "invalid_rule", "--type", "risk"])
+        }
+        Code::RuleRegexInvalid => {
+            home.graph();
+            home.umx(&[
+                "rule",
+                "add",
+                "invalid_regex",
+                "--match",
+                "title=(",
+                "--field",
+                "step",
+            ])
+        }
+        Code::RuleVocabularyUnknown => {
+            home.graph();
+            home.umx(&[
+                "rule", "add", "custom", "--type", "widget", "--field", "step",
+            ])
+        }
+        Code::RuleNotFound => {
+            home.graph();
+            home.umx(&["rule", "show", "not_here"])
+        }
+        Code::RuleNameTaken => {
+            home.graph();
+            home.ok(&["rule", "add", "rated", "--type", "risk", "--field", "step"]);
+            home.umx(&[
+                "rule", "add", "rated", "--type", "person", "--field", "step",
+            ])
+        }
+        Code::RuleMatchesCut => {
+            home.graph();
+            home.add("risk", "First risk");
+            home.add("risk", "Second risk");
+            home.ok(&["rule", "add", "rated", "--type", "risk", "--field", "step"]);
+            home.umx(&["rule", "show", "rated", "--limit", "1"])
+        }
+        Code::RuleScanCut | Code::RuleNodeUnchecked => {
+            home.graph();
+            home.ok(&[
+                "node",
+                "add",
+                "--type",
+                "risk",
+                "--title",
+                "Long note",
+                "--note",
+                &"é".repeat(50_000),
+            ]);
+            home.umx(&[
+                "rule",
+                "add",
+                "bounded",
+                "--match",
+                r"note=\b(a{8}){8}b",
+                "--field",
+                "step",
+                "--dry-run",
+            ])
+        }
+        Code::RuleSkipped => {
+            let path = home.graph();
+            home.ok(&["graph", "unload", "demo"]);
+            let file = Path::new(&path).join("graph.json");
+            let mut meta = umx_protocol::parse_json(&fs::read_to_string(&file).unwrap()).unwrap();
+            meta["umx"] = json!(8);
+            meta["rules"] =
+                json!([{"name":"huge","match":{"regex":{"title":"a{1000000000}"}},"field":"step"}]);
+            fs::write(&file, meta.to_string()).unwrap();
+            home.umx(&["graph", "load", &path])
+        }
         Code::SpineNameUnknown => {
             home.graph();
             let file = home.ops_file(&tm5_decl("widget", "widget", false).to_string());

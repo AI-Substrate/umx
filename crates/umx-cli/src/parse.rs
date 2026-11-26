@@ -69,6 +69,28 @@ const SWITCHES: [&str; 30] = [
 /// command's `--help` topic. Not here: [`COMMON`]; `graph set`'s flags, which are umx-core's graph settings;
 /// the global `--json`, `--human` and `--help`.
 pub const FLAGS: &[(&str, &[&str])] = &[
+    ("rule list", &[]),
+    (
+        "rule add",
+        &[
+            "--type",
+            "--status",
+            "--tag",
+            "--where",
+            "--match",
+            "--field",
+            "--edge",
+            "--from",
+            "--to",
+            "--to-node",
+            "--description",
+            "--dry-run",
+        ],
+    ),
+    ("rule remove", &[]),
+    ("rule off", &[]),
+    ("rule on", &[]),
+    ("rule show", &["--limit", "--offset"]),
     ("check", &["--lint", "--sources", "--kind", "--offset"]),
     (
         "neighbours",
@@ -775,6 +797,7 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
         {
             (*second, EvidenceAction::parse(first), rest)
         }
+
         [node, action, rest @ ..] => (*node, EvidenceAction::parse(action), rest),
         _ => {
             return Err(fail(
@@ -867,6 +890,73 @@ fn node_evidence(a: Args) -> Result<Parsed, Usage> {
     }
     .with(a))
 }
+fn rule_add(a: Args) -> Result<Parsed, Usage> {
+    let fail = |what| Usage {
+        command: "rule add",
+        what,
+    };
+    let mut rule = umx_protocol::json!({"name": a.positionals(1, "give one rule name")?.remove(0)});
+    let mut pattern = umx_protocol::json!({});
+    for flag in ["--type", "--status", "--tag", "--from", "--to"] {
+        let mut values = Vec::new();
+        for value in a.all(flag) {
+            for part in value.split(',') {
+                if part.trim().is_empty() {
+                    return Err(fail("rule lists need nonempty entries"));
+                }
+                values.push(part.trim().to_owned());
+            }
+        }
+        values.sort();
+        values.dedup();
+        if !values.is_empty() {
+            let target = if matches!(flag, "--from" | "--to") {
+                &mut rule
+            } else {
+                &mut pattern
+            };
+            target[&flag[2..]] = umx_protocol::json!(values);
+        }
+    }
+    for (flag, key) in [("--where", "field"), ("--match", "regex")] {
+        for text in a.all(flag) {
+            let (field, value) = text
+                .split_once('=')
+                .ok_or_else(|| fail("--where and --match take <field>=<value>"))?;
+            if pattern.get(key).and_then(|v| v.get(field)).is_some() {
+                return Err(fail("give each pattern field once"));
+            }
+            if pattern.get(key).is_none() {
+                pattern[key] = umx_protocol::json!({});
+            }
+            pattern[key][field] = if key == "regex" {
+                umx_protocol::json!(value)
+            } else {
+                parse_json(value).unwrap_or_else(|| umx_protocol::json!(value))
+            };
+        }
+    }
+    for (flag, key) in [
+        ("--field", "field"),
+        ("--edge", "edge"),
+        ("--to-node", "to_node"),
+        ("--description", "description"),
+    ] {
+        if a.all(flag).len() > 1 {
+            return Err(fail("give each rule shape flag and description once"));
+        }
+        if let Some(value) = a.one(flag) {
+            rule[key] = umx_protocol::json!(value);
+        }
+    }
+    rule["match"] = pattern;
+    Ok(Op::RuleAdd {
+        rule,
+        dry_run: a.has("--dry-run"),
+    }
+    .with(a))
+}
+
 /// `umx batch`'s flags: the `--file` to read (`-` is stdin), each `--refs-from` receipt (repeatable, in order), and
 /// the operation with no lines or refs yet. The files are read by the caller, never named on the wire: the daemon
 /// opens no path a request names.
@@ -909,6 +999,33 @@ pub fn batch(words: &[&str]) -> Result<(String, Vec<String>, Parsed), Usage> {
 pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
     // Top-level verbs that are operations (workshop 007 rule 1).
     match words {
+        ["rule", verb, rest @ ..] => {
+            let command = known("rule", verb).ok_or(Usage {
+                command: "rule list",
+                what: "rule takes list, add, remove, off, on or show",
+            })?;
+            let a = Args::new(command, rest)?;
+            if *verb == "add" {
+                return rule_add(a);
+            }
+            if *verb == "list" {
+                a.positionals(0, "rule list takes no positional arguments")?;
+                return Ok(Op::RuleList.with(a));
+            }
+            let name = a.positionals(1, "give one rule name")?.remove(0);
+            let op = match *verb {
+                "remove" => Op::RuleRemove { name },
+                "off" => Op::RuleOff { name },
+                "on" => Op::RuleOn { name },
+                "show" => Op::RuleShow {
+                    name,
+                    limit: a.number("--limit")?,
+                    offset: a.number("--offset")?,
+                },
+                _ => unreachable!("known rule verb"),
+            };
+            return Ok(op.with(a));
+        }
         ["graph", "spine", "propose", rest @ ..] => {
             let a = Args::new("graph spine propose", rest)?;
             let alias = a.positionals(1, "name the graph's alias")?.remove(0);

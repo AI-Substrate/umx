@@ -517,6 +517,12 @@ pub fn qualified(kind: NameKind, text: &str) -> Result<&str, NotStd<'_>> {
     }
 }
 
+/// Central graph rules in the same row shape as graph.json's own. A graph without std never reads this table.
+pub fn std_rules() -> alloc::vec::Vec<crate::rules::Rule> {
+    serde_json::from_str(include_str!("standard-rules.json"))
+        .expect("the central rules table is valid")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

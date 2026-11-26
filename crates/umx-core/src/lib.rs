@@ -28,6 +28,7 @@ pub mod provenance;
 pub mod receipts;
 pub mod registry;
 pub mod role_advice;
+pub mod rules;
 pub mod scan;
 pub mod scopes;
 pub mod secret_allows;

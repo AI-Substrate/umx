@@ -4517,3 +4517,86 @@ fn an_edge_into_a_secured_graph_never_names_the_far_node_s_type() {
     assert_eq!(codes, ["link_into_secured"], "{}", env.to_json());
     assert!(!env.to_json().contains("team"), "{}", env.to_json());
 }
+#[test]
+fn rule_commands_preserve_dry_run_bytes_and_follow_the_matching_page_next() {
+    let mut home = Home::new("graph-rules");
+    let path = home.graph();
+    home.ok(&["ontology", "add", "field", "risk", "rating:string"]);
+    let risk = home.add("risk", "SEC-42 launch");
+    let other = home.add("risk", "SEC-43 launch");
+    let before = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    let args = [
+        "rule",
+        "add",
+        "rated",
+        "--type",
+        "risk",
+        "--match",
+        "title=^SEC-[0-9]+",
+        "--field",
+        "rating",
+    ];
+    let mut dry_run = args.to_vec();
+    dry_run.push("--dry-run");
+    let shown = home.ok(&dry_run);
+    assert_eq!(shown.data["total"], 2);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        before
+    );
+    assert_eq!(home.ok(&args).data["format"], 8);
+    let after = fs::read(Path::new(&path).join("graph.json")).unwrap();
+    assert_eq!(home.ok(&args).data["unchanged"], true);
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        after
+    );
+    let listed = home.ok(&["rule", "list"]);
+    assert_eq!(listed.data["rows"][0]["source"], "graph");
+    assert_eq!(listed.data["rows"][0]["off"], false);
+    let first = home.ok(&["rule", "show", "rated", "--limit", "1"]);
+    let next = issue(&first, Code::RuleMatchesCut).next().to_string();
+    let second = home.ok(&next.split_whitespace().skip(1).collect::<Vec<_>>());
+    assert_eq!(second.data["total"], 2);
+    let ids = [
+        first.data["nodes"][0].as_str().unwrap(),
+        second.data["nodes"][0].as_str().unwrap(),
+    ];
+    assert!(ids.contains(&risk.as_str()) && ids.contains(&other.as_str()));
+    let absent = home.umx(&[
+        "rule",
+        "add",
+        "absent_hub",
+        "--type",
+        "risk",
+        "--edge",
+        "part_of",
+        "--to-node",
+        "00000000000000000000000001",
+    ]);
+    assert_eq!(absent.1, 1);
+    assert!(absent.0.errors.iter().any(|e| e.code() == "node_not_found"));
+    assert_eq!(
+        fs::read(Path::new(&path).join("graph.json")).unwrap(),
+        after
+    );
+    home.ok(&["rule", "remove", "rated"]);
+    assert_eq!(
+        home.ok(&["rule", "remove", "rated"]).data["unchanged"],
+        true
+    );
+    assert_eq!(home.ok(&["rule", "list"]).data["total"], 0);
+    let meta =
+        umx_protocol::parse_json(&fs::read_to_string(Path::new(&path).join("graph.json")).unwrap())
+            .unwrap();
+    assert_eq!(meta["umx"], 8);
+    let loose = [
+        "rule", "add", "custom", "--type", "widget", "--field", "step",
+    ];
+    let added = home.ok(&loose);
+    let warning = issue(&added, Code::RuleVocabularyUnknown);
+    assert!(warning.message().contains("custom"));
+    let next = warning.next().to_string();
+    home.ok(&next.split_whitespace().skip(1).collect::<Vec<_>>());
+    assert_eq!(home.ok(&loose).data["unchanged"], true);
+}

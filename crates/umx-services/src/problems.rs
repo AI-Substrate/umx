@@ -59,6 +59,8 @@ pub const HINTS: &[&str] = &[
     "on_key_field_held",
     "batch_replayed",
     "idempotency_key_expired",
+    "rule_matches_cut",
+    "rule_scan_cut",
 ];
 
 /// The most hints a reply shows: umx-protocol's MAX_HINTS and its `hints_truncated` (the daemon's test keeps the two
@@ -306,6 +308,15 @@ pub const CODES: &[&str] = &[
     "source_changed",
     "source_missing",
     "spine_name_unknown",
+    "rule_invalid",
+    "rule_regex_invalid",
+    "rule_vocabulary_unknown",
+    "rule_not_found",
+    "rule_name_taken",
+    "rule_matches_cut",
+    "rule_scan_cut",
+    "rule_skipped",
+    "rule_node_unchecked",
     "spine_main_taken",
     "spine_not_found",
     "spine_builtin_candidate",
@@ -3458,6 +3469,64 @@ fn spine_name_slot(given: &str) -> Slot {
         Some(None) => Slot::Word("(that spine)"),
         None => Slot::name_or(given, "(that spine)"),
     }
+}
+
+pub fn rule_invalid(reason: &'static str) -> Problem {
+    Problem::new("rule_invalid").with("reason", Slot::Word(reason))
+}
+
+pub fn rule_regex_invalid(reason: &'static str, position: usize) -> Problem {
+    Problem::new("rule_regex_invalid")
+        .with("reason", Slot::Word(reason))
+        .with("position", Slot::Count(position as u64))
+}
+
+pub fn rule_vocabulary_unknown(rule: &str, at: &'static str, given: &str, fix: Command) -> Problem {
+    Problem::new("rule_vocabulary_unknown")
+        .with("rule", Slot::name_or(rule, "(that rule)"))
+        .with("at", Slot::Word(at))
+        .with("name", Slot::name_or(given, "(that name)"))
+        .with("fix", Slot::Command(fix))
+}
+
+pub fn rule_not_found(given: &str) -> Problem {
+    Problem::new("rule_not_found").with("name", rule_name_slot(given))
+}
+
+pub fn rule_name_taken(given: &str) -> Problem {
+    Problem::new("rule_name_taken").with("name", rule_name_slot(given))
+}
+
+pub fn rule_matches_cut(fix: Command) -> Problem {
+    Problem::new("rule_matches_cut").with("fix", Slot::Command(fix))
+}
+
+pub fn rule_scan_cut() -> Problem {
+    Problem::new("rule_scan_cut")
+}
+
+pub fn rule_node_unchecked(given: &str, count: usize, fix: Command) -> Problem {
+    Problem::new("rule_node_unchecked")
+        .with("name", rule_name_slot(given))
+        .with("count", Slot::Count(count as u64))
+        .with("fix", Slot::Command(fix))
+}
+
+pub fn rule_skipped(given: &str, reason: &'static str, graph: &ValidName) -> Problem {
+    let rule = ValidName::new(given.strip_prefix("std:").unwrap_or(given)).expect("shape checked");
+    let fix = if given.starts_with("std:") {
+        Command::new("rule off").qualified("std:", &rule)
+    } else {
+        Command::new("rule remove").name(&rule)
+    };
+    Problem::new("rule_skipped")
+        .with("name", rule_name_slot(given))
+        .with("reason", Slot::Word(reason))
+        .with("fix", Slot::Command(fix.word("--graph").name(graph)))
+}
+
+fn rule_name_slot(given: &str) -> Slot {
+    Slot::name_or(given.strip_prefix("std:").unwrap_or(given), "(that rule)")
 }
 
 /// F139: a node's evidence and its raised_in anchor's never meet in a source they share; names both ranges.

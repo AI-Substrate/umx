@@ -23,6 +23,8 @@ hashbrown = { version = "0.17", default-features = false }
 libc = "0.2"
 # no_std maths (sqrt for vector lengths, log for the word index): blueprint d-15. The same results on every platform.
 libm = { version = "0.2", default-features = false }
+regex-syntax = { version = "=0.8.12", default-features = false, features = ["unicode"] }
+regex-automata = { version = "=0.4.19", default-features = false, features = ["alloc", "syntax", "unicode", "nfa-pikevm", "hybrid"] }
 toml = { version = "0.9", default-features = false }
 ulid = "1"
 # Sync HTTP for the hosted embedder: rustls with the platform verifier (system roots), no gzip.

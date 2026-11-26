@@ -57,6 +57,13 @@ An existing folder is `umx graph load` (`/umx explore`), not `graph new`.
 
 ## Vocabulary and settings
 
+**usage 225**: declare desired shape with `umx rule add`. Undeclared vocabulary is kept
+with `rule_vocabulary_unknown` and a declaring next; use it if it fits the graph's design.
+Preview the pattern with `--dry-run` and `umx rule show`; `umx rule list` marks std's and the
+graph's own rules. The first stored rule raises the graph to format 8. This release stores
+and previews rules only: no write-time checks, automatic fill or named rule sets yet.
+Read `umx docs get rules` for the flags, exact matches, bounded regex and central switch-offs.
+
 - See it: `umx ontology show`.
 - **usage 007**: the vocabulary is soft. A write with an undeclared name warns `off_vocabulary_type` (or
   status, relation, field) with the `umx ontology add ...` that declares it. If the name is right for this

@@ -127,10 +127,12 @@ fn type_column_rules(alias: &ValidName, meta: &GraphMeta) -> Vec<Problem> {
 }
 
 fn decode_meta(dir: &GraphDir, bytes: &[u8]) -> Result<GraphMeta, Problem> {
-    codec::decode_graph(bytes).map_err(|e| match e.reason {
+    let meta = codec::decode_graph(bytes).map_err(|e| match e.reason {
         DecodeReason::NewerFormat(found) => problems::graph_format_newer(dir, found),
         _ => problems::graph_invalid(&e),
-    })
+    })?;
+    super::rules::validate_stored(&meta)?;
+    Ok(meta)
 }
 
 /// nodes.jsonl, then edges.jsonl, each loaded in full before the next is read: the first bad line wins. A reversed
@@ -403,6 +405,8 @@ impl GraphStore {
             spines: Vec::new(),
             former_aliases: Vec::new(),
             former_paths: Vec::new(),
+            rules: Vec::new(),
+            rules_off: Vec::new(),
             umx: 1,
             id: self.ports.ids.next_id(),
             alias: alias.as_str().to_string(),
@@ -770,6 +774,7 @@ impl GraphStore {
             );
         }
         rules.extend(type_column_rules(&alias, &meta));
+        rules.extend(super::rules::stored_notes(&meta, &alias)?);
         let hidden = rules.len().saturating_sub(MAX_LOAD_WARNINGS);
         rules.truncate(MAX_LOAD_WARNINGS);
         if hidden > 0 {
@@ -1171,6 +1176,7 @@ impl GraphStore {
         // The folder's .gitignore must hide umx's temp and marker files, or a crash leaves them for git to see.
         let ignore = read(GraphFile::GitIgnore)?;
         let mut warnings = edge_warnings;
+        warnings.extend(super::rules::stored_notes(&meta, &graph_name)?);
         if !ignore_hides_temp_files(ignore.as_deref()) {
             rows.push(CheckRow {
                 kind: "gitignore_line_missing",
