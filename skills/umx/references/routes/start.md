@@ -61,8 +61,9 @@ to update it. The graph view (`umx ui`) ships only with a source build: in a bin
 and daemon must speak the same protocol), build its `apps/ui` (`umx docs get ui`), then set `UMX_UI_DIR` or
 `ui.dir`.
 
-**usage 228**: when asked to share a view with another machine on a trusted LAN, use `umx ui --lan --port 4748`.
-The owner runs `umx ui lan-password` privately; never capture that output in logs or transcripts. The password
-lives in `$UMX_HOME/ui-lan-password` (0600), and `umx ui lan-password --rotate` changes it for the next view run.
+**usage 232** (supersedes usage 228): when asked to share a view with another machine on a trusted LAN, use
+`umx ui --lan --port 4748`. The owner runs `umx ui lan-password` privately; never capture that output in logs or
+transcripts. The password lives in `$UMX_HOME/ui-lan-password` (0600). Each browser signs in once and stays signed
+in for 30 days, across restarts; `umx ui lan-password --rotate` changes the password and ends every LAN session.
 HTTP exposes passwords and graph data to network sniffing; authenticated viewers can open secured graphs too.
 Without `--lan`, the view stays loopback-only. Read `umx docs get ui` before sharing.

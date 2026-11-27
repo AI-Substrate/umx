@@ -40,10 +40,10 @@ const lan = process.env.UMX_UI_LAN === "1";
 delete process.env.UMX_UI_LAN;
 if (lan && args.includes("--dev")) refuse("LAN access is available only in the built view.");
 const addresses = lan ? lanAddresses() : [];
-let password;
 if (lan) {
   try {
-    password = readPassword(process.env.UMX_HOME);
+    // Checked at start so a missing or unsafe password file refuses now; the gate rereads it at each sign-in.
+    readPassword(process.env.UMX_HOME);
   } catch (error) {
     refuse(error.message);
   }
@@ -205,8 +205,7 @@ if (dev) {
   }
   if (lan) {
     await whenAccepting(backendPort);
-    const gate = lanGate({ password, hosts: [`${LOOPBACK}:${port}`, `localhost:${port}`, ...addresses.map((ip) => `${ip}:${port}`)] });
-    password = undefined;
+    const gate = lanGate({ home: process.env.UMX_HOME, hosts: [`${LOOPBACK}:${port}`, `localhost:${port}`, ...addresses.map((ip) => `${ip}:${port}`)] });
     const gateway = createServer(async (req, res) => {
       if (!await gate(req, res)) return;
       const upstream = request({ host: LOOPBACK, port: backendPort, path: req.url, method: req.method, headers: req.headers }, (reply) => {
