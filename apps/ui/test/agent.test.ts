@@ -2,7 +2,7 @@
 // camera may move, and the strip's words.
 import { describe, expect, it } from "vitest";
 import {
-  activeNotes, agentFilter, agentOff, applyAgentFilter, cameraAsk, decide, dropRemovedNodes, Gesture, describe as words, HISTORY_MAX, LEDGER0, type Ledger, NO_AGENT,
+  activeNotes, agentCentre, agentFilter, agentOff, applyAgentFilter, cameraAsk, decide, dropRemovedNodes, Gesture, describe as words, HISTORY_MAX, LEDGER0, type Ledger, NO_AGENT,
   openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, qualifyEvent, raiseTitle, readEach, receive, reduce, STALE_MS, TOUCH_MS, undoAgentFilter,
 } from "@/lib/agent";
 import { Raiser } from "@/lib/raise";
@@ -427,3 +427,29 @@ describe("the tab's raise (ws009 M1b2)", () => {
   });
 });
 
+
+describe("an agent centres the view (PRD 005 centre-11)", () => {
+  const now = 100_000;
+  it("centres on the newest fresh focus --centre, and the strip says so", () => {
+    const events = [qev({ kind: "focus", node: A, hops: 1, centre: true }, { at_ms: now }), qev({ kind: "focus", node: B, hops: 2, centre: true }, { at_ms: now })];
+    expect(agentCentre(events, null, now)).toEqual({ key: qB, by: "agent" });
+    expect(words(ev({ kind: "focus", node: A, hops: 2, centre: true }), () => "Approval delays").action).toBe("centred the view on");
+    // The rings' own fit frames them: no jump to the node.
+    expect(cameraAsk(ev({ kind: "focus", node: A, hops: 1, centre: true }))).toBeNull();
+  });
+
+  it("never centres for a plain focus or a stale one, and leaves the centring as it was", () => {
+    const person = { key: qC, by: "person" as const };
+    expect(agentCentre([qev({ kind: "focus", node: A, hops: 1 }, { at_ms: now })], person, now)).toBe(person);
+    expect(agentCentre([qev({ kind: "focus", node: A, hops: 1, centre: true }, { at_ms: now - STALE_MS - 1 })], null, now)).toBeNull();
+  });
+
+  it("clear in the centre's graph ends an agent's centring, never a person's or another graph's", () => {
+    const clear = (graph: string) => qev({ kind: "clear" }, { graph, at_ms: now });
+    expect(agentCentre([clear("demo")], { key: qA, by: "agent" }, now)).toBeNull();
+    const agentElsewhere = { key: qA, by: "agent" as const };
+    expect(agentCentre([clear("other")], agentElsewhere, now)).toBe(agentElsewhere);
+    const person = { key: qA, by: "person" as const };
+    expect(agentCentre([clear("demo")], person, now)).toBe(person);
+  });
+});

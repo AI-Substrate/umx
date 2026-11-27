@@ -77,6 +77,15 @@ describe("UiWait", () => {
     expect(got).toEqual({ epoch: EPOCH, seq: 3, reset: true, events: [{ ...event, by: null }], changes: [] });
   });
 
+  it("reads an agent's focus --centre (PROTOCOL 110, PRD 005 centre-11)", async () => {
+    const event = (centre?: boolean) => ({ seq: 3, at_ms: 1, graph: "demo", command: { kind: "focus", node: N, hops: 1, ...(centre === undefined ? {} : { centre }) } });
+    for (const [sent, read] of [[true, { centre: true }], [false, {}], [undefined, {}]] as const) {
+      const { d } = deps({ reply: waited({ epoch: EPOCH, seq: 3, reset: false, events: [event(sent)] }) });
+      const got = await createSocket(d).wait({ epoch: null, since: 0, timeoutMs: 1, graphs: ["demo"] });
+      expect(got.events[0].command).toEqual({ kind: "focus", node: N, hops: 1, ...read });
+    }
+  });
+
   it("reads who sent an event from umx's serialised actor, keeping only what it shows (plan 129)", async () => {
     // The daemon's `by` as umx-daemon's s6a test a_ui_command_event_carries_the_checked_sender_and_never_a_raw_session
     // emits it: every ActorInput field, the session hashed.
@@ -165,6 +174,8 @@ describe("UiWait", () => {
       waited({ epoch: EPOCH, seq: 3, reset: false, events: [{ seq: 1, at_ms: 1, graph: "demo", command: { kind: "open", graphs: ["demo"], only: false, left_out: "1" } }] }),
       // ws009 M1b2: raise is a boolean when there.
       waited({ epoch: EPOCH, seq: 3, reset: false, events: [{ seq: 1, at_ms: 1, graph: "demo", command: { kind: "open", graphs: ["demo"], only: false, raise: "yes" } }] }),
+      // PRD 005: centre is a boolean when there.
+      waited({ epoch: EPOCH, seq: 3, reset: false, events: [{ seq: 1, at_ms: 1, graph: "demo", command: { kind: "focus", node: N, hops: 1, centre: "yes" } }] }),
     ];
     for (const reply of bad) {
       expect((await refusal(createSocket(deps({ reply }).d).wait({ epoch: null, since: 0, timeoutMs: 1, graphs: ["demo"] }))).code).toBe("ui_umx_output");

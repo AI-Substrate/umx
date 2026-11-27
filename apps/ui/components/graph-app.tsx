@@ -9,7 +9,7 @@ import { NodePanel } from "@/components/node-panel";
 import type { NodeSpinesView } from "@/components/node-spines";
 import { SelectionShare } from "@/components/selection-share";
 import { Segmented } from "@/components/segmented";
-import { hintItems, Hints, type Placement } from "@/components/hit-list";
+import { hintItems, Hints, type HitEntities, type Placement } from "@/components/hit-list";
 import { Sidebar, type Grouping } from "@/components/sidebar";
 import { useGraphSet } from "@/components/use-graph-set";
 import type { LeftOut } from "@/lib/graph-set";
@@ -65,10 +65,12 @@ import { HUB_DEFAULTS, type HubOptions, type SimilarityLink } from "@/lib/graph/
 import { isLaunch, keptSpinePicks, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, readSpinePicks, reopenGraphs, SPINES_KEY, type ViewLook, writeLook } from "@/lib/view-url";
 import { type FilterDim, hiddenReasons, NO_FILTERS, reasonText, reveal, toggleChip, toggled } from "@/lib/graph/filters";
 import { FOCUS_OFF, focusDepths, focusOf } from "@/lib/graph/focus";
-import { activeNotes, agentOff, cameraAsk, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
+import { activeNotes, agentCentre, agentOff, cameraAsk, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
 import type { AgentEvent } from "@/lib/umx/socket";
 import type { CameraState } from "sigma/types";
 import { type Launch, type LaunchDeps, Launches, type Listed, listForLaunch, takeLaunch, watchLaunch } from "@/lib/launch";
+import { centreView, type CentreOn, NOT_PLACED } from "@/lib/graph/centre";
+import { type MemberDetail, readMembers, unionNeighbours } from "@/lib/entity-links";
 import { applyMerge, coveredOf, entitiesOf, entityOf, homeOf, mergedPlaces, mergeRecords, NO_ENTITIES, throughLinks, worldOf } from "@/lib/graph/entities";
 import type { EntityReply } from "@/lib/entity-read";
 import { entityScope, offerMembers, replyFor, scopeOfAsk } from "@/lib/entity-scope";
@@ -267,6 +269,18 @@ export function GraphApp() {
   // The spine view's Spread slider, kept in the fragment with the rest of the look.
   const [spread, setSpread] = useState<number>(SPREAD.default);
   const [layoutOptions, setLayoutOptions] = useState<HubOptions>(HUB_DEFAULTS);
+  // Centre on this (PRD 005): view only, never kept. It holds while the layout and the spine picks it was made under
+  // do: choosing another layout or spine asks for that layout, so it ends the centring.
+  const [centre, setCentre] = useState<(CentreOn & { by: "person" | "agent"; layout: HubOptions; spines: ReadonlyMap<string, string | null> }) | null>(null);
+  const centreOn = centre && centre.layout === layoutOptions && centre.spines === spinePicks ? centre : null;
+  // The member of a merged entity the person chose on its own (Find's member rows, the Entity section): while it is the
+  // selection, the panel, the canvas and Centre on this use only its links (PRD 005 centre-15).
+  const [memberOnly, setMemberOnly] = useState<string | null>(null);
+  // For agent events, which act in an effect that runs once per batch: the centring and what it is made under now.
+  const centreNow = useRef({ centre, layout: layoutOptions, spines: spinePicks });
+  useEffect(() => {
+    centreNow.current = { centre, layout: layoutOptions, spines: spinePicks };
+  });
   const [shadowMode, setShadowMode] = useState<ShadowMode>("selected");
   const [shadowState, setShadowState] = useState<ShadowState>(NO_SHADOWS);
   useEffect(() => {
@@ -821,6 +835,7 @@ export function GraphApp() {
   );
   const focused = focus.state === "on" ? focus.depths : null;
 
+  const ownLinks = selected !== null && memberOnly === selected;
   useEffect(() => {
     // Opening other graphs changes the set before the old selection is reset: never read a node from another set.
     if (!selected || !shownKey || selection.graph !== shownKey) {
@@ -831,7 +846,9 @@ export function GraphApp() {
     setDetailLoading(true);
     setDetailError(null);
     const at = unq(selected);
-    api<NodeDetail>(`/api/graphs/${encodeURIComponent(at.alias)}/nodes/${encodeURIComponent(at.id)}`)
+    // A member chosen on its own shows only its own links (PRD 005 centre-15); umx otherwise adds its entity's.
+    const own = ownLinks ? "?entities=off" : "";
+    api<NodeDetail>(`/api/graphs/${encodeURIComponent(at.alias)}/nodes/${encodeURIComponent(at.id)}${own}`)
       .then((d) => live && setDetail(d))
       .catch((e) => {
         if (!live) return;
@@ -842,7 +859,7 @@ export function GraphApp() {
     return () => {
       live = false;
     };
-  }, [selected, shownKey, selection.graph, detailTick]);
+  }, [selected, shownKey, selection.graph, detailTick, ownLinks]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -871,11 +888,15 @@ export function GraphApp() {
     selectionNow.current = selection;
   }, [selection]);
   const pickNode = useCallback((id: string) => {
+    setMemberOnly(null);
     setSelection((s) => pickOne(s, id));
     setJump((f) => ({ id, n: (f?.n ?? 0) + 1 }));
   }, []);
   // Canvas clicks: a click selects one node, shift-click adds or removes one, a click on the empty canvas clears.
-  const onPick = useCallback((id: string, add: boolean) => setSelection((s) => (add ? toggleOne(s, id) : pickOne(s, id))), []);
+  const onPick = useCallback((id: string, add: boolean) => {
+    setMemberOnly(null);
+    setSelection((s) => (add ? toggleOne(s, id) : pickOne(s, id)));
+  }, []);
   const onClear = useCallback(() => {
     setSelection((s) => noSelection(s.graph));
     setFocusDepth(0);
@@ -912,10 +933,19 @@ export function GraphApp() {
   // A shown hit is selected and the camera moves to it; a hidden one is only selected, until "Show" reveals it.
   const pickHit = useCallback(
     (id: string) => {
+      setMemberOnly(null);
       if (place(id).kind === "shown") pickNode(id);
       else setSelection((s) => pickOne(s, id));
     },
     [place, pickNode],
+  );
+  // One member of a merged entity on its own (PRD 005 centre-15): the panel, canvas and centring use only its links.
+  const pickMember = useCallback(
+    (id: string) => {
+      pickHit(id);
+      setMemberOnly(id);
+    },
+    [pickHit],
   );
   const revealHit = useCallback(
     (id: string) => {
@@ -1307,6 +1337,10 @@ export function GraphApp() {
     }
     setPendingAsk(out.pending);
     setPrompt(out.prompt);
+    // `umx ui focus --centre` centres the view as the button does (PRD 005); clear in its graph goes back.
+    const now = centreNow.current;
+    const centring = agentCentre(batch.events, now.centre, Date.now());
+    if (centring !== now.centre) setCentre(centring && { key: centring.key, member: false, by: "agent", layout: now.layout, spines: now.spines });
     for (const e of batch.events) {
       const id = `${e.seq}:${e.at_ms}`;
       if (e.command.kind !== "open" || openSeen.current.has(id)) continue;
@@ -1426,6 +1460,54 @@ export function GraphApp() {
     () => (mergeEntities && replyNow?.reply?.records ? mergeRecords(replyNow.reply.records.map((r) => ({ graph: r.graph, key: qid(r.graph, r.id), node: r.node }))) : null),
     [mergeEntities, replyNow],
   );
+  // The selected entity (PRD 005 centre-14): with Merge entities on, a selected member of an entity of two or more shown
+  // members stands for all of them, unless the person chose that member on its own (centre-15).
+  const selectedMembers = useMemo(() => {
+    if (!view || !mask || !mergeEntities || !selected || memberOnly === selected) return null;
+    const e = entities.of.get(selected);
+    if (e === undefined) return null;
+    const shownMembers = entities.list[e].members.filter((m) => view.graph.hasNode(m) && mask[view.graph.getNodeAttribute(m, "index")] === 1);
+    return shownMembers.length > 1 && shownMembers.includes(selected) ? [selected, ...shownMembers.filter((m) => m !== selected)] : null;
+  }, [view, mask, mergeEntities, selected, memberOnly, entities]);
+  // Find's rows (PRD 005 centre-15): with Merge entities on, a hit's entity of two or more shown members.
+  const hitEntity = useMemo<HitEntities | null>(() => {
+    if (!view || !mask || !mergeEntities) return null;
+    return (id) => {
+      const e = entities.of.get(id);
+      if (e === undefined) return null;
+      const members = entities.list[e].members.filter((m) => view.graph.hasNode(m) && mask[view.graph.getNodeAttribute(m, "index")] === 1);
+      if (members.length < 2 || !members.includes(id)) return null;
+      return { entity: e, members: members.map((m) => ({ key: m, graph: aliasOfKey(m), title: String(view.graph.getNodeAttribute(m, "label")) })) };
+    };
+  }, [view, mask, mergeEntities, entities]);
+  const membersAsk = selectedMembers ? `${selectedMembers.join(",")}|${detailTick}|${view?.data ?? 0}` : null;
+  const [memberReads, setMemberReads] = useState<{ ask: string; parts: MemberDetail[] } | null>(null);
+  useEffect(() => {
+    if (!membersAsk) return;
+    const abort = new AbortController();
+    const others = membersAsk.split("|")[0].split(",").slice(1);
+    void readMembers(others, (key) => {
+      const at = unq(key);
+      return api<NodeDetail>(`/api/graphs/${encodeURIComponent(at.alias)}/nodes/${encodeURIComponent(at.id)}?entities=off`, abort.signal);
+    }).then((parts) => {
+      if (!abort.signal.aborted) setMemberReads({ ask: membersAsk, parts });
+    });
+    return () => abort.abort();
+  }, [membersAsk]);
+  const entityLinks = useMemo(() => {
+    if (!selectedMembers || !detail || !view || memberReads?.ask !== membersAsk || String(detail.node.id) !== unq(selectedMembers[0]).id) return null;
+    const members = new Set(selectedMembers);
+    return unionNeighbours([{ key: selectedMembers[0], detail }, ...memberReads.parts], members, (m) =>
+      neighbourLinks(view.open, aliasOfKey(m), securedIds, { graph: view.graph, node: m }),
+    );
+  }, [selectedMembers, detail, view, memberReads, membersAsk, securedIds]);
+  // Centre on this (PRD 005): the selected entity, or the member chosen on its own; Back to layout ends it.
+  const centreHere = useCallback(() => {
+    if (selected) setCentre({ key: selected, member: memberOnly === selected, by: "person", layout: layoutOptions, spines: spinePicks });
+  }, [selected, memberOnly, layoutOptions, spinePicks]);
+  const backToLayout = useCallback(() => setCentre(null), []);
+  const centredHere =
+    !!centreOn && !!selected && (centreOn.member ? centreOn.key === selected && memberOnly === selected : memberOnly !== selected && (selectedMembers ?? [selected]).includes(centreOn.key));
   // "Show across graphs" (design point 2): every member selected (the person's ring, K1 glow in Console), their
   // threads at emphasis width, the camera fitted to them and each member's hop 1 in focus. It lasts while the
   // selection still holds every member.
@@ -1561,6 +1643,8 @@ export function GraphApp() {
     };
   }, [selected, panelGraph, spineLists, spineShown, spinePlaces, viewGraph, pickNode]);
   const [spineAxes, setSpineAxes] = useState<SpineAxis[]>([]);
+  // What the canvas is centred on now (PRD 005), for the sidebar and the panel; paused while the node is hidden.
+  const [centred, setCentred] = useState<{ key: string; rings: number; shelf: number; paused: boolean } | null>(null);
   const spineShape = useRef("");
   // The force layout's positions, kept while a spine is shown so none puts each node back where it was laid out.
   const spineBase = useRef<{ graph: ViewGraph; layout: unknown; nudged: number; at: Map<string, { x: number; y: number; clearance?: number }> } | null>(null);
@@ -1590,7 +1674,14 @@ export function GraphApp() {
       spineBase.current = { graph: g, layout, nudged, at };
     }
     const axes: SpineAxis[] = [];
-    if (layout.done && spineNow.size > 0) {
+    // Centred (PRD 005): rings of hops around the node, in place of the layout and its spine (paused, not changed).
+    const rings = layout.done && centreOn && mask && edges ? centreView(g, view.index, view.ids, mask, edges, centreOn, mergeEntities ? entities : NO_ENTITIES, spacing) : null;
+    if (rings) {
+      g.updateEachNodeAttributes((_k, a) => {
+        if (rings.hop[a.index] !== NOT_PLACED) [a.x, a.y] = [rings.positions[a.index * 2], rings.positions[a.index * 2 + 1]];
+        return a;
+      });
+    } else if (layout.done && spineNow.size > 0) {
       // The lane takes the canvas's shape, so Fit fills it.
       const box = document.querySelector(".sigma-host")?.getBoundingClientRect();
       const aspect = box && box.width > 0 && box.height > 0 ? box.width / box.height : undefined;
@@ -1609,14 +1700,18 @@ export function GraphApp() {
       }
     }
     setSpineAxes((old) => (old.length === 0 && axes.length === 0 ? old : axes));
-    // A spine shown or put away moves every node: fit the camera to the new shape, once per change of spines.
-    const shape = [...spineNow.keys()].sort().join(",");
+    setCentred((old) => {
+      const next = centreOn && layout.done ? { key: centreOn.key, rings: rings?.rings ?? 0, shelf: rings?.shelf ?? 0, paused: rings === null } : null;
+      return old && next && old.key === next.key && old.rings === next.rings && old.shelf === next.shelf && old.paused === next.paused ? old : next;
+    });
+    // A spine shown or put away, or a centring, moves every node: fit the camera to the new shape, once per change.
+    const shape = rings && centreOn ? `centre:${centreOn.key}:${centreOn.member}` : [...spineNow.keys()].sort().join(",");
     if (layout.done && shape !== spineShape.current) {
       spineShape.current = shape;
       setFit((f) => ({ nodes: [], n: (f?.n ?? 0) + 1 }));
     }
     applyMerge(g, mergeEntities && layout.done ? entities : NO_ENTITIES);
-  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread, hubOwners, spacing, layoutOptions.mode]);
+  }, [view, layout, mergeEntities, entities, visible, filters, nudged, spineNow, spread, hubOwners, spacing, layoutOptions.mode, centreOn, mask, edges]);
   // Shadow connections (ws009 M1c, plan 169). ShadowReads owns the reads (review B2 to B4): the data belongs to
   // the open set it was read over, a new set drops it, Off stops and drops it, and only the newest read lands. Read
   // again on events: a new set, a live change or an Apply (10 s after the last), and the refresh button. Under Hold the
@@ -1708,7 +1803,7 @@ export function GraphApp() {
           loading: entityAsk !== null && (replyNow?.loading ?? true),
           error: replyNow?.error ?? null,
           merged: mergedRecord,
-          onPick: pickNode,
+          onPick: (key) => (walked.members.some((m) => m.key === key) ? pickMember(key) : pickNode(key)),
           onAcross: () => showAcross(walked.members.map((m) => m.key), selected),
           onOpen: (g) => openGraphs([...shown, g]),
         }
@@ -1909,6 +2004,11 @@ export function GraphApp() {
             hubCount={hubs.centres.length}
             hubFallback={hubs.fallback ?? false}
             hubPreview={hubs.preview ?? view?.snaps.some((s) => s.hubs === undefined) ?? false}
+            centred={
+              centred && view?.graph.hasNode(centred.key)
+                ? { title: String(view.graph.getNodeAttribute(centred.key, "label")), rings: centred.rings, shelf: centred.shelf, paused: centred.paused, spine: spineNow.size > 0, onBack: backToLayout }
+                : null
+            }
             onSpacing={setSpacing}
             louvainMs={louvain?.ms ?? null}
             clustering={view !== null && grouping === "louvain" && (louvain === null || louvain.resolution !== resolution)}
@@ -1920,6 +2020,8 @@ export function GraphApp() {
             place={place}
             onPickNode={pickHit}
             onReveal={revealHit}
+            hitEntity={hitEntity}
+            onPickMember={pickMember}
             filters={filters}
             pulse={pulse}
             chips={chips}
@@ -2076,10 +2178,11 @@ export function GraphApp() {
                 cameraOut={cameraOut}
                 palette={palette}
                 selected={selected}
+                selectedMembers={selectedMembers}
                 selection={selectionSet}
                 jump={jump}
                 focused={acrossDepths ?? shownFocus?.depths ?? null}
-                groups={spineAxes.length > 0 ? null : groupShown}
+                groups={spineAxes.length > 0 || (centred && !centred.paused) ? null : groupShown}
                 layoutDone={layout.done}
                 spacing={spacing}
                 layoutMode={layoutOptions.mode}
@@ -2135,7 +2238,9 @@ export function GraphApp() {
             <NodePanel
               open={selected !== null || removedId !== null}
               removed={selected === null && removedId !== null}
-              detail={detail}
+              detail={entityLinks && detail ? { ...detail, neighbours: entityLinks.neighbours, neighboursTruncated: entityLinks.truncated } : detail}
+              members={selectedMembers ? { count: selectedMembers.length, failed: entityLinks?.failed ?? 0, loading: entityLinks === null } : null}
+              centre={selected ? { here: centredHere, paused: centredHere && (centred?.paused ?? false), onCentre: centreHere, onBack: backToLayout } : null}
               error={detailError}
               loading={detailLoading}
               theme={theme}
@@ -2143,7 +2248,7 @@ export function GraphApp() {
               onPick={pickNode}
               hiddenIds={hiddenIds}
               graph={selected ? aliasOfKey(selected) : null}
-              links={links}
+              links={entityLinks?.links ?? links}
               focus={{ depth: focusDepth, focus, onDepth: setFocusDepth }}
               unlabelled={unlabelled}
               entity={entityView}

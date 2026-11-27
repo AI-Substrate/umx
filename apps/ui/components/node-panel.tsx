@@ -1,5 +1,5 @@
 "use client";
-import { ArrowLeft, ArrowRight, CircleAlert, ExternalLink, Loader2, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleAlert, ExternalLink, Loader2, LocateFixed, Sparkles, Undo2, X } from "lucide-react";
 import { useMemo } from "react";
 import { EntitySection, type EntityView } from "@/components/entity-section";
 import { HitList, type Placement } from "@/components/hit-list";
@@ -49,6 +49,11 @@ type Props = {
   shadows?: { rows: { key: string; title: string; graph: string; score: number }[]; notes: string[] } | null;
   /** How the node sits on each spine its graph declares, with toggles shared with the sidebar's Spine chips. */
   spines?: NodeSpinesView | null;
+  /** Centre on this (PRD 005): `here` while the view is centred on this node (or its entity); `paused` while that
+   * node is hidden. */
+  centre?: { here: boolean; paused: boolean; onCentre: () => void; onBack: () => void } | null;
+  /** A selected merged entity (PRD 005 centre-14): the neighbours listed are all its members'. */
+  members?: { count: number; failed: number; loading: boolean } | null;
 };
 
 /** Where a neighbour is on the canvas (plan 133): its key when its graph is open, and how to name its graph. */
@@ -280,7 +285,7 @@ export function NeighbourList({
   );
 }
 
-export function NodePanel({ open, detail, error, loading, theme, onClose, onPick, hiddenIds, focus, similar, removed = false, graph = null, links, unlabelled = 0, entity = null, shadows = null, spines = null }: Props) {
+export function NodePanel({ open, detail, error, loading, theme, onClose, onPick, hiddenIds, focus, similar, removed = false, graph = null, links, unlabelled = 0, entity = null, shadows = null, spines = null, centre = null, members = null }: Props) {
   const node = removed ? undefined : detail?.node;
   const fields = node ? Object.entries(node).filter(([k]) => !STANDARD.has(k)) : [];
   const evidence = Array.isArray(node?.evidence) ? (node.evidence as Evidence[]) : [];
@@ -348,6 +353,17 @@ export function NodePanel({ open, detail, error, loading, theme, onClose, onPick
             ) : null}
           </div>
         </div>
+        {centre && !removed ? (
+          centre.here ? (
+            <Button variant="outline" size="sm" onClick={centre.onBack} data-testid="centre-back" title={centre.paused ? "Paused: this node is hidden" : undefined}>
+              <Undo2 /> Back to layout
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={centre.onCentre} data-testid="centre-on" title="Lay the view out in rings of hops around this node">
+              <LocateFixed /> Centre on this
+            </Button>
+          )
+        ) : null}
         <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
           <X />
         </Button>
@@ -405,7 +421,14 @@ export function NodePanel({ open, detail, error, loading, theme, onClose, onPick
               </Section>
             ) : null}
             {entity ? <EntitySection {...entity} /> : null}
-            <Section title={`Neighbours (${detail!.neighbours.length}${detail!.neighboursTruncated ? "+" : ""})`}>
+            <Section title={`Neighbours${members ? ` of all ${members.count} members` : ""} (${detail!.neighbours.length}${detail!.neighboursTruncated ? "+" : ""})`}>
+              {members?.loading ? (
+                <p className="text-xs text-muted-foreground" data-testid="members-loading">Reading the other members&apos; links…</p>
+              ) : members && members.failed > 0 ? (
+                <p className="text-xs text-muted-foreground" data-testid="members-failed">
+                  The links of {members.failed} {members.failed === 1 ? "member" : "members"} could not be read.
+                </p>
+              ) : null}
               <NeighbourList rows={detail!.neighbours} theme={theme} onPick={onPick} hiddenIds={hiddenIds} links={links} />
             </Section>
             {shadows ? (

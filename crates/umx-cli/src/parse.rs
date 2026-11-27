@@ -31,8 +31,9 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 31] = [
+const SWITCHES: [&str; 32] = [
     "--clear-values",
+    "--centre",
     "--same-graph",
     "--raise",
     "--add",
@@ -457,7 +458,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
     ("root add", &[]),
     ("root list", &[]),
     ("root remove", &[]),
-    ("ui focus", &["--hops", "--note"]),
+    ("ui focus", &["--hops", "--note", "--centre"]),
     ("ui highlight", &["--add", "--note"]),
     ("ui filter", &["--show", "--hide", "--note"]),
     ("ui fit", &["--note"]),
@@ -2151,7 +2152,12 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                             what: "--hops is a whole number from 1 to 3",
                         })?,
                     };
-                    UiCmd::Focus { node, hops, note }
+                    UiCmd::Focus {
+                        node,
+                        hops,
+                        note,
+                        centre: a.switches.iter().any(|s| s == "--centre"),
+                    }
                 }
                 "ui highlight" => UiCmd::Highlight {
                     nodes: a.positional.clone(),
@@ -2520,6 +2526,32 @@ mod tests {
                 .collect::<Vec<_>>(),
             [("related", "off")]
         );
+    }
+
+    #[test]
+    fn ui_focus_centre_is_a_switch() {
+        let op = |args: &[&str]| {
+            parse(args, Path::new("/work"))
+                .ok()
+                .expect("ui focus parses")
+                .op
+        };
+        assert!(matches!(
+            op(&["ui", "focus", "01JC8X", "--centre", "--hops", "2"]),
+            Op::UiCommand {
+                command: UiCmd::Focus {
+                    centre: true,
+                    hops: 2,
+                    ..
+                }
+            }
+        ));
+        assert!(matches!(
+            op(&["ui", "focus", "01JC8X"]),
+            Op::UiCommand {
+                command: UiCmd::Focus { centre: false, .. }
+            }
+        ));
     }
 
     #[test]

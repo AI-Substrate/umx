@@ -1,10 +1,11 @@
 "use client";
-import { Loader2, RotateCcw, Search } from "lucide-react";
+import { Loader2, RotateCcw, Search, Undo2 } from "lucide-react";
 import { GraphPicker, type GraphPickerProps } from "@/components/graph-picker";
 import { type SpinePanel, SpinePicker } from "@/components/spine-picker";
-import { HitList, type Placement } from "@/components/hit-list";
+import { type HitEntities, HitList, type Placement } from "@/components/hit-list";
 import { TypeDot } from "@/components/type-dot";
 import { Segmented } from "@/components/segmented";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { type ShadowLegend, ShadowLegendRow } from "@/components/shadow-legend";
@@ -46,6 +47,8 @@ type Props = {
   hubCount: number;
   hubFallback: boolean;
   hubPreview?: boolean;
+  /** Centred on a node (PRD 005): its title, rings and shelf, whether a spine is paused, and Back to layout. */
+  centred?: { title: string; rings: number; shelf: number; paused: boolean; spine: boolean; onBack: () => void } | null;
   louvainMs: number | null;
   /** A Louvain run for the current settings is still on its way. */
   clustering: boolean;
@@ -57,6 +60,9 @@ type Props = {
   place: (id: string) => Placement;
   onPickNode: (id: string) => void;
   onReveal: (id: string) => void;
+  /** With Merge entities on, Find names each merged entity once (PRD 005 centre-15); a member row picks it alone. */
+  hitEntity?: HitEntities | null;
+  onPickMember?: (id: string) => void;
   filters: Filters;
   chips: ChipCounts | null;
   onChip: (dim: FilterDim, key: string) => void;
@@ -129,6 +135,20 @@ export function Sidebar({ searchRef, ...p }: Props) {
           {p.hubCount > 0 ? `${number.format(p.hubCount)} hub${p.hubCount === 1 ? "" : "s"}` : p.hubFallback ? "No eligible degree hubs." : p.layout.mode === "declared" && !p.hubPreview ? "No declared hubs are visible." : `No ${p.layout.mode === "declared" ? "part_of" : p.layout.mode} hubs available; using Normal.`}
         </p> : null}
         {p.hubFallback ? <p className="text-xs text-muted-foreground" role="status">No similarity data; using Degree hubs (most connections).</p> : null}
+        {p.centred ? (
+          <div className="space-y-1.5 rounded-md border px-2 py-1.5 text-xs" data-testid="centred" role="status">
+            <p className="min-w-0">
+              Centred on <span className="font-medium break-words">{p.centred.title}</span>
+              {p.centred.paused
+                ? ": paused while it is hidden."
+                : `: ${number.format(p.centred.rings)} ring${p.centred.rings === 1 ? "" : "s"}${p.centred.shelf > 0 ? `, ${number.format(p.centred.shelf)} on the shelf` : ""}.`}
+            </p>
+            {p.centred.spine && !p.centred.paused ? <p className="text-muted-foreground">The spine is paused while centred.</p> : null}
+            <Button variant="outline" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={p.centred.onBack} data-testid="centred-back">
+              <Undo2 className="size-3" /> Back to layout
+            </Button>
+          </div>
+        ) : null}
       </div>
       {p.spine ? <SpinePicker {...p.spine} /> : null}
 
@@ -167,7 +187,7 @@ export function Sidebar({ searchRef, ...p }: Props) {
         ) : null}
         {p.search.result ? (
           <div className="max-h-72 overflow-y-auto">
-            <HitList result={p.search.result} theme={p.theme} place={p.place} onPick={p.onPickNode} onReveal={p.onReveal} testId="search-results" />
+            <HitList result={p.search.result} theme={p.theme} place={p.place} onPick={p.onPickNode} onReveal={p.onReveal} testId="search-results" entityOf={p.hitEntity} onPickMember={p.onPickMember} />
           </div>
         ) : null}
       </div>

@@ -4329,12 +4329,13 @@ fn retry(op: &Op) -> Command {
                     node: n,
                     hops,
                     note,
-                } => noted(
-                    node(Command::new("ui focus"), n, "<node>")
+                    centre,
+                } => {
+                    let c = node(Command::new("ui focus"), n, "<node>")
                         .word("--hops")
-                        .count(u64::from(*hops)),
-                    note,
-                ),
+                        .count(u64::from(*hops));
+                    noted(if *centre { c.word("--centre") } else { c }, note)
+                }
                 UiCmd::Highlight {
                     nodes: n,
                     add,

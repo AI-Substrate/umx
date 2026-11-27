@@ -208,10 +208,16 @@ pub(crate) fn client_gone() -> bool {
 /// The wire command as the agent sent it, in umx-core's terms (node references still as typed).
 pub(crate) fn core_cmd(c: &UiCmd) -> CoreCmd<String> {
     let (action, note) = match c {
-        UiCmd::Focus { node, hops, note } => (
+        UiCmd::Focus {
+            node,
+            hops,
+            note,
+            centre,
+        } => (
             UiAction::Focus {
                 node: node.clone(),
                 hops: *hops,
+                centre: *centre,
             },
             note,
         ),
@@ -263,10 +269,11 @@ pub(crate) fn core_cmd(c: &UiCmd) -> CoreCmd<String> {
 fn wire(c: &CoreCmd) -> UiCmd {
     let note = c.note.clone();
     match &c.action {
-        UiAction::Focus { node, hops } => UiCmd::Focus {
+        UiAction::Focus { node, hops, centre } => UiCmd::Focus {
             node: node.to_text(),
             hops: *hops,
             note,
+            centre: *centre,
         },
         UiAction::Highlight { nodes, add } => UiCmd::Highlight {
             nodes: ids(nodes),
@@ -343,4 +350,27 @@ fn waited_json(w: &UiWaited) -> Value {
         "events": w.events.iter().map(event_json).collect::<Vec<_>>(),
         "changes": w.changes.iter().map(change_json).collect::<Vec<_>>(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// PRD 005: `umx ui focus --centre` reaches the view's event as sent, and a plain focus stays plain on the wire.
+    #[test]
+    fn focus_carries_centre_from_the_request_to_the_event() {
+        for centre in [true, false] {
+            let sent = UiCmd::Focus {
+                node: "01JC8XA4H7ABCDEFGHJKMNPQRS".into(),
+                hops: 2,
+                note: None,
+                centre,
+            };
+            let resolved = core_cmd(&sent)
+                .map(|n| n.parse::<umx_core::Id>())
+                .expect("an id");
+            assert_eq!(wire(&resolved), sent);
+            assert_eq!(wire_json(&resolved).get("centre").is_some(), centre);
+        }
+    }
 }

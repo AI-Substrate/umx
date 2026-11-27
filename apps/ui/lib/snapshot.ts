@@ -440,10 +440,11 @@ export async function vouchNeighbours(read: Reader, rows: Neighbour[]): Promise<
   return out.map((n) => (n.kind === "node" && !n.graphAlias ? { ...n, title: hiddenTitle(n.type, n.id) } : n));
 }
 
-export async function loadNode(read: Reader, graph: string, id: string): Promise<NodeDetail> {
+/** `own`: only the node's own edges (`--entities off`), none inherited from its entity's members. */
+export async function loadNode(read: Reader, graph: string, id: string, own = false): Promise<NodeDetail> {
   const { localId, aliasOf } = await graphIds(read, graph);
   const got = await read<{ node: Record<string, unknown> }>("node get", { graph, id });
-  const near = await read<Rows<NeighbourRow>>("neighbours", { graph, id });
+  const near = await read<Rows<NeighbourRow>>(own ? "neighbours own" : "neighbours", { graph, id });
   // Every value umx flags is replaced here, from this reply's own flags (ws009 M2b); keys it does not flag are shown.
   const { node, titleHidden } = redactNode(got.data.node);
   return {

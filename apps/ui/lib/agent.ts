@@ -119,6 +119,24 @@ export function dropRemovedNodes(s: AgentState, removed: ReadonlySet<string>): A
   return { ...s, highlight: new Set(highlight), focus: focusGone ? null : s.focus, focusMark: focusGone ? null : s.focusMark, marks };
 }
 
+/** A centring (PRD 005) and who made it. */
+export type Centring = { key: string; by: "person" | "agent" };
+
+/**
+ * What a batch of qualified events does to the view's centring (PRD 005 centre-11): the newest `focus --centre` no
+ * older than STALE_MS centres it on that node (a replayed or old one never re-arranges the view); `clear` in a graph
+ * ends an agent's centring on a node of that graph, never a person's. Returns `current` itself when nothing changes.
+ */
+export function agentCentre<T extends Centring>(events: readonly AgentEvent[], current: T | null, now: number): T | Centring | null {
+  let out: T | Centring | null = current;
+  for (const e of events) {
+    const c = e.command;
+    if (c.kind === "focus" && c.centre && now - e.at_ms <= STALE_MS) out = { key: c.node, by: "agent" };
+    else if (c.kind === "clear" && out?.by === "agent" && aliasOfKey(out.key) === e.graph) out = null;
+  }
+  return out;
+}
+
 /** Where the view's actions on events have got to, per daemon epoch: an event at or below is never acted on again. */
 export type Applied = { epoch: string; seq: number } | null;
 
@@ -245,6 +263,8 @@ export type CameraAsk = { seq: number; at_ms: number; kind: "focus" | "fit"; nod
 
 export function cameraAsk(e: AgentEvent): CameraAsk | null {
   const c = e.command;
+  // A centring fits the camera to its rings (PRD 005 centre-10); jumping to the node would hide them.
+  if (c.kind === "focus" && c.centre) return null;
   if (c.kind === "focus") return { seq: e.seq, at_ms: e.at_ms, kind: "focus", nodes: [c.node], graph: e.graph };
   if (c.kind === "fit") return { seq: e.seq, at_ms: e.at_ms, kind: "fit", nodes: c.nodes, graph: e.graph };
   return null;
@@ -390,7 +410,7 @@ export function describe(e: AgentEvent, title: (id: string) => string | null): D
   const base = { who: who(e.by), note: c.note ?? null, notShown };
   switch (c.kind) {
     case "focus":
-      return { ...base, action: "focused", target: `${target()}, ${c.hops} hop${c.hops === 1 ? "" : "s"}` };
+      return { ...base, action: c.centre ? "centred the view on" : "focused", target: `${target()}, ${c.hops} hop${c.hops === 1 ? "" : "s"}` };
     case "highlight":
       return { ...base, action: c.add ? "added to its highlight" : "highlighted", target: target() };
     case "fit":
