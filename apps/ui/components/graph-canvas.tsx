@@ -81,6 +81,9 @@ type Props = {
   palette: CanvasPalette;
   /** The node the panel shows and focus starts from. */
   selected: string | null;
+  /** With Merge entities on, every shown member of the selected entity, the selected one first (PRD 005 centre-14):
+   * their links are all the selection's. Null for a node, or a member the person chose on its own. */
+  selectedMembers?: readonly string[] | null;
   /** Every node the person selected: each gets the accent ring. */
   selection: ReadonlySet<string>;
   /** Move the camera to this node; n changes on every request. */
@@ -339,7 +342,7 @@ const NO_PLACES: ReadonlyMap<string, Place> = new Map();
 /** A thread's width, in screen pixels: confirmed, and picked by "Show across graphs" (ws009 M2 design point 1). */
 const THREAD = { normal: 1.2, emphasis: 2.4 };
 
-function Behaviour({ graph, palette, selected, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "normal", spineKey = "", onUnlabelled, spineAxes = NO_AXES }: Props) {
+function Behaviour({ graph, palette, selected, selectedMembers = null, selection, jump, focused, groups, layoutDone, offRelations, relationModes = NO_MODES, symmetric = NO_SYMMETRIC, version, onPick, onClear, onLasso, onJumped, agentMarks, fit, gesture, agentFocusNode = null, agentNotes = NO_NOTES, live = null, readouts = null, panelOpen = false, hold = null, camera: cameraTo = null, cameraOut, entities = NO_ENTITIES, merge = false, across = null, colorOf, shadows = null, spacing = SPACING.default, layoutMode = "normal", spineKey = "", onUnlabelled, spineAxes = NO_AXES }: Props) {
   const sigma = useSigma<NodeAttrs, EdgeAttrs>();
   // Merged places (ws009 M2), recomputed lazily after any node change (layout, visibility, live), read by the reducers
   // and the overlays.
@@ -788,9 +791,11 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
   // (design note section 5) keeps its own channel.
   useEffect(() => {
     const near = new Set<string>();
-    if (selected && graph.hasNode(selected)) {
-      graph.forEachEdge(selected, (_e, a, s, t) => {
-        if (!offRelations.has(a.kind)) near.add(s === selected ? t : s);
+    const chosen = new Set(selectedMembers ?? (selected ? [selected] : []));
+    for (const c of chosen) {
+      if (!graph.hasNode(c)) continue;
+      graph.forEachEdge(c, (_e, a, s, t) => {
+        if (!offRelations.has(a.kind)) near.add(s === c ? t : s);
       });
     }
     const heads = new Set(groups?.heads ?? []);
@@ -805,7 +810,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
     focused?.forEach((d, n) => {
       if (d === 0) centre = n;
     });
-    const at = { selected, hovered: null as string | null, focusCentre: centre };
+    const at = { selected, hovered: null as string | null, focusCentre: centre, members: selectedMembers ?? undefined };
     // What the edge reducer leaves out: a relation turned off, an edge inside one merged entity (it has no length left),
     // a denial, and an identity edge a thread already draws.
     const leftOut = edgeLeftOut(graph, {
@@ -1156,7 +1161,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
         }
         return { ...out, color: palette.edgeDim, size: quiet ? EDGE_SIZE.quiet : EDGE_SIZE.normal, zIndex: 0, label: null };
       }
-      if (selected && (s === selected || t === selected)) return { ...out, color: selectedEdgeColor(kind, palette), size: EDGE_SIZE.emphasis, zIndex: 2 };
+      if (chosen.has(s) || chosen.has(t)) return { ...out, color: selectedEdgeColor(kind, palette), size: EDGE_SIZE.emphasis, zIndex: 2 };
       return { ...out, color: quiet ? palette.edgeStructure : palette.edge, size: quiet ? EDGE_SIZE.quiet : EDGE_SIZE.normal };
     }
     const refreshSizes = sizeProjection.changed;
@@ -1176,7 +1181,7 @@ function Behaviour({ graph, palette, selected, selection, jump, focused, groups,
       sigma.off("leaveNode", hoverLabels);
       cancelAnimationFrame(hoverFrame);
     };
-  }, [selected, selection, focused, groups, palette, graph, sigma, setSettings, offRelations, relationModes, symmetric, agentMarks, agentFocusNode, merge, placesNow, entities, proposedPairs, version, onUnlabelled, spineAxes]);
+  }, [selected, selectedMembers, selection, focused, groups, palette, graph, sigma, setSettings, offRelations, relationModes, symmetric, agentMarks, agentFocusNode, merge, placesNow, entities, proposedPairs, version, onUnlabelled, spineAxes]);
 
   // Shadow connections (ws009 M1c, ui-expert point 1): a dotted straight line under the edges, 0.8 px with 2 px dots and
   // 4 px gaps, no arrow, in the structure colour (Console: chrome-hi; Instrument: ink), fading in with the score. A

@@ -4,10 +4,11 @@ import { umx } from "@/lib/umx";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: Request, ctx: { params: Promise<{ alias: string; id: string }> }) {
+/** `?entities=off`: the node's own edges only (PRD 005 centre-14, centre-15). */
+export async function GET(req: Request, ctx: { params: Promise<{ alias: string; id: string }> }) {
   try {
     const { alias, id } = await ctx.params;
-    return ok(await loadNode(umx(), alias, id));
+    return ok(await loadNode(umx(), alias, id, new URL(req.url).searchParams.get("entities") === "off"));
   } catch (error) {
     return errorResponse(error);
   }

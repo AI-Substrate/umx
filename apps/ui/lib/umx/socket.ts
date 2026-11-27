@@ -33,7 +33,8 @@ const BUILD = { version: "0.0.0", commit: "umx-ui", built: "apps/ui" };
 export type AgentActor = { seat?: string; role?: string; harness?: string; user?: string };
 
 export type UiCommand =
-  | { kind: "focus"; node: string; hops: number; note?: string }
+  /** `centre` (PROTOCOL 110, PRD 005, `umx ui focus --centre`): the view also centres in rings of hops on the node. */
+  | { kind: "focus"; node: string; hops: number; centre?: boolean; note?: string }
   | { kind: "highlight"; nodes: string[]; add: boolean; note?: string }
   | { kind: "filter"; show: string[]; hide: string[]; note?: string }
   | { kind: "fit"; nodes: string[]; note?: string }
@@ -122,8 +123,9 @@ function command(v: unknown): UiCommand {
   switch (c.kind) {
     case "focus": {
       const hops = whole(c.hops);
-      if (hops === null || hops < 1 || hops > 3) throw bad("focus");
-      return withNote({ kind: "focus", node: checked(nodeId, c.node, "node id"), hops });
+      const centre: unknown = c.centre ?? false;
+      if (hops === null || hops < 1 || hops > 3 || typeof centre !== "boolean") throw bad("focus");
+      return withNote({ kind: "focus", node: checked(nodeId, c.node, "node id"), hops, ...(centre ? { centre: true } : {}) });
     }
     case "highlight": {
       const nodes = ids(c.nodes);

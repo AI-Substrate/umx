@@ -122,7 +122,7 @@ export const HOVER_LABELS_MAX = 40;
  */
 export function forcedLabels(
   graph: ViewGraph,
-  at: { selected: string | null; hovered: string | null; focusCentre: string | null },
+  at: { selected: string | null; hovered: string | null; focusCentre: string | null; members?: readonly string[] },
   shown: (edge: string) => boolean,
   max = FORCED_LABELS_MAX,
   hoverMax = HOVER_LABELS_MAX,
@@ -147,6 +147,8 @@ export function forcedLabels(
     });
   };
   take(at.selected, "selected");
+  // A selected merged entity (PRD 005 centre-14): every member's edges are the selection's.
+  for (const m of at.members ?? []) take(m, "selected");
   take(at.hovered, "hovered");
   take(at.focusCentre, "focus");
   return { edges, more };

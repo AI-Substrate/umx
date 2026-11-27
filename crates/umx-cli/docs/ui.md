@@ -283,6 +283,7 @@ applies them. They never show what the view hides from the person (a graph it do
 nodes beyond the person's own toggles).
 
     umx ui focus 01JC8XA4H7 --hops 2 --note "start here"
+    umx ui focus 01JC8XA4H7 --centre --note "everything around this"
     umx ui highlight 01JC8XA4H7 01JC8XB2QK --note "these two disagree"
     umx ui highlight umx:acme/01JC8XC9MZ --add
     umx ui filter --hide relation:similar_to --show type:problem
@@ -290,14 +291,17 @@ nodes beyond the person's own toggles).
     umx ui fit --graph acme
     umx ui clear --graph acme
 
-- `umx ui focus <node> [--hops n]` centres the view on the node and shows `--hops` hops around it (1 to 3, default 1).
+- `umx ui focus <node> [--hops n] [--centre]` centres the view on the node and shows `--hops` hops around it (1 to 3,
+  default 1). `--centre` also lays the view out in rings of hops around the node, as the panel's "Centre on this"
+  does (see "Centre on a node" below); `umx ui clear` in that graph puts the layout back. A centre command older than
+  30 seconds when the view gets it does not re-arrange the view.
 - `umx ui highlight <node>...` marks up to 100 nodes. They replace what agents highlighted before; `--add` adds them
   instead.
 - `umx ui filter [--show|--hide <relation|type|status>:<name>]...` sets the agents' filter: each run replaces the
   last, so name everything you want shown and hidden (at most 64 of each). With no names it clears it. The event
   carries both whole lists, so the view can undo it from the event alone.
 - `umx ui fit [<node>...]` fits those nodes (up to 100) in the view, or the whole graph with none.
-- `umx ui clear` removes what agents set (highlight and filter); never what the person set.
+- `umx ui clear` removes what agents set (highlight, filter, and a centring an agent made); never what the person set.
 - `umx ui open --graph <alias>[,<alias>...]` opens those graphs in the view (see "Open graphs for the person" below).
 - With several graphs open, a command acts within its graph: a highlight replaces only that graph's highlight, and
   `clear` takes off only what was set in that graph. A filter sets the chips for the whole canvas.
@@ -448,6 +452,31 @@ spine per graph, another switches to it, and clicking the shown one puts it away
 the node's graph once while it is open, and again only after a live change to that graph, not on every click. When
 the graph's spines cannot be listed, the panel says so rather than that it has none.
 
+## Centre on a node
+
+The node panel's "Centre on this", at its top, lays the view out around that node: the node in the middle, its
+neighbours on ring 1, their neighbours on ring 2, and so on, so distance from the middle is hops. Links count either
+way, and a link between two open graphs counts like any other, so every open graph takes part. Shown nodes that no
+shown link reaches sit on a shelf outside the last ring. Only what the view shows counts: a hidden node gets no place
+and joins no rings, and a relation turned off joins nothing; changing a filter while centred lays the rings out
+again. Rings never overlap: a crowded ring becomes a band of circles, and Spacing still adds room.
+
+- Ring 1 is ordered by type, then id; further out, a node sits after the node that reached it, then by type and id.
+  The same node, filters and spacing always give the same rings.
+- The camera fits the whole drawing each time the view centres or goes back.
+- The sidebar's Layout box says "Centred on <title>: n rings, m on the shelf", with Back to layout. While centred,
+  the panel's button for that node reads Back to layout; pressing Centre on this on another node centres on that one.
+- Back to layout, choosing another layout or showing or hiding a spine puts every node back where the chosen layout
+  put it. A spine is paused while centred: its axis is not drawn, and it comes back as it was.
+- If the centre node is hidden by a filter, centring pauses until it is shown again, and the sidebar says so.
+- Centring is view only: it writes nothing, reads nothing more from umx, and is not kept across a reload.
+- With Merge entities on, centring on a merged entity starts from the links of all its members, and every other
+  merged entity takes one place, on the ring of its nearest member. A member chosen on its own (see Entities) starts
+  from its own links only.
+- An agent does the same with `umx ui focus <node> --centre`; the strip says "<who> centred the view on <title>",
+  and the camera fits the rings instead of moving to the node. It is still a focus: rings past `--hops` are dimmed
+  until the person clears the focus or an agent runs `umx ui clear`.
+
 ## Edges
 
 Every edge has a head at its target, so it reads from source to target. Into a node with more than 20 drawn incoming
@@ -517,8 +546,14 @@ applied). Nothing merged is stored.
   still carry each node's keys, flagged ones too, for the entity builder; they are never shown, logged or stored.
   A key never goes in a canvas label, callout, tooltip, the tab title, the URL, browser storage, the console, the agent
   strip or the selection shared with agents (the view shares ids only).
-- Not yet: neighbours inherited across an entity, filters that match any member, `umx ui focus`
-  on an entity, and entity search (ws008 E3 and ws009 J1).
+- With "Merge entities" on, selecting a merged entity (on the canvas, or its row in Find) selects the whole entity:
+  the panel's "Neighbours of all n members" lists every member's neighbours, read from umx as one node's are (six at a
+  time; it says how many members' links could not be read), and the canvas draws every member's links as the
+  selection's. Links between members are left to the Entity section.
+- With "Merge entities" on, Find lists a merged entity once, where its best hit is, naming its members' graphs. Its
+  arrow shows one row per member: picking a member, there or in the Entity section, selects that member on its own,
+  and the panel, the canvas and Centre on this then use only its links.
+- Not yet: filters that match any member (ws009 J1).
 
 ## Shadows
 

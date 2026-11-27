@@ -22,12 +22,18 @@ async function refused(p: Promise<unknown>): Promise<UmxError> {
 }
 
 describe("umx adapter", () => {
-  it("allows only the twenty read verbs", () => {
+  it("allows only the twenty-one read verbs", () => {
     expect(READ_VERB_NAMES.sort()).toEqual([
       "daemon status", "edge list", "edges by id", "embeddings status", "entity show", "entity show loaded", "graph list", "neighbours",
-      "node find", "node get", "node list", "node row", "ontology show", "resolve graph", "scope list", "search", "similar to", "similarity pairs",
+      "neighbours own", "node find", "node get", "node list", "node row", "ontology show", "resolve graph", "scope list", "search", "similar to", "similarity pairs",
       "spine places", "spine show",
     ]);
+  });
+
+  it("reads a node's own neighbours without its entity's (PRD 005 centre-15)", async () => {
+    const { exec, read } = harness();
+    await read("neighbours own", { graph: "demo", id: "01JC8XA4H7ABCDEFGHJKMNPQRS" });
+    expect(exec.mock.calls[0][1]).toEqual(["neighbours", "01JC8XA4H7ABCDEFGHJKMNPQRS", "--graph", "demo", "--limit", "1000", "--entities", "off"]);
   });
 
   it("reads a graph's spines and one spine's placements, the name checked", async () => {

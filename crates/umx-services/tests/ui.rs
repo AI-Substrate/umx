@@ -157,6 +157,7 @@ fn focus(node: &str) -> UiAction<String> {
     UiAction::Focus {
         node: node.into(),
         hops: 1,
+        centre: false,
     }
 }
 
@@ -201,6 +202,7 @@ fn each_bound_and_the_note_are_refused_by_the_one_check() {
             action: UiAction::Focus {
                 node: id.clone(),
                 hops: 4,
+                centre: false,
             },
             note: None,
         },
