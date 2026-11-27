@@ -1239,8 +1239,11 @@ fn source_cited(home: &Home, path: &str) {
 }
 
 /// Every catalogue code, raised for real. A new code without a trigger here does not compile.
+/// Each call gets its own home: tests that raise the same code run in parallel, and `Home::new` empties its folder.
 fn trigger(code: Code) -> (Envelope, u8) {
-    let mut home = Home::new(code.spec().code);
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut home = Home::new(&format!("{}-{call}", code.spec().code));
     match code {
         Code::FieldValueOffVocabulary => {
             home.graph();
