@@ -222,10 +222,11 @@ point). Follow `hub_scan_cut`'s `umx hub fill <name> --after <node>`. `umx docs 
    "<why>"`, copying the pointer from list. It moves to the node's `evidence_removed` trail; nothing is erased.
    `evidence_ambiguous` lists positions: add `--at <n>`. `already_removed` means it is done. Many at once: batch
    `{"op":"evidence remove",...}` lines with one `umx batch --reason "<why>"`. Never hand-edit nodes.jsonl.
-   **usage 175**: a pointer that must not stay (a credential in a path, private text in a quote): `umx node
-   evidence <node> remove '<pointer>' --redact --reason "<why>"` removes every pointer with that source in the
-   graph and keeps only `(redacted)` trail entries. Keep any part of the pointer out of the reason.
-   `evidence_redact_blocked` names each place that still holds the text: edit those, then redact again. Read
+   **usage 219**: a pointer that must not stay (a credential in a path, a personal URL, private text in a quote):
+   `umx node evidence <node> remove '<pointer>' --redact --reason "<why>"` removes every pointer with that source
+   in the graph, live or already in a trail, and keeps only `(redacted)` trail entries. Keep any part of the
+   pointer out of the reason. `evidence_redact_blocked` names each place that still holds the source or quoted
+   text (a common `section=` heading never blocks): edit those, then redact again. Read
    `redacted_in_files_only` as a to-do: git history and other graphs still hold it.
 
 **usage 153**: re-adding an edge is `edge_exists` only with no fields or when every supplied field already

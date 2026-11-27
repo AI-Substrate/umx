@@ -42,7 +42,7 @@ several). Each pointer is a source, `#`, and a selector:
   batch lines `{"op":"evidence remove","node":"<id>","pointer":"<pointer>"}` with one `umx batch --reason "<why>"`
   (see `umx docs get batch`; usage 144).
 - **Redacting a pointer.** If a pointer itself is sensitive (a credential in a path, a private quote), remove it with
-  `umx node evidence <node> remove '<pointer>' --redact --reason "<why>"` (usage 175). This differs from a
+  `umx node evidence <node> remove '<pointer>' --redact --reason "<why>"` (usage 219). This differs from a
   plain remove, which keeps the pointer in the trail:
   - Every pointer in this graph with that source is removed: on every node, live or already in a trail, and on
     edges. The selector does not have to match, so a secret only in one quote removes every pointer to that
@@ -57,8 +57,8 @@ several). Each pointer is a source, `#`, and a selector:
     `status_history`.
   - The reply gives only counts (`redacted.pointers`, `.nodes`, `.edges`). A refusal never lists the node's
     pointers.
-  - It is refused with `evidence_redact_blocked`, changing nothing, while the source or a selector's text would
-    still be anywhere in the graph's files after it: any value or field name of any node or edge (title, type,
+  - It is refused with `evidence_redact_blocked`, changing nothing, while the source or a selector's quoted text
+    would still be anywhere in the graph's files after it: any value or field name of any node or edge (title, type,
     created_by, a locator, a status reason or place, another pointer or trail entry), the kind, author or reason a redacted
     entry keeps, a repeated line in nodes.jsonl or edges.jsonl, or graph.json as it is on disk. The session and agent
     records the redact's own write puts down count too, so a writer whose name or role holds the text is refused: redact
@@ -68,11 +68,15 @@ several). Each pointer is a source, `#`, and a selector:
     each record and a place: a standard field by its name, a list entry by its position counted from 1 (`evidence:2`
     is the second pointer), a custom field by its number among the record's custom fields as its line holds them,
     counted from 1 (`field 3`). `check --lint` and a read's `secret_suspected` name the same entry alike.
-    They never give the text or a custom field's name. Edit those places, then redact again; for a field written
-    twice, edit that line in nodes.jsonl so it holds the field once.
+    They never give the text or a custom field's name. The refusal's next opens the first record named (`node get`,
+    `edge show`, or `check` for a file). Edit those places, then redact again; for a field written twice, edit that
+    line in nodes.jsonl so it holds the field once.
   - The reason may not hold any part of the pointer, in any case, and may not look like a secret.
-  - Any text that contains the source or a selector string blocks the redact, even if it is not a pointer. A short
-    quote selector (`quote=ok`, or one that is also a word umx writes, such as `quote=document`) can therefore
+  - What is checked: the source, and the selector's quoted text (`quote=`, `prefix=`, `suffix=`, and any key umx
+    does not know). A `section=` heading is document structure and is checked only when it looks like a secret, so
+    a common heading word (`section=Experience`) elsewhere in the graph does not block; line, seq and page numbers
+    are never checked. Any text that contains the source or a quoted string blocks the redact, even if it is not a
+    pointer. A short quote selector (`quote=ok`, or one that is also a word umx writes, such as `quote=document`) can therefore
     block. Spell the pointer with a longer quote, or edit the text.
 
   The warning `redacted_in_files_only` is the limit: umx rewrote this graph's files, nothing else. Git history,

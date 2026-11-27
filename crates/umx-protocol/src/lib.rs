@@ -3945,9 +3945,9 @@ catalogue! {
         "The pointer is gone from this graph's files only. Rewrite the git history that holds it, or treat its value as exposed.",
         "umx docs get evidence";
     EvidenceRedactBlocked => "evidence_redact_blocked", Error, 1,
-        "evidence remove --redact found the pointer's text outside the evidence it scrubs (a field, a reason, a locator, another pointer, a repeated line or graph.json); the candidates name each record and place, never the text; nothing changed",
-        "<n> places in <graph> hold the pointer's text outside the evidence it can scrub; nothing changed. Edit each one named, then redact again.",
-        "umx docs get evidence";
+        "evidence remove --redact found the pointer's source or quoted text outside the evidence it scrubs (a field, a reason, a locator, another pointer, a repeated line or graph.json); the candidates name each record and place, never the text; nothing changed",
+        "<n> places in <graph> hold the pointer's source or quoted text outside the evidence it can scrub; nothing changed. Edit each one named, then redact again.",
+        "<fix>";
     EvidenceMissingSkipped => "evidence_missing_skipped", Warning, 0,
         "a batch evidence remove line with missing skip whose pointer matches nothing on the node; that line changed nothing",
         "No evidence pointer on node <id> matches; the line was skipped.",

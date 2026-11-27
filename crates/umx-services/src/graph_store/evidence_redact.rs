@@ -9,7 +9,7 @@
 //! made a redacted entry of the same shape in place.
 //!
 //! Before anything is persisted, every byte that stays is checked for the needles: the source spellings and
-//! selector strings of every pointer scrubbed, and of the pointer given. Checked are every record the write adds or
+//! selector quoted text (see `Needles::add_pointer`) of every pointer scrubbed, and of the pointer given. Checked are every record the write adds or
 //! replaces, read from the batch as it would be persisted: the participants with the attribution the write stamps
 //! (keys, typed fields, the redacted entries' kept metadata and the session included; R2, F203 N1) and the session,
 //! agent and other provenance records it upserts (review R1). Also checked: the stored line of each node it leaves
@@ -100,13 +100,31 @@ impl Needles {
         }
     }
 
-    /// A pointer's stored source and every string value in its selector (a quote, a heading; not the selector's
-    /// own key names, which every such pointer shares).
+    /// A pointer's stored source and the selector text that can be private: quoted text (`quote`, `prefix`,
+    /// `suffix`), any value under a key umx does not know (fail closed), and a structural label (a `section`
+    /// heading) only when it looks like a secret. Common headings such as `Experience` are document structure; were
+    /// they needles, every node that uses the word would block the redact. Numbers (`lines`, `seq`, `page`) are no
+    /// text. The selector's own key names, which every such pointer shares, are never needles.
     fn add_pointer(&mut self, p: &Value) {
         self.add(source_of(p));
         let mut texts = Vec::new();
-        if let Some(selector) = p.get("selector") {
-            selector_values(selector, &mut texts);
+        match p.get("selector") {
+            Some(Value::Object(map)) => {
+                for (k, v) in map {
+                    let mut held = Vec::new();
+                    selector_values(v, &mut held);
+                    match k.as_str() {
+                        "lines" | "seq" | "page" => {}
+                        "section" => texts.extend(
+                            held.into_iter()
+                                .filter(|t| umx_core::secrets::scan(t).is_some()),
+                        ),
+                        _ => texts.extend(held),
+                    }
+                }
+            }
+            Some(other) => selector_values(other, &mut texts),
+            None => {}
         }
         for t in texts {
             self.add(&t);
@@ -747,7 +765,17 @@ impl GraphStore {
             if !blocking.is_empty() {
                 let mut seen = BTreeSet::new();
                 blocking.retain(|c| seen.insert((c.id.clone(), c.title.clone())));
-                return Err(problems::evidence_redact_blocked(&graph, blocking));
+                let first = blocking
+                    .first()
+                    .and_then(|c| c.id.parse::<umx_core::Id>().ok())
+                    .map_or(problems::RedactBlocker::File, |id| {
+                        if batch.graph().node(id).is_some() {
+                            problems::RedactBlocker::Node(id)
+                        } else {
+                            problems::RedactBlocker::Edge(id)
+                        }
+                    });
+                return Err(problems::evidence_redact_blocked(&graph, blocking, first));
             }
             Ok(())
         })?;
