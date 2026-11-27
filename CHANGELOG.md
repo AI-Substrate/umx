@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/AI-Substrate/umx/compare/v0.6.2...v0.6.3) (2026-11-27)
+
+
+### Features
+
+* Spacing in the view reaches 30 on a logarithmic slider, and Fit frames a big spread ([bcb2c37](https://github.com/AI-Substrate/umx/commit/bcb2c379be37c41554ba2aa89897c17e3f955ee5))
+
 ## [0.6.2](https://github.com/AI-Substrate/umx/compare/v0.6.1...v0.6.2) (2026-11-27)
 
 
