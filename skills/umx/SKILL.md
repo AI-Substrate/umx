@@ -2,7 +2,7 @@
 name: umx
 description: Route Concept Graph (umx) jobs. Start the daemon and learn the CLI, build a graph (graph new, vocabulary, settings, nodes, edges, status moves), ingest a transcript or document into nodes with evidence, explore a graph (find, list, history, edges, neighbours, walk, path), query exact fields, or fix a umx error or what a merge left in a graph. Use when the user says "umx", "unimatrix", "concept graph", "make a graph", "add this to the graph", "ingest this into the graph", "what does the graph say about", or pastes a umx error code.
 metadata:
-  umx-version: "0.6.1" # x-release-please-version
+  umx-version: "0.6.2" # x-release-please-version
 ---
 
 # /umx: the Concept Graph router

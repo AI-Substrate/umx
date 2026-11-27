@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.2](https://github.com/AI-Substrate/umx/compare/v0.6.1...v0.6.2) (2026-11-27)
+
+
+### Features
+
+* centre the graph view on a node, in rings of hops (PRD 005) ([c6f23c7](https://github.com/AI-Substrate/umx/commit/c6f23c79687c7fe699e36d1f66a5d5e0828eda69))
+* ui focus --select, Clear agent marks, Find by id, and std fields placed elsewhere ([0fb88f4](https://github.com/AI-Substrate/umx/commit/0fb88f41a0e68ec8346d47727a7dd7c66f188f63))
+
+
+### Bug Fixes
+
+* the LAN view asks for the password once ([873f089](https://github.com/AI-Substrate/umx/commit/873f0897f475ee4aaf234ee51cc7d0d540c1e2bd))
+
 ## [0.6.1](https://github.com/AI-Substrate/umx/compare/v0.6.0...v0.6.1) (2026-11-26)
 
 
