@@ -16,7 +16,7 @@ import type { EdgeMode } from "@/lib/graph/edges";
 import { groupColor, HULL_MIN, statusColor, statusLook, STATUS_KINDS, type StatusKind, type Theme } from "@/lib/graph/colors";
 import { anyOff, type FilterDim, type Filters } from "@/lib/graph/filters";
 import { graphColor } from "@/lib/graph/graph-colors";
-import { SPACING } from "@/lib/graph/spacing";
+import { SPACING, positionOf, spacingAt, spacingLabel } from "@/lib/graph/spacing";
 import { LAYOUT_MODES, DEGREE_MODES, type HubOptions } from "@/lib/graph/hubs";
 import type { SearchMode } from "@/lib/types";
 import { cn, number } from "@/lib/utils";
@@ -280,16 +280,16 @@ export function Sidebar({ searchRef, ...p }: Props) {
         <label className="block space-y-1 text-sm">
           <span className="flex items-center justify-between">
             <span>Spacing</span>
-            <span className="text-xs text-muted-foreground tabular-nums">{p.spacing.toFixed(1)}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{spacingLabel(p.spacing)}</span>
           </span>
           <input
             type="range"
-            min={SPACING.min}
-            max={SPACING.max}
-            step={SPACING.step}
-            value={p.spacing}
+            min={0}
+            max={SPACING.steps}
+            step={1}
+            value={positionOf(p.spacing)}
             disabled={!p.graph}
-            onChange={(e) => p.onSpacing(Number(e.target.value))}
+            onChange={(e) => p.onSpacing(spacingAt(Number(e.target.value)))}
             className="w-full accent-primary disabled:opacity-50"
             aria-label="Layout spacing"
             data-testid="spacing"

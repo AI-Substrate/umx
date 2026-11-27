@@ -5,6 +5,7 @@
 // upward). The lane keeps the
 // graph's own region, so several graphs each keep theirs.
 import { separateDiscs } from "@/lib/graph/clearance";
+import { SPACING_LINEAR } from "@/lib/graph/spacing";
 
 /** Where umx placed one node: its band (null when not placed), how, and whether it is one of the spine's anchors. */
 export type Place = { band: number | null; by: string; anchor: boolean };
@@ -98,9 +99,11 @@ export function spineLayout(
   const h = Math.max(y1 - y0, 1);
   const cx = (x0 + x1) / 2;
   const cy = (y0 + y1) / 2;
-  // Spread pushes rows apart by s and columns by sqrt(s): labels run across, so rows need the room more.
-  const row = (h / ROWS) * s * Math.sqrt(spacing / 1.6);
-  const col = (h / ROWS) * FAN * Math.sqrt(s) * Math.sqrt(spacing / 1.6);
+  // Spread pushes rows apart by s and columns by sqrt(s): labels run across, so rows need the room more. Spacing's
+  // own factor stops at SPACING_LINEAR, where the force layout's height h starts growing in step with it.
+  const room = Math.sqrt(Math.min(spacing, SPACING_LINEAR) / 1.6);
+  const row = (h / ROWS) * s * room;
+  const col = (h / ROWS) * FAN * Math.sqrt(s) * room;
   const bands = [...new Set(nodes.map((n) => places.get(n.id)?.band).filter((b): b is number => typeof b === "number"))].sort((a, b) => a - b);
   const members = new Map<number, { key: string; x: number; y: number }[]>();
   const anchors = new Map<number, string[]>();
