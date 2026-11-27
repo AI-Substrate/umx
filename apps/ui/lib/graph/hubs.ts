@@ -178,3 +178,9 @@ export function canonicalGraph(g: IndexGraph, ids: readonly string[], visible: U
   };
   return { graph, order, ids: order.map((i) => ids[i]) };
 }
+
+/** Declared hubs mode with no hub declared in any open graph, by a daemon that serves declarations (an older one
+ * previews part_of): the view says so on the canvas and offers Degree and Similarity hubs. */
+export function declaresNoHubs(mode: LayoutMode, plan: { centres: readonly unknown[]; preview?: boolean }, snaps: readonly { hubs?: readonly unknown[] }[]): boolean {
+  return mode === "declared" && plan.centres.length === 0 && !plan.preview && snaps.length > 0 && snaps.every((s) => s.hubs !== undefined && s.hubs.length === 0);
+}

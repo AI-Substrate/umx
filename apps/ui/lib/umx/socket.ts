@@ -1,15 +1,16 @@
 // The view's own requests on the daemon socket (ws009 S6b, plan 114): the long poll UiWait (with the change feed, S5b
-// plan 127), and UiSelect, which
-// publishes the person's selection (S7, plan 117, lib/publish.ts). Ops only the view sends have no CLI verb (Op::VIEW_ONLY);
+// plan 127), UiSelect, which publishes the person's selection (S7, plan 117, lib/publish.ts), and the person's
+// "Clear agent marks", the `umx ui clear` command (lib/publish.ts). Ops only the view sends have no CLI verb (Op::VIEW_ONLY);
 // every other read goes through the CLI (lib/umx/index.ts). The wire is umx's own client's: one JSON request, the
 // write half shut, one envelope back (crates/umx-cli/src/lib.rs call_with). This file and lib/umx/index.ts are the
 // only modules that open a socket or run a process (architect R2); this one may read file metadata (lstat) to check
 // the run folder, never file contents.
 import { lstat } from "node:fs/promises";
 import { connect } from "node:net";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import type { DaemonChange, Ids } from "@/lib/live";
 import { MAX_CHANGE_IDS } from "@/lib/live";
+import { VIEW_ROLE } from "@/lib/agent";
 import { MAX_OPEN } from "@/lib/graph/keys";
 import { alias, nodeId, UMX_PROTOCOL, type UmxIssue, UmxError } from "@/lib/umx";
 
@@ -29,12 +30,14 @@ const GRACE_MS = 10_000;
 /** Who the view is on the wire. The daemon only warns that it is not its own build (daemon_version_mismatch). */
 const BUILD = { version: "0.0.0", commit: "umx-ui", built: "apps/ui" };
 
+
 /** Who sent an event: umx's sanitized actor when it carries one (P2), else nothing. A claim, never verified. */
 export type AgentActor = { seat?: string; role?: string; harness?: string; user?: string };
 
 export type UiCommand =
-  /** `centre` (PROTOCOL 110, PRD 005, `umx ui focus --centre`): the view also centres in rings of hops on the node. */
-  | { kind: "focus"; node: string; hops: number; centre?: boolean; note?: string }
+  /** `centre` (PROTOCOL 110, PRD 005, `umx ui focus --centre`): the view also centres in rings of hops on the node.
+   * `select` (PROTOCOL 111, `umx ui focus --select`): the view also selects the node, opening its panel. */
+  | { kind: "focus"; node: string; hops: number; centre?: boolean; select?: boolean; note?: string }
   | { kind: "highlight"; nodes: string[]; add: boolean; note?: string }
   | { kind: "filter"; show: string[]; hide: string[]; note?: string }
   | { kind: "fit"; nodes: string[]; note?: string }
@@ -124,8 +127,9 @@ function command(v: unknown): UiCommand {
     case "focus": {
       const hops = whole(c.hops);
       const centre: unknown = c.centre ?? false;
-      if (hops === null || hops < 1 || hops > 3 || typeof centre !== "boolean") throw bad("focus");
-      return withNote({ kind: "focus", node: checked(nodeId, c.node, "node id"), hops, ...(centre ? { centre: true } : {}) });
+      const select: unknown = c.select ?? false;
+      if (hops === null || hops < 1 || hops > 3 || typeof centre !== "boolean" || typeof select !== "boolean") throw bad("focus");
+      return withNote({ kind: "focus", node: checked(nodeId, c.node, "node id"), hops, ...(centre ? { centre: true } : {}), ...(select ? { select: true } : {}) });
     }
     case "highlight": {
       const nodes = ids(c.nodes);
@@ -239,8 +243,20 @@ function readReply(raw: string, expected: string): unknown {
   return env.data;
 }
 
-function request(command: string, op: Record<string, unknown>, graph?: string): string {
-  return JSON.stringify({ umx: UMX_PROTOCOL, command, args: [], client: BUILD, op, ...(graph === undefined ? {} : { graph }) });
+function request(command: string, op: Record<string, unknown>, graph?: string, actor?: Record<string, string>): string {
+  return JSON.stringify({
+    umx: UMX_PROTOCOL, command, args: [], client: BUILD, op, ...(graph === undefined ? {} : { graph }), ...(actor ? { actor } : {}),
+  });
+}
+
+/** The OS user the view runs as, as umx's client names its writer (the cli tier needs one); "unknown" otherwise. */
+function viewUser(): string {
+  try {
+    const name = userInfo().username;
+    return /^[A-Za-z0-9._:@-]{1,128}$/.test(name) ? name : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 export function createSocket(deps: SocketDeps) {
@@ -272,6 +288,13 @@ export function createSocket(deps: SocketDeps) {
       const socket = await checkRun(deps);
       const op = { op: "ui_select", nodes: nodes.map((n) => nodeId(n)) };
       readReply(await deps.exchange(socket, request("ui select", op, alias(graph)), GRACE_MS), "ui select");
+    },
+    /** `umx ui clear` for `graph`, sent by the person: takes off what agents set there, in every view, for good. */
+    async clear(graph: string): Promise<void> {
+      const socket = await checkRun(deps);
+      const op = { op: "ui_command", command: { kind: "clear" } };
+      const actor = { tier: "cli", role: VIEW_ROLE, user: viewUser() };
+      readReply(await deps.exchange(socket, request("ui clear", op, alias(graph), actor), GRACE_MS), "ui clear");
     },
   };
 }

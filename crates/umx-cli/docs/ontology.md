@@ -274,7 +274,9 @@ types graph.json declares, never std's.
   `works_for` edges), the same kind and role is std's already: `"unchanged": true`, nothing written. With
   `--description` it is the graph's own declaration, std's kind and the description. Another role is
   `field_role_conflict`; change a role with `umx ontology set field`. On a type std does not give it to
-  (`umx ontology add field topic due_on:date`) it is the graph's own declaration and kind.
+  (`umx ontology add field topic due_on:date`) it is the graph's own declaration and kind, also for a field std
+  places on other types only: `umx ontology add field transcript starts_on:date` declares it on `transcript`
+  (std places `starts_on` on `meeting`, `event`, `project` and `segment`), and the same again is then unchanged.
 - A reserved key (`id`, `title`, `status`, `note`, the provenance keys such as `prov_key`, the locator fields,
   `entity_key`, `std`) is never a custom field name (`reserved_name`), in any graph.
 - `umx ontology remove field person shoe_size` removes the extension. A field std gives the type cannot be

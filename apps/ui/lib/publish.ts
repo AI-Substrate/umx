@@ -56,3 +56,30 @@ export function sharedPublish(): Promise<ReturnType<typeof createPublish>> {
     }),
   );
 }
+
+export type ClearDeps = { check: (graph: string) => Promise<void>; clear: (graph: string) => Promise<void> };
+
+/** "Clear agent marks" (the person's `umx ui clear`): only for a graph the picker would open, as publishing is. */
+export function createClear(deps: ClearDeps) {
+  return async (graph: string): Promise<{ graph: string; cleared: true }> => {
+    const g = alias(graph);
+    await deps.check(g);
+    await deps.clear(g);
+    return { graph: g, cleared: true };
+  };
+}
+
+const CLEAR = Symbol.for("umx.ui.clear");
+
+/** The process-wide clearer, on the real daemon. */
+export function sharedClear(): Promise<ReturnType<typeof createClear>> {
+  return import("@/lib/events").then(({ cachedCheck, processWide }) =>
+    processWide(CLEAR, async () => {
+      const [{ umxSocket }, { graphIds }, { umx }] = await Promise.all([import("@/lib/umx/socket"), import("@/lib/snapshot"), import("@/lib/umx")]);
+      return createClear({
+        check: cachedCheck(async (graph) => void (await graphIds(umx(), graph)), () => Date.now()),
+        clear: (graph) => umxSocket().clear(graph),
+      });
+    }),
+  );
+}

@@ -6,6 +6,9 @@ import { type FilterDim, type Filters, NO_FILTERS } from "@/lib/graph/filters";
 import { aliasOfKey, MAX_OPEN, qid } from "@/lib/graph/keys";
 import type { AgentActor, AgentEvent, UiCommand } from "@/lib/umx/socket";
 
+/** The role the view claims on a command the person sent from it, "Clear agent marks" (lib/umx/socket clear). */
+export const VIEW_ROLE = "graph_view";
+
 /** Focus and fit older than this when they reach the view never move the camera (no replayed jumps). */
 export const STALE_MS = 30_000;
 /** The camera never moves for an agent within this long of the person touching the canvas. */
@@ -137,6 +140,16 @@ export function agentCentre<T extends Centring>(events: readonly AgentEvent[], c
   return out;
 }
 
+/** Whether the centring `agentCentre` just took from `events` also selects its node (`umx ui focus --centre
+ * --select`): the newest `focus --centre` on that node in the batch asked for it. */
+export function centreSelects(events: readonly AgentEvent[], key: string): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const c = events[i].command;
+    if (c.kind === "focus" && c.centre && c.node === key) return c.select === true;
+  }
+  return false;
+}
+
 /** Where the view's actions on events have got to, per daemon epoch: an event at or below is never acted on again. */
 export type Applied = { epoch: string; seq: number } | null;
 
@@ -258,14 +271,15 @@ export function keepPersonRelations(l: Ledger): Ledger {
   return { ...LEDGER0, filters: { ...NO_FILTERS, relations: new Set(undoAgentFilter(l.filters, l.agent).relations) } };
 }
 
-/** A camera move an agent asked for in `graph`: focus (one node) or fit (some nodes, or none for that whole graph). */
-export type CameraAsk = { seq: number; at_ms: number; kind: "focus" | "fit"; nodes: string[]; graph: string };
+/** A camera move an agent asked for in `graph`: focus (one node) or fit (some nodes, or none for that whole graph).
+ * `select`: a focus that also selects its node (`umx ui focus --select`), when the camera moves, never before. */
+export type CameraAsk = { seq: number; at_ms: number; kind: "focus" | "fit"; nodes: string[]; graph: string; select?: boolean };
 
 export function cameraAsk(e: AgentEvent): CameraAsk | null {
   const c = e.command;
   // A centring fits the camera to its rings (PRD 005 centre-10); jumping to the node would hide them.
   if (c.kind === "focus" && c.centre) return null;
-  if (c.kind === "focus") return { seq: e.seq, at_ms: e.at_ms, kind: "focus", nodes: [c.node], graph: e.graph };
+  if (c.kind === "focus") return { seq: e.seq, at_ms: e.at_ms, kind: "focus", nodes: [c.node], graph: e.graph, ...(c.select ? { select: true } : {}) };
   if (c.kind === "fit") return { seq: e.seq, at_ms: e.at_ms, kind: "fit", nodes: c.nodes, graph: e.graph };
   return null;
 }
@@ -391,8 +405,10 @@ export class Gesture {
   }
 }
 
-/** Who did it, as the event claims (never verified): its seat, role or user, else "an agent". */
+/** Who did it, as the event claims (never verified): its seat, role or user, else "an agent"; the view's own
+ * "Clear agent marks" is "the view". */
 export function who(by: AgentActor | null): string {
+  if (by?.role === VIEW_ROLE && !by.seat) return "the view";
   return by?.seat || by?.role || by?.user || "an agent";
 }
 
@@ -410,7 +426,11 @@ export function describe(e: AgentEvent, title: (id: string) => string | null): D
   const base = { who: who(e.by), note: c.note ?? null, notShown };
   switch (c.kind) {
     case "focus":
-      return { ...base, action: c.centre ? "centred the view on" : "focused", target: `${target()}, ${c.hops} hop${c.hops === 1 ? "" : "s"}` };
+      return {
+        ...base,
+        action: c.centre ? (c.select ? "selected and centred the view on" : "centred the view on") : c.select ? "focused and selected" : "focused",
+        target: `${target()}, ${c.hops} hop${c.hops === 1 ? "" : "s"}`,
+      };
     case "highlight":
       return { ...base, action: c.add ? "added to its highlight" : "highlighted", target: target() };
     case "fit":

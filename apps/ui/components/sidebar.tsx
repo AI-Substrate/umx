@@ -57,6 +57,10 @@ type Props = {
   mode: SearchMode;
   onMode: (m: SearchMode) => void;
   search: SearchState;
+  /** What the box names as an id (lib/find-id): one node, with its title, several, or none; null when not id-like. */
+  idMatch?: { kind: "one"; title: string } | { kind: "many"; count: number } | { kind: "none" } | null;
+  /** Jump to the one node the box names by id (Enter). */
+  onIdJump?: () => void;
   place: (id: string) => Placement;
   onPickNode: (id: string) => void;
   onReveal: (id: string) => void;
@@ -92,7 +96,7 @@ const MODES = [
   ["title", "Title"],
   ["hybrid", "Search"],
 ] as const;
-const PLACEHOLDER: Record<SearchMode, string> = { title: "Title, typos ok  ( / )", hybrid: "Words or meaning  ( / )" };
+const PLACEHOLDER: Record<SearchMode, string> = { title: "Title or id, typos ok  ( / )", hybrid: "Words, meaning or id  ( / )" };
 /** Clusters listed in the legend; the rest are summed in one line. */
 const LEGEND_GROUPS = 14;
 
@@ -170,16 +174,34 @@ export function Sidebar({ searchRef, ...p }: Props) {
                 e.nativeEvent.stopImmediatePropagation();
                 p.onQuery("");
               }
+              // An id, a unique prefix or a umx: address: Enter jumps to that node.
+              if (e.key === "Enter" && p.idMatch?.kind === "one") {
+                e.preventDefault();
+                p.onIdJump?.();
+              }
             }}
             placeholder={PLACEHOLDER[p.mode]}
             className="pl-8"
             maxLength={200}
             disabled={!p.graph}
             data-testid="find"
-            aria-label={p.mode === "title" ? "Find a node by title (umx node find)" : "Search words and meaning (umx search)"}
+            aria-label={p.mode === "title" ? "Find a node by title or id (umx node find)" : "Search words and meaning, or find a node by id (umx search)"}
           />
           {p.search.loading ? <Loader2 className="absolute top-2.5 right-2.5 size-4 animate-spin text-muted-foreground" /> : null}
         </div>
+        {p.idMatch ? (
+          <p className="text-xs text-muted-foreground" data-testid="find-id">
+            {p.idMatch.kind === "one" ? (
+              <button type="button" className="text-left underline-offset-2 hover:underline" onClick={p.onIdJump} data-testid="find-id-jump">
+                Id match: <bdi className="text-foreground">{p.idMatch.title}</bdi> (Enter jumps to it)
+              </button>
+            ) : p.idMatch.kind === "many" ? (
+              `${p.idMatch.count} nodes start with this id; type more of it.`
+            ) : (
+              "No node on the canvas has this id."
+            )}
+          </p>
+        ) : null}
         {p.search.error ? (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1 text-xs" data-testid="search-error">
             <span className="font-mono text-destructive">{p.search.error.code}</span>: {p.search.error.message}

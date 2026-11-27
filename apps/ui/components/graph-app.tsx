@@ -24,6 +24,7 @@ import { useSelectionShare } from "@/components/use-selection";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api, ApiFailure, asIssue, onRenamed, post, renamedOf } from "@/lib/api";
+import { findById } from "@/lib/find-id";
 import { VIEW_HEADER } from "@/lib/guard";
 import { composeRenames, idsWithPending, movedSelection, type Rename, renameKey, renameNotice, renamesLanded, renameTarget } from "@/lib/rename";
 import { applyRows, applySnapshot, changeText, type Extent, extentOf, goneAfterRead, type Outcome, qualifyRows, readChange, remapGroups, reopen, snapAfter } from "@/lib/graph/apply";
@@ -61,11 +62,11 @@ import { effectiveFocus } from "@/lib/graph/fui";
 import { graphColor } from "@/lib/graph/graph-colors";
 import { aliasOfKey, qid, setKey, unq } from "@/lib/graph/keys";
 import { SPACING, SPACING_KEY, spacingOf } from "@/lib/graph/spacing";
-import { HUB_DEFAULTS, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
+import { declaresNoHubs, HUB_DEFAULTS, type HubOptions, type SimilarityLink } from "@/lib/graph/hubs";
 import { isLaunch, keptSpinePicks, LOOK_DEFAULTS, OPEN_KEY, readLook, readOpen, readSpinePicks, reopenGraphs, SPINES_KEY, type ViewLook, writeLook } from "@/lib/view-url";
 import { type FilterDim, hiddenReasons, NO_FILTERS, reasonText, reveal, toggleChip, toggled } from "@/lib/graph/filters";
 import { FOCUS_OFF, focusDepths, focusOf } from "@/lib/graph/focus";
-import { activeNotes, agentCentre, agentOff, cameraAsk, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
+import { activeNotes, agentCentre, agentOff, cameraAsk, centreSelects, cameraMove, Gesture, type CameraAsk, chipDiff, decide, describe as describeEvent, LEDGER0, type Ledger, keepPersonRelations, openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, raiseTitle, readEach, takeBatch } from "@/lib/agent";
 import type { AgentEvent } from "@/lib/umx/socket";
 import type { CameraState } from "sigma/types";
 import { type Launch, type LaunchDeps, Launches, type Listed, listForLaunch, takeLaunch, watchLaunch } from "@/lib/launch";
@@ -785,6 +786,9 @@ export function GraphApp() {
     ? shadowState.data.pairs : NO_SIMILARITIES;
   const { layout, louvain, hubs, nudged } = useLayout(view, mask, edges, resolution, spacing, layoutOptions, layoutSimilarities);
   const hubOwners = useMemo(() => new Map(hubs.owner), [hubs]);
+  // Declared hubs with no hub declared in any open graph (a daemon that serves declarations; an older one previews
+  // part_of): the canvas says so and offers the modes that find hubs themselves.
+  const noDeclaredHubs = !!view && !loading && declaresNoHubs(layoutOptions.mode, hubs, view.snaps);
   const parent = useMemo(() => (view && mask && edges ? parentGroups(view.index, mask, edges) : null), [view, mask, edges]);
   const chips = useMemo(() => (view ? chipCounts(view.graph, visible, filters) : null), [view, visible, filters]);
   // Louvain's groups are for the numbering it was asked with; after a live change they are read for the new one
@@ -947,6 +951,18 @@ export function GraphApp() {
     },
     [pickHit],
   );
+  // Find by id (lib/find-id): a full id, a unique prefix or a umx: address names one canvas node; Enter (or the line
+  // under the box) jumps to it as a hit does. A pasted full id or address jumps at once.
+  const idMatch = useMemo(() => (view ? findById(query, view.graph.nodes()) : null), [view, query]);
+  const idJump = useCallback(() => {
+    if (idMatch?.kind === "one") pickHit(idMatch.key);
+  }, [idMatch, pickHit]);
+  const pastedId = idMatch?.kind === "one" && /^(umx:\S+\/)?[0-9A-Z]{26}$/i.test(query.trim()) ? idMatch.key : null;
+  useEffect(() => {
+    if (pastedId) pickHit(pastedId);
+    // Once per id the box names, not again when pickHit changes with the canvas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastedId]);
   const revealHit = useCallback(
     (id: string) => {
       if (!view?.graph.hasNode(id)) return;
@@ -1341,6 +1357,8 @@ export function GraphApp() {
     const now = centreNow.current;
     const centring = agentCentre(batch.events, now.centre, Date.now());
     if (centring !== now.centre) setCentre(centring && { key: centring.key, member: false, by: "agent", layout: now.layout, spines: now.spines });
+    // `--centre --select`: the node's panel opens with the centring, as a person's pick would.
+    if (centring && centring !== now.centre && centring.by === "agent" && centreSelects(batch.events, centring.key)) setSelection((s) => pickOne(s, centring.key));
     for (const e of batch.events) {
       const id = `${e.seq}:${e.at_ms}`;
       if (e.command.kind !== "open" || openSeen.current.has(id)) continue;
@@ -1373,8 +1391,11 @@ export function GraphApp() {
       const v = viewNow.current;
       const nodes = v ? v.graph.mapNodes((key, a) => ({ key, graph: a.graph, hidden: a.hidden })) : [];
       const move = cameraMove(ask, nodes, v?.aliases.length ?? 1);
-      if (move?.kind === "jump") setJump((j) => ({ id: move.id, n: (j?.n ?? 0) + 1 }));
-      else if (move?.kind === "fit") setFit((f) => ({ nodes: move.nodes, n: (f?.n ?? 0) + 1 }));
+      if (move?.kind === "jump") {
+        setJump((j) => ({ id: move.id, n: (j?.n ?? 0) + 1 }));
+        // `umx ui focus --select`: the node's panel opens with the move, as a person's pick would.
+        if (ask.select && v?.graph.hasNode(move.id)) setSelection((s) => pickOne(s, move.id));
+      } else if (move?.kind === "fit") setFit((f) => ({ nodes: move.nodes, n: (f?.n ?? 0) + 1 }));
     },
     [],
   );
@@ -1851,6 +1872,14 @@ export function GraphApp() {
     [agent.state.history, shownNode, moveCamera],
   );
   const undoAgent = useCallback(() => updateLedger(agentOff), [updateLedger]);
+  // "Clear agent marks": `umx ui clear` for each open graph, so the daemon's kept events end cleared and a reload or
+  // another view does not bring the marks back. The clear comes back through the poll like any agent's.
+  const [clearError, setClearError] = useState<ApiError | null>(null);
+  const agentMarks = agent.state.highlight.size > 0 || agent.state.focus !== null || agent.state.filter !== null;
+  const clearAgentMarks = useCallback(() => {
+    setClearError(null);
+    void Promise.all(shown.map((g) => post(`/api/graphs/${encodeURIComponent(g)}/clear`, {}))).catch((e) => setClearError(asIssue(e)));
+  }, [shown]);
   const promptTarget = prompt ? describeEvent({ seq: prompt.seq, at_ms: prompt.at_ms, graph: prompt.graph, by: null, command: prompt.kind === "focus" ? { kind: "focus", node: prompt.nodes[0], hops: 1 } : { kind: "fit", nodes: prompt.nodes } }, titleOf).target.replace(/, 1 hop$/, "") : null;
 
 
@@ -2019,6 +2048,12 @@ export function GraphApp() {
             search={search}
             place={place}
             onPickNode={pickHit}
+            idMatch={
+              idMatch?.kind === "one"
+                ? { kind: "one", title: String((view?.graph.getNodeAttribute(idMatch.key, "label") as string | undefined) ?? idMatch.key) }
+                : idMatch
+            }
+            onIdJump={idJump}
             onReveal={revealHit}
             hitEntity={hitEntity}
             onPickMember={pickMember}
@@ -2160,6 +2195,24 @@ export function GraphApp() {
                 </div>
               </div>
             ) : null}
+            {noDeclaredHubs ? (
+              <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center px-8" data-testid="no-declared-hubs">
+                <div className="pointer-events-auto max-w-md space-y-2 rounded-xl border bg-card/95 p-4 text-center shadow-sm backdrop-blur">
+                  <p className="text-sm font-medium">No hubs are declared{view && view.aliases.length > 1 ? " in these graphs" : " in this graph"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Declared hubs lays out only the hubs a graph declares (<span className="font-mono">umx hub set</span>), so this looks as Normal does. Use hubs umx finds instead:
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setLayoutOptions((o) => ({ ...o, mode: "degree" }))} data-testid="no-declared-hubs-degree">
+                      Degree hubs
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setLayoutOptions((o) => ({ ...o, mode: "similarity" }))} data-testid="no-declared-hubs-similarity">
+                      Similarity hubs
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {loading ? (
               <div className="absolute inset-0 z-10 grid place-items-center">
                 <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -2228,7 +2281,8 @@ export function GraphApp() {
                 }}
                 onDismiss={() => setPrompt(null)}
                 onReplay={replay}
-                error={agent.error && agent.error.code !== "ui_events_pending" ? agent.error : null}
+                onClear={agentMarks ? clearAgentMarks : null}
+                error={clearError ?? (agent.error && agent.error.code !== "ui_events_pending" ? agent.error : null)}
                 notice={shownNote ? { text: shownNote.text, action: shownNote.apply ? { label: "Apply", run: () => applyHeld([shownNote.apply!]) } : undefined } : null}
                 onNoticeDismiss={() => setHoldNote(null)}
                 openBox={openBox ?? offerBox}

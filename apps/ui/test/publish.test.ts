@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/graphs/[alias]/selection/route";
 import { BODY_MAX, readBody } from "@/lib/http";
-import { createPublish, readSelection } from "@/lib/publish";
+import { createClear, createPublish, readSelection } from "@/lib/publish";
 import { UmxError } from "@/lib/umx";
 
 const A = "01NODEAAAAAAAAAAAAAAAAAAAA";
@@ -126,5 +126,23 @@ describe("reading a request body", () => {
     // 4 MiB offered; the reader stops within a chunk or two (one the stream may have queued ahead) past 64 KiB.
     expect(big.sent()).toBeLessThanOrEqual(BODY_MAX + 2 * 4096);
     expect(big.cancelled()).toBe(true);
+  });
+});
+
+describe("clearing what agents set (Clear agent marks)", () => {
+  it("checks the graph the picker would open before the daemon hears of it", async () => {
+    const calls: string[] = [];
+    const clear = createClear({ check: async (g) => void calls.push(`check ${g}`), clear: async (g) => void calls.push(`clear ${g}`) });
+    expect(await clear("demo")).toEqual({ graph: "demo", cleared: true });
+    expect(calls).toEqual(["check demo", "clear demo"]);
+    const refusing = createClear({
+      check: async () => {
+        throw new UmxError("ui_graph_not_open", "secured", null, 409);
+      },
+      clear: async (g) => void calls.push(`clear ${g}`),
+    });
+    await refused(refusing("vault"), "ui_graph_not_open", 409);
+    await refused(clear("Bad Alias"), "ui_bad_graph", 400);
+    expect(calls).toEqual(["check demo", "clear demo"]);
   });
 });

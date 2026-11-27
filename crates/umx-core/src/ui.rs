@@ -42,8 +42,13 @@ pub const MAX_OPEN_GRAPHS: usize = 12;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UiAction<N = Id> {
     /// Bring `node` into view and show `hops` hops around it. `centre` (PROTOCOL 110, PRD 005): also re-arrange the
-    /// view in rings of hops around it (view only).
-    Focus { node: N, hops: u32, centre: bool },
+    /// view in rings of hops around it (view only). `select` (PROTOCOL 111): also select it, opening its panel.
+    Focus {
+        node: N,
+        hops: u32,
+        centre: bool,
+        select: bool,
+    },
     /// Mark `nodes`: they replace the agent's highlight, or with `add` join it.
     Highlight { nodes: Vec<N>, add: bool },
     /// The agent's whole filter: `relation:`, `type:` and `status:` names to show and to hide. Each command carries
@@ -138,10 +143,16 @@ impl<N> UiCmd<N> {
     /// The same command with each node renamed by `f`, in [`Self::nodes`] order; the first error stops it.
     pub fn map<M, E>(self, mut f: impl FnMut(N) -> Result<M, E>) -> Result<UiCmd<M>, E> {
         let action = match self.action {
-            UiAction::Focus { node, hops, centre } => UiAction::Focus {
+            UiAction::Focus {
+                node,
+                hops,
+                centre,
+                select,
+            } => UiAction::Focus {
                 node: f(node)?,
                 hops,
                 centre,
+                select,
             },
             UiAction::Highlight { nodes, add } => UiAction::Highlight {
                 nodes: nodes.into_iter().map(&mut f).collect::<Result<_, _>>()?,
@@ -559,6 +570,7 @@ mod tests {
                 node: "a".into(),
                 hops,
                 centre: false,
+                select: false,
             })
         };
         assert!(focus(1).check().is_ok() && focus(3).check().is_ok());

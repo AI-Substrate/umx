@@ -213,11 +213,13 @@ pub(crate) fn core_cmd(c: &UiCmd) -> CoreCmd<String> {
             hops,
             note,
             centre,
+            select,
         } => (
             UiAction::Focus {
                 node: node.clone(),
                 hops: *hops,
                 centre: *centre,
+                select: *select,
             },
             note,
         ),
@@ -269,11 +271,17 @@ pub(crate) fn core_cmd(c: &UiCmd) -> CoreCmd<String> {
 fn wire(c: &CoreCmd) -> UiCmd {
     let note = c.note.clone();
     match &c.action {
-        UiAction::Focus { node, hops, centre } => UiCmd::Focus {
+        UiAction::Focus {
+            node,
+            hops,
+            centre,
+            select,
+        } => UiCmd::Focus {
             node: node.to_text(),
             hops: *hops,
             note,
             centre: *centre,
+            select: *select,
         },
         UiAction::Highlight { nodes, add } => UiCmd::Highlight {
             nodes: ids(nodes),
@@ -365,6 +373,7 @@ mod tests {
                 hops: 2,
                 note: None,
                 centre,
+                select: false,
             };
             let resolved = core_cmd(&sent)
                 .map(|n| n.parse::<umx_core::Id>())

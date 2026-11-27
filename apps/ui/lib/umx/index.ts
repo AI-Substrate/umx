@@ -8,7 +8,7 @@ import { MAX_OPEN } from "@/lib/graph/keys";
 
 /** The protocol this view speaks: umx_protocol::PROTOCOL (the umx-arch test protocol_pin keeps the two equal). The
  * socket client sends it, and the daemon refuses any other (protocol_mismatch); CLI reads newer than it warn. */
-export const UMX_PROTOCOL = 110;
+export const UMX_PROTOCOL = 111;
 /** The oldest protocol the view still reads. Older is refused; newer than UMX_PROTOCOL is read with a warning,
  * since a protocol bump usually only adds fields the view ignores. */
 export const UMX_PROTOCOL_MIN = 25;
