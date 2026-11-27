@@ -79,12 +79,13 @@ describe("the import boundary (architect R2)", () => {
     }
   });
 
-  it("limits the LAN password reader to its explicit read-only filesystem imports", async () => {
+  it("limits the LAN gate to the filesystem calls its password and sessions files need", async () => {
     const file = "bin/lan.mjs";
-    expect(await lint(file, `import { openSync, fstatSync, readFileSync, closeSync, constants } from "node:fs";
-export const x = [openSync, fstatSync, readFileSync, closeSync, constants];`)).toEqual([]);
+    expect(await lint(file, `import { openSync, fstatSync, fsyncSync, readFileSync, renameSync, rmSync, writeSync, closeSync, constants } from "node:fs";
+export const x = [openSync, fstatSync, fsyncSync, readFileSync, renameSync, rmSync, writeSync, closeSync, constants];`)).toEqual([]);
     for (const code of [
       `import { writeFileSync } from "node:fs"; export const x = writeFileSync;`,
+      `import { readdirSync } from "node:fs"; export const x = readdirSync;`,
       `import * as fs from "node:fs"; export const x = fs;`,
       `export const x = import("node:fs");`,
       `import { connect } from "node:net"; export const x = connect;`,

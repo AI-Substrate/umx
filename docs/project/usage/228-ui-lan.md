@@ -2,7 +2,8 @@
 id: 228
 title: Share the graph view on a trusted LAN with a persistent password
 route: start
-status: current
+status: superseded
+superseded_by: 232
 source: LAN view request, 2026-11-26
 reqs: [req-104]
 supersedes: none

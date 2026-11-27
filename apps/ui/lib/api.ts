@@ -41,7 +41,19 @@ async function failure(res: Response): Promise<ApiFailure> {
   }
   const renamed = renamedOf(issue);
   if (renamed) for (const l of [...renameListeners]) l(renamed);
+  if (res.status === 401 && issue.code === SIGNED_OUT) signedOut();
   return new ApiFailure(res.status, issue);
+}
+
+/** What the LAN gateway (bin/lan.mjs) answers the view's own fetches when its session is missing or expired. */
+export const SIGNED_OUT = "ui_lan_signed_out";
+
+let reloading = false;
+/** Reloads the page once, so the gateway shows its sign-in page instead of the view showing a fetch error. */
+function signedOut() {
+  if (reloading || typeof window === "undefined") return;
+  reloading = true;
+  window.location.reload();
 }
 
 export async function api<T>(path: string, signal?: AbortSignal): Promise<T> {

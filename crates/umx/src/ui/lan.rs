@@ -108,6 +108,13 @@ pub(super) fn ensure(config: &Config, host: &dyn UiHost, rotate: bool) -> Result
         file.sync_all()?;
         if rotate {
             fs::rename(&temporary, &path)?;
+            // The view already refuses sessions from before the new file (bin/lan.mjs ties them to it); this drops
+            // their hashes too.
+            match fs::remove_file(config.home.join("ui-lan-sessions")) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
         } else {
             // Publish without replacing a password another launcher may have just created.
             match fs::hard_link(&temporary, &path) {
@@ -162,7 +169,12 @@ mod tests {
             0o600
         );
         assert_eq!(ensure(&config, &host, false).unwrap(), first);
+        let sessions = config.home.join("ui-lan-sessions");
+        fs::write(&sessions, "{}").unwrap();
+        assert_eq!(ensure(&config, &host, false).unwrap(), first);
+        assert!(sessions.exists());
         assert_ne!(ensure(&config, &host, true).unwrap(), first);
+        assert!(!sessions.exists());
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         assert!(ensure(&config, &host, false).is_err());
         fs::remove_file(&path).unwrap();

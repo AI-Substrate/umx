@@ -1,7 +1,9 @@
 // The import boundary (architect R2, ws009): only lib/umx may import node:child_process or node:net, and no
 // module imports node:fs outside build config, except that lib/umx/socket.ts may import lstat (file metadata, to check
 // the daemon's run folder; architect, S6b) from node:fs/promises, and the gate scripts in scripts/ may read node:fs:
-// readFileSync only (the lockfile and settings, plan 159). test/lint-plant.test.ts proves the rules fire.
+// readFileSync only (the lockfile and settings, plan 159). bin/lan.mjs may read its password file and read and
+// replace its owner-only sessions file through the named calls below; test/lan.test.ts may make a private UMX_HOME
+// for it. test/lint-plant.test.ts proves the rules fire.
 import js from "@eslint/js";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
@@ -50,10 +52,20 @@ export default tseslint.config(
   },
   {
     files: ["bin/lan.mjs"],
-    rules: boundary([...PROCESS, ...NET, ...FS], `${BOUNDARY} LAN startup may read its password only.`, [
+    rules: boundary([...PROCESS, ...NET, ...FS], `${BOUNDARY} The LAN gate may use its password and sessions files only.`, [
       ...restricted([...PROCESS, ...NET], BOUNDARY),
-      { name: "node:fs", allowImportNames: ["closeSync", "constants", "fstatSync", "openSync", "readFileSync"], message: "Only the LAN launcher's password-file reader may use these." },
+      {
+        name: "node:fs",
+        allowImportNames: ["closeSync", "constants", "fstatSync", "fsyncSync", "openSync", "readFileSync", "renameSync", "rmSync", "writeSync"],
+        message: "Only the LAN gate's password and sessions files may use these.",
+      },
       ...restricted(FS.filter((n) => n !== "node:fs"), NO_FS),
+    ]),
+  },
+  {
+    files: ["test/lan.test.ts"],
+    rules: boundary([...PROCESS, ...NET, ...FS], `${BOUNDARY} ${NO_FS}`, [
+      ...restricted([...PROCESS, ...NET, ...FS.filter((n) => n !== "node:fs")], `${BOUNDARY} ${NO_FS}`),
     ]),
   },
   {
