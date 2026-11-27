@@ -442,10 +442,13 @@ and the glow follow the shape, in every skin. Each type chip and legend row show
 Zoomed far out, small nodes read as dots.
 
 The layout keeps clusters close together and their nodes apart, so the graph reads less clumped at Fit. Spacing, under
-Clusters (0.5 to 3, default 1.6), widens the gaps between nodes: at the default nodes are drawn at today's size, a
-higher value draws them smaller and a lower one larger (size times sqrt(1.6 / spacing)), and moving it lays the graph
-out again from where its nodes are. Which nodes get labels still goes by their usual size. The same graphs at the
-same spacing open laid out the same way. The browser keeps only the number (local storage `layout-spacing`).
+Clusters (0.5 to 30, default 1.6), widens the gaps between nodes, and moving it lays the graph out again from where its
+nodes are. The slider is logarithmic: each step multiplies the spacing by the same factor, so the low end is as fine as
+it was and the top is 10 times the old maximum of 3. Up to 3 it lays out exactly as it always did; above 3 the layout
+grows in step with the spacing (10 times wider at 30 than at 3) and spreads nodes more evenly, opening up dense
+clusters. Nodes keep their size at every spacing. While you move the slider the view keeps its frame, so the graph
+grows on screen; press Fit to see all of it. Which nodes get labels still goes by their usual size. The same graphs at
+the same spacing open laid out the same way. The browser keeps only the number (local storage `layout-spacing`).
 
 Layout's Declared hubs lays out the hubs the open graphs declare (`umx docs get hubs`). When none of them declares a
 hub, the canvas says so and offers Degree hubs and Similarity hubs, which find hubs themselves.

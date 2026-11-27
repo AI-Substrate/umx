@@ -185,6 +185,20 @@ function screenBox(sigma: Sigma<NodeAttrs, EdgeAttrs>, points: readonly { x: num
   return { x: c.x, y: c.y, ratio: camera.ratio * scale, angle: camera.angle };
 }
 
+/** Drops a custom frame without moving the picture: the graph point in the middle of the screen stays there, at the
+ * same scale, under sigma's own frame (renders synchronously, so the in-between frame is never painted). */
+function releaseFrame(sigma: Sigma<NodeAttrs, EdgeAttrs>) {
+  const { width, height } = sigma.getDimensions();
+  const mid = { x: width / 2, y: height / 2 };
+  const [a, b] = [sigma.viewportToGraph(mid), sigma.viewportToGraph({ x: mid.x + 100, y: mid.y })];
+  sigma.setCustomBBox(null);
+  sigma.refresh();
+  const [va, vb] = [sigma.graphToViewport(a), sigma.graphToViewport(b)];
+  const camera = sigma.getCamera();
+  const c = sigma.viewportToFramedGraph(va);
+  camera.setState({ x: c.x, y: c.y, ratio: camera.ratio * (Math.hypot(vb.x - va.x, vb.y - va.y) / 100) });
+}
+
 /** The node panel's width (components/node-panel.tsx w-[420px] max-w-[90vw]). */
 const PANEL_W = 420;
 
@@ -529,9 +543,14 @@ function Behaviour({ graph, palette, selected, selectedMembers = null, selection
   }, [sigma, cameraOut]);
 
   // The whole graph: sigma's reset, or with a held frame the shown nodes' own box (a reset would show the old frame).
+  // The frame kept across a spacing change is let go first, so a spread larger than maxCameraRatio still fits.
   const fitAll = useRef<(duration: number) => void>(() => {});
   useEffect(() => {
     fitAll.current = (duration: number) => {
+      if (!hold && spacingFrame.current.box) {
+        spacingFrame.current.box = null;
+        releaseFrame(sigma);
+      }
       sigma.refresh();
       const points = [...graph.filterNodes((_n, a) => !a.hidden).map((id) => graph.getNodeAttributes(id)), ...spineAxes.flatMap((a) => [{ x: a.x0, y: a.y }, { x: a.x1, y: a.y }])];
       const target = screenBox(sigma, points, spineAxes.length > 0 ? SPINE_PAD : [40, 40, 40]);

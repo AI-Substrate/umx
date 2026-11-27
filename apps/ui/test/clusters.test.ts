@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { convexHull, type IndexGraph, louvainGroups, parentGroups } from "@/lib/graph/clusters";
 import { compactGroups, iterationsFor, keepSeeds, layOut, runLayout, seedPositions } from "@/lib/graph/layout";
-import { SPACING, spacingOf } from "@/lib/graph/spacing";
+import { clearanceRadius } from "@/lib/graph/clearance";
+import { SPACING, positionOf, spacingAt, spacingLabel, spacingOf } from "@/lib/graph/spacing";
 
 /** Two 6-cliques joined by one edge, plus node 12 hanging off node 0 by part_of. */
 function twoCliques(): IndexGraph {
@@ -120,11 +121,58 @@ describe("spacing (plan 198)", () => {
     expect(spread(at(1.6))).toBeGreaterThan(spread(at(0.5)) * 1.1);
   });
 
-  it("reads a stored spacing only when it is a number in range", () => {
+  it("reads a stored spacing only when it is a number in range, old 0.5 to 3 values unchanged", () => {
     expect(spacingOf("2.2")).toBe(2.2);
     expect(spacingOf("0.5")).toBe(0.5);
     expect(spacingOf("3")).toBe(3);
-    for (const bad of [null, "", " ", "0.4", "3.1", "wide", "NaN", "Infinity"]) expect(spacingOf(bad)).toBe(SPACING.default);
+    expect(spacingOf("3.1")).toBe(3.1);
+    expect(spacingOf("30")).toBe(30);
+    for (const bad of [null, "", " ", "0.4", "30.1", "wide", "NaN", "Infinity"]) expect(spacingOf(bad)).toBe(SPACING.default);
+  });
+
+  it("maps the slider logarithmically: monotonic from min to max, finer than the old slider at the low end", () => {
+    const values = Array.from({ length: SPACING.steps + 1 }, (_, p) => spacingAt(p));
+    expect(values[0]).toBe(SPACING.min);
+    expect(values[SPACING.steps]).toBe(SPACING.max);
+    values.slice(1).forEach((v, i) => expect(v).toBeGreaterThan(values[i]));
+    // The old slider had 26 positions from 0.5 to 3.
+    expect(values.filter((v) => v <= 3).length).toBeGreaterThan(26);
+    values.forEach((v, p) => expect(Math.round(positionOf(v))).toBe(p));
+    for (const old of [0.5, 1.6, 2.2, 3]) expect(spacingAt(positionOf(old))).toBeCloseTo(old, 2);
+    expect([spacingLabel(1.6), spacingLabel(9.95), spacingLabel(12.4), spacingLabel(30)]).toEqual(["1.6", "9.9", "12", "30"]);
+  });
+
+  it("spreads a clustered graph 10 times wider at the top of the slider than at the old maximum, and more evenly", () => {
+    // Eight 9-cliques in a ring, each with three leaves.
+    const edges: number[] = [];
+    for (let c = 0; c < 8; c++) {
+      const base = c * 12;
+      for (let i = 0; i < 9; i++) for (let j = i + 1; j < 9; j++) edges.push(base + i, base + j);
+      for (let k = 9; k < 12; k++) edges.push(base + k, base + k - 9);
+      edges.push(base, ((c + 1) % 8) * 12);
+    }
+    const ring: IndexGraph = { n: 96, edges: Uint32Array.from(edges), partOf: new Uint8Array(edges.length / 2) };
+    const ringGroups = louvainGroups(ring, all(96), 1, 3);
+    const ringSizes = new Float32Array(96).fill(4);
+    const at = (spacing: number) => layOut(ring, ringGroups, ringSizes, { seed: 3, spacing }, 60_000);
+    const extent = (p: Float32Array) => {
+      const [xs, ys] = [0, 1].map((o) => p.filter((_, i) => i % 2 === o));
+      return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    };
+    /** The median nearest-neighbour distance over the layout's size: what Fit shows, nodes being a fixed screen size. */
+    const atFit = (p: Float32Array) => {
+      const nn = [...Array(96).keys()].map((i) => Math.min(...[...Array(96).keys()].filter((j) => j !== i).map((j) => Math.hypot(p[i * 2] - p[j * 2], p[i * 2 + 1] - p[j * 2 + 1]))));
+      return nn.sort((a, b) => a - b)[48] / extent(p);
+    };
+    const [old, top] = [at(3), at(SPACING.max)];
+    expect(top.capped).toBe(false);
+    expect(top.iterations).toBe(old.iterations);
+    const grown = extent(top.positions) / extent(old.positions);
+    expect(grown).toBeGreaterThan(7);
+    expect(grown).toBeLessThan(16);
+    expect(atFit(top.positions)).toBeGreaterThan(atFit(old.positions) * 1.2);
+    // The canvas draws a glyph no bigger than its clearance on screen: clearance keeps pace, so glyphs keep their size.
+    expect(clearanceRadius(4, SPACING.max) / extent(top.positions)).toBeGreaterThan((clearanceRadius(4, 3) / extent(old.positions)) * 0.7);
   });
 
   it("pulls groups toward the centre until their circles are the gap apart, never outward, and leaves loners", () => {

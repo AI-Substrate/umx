@@ -27,6 +27,9 @@ describe("the view's look in the fragment", () => {
   it("drops anything unknown, out of range or oddly named, and never reads graphs", () => {
     expect(readLook("#colour=red&group=x&res=99&spacing=-1&spread=9&merge=yes&off.type=<b>,ok&g=vault")).toEqual({ off: { relations: [], types: ["ok"], statuses: [] } });
     expect(readLook("")).toEqual({});
+    expect(readLook("#spacing=2.2")).toEqual({ spacing: 2.2 });
+    expect(readLook("#spacing=30")).toEqual({ spacing: 30 });
+    expect(readLook("#spacing=31")).toEqual({});
   });
 
   it("leaves a launch link's fragment to the launch", () => {

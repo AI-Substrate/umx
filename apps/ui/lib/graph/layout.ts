@@ -8,6 +8,7 @@ import noverlap from "graphology-layout-noverlap";
 import type { Groups, IndexGraph } from "@/lib/graph/clusters";
 import { rng } from "@/lib/graph/rng";
 import { clearanceRadius, separateDiscs } from "@/lib/graph/clearance";
+import { SPACING_LINEAR } from "@/lib/graph/spacing";
 
 export type LayoutResult = { positions: Float32Array; iterations: number; ms: number; capped: boolean };
 
@@ -191,18 +192,23 @@ export function compactGroups(positions: Float32Array, sizes: Float32Array, grou
   }
 }
 
-/** Spacing increases repulsion and therefore the equilibrium link distance; strong gravity keeps groups together. */
-export const FORCE = { scaling: 3, gravity: 2 } as const;
+/** Spacing increases repulsion and therefore the equilibrium link distance; strong gravity keeps groups together.
+ * Up to `over` that is all it does. Sigma draws nodes at a fixed screen size, so a layout that only grows looks the
+ * same at Fit; above `over`, gravity grows against attraction by (spacing / over) ** `even`, which spreads the
+ * nodes more evenly (dense groups open up, empty space between groups closes), and repulsion grows to match, so the
+ * layout's size keeps growing in step with the spacing (10 times at 30 against 3). */
+export const FORCE = { scaling: 3, gravity: 2, over: SPACING_LINEAR, even: 2.5 } as const;
 
 /** ForceAtlas2 for the spread-out look: more repulsion, strong gravity, attraction shared out by degree (so hubs do
  * not pull their leaves into a ball), no linLog (it tightens clusters) and no size adjustment during the run
  * (Barnes-Hut runs above 2k nodes); noverlap separates nodes after it. */
 function forceSettings(graph: Graph, spacing: number) {
   const inferred = forceAtlas2.inferSettings(graph);
+  const over = Math.max(1, spacing / FORCE.over);
   return {
     ...inferred,
-    scalingRatio: (inferred.scalingRatio ?? 1) * FORCE.scaling * spacing,
-    gravity: (inferred.gravity ?? 1) * FORCE.gravity,
+    scalingRatio: (inferred.scalingRatio ?? 1) * FORCE.scaling * spacing * over ** (FORCE.even + 1),
+    gravity: (inferred.gravity ?? 1) * FORCE.gravity * over ** FORCE.even,
     strongGravityMode: true,
     outboundAttractionDistribution: true,
     barnesHutOptimize: graph.order > 2000,

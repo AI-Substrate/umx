@@ -67,9 +67,10 @@ export function separateDiscs(discs: readonly Disc[], fixed?: Uint8Array, bounds
 }
 
 /** A reserved radius includes room beyond a glyph. The renderer projects it to screen space before drawing,
- * since Sigma's nominal glyph sizes are pixels, not layout units. */
+ * since Sigma's nominal glyph sizes are pixels, not layout units. Above SPACING_LINEAR (3, where the two terms meet)
+ * it grows in step with the spacing, as the force layout does, so a wider spacing never draws glyphs smaller at Fit. */
 export function clearanceRadius(size: number, spacing: number): number {
-  return Math.max(1, size) * (1.5 + spacing);
+  return Math.max(1, size) * Math.max(1.5 + spacing, 1.5 * spacing);
 }
 
 /** Cache projection sizes between reducer passes; pan-only frames do no work, zoom/resize settles once. */

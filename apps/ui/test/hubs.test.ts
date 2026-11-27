@@ -170,7 +170,7 @@ describe("clearance and fans", () => {
     const n = 1000;
     const g = graph(n, Array.from({ length: n - 2 }, (_, i): [number, number] => [i % 2, i + 2]));
     const plan = findHubs(g, ids(n), options("degree"), 1, 7);
-    for (const spacing of [1.6, 3]) {
+    for (const spacing of [1.6, 3, 30]) {
       const sizes = new Float32Array(n).fill(4);
       for (const head of plan.centres) sizes[head] = hubSize(sizes[head]);
       const at = fanLayout(new Float32Array(n * 2), sizes, plan, spacing);
