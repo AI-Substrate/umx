@@ -46,6 +46,15 @@ describe("the activity strip", () => {
     expect(prompted).toContain("agent-go");
   });
 
+  it("offers Clear agent marks only when given, and names the view's own clear as the view's", () => {
+    const d = words({ seq: 4, at_ms: 1, graph: "demo", by: null, command: { kind: "highlight", nodes: [A], add: false } }, title);
+    expect(strip([entry(4, d)])).not.toContain("agent-clear");
+    expect(strip([entry(4, d)], { onClear: none })).toContain("Clear agent marks");
+    const cleared = words({ seq: 5, at_ms: 1, graph: "demo", by: { role: "graph_view", user: "me" }, command: { kind: "clear" } }, title);
+    expect(cleared.who).toBe("the view");
+    expect(words({ seq: 6, at_ms: 1, graph: "demo", by: { seat: "pij-x", role: "graph_view" }, command: { kind: "clear" } }, title).who).toBe("pij-x");
+  });
+
   it("pulses exactly the chips an agent filter changed", () => {
     const before = { relations: new Set<string>(), types: new Set(["risk"]), statuses: new Set<string>() };
     const after = { relations: new Set(["cites"]), types: new Set<string>(), statuses: new Set<string>() };

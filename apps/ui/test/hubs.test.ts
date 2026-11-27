@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { canonicalGraph, fanLayout, findHubs, hubSize, type HubOptions } from "@/lib/graph/hubs";
+import { canonicalGraph, declaresNoHubs, fanLayout, findHubs, hubSize, type HubOptions } from "@/lib/graph/hubs";
 import { clearanceRadius, separateDiscs, sizeRefresh } from "@/lib/graph/clearance";
 import { layOut } from "@/lib/graph/layout";
 import { louvainGroups, type IndexGraph } from "@/lib/graph/clusters";
@@ -255,5 +255,18 @@ describe("canonical layout and settings", () => {
     expect(readLook(writeLook(look))).toEqual(look);
     expect(readLook("#layout=script&degree=sideways&hubs=2.5")).toEqual({});
     expect(readLook("#hubs=101")).toEqual({});
+  });
+});
+
+describe("Declared hubs with none declared", () => {
+  it("is said on the canvas only when no open graph declares a hub and the daemon serves declarations", () => {
+    const none = { centres: [] as number[] };
+    expect(declaresNoHubs("declared", none, [{ hubs: [] }, { hubs: [] }])).toBe(true);
+    expect(declaresNoHubs("declared", none, [{ hubs: [] }, { hubs: [{ name: "risks" }] }])).toBe(false);
+    expect(declaresNoHubs("declared", none, [{}])).toBe(false);
+    expect(declaresNoHubs("declared", { centres: [], preview: true }, [{ hubs: [] }])).toBe(false);
+    expect(declaresNoHubs("declared", { centres: [3] }, [{ hubs: [] }])).toBe(false);
+    expect(declaresNoHubs("degree", none, [{ hubs: [] }])).toBe(false);
+    expect(declaresNoHubs("declared", none, [])).toBe(false);
   });
 });

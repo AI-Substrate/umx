@@ -223,6 +223,25 @@ fn std_placed_on_relation(o: &Ontology, relation: &str, field: &str) -> bool {
         && standard::fields().any(|f| f.name == field && f.relations.contains(&relation))
 }
 
+/// std's declaration of `field` that node type `kind` already has in a std graph: std places it on the type, or it is
+/// one std places on nothing (tags, entity_key, the provenance keys), which every node has. A field std places on
+/// other types and only allows here (`starts_on` on a transcript) is not one: the type has it once the graph
+/// declares it, so `ontology add field` declares it rather than answering unchanged.
+fn std_given_decl(o: &Ontology, kind: &str, field: &str) -> Option<FieldDecl> {
+    std_decl(o, kind, field).filter(|_| std_placed(o, kind, field) || !std_placed_anywhere(field))
+}
+
+/// [`std_given_decl`] on relation `relation`'s edges.
+fn std_given_relation_decl(o: &Ontology, relation: &str, field: &str) -> Option<FieldDecl> {
+    std_relation_decl(o, relation, field)
+        .filter(|_| std_placed_on_relation(o, relation, field) || !std_placed_anywhere(field))
+}
+
+/// Whether std places `field` on any type or relation.
+fn std_placed_anywhere(field: &str) -> bool {
+    standard::fields().any(|f| f.name == field && (!f.types.is_empty() || !f.relations.is_empty()))
+}
+
 /// The nodes of `kind` whose embedded text a role change of `field` alters: those holding non-blank text in it.
 fn role_affected(graph: &Graph, kind: &str, field: &str) -> Vec<Id> {
     graph
@@ -1037,7 +1056,7 @@ impl GraphStore {
             // same field again writes nothing and graph.json holds only the graph's own extensions.
             let own = o.field_decl(type_name.as_str(), &field.name).cloned();
             let from_std = own.is_none();
-            let have = own.or_else(|| std_decl(o, type_name.as_str(), &field.name));
+            let have = own.or_else(|| std_given_decl(o, type_name.as_str(), &field.name));
             match have {
                 Some(f) if f.kind == field.kind && f.effective_role() == field.effective_role() => {
                     let merged_values = revalues(o, graph, &type_name, &name, &f, &field)?;
@@ -1143,7 +1162,7 @@ impl GraphStore {
                 .get(rel.as_str())
                 .and_then(|fields| fields.iter().find(|f| f.name == field.name))
                 .cloned()
-                .or_else(|| std_relation_decl(o, rel.as_str(), &field.name));
+                .or_else(|| std_given_relation_decl(o, rel.as_str(), &field.name));
             match declared {
                 Some(f) if f.kind == field.kind => return Ok(false),
                 Some(f) => {
@@ -1281,7 +1300,7 @@ impl GraphStore {
             }
             let own = o.field_decl(n.as_str(), &field.name).cloned();
             let from_std = own.is_none();
-            let have = own.or_else(|| std_decl(o, n.as_str(), &field.name));
+            let have = own.or_else(|| std_given_decl(o, n.as_str(), &field.name));
             let same = |f: &FieldDecl| {
                 f.kind == field.kind && f.effective_role() == field.effective_role()
             };

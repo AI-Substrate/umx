@@ -249,12 +249,13 @@ pub fn parse_json(text: &str) -> Option<Value> {
 /// rule_set_skipped, rule_sets_cut, rule_sets_full, rule_set_name_taken and rule_sets_refresh_failed;
 /// rule-check continuation keeps partial results on pathological nodes (usage 230).
 /// 110: `UiCmd::Focus` gains `centre` (`umx ui focus <id> --centre`, PRD 005): the view centres in rings of hops.
+/// 111: UiCmd::Focus `select` (`umx ui focus --select`): the view also selects the node, opening its panel (usage 235).
 ///
 /// Any change to the wire (a new Op variant, a new or renamed field in Request, Op or Envelope, or a changed
 /// meaning) bumps PROTOCOL by one in the PR that makes it; serde(default) does not exempt it; bump per PR.
 /// Record the new [`WIRE_FINGERPRINT`] in the same change: the `wire_fingerprint_matches_protocol` test fails
 /// until both move together.
-pub const PROTOCOL: u32 = 110;
+pub const PROTOCOL: u32 = 111;
 
 /// The protocol version and the fingerprint of the wire it names: a hash of one sample of every Op variant,
 /// Request and Envelope as canonical JSON (see the `wire_fingerprint_matches_protocol` test).
@@ -263,7 +264,7 @@ pub const PROTOCOL: u32 = 110;
 /// At 71, D72 changed only the text inside the RootAdd and RootRemove samples (a placeholder root name), not the wire,
 /// so the hash was re-recorded with no bump.
 #[cfg(test)]
-const WIRE_FINGERPRINT: (u32, u64) = (110, 0x4c61_15c5_2c1c_3fda);
+const WIRE_FINGERPRINT: (u32, u64) = (111, 0x2dc7_a404_ab5f_d1f2);
 
 /// Paths in the envelope whose strings may come from graph content. Fixed, so agents can rely on it.
 /// `data` covers every path under it; the two `data.` paths are named too (ws009 S6) so a client that renders only
@@ -2151,6 +2152,7 @@ pub enum Op {
 pub enum UiCmd {
     /// `centre` (PROTOCOL 110, PRD 005, `umx ui focus --centre`): the view also re-arranges itself in rings of hops
     /// around the node, view only.
+    /// `select` (PROTOCOL 111, `umx ui focus --select`): also select the node, opening its panel.
     Focus {
         node: String,
         hops: u32,
@@ -2158,6 +2160,8 @@ pub enum UiCmd {
         note: Option<String>,
         #[serde(default, skip_serializing_if = "is_false")]
         centre: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        select: bool,
     },
     /// `add`: join the agent's current highlight instead of replacing it.
     Highlight {
@@ -6289,6 +6293,7 @@ mod tests {
                     hops: 2,
                     note: s("look"),
                     centre: true,
+                    select: true,
                 },
             },
             Op::UiCommand {

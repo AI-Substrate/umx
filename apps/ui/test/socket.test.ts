@@ -206,3 +206,29 @@ describe("UiSelect (S7)", () => {
     expect(exchange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the person's Clear agent marks", () => {
+  it("sends umx ui clear for the graph, claimed as the view, and nothing for a bad alias", async () => {
+    const { d, exchange } = deps({ reply: { ...waited({ seq: 9 }), command: "ui clear" } });
+    await createSocket(d).clear("demo");
+    const sent = JSON.parse(exchange.mock.calls[0][1]);
+    expect(sent).toMatchObject({ command: "ui clear", graph: "demo", op: { op: "ui_command", command: { kind: "clear" } } });
+    expect(sent.actor).toMatchObject({ tier: "cli", role: "graph_view" });
+    expect(sent.actor.user).toMatch(/^[A-Za-z0-9._:@-]+$/);
+    await refusal(createSocket(d).clear("--all"));
+    expect(exchange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("an agent's focus --select (PROTOCOL 111)", () => {
+  it("reads select only as a boolean and keeps it on the event", async () => {
+    const focus = (extra: object) => ({ seq: 1, at_ms: 1, graph: "demo", by: null, command: { kind: "focus", node: N, hops: 1, ...extra } });
+    const { d } = deps({ reply: waited({ epoch: EPOCH, seq: 1, reset: false, events: [focus({ select: true })] }) });
+    const got = await createSocket(d).wait({ epoch: null, since: 0, timeoutMs: 0, graphs: ["demo"] });
+    expect(got.events[0].command).toEqual({ kind: "focus", node: N, hops: 1, select: true });
+    const plain = deps({ reply: waited({ epoch: EPOCH, seq: 1, reset: false, events: [focus({ select: false })] }) });
+    expect((await createSocket(plain.d).wait({ epoch: null, since: 0, timeoutMs: 0, graphs: ["demo"] })).events[0].command).toEqual({ kind: "focus", node: N, hops: 1 });
+    const bad = deps({ reply: waited({ epoch: EPOCH, seq: 1, reset: false, events: [focus({ select: "yes" })] }) });
+    await refusal(createSocket(bad.d).wait({ epoch: null, since: 0, timeoutMs: 0, graphs: ["demo"] }));
+  });
+});

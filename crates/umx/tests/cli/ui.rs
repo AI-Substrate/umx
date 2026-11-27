@@ -276,6 +276,17 @@ fn ui_verbs_reach_a_waiting_view_as_events_with_ids_and_notes() {
     assert_eq!(env.data["rows"][0]["title"], "Launch date");
     assert_eq!(env.data["rows"][0]["address"], format!("umx:demo/{b}"));
     assert!(env.untrusted.iter().any(|p| p == "data.rows[].title"));
+
+    // `--select` (PROTOCOL 111): the event asks the view to select the node too; without it the key is absent.
+    let (env, exit) = home.umx(&["ui", "focus", &a, "--select"]);
+    assert_eq!(exit, 0, "{}", env.to_json());
+    assert_eq!(env.data["command"]["select"], true, "{}", env.to_json());
+    let (env, _) = home.umx(&["ui", "focus", &a]);
+    assert!(
+        env.data["command"].get("select").is_none(),
+        "{}",
+        env.to_json()
+    );
 }
 
 /// ws009 plan 179 (security, as F188): `umx ui selection` keeps each title and names one umx's secret check flags in

@@ -2017,6 +2017,60 @@ fn several_types_take_a_field_with_std_s_types_counted_as_declared() {
 }
 
 #[test]
+fn a_field_std_places_elsewhere_is_declared_on_another_type_not_answered_unchanged() {
+    // starts_on is std's on meeting, event, project and segment (and works_for, member_of edges), and only allowed
+    // elsewhere: on a transcript, or a blocks edge, it is the graph's own declaration, written once, then unchanged.
+    let mut home = Home::new("std-placed-elsewhere");
+    let path = home.graph();
+    let env = home.ok(&["ontology", "add", "field", "transcript", "starts_on:date"]);
+    assert_eq!(env.data["unchanged"], json!(false), "{}", env.to_json());
+    assert_eq!(
+        type_in_file(&path, "transcript"),
+        json!({ "name": "transcript", "fields": [{ "name": "starts_on", "kind": "date" }] })
+    );
+    let env = home.ok(&["ontology", "add", "field", "transcript", "starts_on:date"]);
+    assert_eq!(env.data["unchanged"], json!(true), "{}", env.to_json());
+    // The several-types form: meeting has it from std, transcript from the graph, person takes it now.
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "meeting,transcript,person",
+        "starts_on:date",
+    ]);
+    assert_eq!(env.data["types"], json!(["person"]), "{}", env.to_json());
+    assert_eq!(env.data["unchanged"], json!(["meeting", "transcript"]));
+    let types = graph_json(&path)["ontology"]["types"].clone();
+    assert!(
+        !types
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "meeting"),
+        "std's own stays std's: {types}"
+    );
+    let env = home.ok(&[
+        "ontology",
+        "add",
+        "field",
+        "--relation",
+        "blocks",
+        "starts_on:date",
+    ]);
+    assert_eq!(env.data["unchanged"], json!(false), "{}", env.to_json());
+    assert_eq!(
+        graph_json(&path)["ontology"]["relation_fields"]["blocks"],
+        json!([{ "name": "starts_on", "kind": "date" }])
+    );
+    // Another kind is still std's kind conflict.
+    refused_with(
+        &home,
+        &["ontology", "add", "field", "transcript", "starts_on:string"],
+        Code::StdFieldConflict,
+    );
+}
+
+#[test]
 fn std_s_own_fields_are_never_removed_and_the_graph_s_role_for_one_is() {
     // req-100 clause 5: remove field takes out only what the graph added.
     let mut home = Home::new("t2c-remove");

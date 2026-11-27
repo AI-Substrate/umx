@@ -271,7 +271,9 @@ in the panel is mono, on one line, cut with an ellipsis when it does not fit, wi
 Status history shows each move's reason and, under it, the move's evidence pointer drawn as the Evidence section
 draws a node's (a redacted one as "(redacted)" with its kind); a move's `in` place is not shown. Find runs in each
 open graph and lists the hits rank by rank, each labelled with its graph; focus walks across the edges between open
-graphs. Live changes and agent commands come for every open graph through one poll.
+graphs. Find also takes a node's id: a full id, a unique prefix of one (at least 4 characters, any case) or a
+`umx:<alias>/<id>` address. A line under the box names the node, and Enter (or the line) jumps to it as a hit does; a
+pasted full id or address jumps at once. A prefix several nodes share says how many. Live changes and agent commands come for every open graph through one poll.
 
 A graph renamed with `umx graph rename` while it is open (`umx docs get graph`) stays open under its live alias. The
 view asks umx once where its former alias leads (`umx resolve umx:<old>`), and only for a graph it has open or a launch
@@ -296,6 +298,7 @@ nodes beyond the person's own toggles).
 
     umx ui focus 01JC8XA4H7 --hops 2 --note "start here"
     umx ui focus 01JC8XA4H7 --centre --note "everything around this"
+    umx ui focus 01JC8XA4H7 --select
     umx ui highlight 01JC8XA4H7 01JC8XB2QK --note "these two disagree"
     umx ui highlight umx:acme/01JC8XC9MZ --add
     umx ui filter --hide relation:similar_to --show type:problem
@@ -303,17 +306,22 @@ nodes beyond the person's own toggles).
     umx ui fit --graph acme
     umx ui clear --graph acme
 
-- `umx ui focus <node> [--hops n] [--centre]` centres the view on the node and shows `--hops` hops around it (1 to 3,
-  default 1). `--centre` also lays the view out in rings of hops around the node, as the panel's "Centre on this"
-  does (see "Centre on a node" below); `umx ui clear` in that graph puts the layout back. A centre command older than
-  30 seconds when the view gets it does not re-arrange the view.
+- `umx ui focus <node> [--hops n] [--centre] [--select]` centres the view on the node and shows `--hops` hops around it
+  (1 to 3, default 1). `--centre` also lays the view out in rings of hops around the node, as the panel's "Centre on
+  this" does (see "Centre on a node" below); `umx ui clear` in that graph puts the layout back. A centre command older
+  than 30 seconds when the view gets it does not re-arrange the view. `--select` also selects the node, opening its
+  panel, when the view moves to it (at once when it follows, or when the person presses Go; never while the person
+  is busy with the canvas), or with `--centre` when the view centres on it.
 - `umx ui highlight <node>...` marks up to 100 nodes. They replace what agents highlighted before; `--add` adds them
   instead.
 - `umx ui filter [--show|--hide <relation|type|status>:<name>]...` sets the agents' filter: each run replaces the
   last, so name everything you want shown and hidden (at most 64 of each). With no names it clears it. The event
   carries both whole lists, so the view can undo it from the event alone.
 - `umx ui fit [<node>...]` fits those nodes (up to 100) in the view, or the whole graph with none.
-- `umx ui clear` removes what agents set (highlight, filter, and a centring an agent made); never what the person set.
+- `umx ui clear` removes what agents set (highlight, focus, filter, their notes, and a centring an agent made); never
+  what the person set. The person can do the same from the agent strip: "Clear agent marks" sends `umx ui clear` for
+  each open graph, so a reload or another view does not bring the marks back. The strip labels it "the view cleared
+  what agents set".
 - `umx ui open --graph <alias>[,<alias>...]` opens those graphs in the view (see "Open graphs for the person" below).
 - With several graphs open, a command acts within its graph: a highlight replaces only that graph's highlight, and
   `clear` takes off only what was set in that graph. A filter sets the chips for the whole canvas.
@@ -438,6 +446,9 @@ Clusters (0.5 to 3, default 1.6), widens the gaps between nodes: at the default 
 higher value draws them smaller and a lower one larger (size times sqrt(1.6 / spacing)), and moving it lays the graph
 out again from where its nodes are. Which nodes get labels still goes by their usual size. The same graphs at the
 same spacing open laid out the same way. The browser keeps only the number (local storage `layout-spacing`).
+
+Layout's Declared hubs lays out the hubs the open graphs declare (`umx docs get hubs`). When none of them declares a
+hub, the canvas says so and offers Degree hubs and Similarity hubs, which find hubs themselves.
 
 ## Spines
 

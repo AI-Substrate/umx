@@ -2,7 +2,7 @@
 // camera may move, and the strip's words.
 import { describe, expect, it } from "vitest";
 import {
-  activeNotes, agentCentre, agentFilter, agentOff, applyAgentFilter, cameraAsk, decide, dropRemovedNodes, Gesture, describe as words, HISTORY_MAX, LEDGER0, type Ledger, NO_AGENT,
+  activeNotes, agentCentre, agentFilter, agentOff, applyAgentFilter, cameraAsk, centreSelects, decide, dropRemovedNodes, Gesture, describe as words, HISTORY_MAX, LEDGER0, type Ledger, NO_AGENT,
   openIgnored, openLanded, openMayMove, openPlan, openTail, personSets, qualifyEvent, raiseTitle, readEach, receive, reduce, STALE_MS, TOUCH_MS, undoAgentFilter,
 } from "@/lib/agent";
 import { Raiser } from "@/lib/raise";
@@ -180,6 +180,24 @@ describe("who owns a chip (review R224-3)", () => {
 describe("the camera", () => {
   const ask = cameraAsk(ev({ kind: "focus", node: A, hops: 1 }, { at_ms: 100_000 }))!;
   const at = { now: 100_000, follow: true, visible: true, lastTouch: 0, busy: false, shown: () => true };
+
+  it("selects with a centring only when the newest centre on that node asked to, and never asks the camera", () => {
+    const sel = qev({ kind: "focus", node: A, hops: 1, centre: true, select: true });
+    const plain = qev({ kind: "focus", node: A, hops: 1, centre: true });
+    expect(centreSelects([sel], qA)).toBe(true);
+    expect(centreSelects([sel, plain], qA)).toBe(false);
+    expect(centreSelects([sel], qB)).toBe(false);
+    expect(centreSelects([qev({ kind: "focus", node: A, hops: 1, select: true })], qA)).toBe(false);
+    expect(cameraAsk(sel)).toBeNull();
+    expect(words(sel, () => "Gear").action).toBe("selected and centred the view on");
+  });
+
+  it("carries a focus --select to the camera move, qualified, and says it selects", () => {
+    const e = qualifyEvent(ev({ kind: "focus", node: A, hops: 1, select: true }));
+    expect(cameraAsk(e)).toMatchObject({ kind: "focus", nodes: [qA], select: true });
+    expect(cameraAsk(ev({ kind: "focus", node: A, hops: 1 }))).not.toHaveProperty("select");
+    expect(words(e, () => "Gear").action).toBe("focused and selected");
+  });
 
   it("moves when following, visible and untouched", () => {
     expect(decide(ask, at)).toBe("move");

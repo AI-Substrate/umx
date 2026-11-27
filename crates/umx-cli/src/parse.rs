@@ -31,7 +31,8 @@ struct Args {
     switches: Vec<String>,
 }
 
-const SWITCHES: [&str; 32] = [
+const SWITCHES: [&str; 33] = [
+    "--select",
     "--clear-values",
     "--centre",
     "--same-graph",
@@ -458,7 +459,7 @@ pub const FLAGS: &[(&str, &[&str])] = &[
     ("root add", &[]),
     ("root list", &[]),
     ("root remove", &[]),
-    ("ui focus", &["--hops", "--note", "--centre"]),
+    ("ui focus", &["--hops", "--note", "--centre", "--select"]),
     ("ui highlight", &["--add", "--note"]),
     ("ui filter", &["--show", "--hide", "--note"]),
     ("ui fit", &["--note"]),
@@ -2157,6 +2158,7 @@ pub fn parse(words: &[&str], cwd: &Path) -> Result<Parsed, Usage> {
                         hops,
                         note,
                         centre: a.switches.iter().any(|s| s == "--centre"),
+                        select: a.switches.iter().any(|s| s == "--select"),
                     }
                 }
                 "ui highlight" => UiCmd::Highlight {

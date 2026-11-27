@@ -2,7 +2,7 @@
 // The agent's activity strip, its history drawer and the "Agent wants to show X" prompt (plan 114, design note
 // section 5). The label ("<who> focused") is fixed chrome; the agent's note and any title are separate text elements,
 // isolated with <bdi>, so the agent's words can neither spoof the label nor reorder it (security T2).
-import { Bot, History, Undo2, X } from "lucide-react";
+import { Bot, Eraser, History, Undo2, X } from "lucide-react";
 import { useState } from "react";
 import type { Described } from "@/lib/agent";
 import type { ApiError } from "@/lib/types";
@@ -45,6 +45,7 @@ export function AgentStrip({
   onGo,
   onDismiss,
   onReplay,
+  onClear = null,
   error,
   notice = null,
   onNoticeDismiss,
@@ -60,6 +61,8 @@ export function AgentStrip({
   onGo: () => void;
   onDismiss: () => void;
   onReplay: (seq: number) => void;
+  /** Take off what agents set in the open graphs (`umx ui clear` for each), when they have set something. */
+  onClear?: (() => void) | null;
   error: ApiError | null;
   /** Hold (plan 152): fixed words about held changes, with an action (a graph's Apply) when there is one. */
   notice?: { text: string; action?: { label: string; run: () => void } } | null;
@@ -155,6 +158,11 @@ export function AgentStrip({
           {onUndo ? (
             <button type="button" className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-muted" onClick={onUndo} data-testid="agent-undo">
               <Undo2 className="size-3" /> Undo
+            </button>
+          ) : null}
+          {onClear ? (
+            <button type="button" className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-muted" onClick={onClear} data-testid="agent-clear">
+              <Eraser className="size-3" aria-hidden /> Clear agent marks
             </button>
           ) : null}
           <button

@@ -38,6 +38,9 @@ unchanged; another kind is `std_field_conflict` except for soft risk ratings. Se
 (`risk,team`); `--all-types` means graph.json's types only. `ontology remove field` refuses std's own fields
 (`reserved_name`) and removes only your extension or your role for a std field.
 
+**usage 234**: a std field std places only on other types (`starts_on` on the dated types) is yours to declare on
+another type: `umx ontology add field transcript starts_on:date` writes it (`"unchanged": false`), with std's kind.
+
 **usage 213**: move a graph made without std onto std with `umx ontology adopt-std` (`--dry-run` first): graph.json
 gets `std: 1` and drops its own copies of std's entries; lines change only for a `--map individual=person`, which
 keeps ids and addresses. Renames are only suggested, never made. A conflict (a std field of another kind, stored
